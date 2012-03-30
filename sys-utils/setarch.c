@@ -265,6 +265,10 @@ int main(int argc, char *argv[])
     argv[0] = argv[-1];      /* for getopt_long() to get the program name */
     if (!strcmp(p, "-h") || !strcmp(p, "--help"))
       show_help();
+  #if defined(__sparc64__) || defined(__sparc__)
+  } else if (!strcmp(p,"sparc64")) {
+      options |= ADDR_LIMIT_32BIT;
+  #endif
   }
   #if defined(__sparc64__) || defined(__sparc__)
    if (!strcmp(p, "sparc32bash")) {

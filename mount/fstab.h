@@ -34,6 +34,9 @@ struct mntentchn *getfs_by_devdir (const char *dev, const char *dir);
 struct mntentchn *getfs_by_uuid (const char *uuid);
 struct mntentchn *getfs_by_label (const char *label);
 
+struct mntentchn *mountall_head (void);
+struct mntentchn *getmountalldir (const char *dir);
+
 void lock_mtab (void);
 void unlock_mtab (void);
 void update_mtab (const char *special, struct my_mntent *with);

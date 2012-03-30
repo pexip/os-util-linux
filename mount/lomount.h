@@ -2,7 +2,7 @@
 #define UTIL_LINUX_LOMOUNT_H
 
 extern int set_loop(const char *, const char *, unsigned long long, unsigned long long,
-		    const char *, int, int *);
+		    const char *, int, int *, int, int);
 extern int del_loop(const char *);
 extern int is_loop_device(const char *);
 extern int is_loop_autoclear(const char *device);

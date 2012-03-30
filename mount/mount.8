@@ -909,6 +909,16 @@ This option implies the options
 (unless overridden by subsequent options, as in the option line
 .BR group,dev,suid ).
 .TP
+.B encryption
+Specifies an encryption algorithm to use.  Used in conjunction with the
+.BR loop " option."
+.TP
+.B keybits
+Specifies the key size to use for an encryption algorithm. Used in conjunction
+with the 
+.BR loop " and " encryption " options."
+.B nofail
+Do not report errors for this device if it does not exist.
 .B iversion
 Every time the inode is modified, the i_version field will be incremented.
 .TP
@@ -1418,8 +1428,8 @@ compatible change and will be ignored by older kernels.
 .TP
 .BR journal_async_commit
 Commit block can be written to disk without waiting for descriptor blocks. If
-enabled older kernels cannot mount the device.
-This will enable 'journal_checksum' internally.
+enabled older kernels cannot mount the device. This will
+enable 'journal_checksum' internally.
 .TP
 .BR journal=update
 Update the ext4 filesystem's journal to the current format.
@@ -1943,7 +1953,7 @@ and the current version of
 .SH "Mount options for nfs and nfs4"
 See the options section of the
 .BR nfs (5)
-man page (nfs-utils package must be installed).
+man page (nfs-common package must be installed).
 
 The
 .IR nfs " and " nfs4
@@ -2695,6 +2705,10 @@ This type of mount knows about four options, namely
 .BR loop ", " offset ", " sizelimit " and " encryption ,
 that are really options to
 .BR \%losetup (8).
+If the mount requires a passphrase, you will be prompted for one unless
+you specify a file descriptor to read from instead with the
+.BR \-\-pass-fd
+option.
 (These options can be used in addition to those specific
 to the filesystem type.)
 

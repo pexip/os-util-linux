@@ -1126,8 +1126,18 @@ static void determine_clock_access_method(const bool user_requests_ISA)
 	if (!ur)
 		ur = probe_for_kd_clock();
 
+	/*
+	 * This final clause is a really bad idea on x86/AT PCs. You run the
+	 * risk of a race condition with another copy of hwclock
+	 * that already has /dev/rtc open. The fallback case on
+	 * x86 is to then raise I/O priviledge level and access
+	 * the RTC CMOS directly using I/O instructions. Simultaneous
+	 * access like that can really hose the RTC.
+	 */
+#if !defined(__i386__)
 	if (!ur && !user_requests_ISA)
 		ur = probe_for_cmos_clock();
+#endif
 
 	if (debug) {
 		if (ur)

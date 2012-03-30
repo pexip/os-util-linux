@@ -255,7 +255,6 @@ includedir = @includedir@
 infodir = @infodir@
 install_sh = @install_sh@
 libdir = @libdir@
-libdirname = @libdirname@
 libexecdir = @libexecdir@
 localedir = @localedir@
 localstatedir = @localstatedir@

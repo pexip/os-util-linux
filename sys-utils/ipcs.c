@@ -524,8 +524,10 @@ void do_msg (char format)
 
 	case STATUS:
 		printf (_("------ Messages Status --------\n"));
+#ifndef __FreeBSD_kernel__
 		printf (_("allocated queues = %d\n"), msginfo.msgpool);
 		printf (_("used headers = %d\n"), msginfo.msgmap);
+#endif
 		printf (_("used space = %d bytes\n"), msginfo.msgtql);
 		return;
 

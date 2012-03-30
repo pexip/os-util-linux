@@ -62,9 +62,6 @@ NONE:NONE | NONE:/usr | /usr:*)
   esac ;;
 esac
 
-libdirname=`basename "$libdir"`
-AC_SUBST([libdirname])
-
 # The original default values of {bin,sbin,lib}dir
 usrbin_execdir='${exec_prefix}/bin'
 AC_SUBST([usrbin_execdir])
@@ -72,7 +69,7 @@ AC_SUBST([usrbin_execdir])
 usrsbin_execdir='${exec_prefix}/sbin'
 AC_SUBST([usrsbin_execdir])
 
-usrlib_execdir='${exec_prefix}/'$libdirname
+usrlib_execdir='${libexecdir}'
 AC_SUBST([usrlib_execdir])
 
 AM_PROG_CC_C_O

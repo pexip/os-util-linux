@@ -63,7 +63,9 @@ and
 .BR umount (8)
 sequentially iterate through
 .B fstab
-doing their thing.
+doing their thing, though at boot time
+.BR mountall (8)
+may process the file out-of-order when it believes it is safe to do so.
 
 .B The first field
 .RI ( fs_spec ).
@@ -203,6 +205,27 @@ for use by fstab-maintaining programs
 do not report errors for this device if it does not exist.
 .RE
 
+The
+.BR mountall (8)
+program that mounts filesystem during boot also recognises additional
+options that the ordinary
+.BR mount (8)
+tool does not.  These are: ``bootwait'' which can be applied to remote
+filesystems mounted outside of
+.I /usr
+or
+.IR /var ,
+without which
+.BR mountall (8)
+would not hold up the boot for these; ``nobootwait'' which can be
+applied to non-remote filesystems to explicitly instruct
+.BR mountall (8)
+not to hold up the boot for them; ``optional'' which causes the entry
+to be ignored if the filesystem type is not known at boot time; and
+``showthrough'' which permits a mountpoint to be mounted before its
+parent mountpoint (this latter should be used carefully, as it can
+cause boot hangs).
+
 .B The fifth field
 .RI ( fs_freq ).
 .RS
@@ -243,6 +266,7 @@ or
 .I <fstab.h>
 .SH "SEE ALSO"
 .BR mount (8),
+.BR mountall (8),
 .BR swapon (8),
 .BR fs (5),
 .BR nfs (5),

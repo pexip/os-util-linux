@@ -99,6 +99,11 @@ print help
 .IP "\fB\-j, \-\-associated \fIfile\fP"
 show status of all loop devices associated with given
 .I file
+.IP "\fB\-k, \-\-keybits \fInum\fP"
+set the number of bits to use in key to \fInum\fP.
+.IP "\fB\-N, \-\-nohashpass\fP"
+Do not hash the password.  By default, Debian systems run the password through a
+hash function, non-Debian systems tend not to.
 .IP "\fB\-o, \-\-offset \fIoffset\fP"
 the data start is moved \fIoffset\fP bytes into the specified file or
 device
@@ -169,6 +174,8 @@ the command
 .fi
 .SH RESTRICTION
 DES encryption is painfully slow. On the other hand, XOR is terribly weak.
+Both are insecure nowadays. Some ciphers may require a licence for you to be
+allowed to use them.
 
 Cryptoloop is deprecated in favor of dm-crypt. For more details see
 .BR cryptsetup (8).

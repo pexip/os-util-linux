@@ -99,7 +99,6 @@ static char *bindirs[] = {
 	"/usr/share",
 
 	"/opt/*/bin",
-
 	0
 };
 

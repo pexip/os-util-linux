@@ -619,8 +619,6 @@ are supported by the hardware.
 .SH FILES
 .I /etc/adjtime
 .I /usr/share/zoneinfo/
-.RI ( /usr/lib/zoneinfo
-on old systems)
 .I /dev/rtc
 .I /dev/rtc0
 .I /dev/port
@@ -634,6 +632,8 @@ on old systems)
 .BR settimeofday (2),
 .BR crontab (1),
 .BR tzset (3)
+.BR /etc/init.d/hwclock.sh,
+.BR /usr/share/doc/util-linux/README.Debian.hwclock
 
 .SH AUTHORS
 Written by Bryan Henderson, September 1996 (bryanh@giraffe-data.com),
