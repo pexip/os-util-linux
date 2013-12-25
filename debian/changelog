@@ -1,3 +1,9 @@
+util-linux (2.20.1-1ubuntu3pexip1) pexip; urgency=low
+
+  * Prepare Pexip packaging
+
+ -- John-Mark Bell <jmb@pexip.com>  Wed, 25 Dec 2013 05:11:28 +0000
+
 util-linux (2.20.1-1ubuntu3) precise; urgency=low
 
   * Build-depend on gettext:any for cross-building support.
