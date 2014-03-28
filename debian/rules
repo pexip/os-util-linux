@@ -33,9 +33,10 @@ export arch = $(DEB_HOST_ARCH)
 version := $(shell sed -e '1{;s|^util-linux (\(.*\))\ .*|\1|;q;}' debian/changelog)
 Upstream := $(shell sed 's/^.*(\(.*\)-.*).*/\1/; q' debian/changelog)
 
-CONFOPTS= --enable-raw --enable-rdev --enable-partx --with-slang --libdir=/lib/$(DEB_HOST_MULTIARCH) --libexecdir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH)
+CONFOPTS= --enable-raw --enable-rdev --with-slang --enable-ddate --enable-line
+CONFOPTS += --libdir=/lib/$(DEB_HOST_MULTIARCH) --libexecdir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH)
 ifeq ($(DEB_HOST_ARCH_OS),linux)
-CONFOPTS += --with-selinux --enable-libmount-mount
+CONFOPTS += --with-selinux --enable-libmount-mount --enable-partx
 endif
 
 build: build-arch build-indep
@@ -43,7 +44,8 @@ build-arch: build-stamp
 build-indep: build-stamp
 build-stamp:
 	dh_testdir
-	./configure $(CONFOPTS) $(CROSS)
+	autoreconf -vfi
+	./configure  $(shell dpkg-buildflags --export=configure) $(CONFOPTS) $(CROSS)
 	$(MAKE) all CPU=$(arch) arch=$(arch)
 	touch build-stamp
 
@@ -83,7 +85,7 @@ install: build
 	dh_installmenu -i -s
 	dh_installcron -i -s
 	dh_installinfo -i -s
-	dh_installchangelogs docs/v*-ReleaseNotes -i -s
+	dh_installchangelogs docs/v$(Upstream)-ReleaseNotes -i -s
 	dh_movefiles --sourcedir=debian/util-linux -i -s
 	rm -rf debian/util-linux/usr/share/locale
 	#
@@ -120,26 +122,13 @@ endif
 	rmdir  debian/util-linux/usr/share/getopt
 	for pkg in bsdutils mount uuid-runtime; do install -m 644 debian/$${pkg}.lintian-overrides debian/$${pkg}/usr/share/lintian/overrides/$${pkg}; done
 	install -m 644 debian/mime.util-linux debian/util-linux/usr/lib/mime/packages/util-linux
-ifeq ($(DISTRO),Debian)
 	if [ -f debian/util-linux/sbin/hwclock ] ; then \
 	    install -m 755 debian/hwclock.sh debian/util-linux/etc/init.d/hwclock.sh; \
-	    install -m 755 debian/hwclock.sh debian/util-linux/etc/init.d/hwclockfirst.sh; \
-	    sed -i -e '/^FIRST=/s/no/yes/' -e '/Provides:/s/ck/ckfirst/' \
-		-e '/Required-Start:/s/checkroot/mountdevsubfs/' \
-		-e '/Required-Start:/a# Required-Stop:' -e '/Required-Stop:/d' \
-		-e '/Default-Start:/a# X-Start-Before:    checkroot' \
-		-e '/Default-Start:/a# Default-Stop:' -e '/Default-Stop:/d' \
-		debian/util-linux/etc/init.d/hwclockfirst.sh; \
-	fi
-	if [ -f debian/util-linux/sbin/hwclock ] ; then \
+	    install -m 644 debian/hwclock.default debian/util-linux/etc/default/hwclock; \
+	    install -m 644 debian/hwclock.5 debian/util-linux/usr/share/man/man5; \
 	    install -m 644 debian/hwclock.rules debian/util-linux/lib/udev/rules.d/85-hwclock.rules; \
 	    install -m 755 debian/hwclock-set debian/util-linux/lib/udev/hwclock-set; \
 	fi
-else
-	# blkid.conf file and blkid.tab symlink
-	install -m 644 debian/blkid.conf debian/libblkid1/etc/
-	ln -s /dev/.blkid.tab debian/libblkid1/etc/blkid.tab
-endif
 ifeq ($(DEB_HOST_ARCH_OS),linux)
 	# copy mount library and symlink into udeb
 	ln debian/libmount1/lib/*/libmount.so.1.* debian/libmount1-udeb/lib/
@@ -206,12 +195,7 @@ binary-arch: build install
 	dh_testdir -s
 	dh_testroot -s
 	dh_lintian -s
-ifeq ($(DISTRO),Debian)
 	dh_installinit -s -- defaults 15 85
-else
-	dh_installinit -putil-linux --name=hwclock --no-start
-	dh_installinit -putil-linux --name=hwclock-save --upstart-only --no-start
-endif
 	[ -n "$(STRIP)" ] || dh_strip -s
 	dh_makeshlibs -s
 	dh_installdebconf -s

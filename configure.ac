@@ -733,7 +733,7 @@ m4_define([_UTIL_CHECK_SYSCALL_FALLBACK],
 [m4_ifval([$1],
   [#(
   $1) syscall="$2" ;;dnl
-  _UTIL_CHECK_SYSCALL_FALLBACK(m4_shiftn(2, $@))])dnl
+  _UTIL_CHECK_SYSCALL_FALLBACK(m4_shift2($@))])dnl
 ])
 
 

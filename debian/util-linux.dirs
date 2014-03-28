@@ -1,6 +1,7 @@
 bin/
 sbin/
 etc/
+etc/default/
 etc/init.d/
 usr/
 usr/bin/

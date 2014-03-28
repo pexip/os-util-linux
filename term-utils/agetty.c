@@ -10,6 +10,7 @@
  *
  * This program is freely distributable.
  */
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -39,6 +40,12 @@
 #include "c.h"
 #include "widechar.h"
 
+#if defined(__FreeBSD_kernel__)
+#include <pty.h>
+#include <sys/param.h>
+#endif
+
+
 #ifdef __linux__
 #  include <sys/kd.h>
 #  include <sys/param.h>
@@ -64,6 +71,10 @@
 #  ifndef DEFAULT_STERM
 #    define DEFAULT_STERM  "vt100"
 #  endif
+#endif
+
+#ifdef __FreeBSD_kernel__
+#define USE_SYSLOG
 #endif
 
 /* If USE_SYSLOG is undefined all diagnostics go to /dev/console. */
@@ -980,6 +991,10 @@ static void open_tty(char *tty, struct termios *tp, struct options *op)
 	if (tcgetattr(STDIN_FILENO, tp) < 0)
 		log_err("%s: tcgetattr: %m", tty);
 
+#if defined(__FreeBSD_kernel__)
+    login_tty (0);
+#endif
+
 	/*
 	 * Detect if this is a virtual console or serial/modem line.
 	 * In case of a virtual console the ioctl TIOCMGET fails and
@@ -1141,6 +1156,46 @@ static void reset_vc(const struct options *op, struct termios *tp)
 	/* Sane setting, allow eight bit characters, no carriage return delay
 	 * the same result as `stty sane cr0 pass8'
 	 */
+#ifndef IUCLC
+# define IUCLC 0
+#endif
+#ifndef NL0
+# define NL0 0
+#endif
+#ifndef CR0
+# define CR0 0
+#endif
+#ifndef BS0
+# define BS0 0
+#endif
+#ifndef VT0
+# define VT0 0
+#endif
+#ifndef FF0
+# define FF0 0
+#endif
+#ifndef OLCUC
+# define OLCUC 0
+#endif
+#ifndef OFILL
+# define OFILL 0
+#endif
+#ifndef NLDLY
+# define NLDLY 0
+#endif
+#ifndef CRDLY
+# define CRDLY 0
+#endif
+#ifndef BSDLY
+# define BSDLY 0
+#endif
+#ifndef VTDLY
+# define VTDLY 0
+#endif
+#ifndef FFDLY
+# define FFDLY 0
+#endif
+
 	tp->c_iflag |=  (BRKINT | ICRNL | IMAXBEL);
 	tp->c_iflag &= ~(IGNBRK | INLCR | IGNCR | IXOFF | IUCLC | IXANY | ISTRIP);
 	tp->c_oflag |=  (OPOST | ONLCR | NL0 | CR0 | TAB0 | BS0 | VT0 | FF0);

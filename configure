@@ -840,6 +840,7 @@ CC
 usrlib_execdir
 usrsbin_execdir
 usrbin_execdir
+libdirname
 AM_BACKSLASH
 AM_DEFAULT_VERBOSITY
 am__untar
@@ -3230,6 +3231,9 @@ $as_echo "$as_me:   --libdir defaults to /lib" >&6;} ;;
   esac ;;
 esac
 
+libdirname=`basename "$libdir"`
+
+
 # The original default values of {bin,sbin,lib}dir
 usrbin_execdir='${exec_prefix}/bin'
 
@@ -3237,7 +3241,7 @@ usrbin_execdir='${exec_prefix}/bin'
 usrsbin_execdir='${exec_prefix}/sbin'
 
 
-usrlib_execdir='${libexecdir}'
+usrlib_execdir='${exec_prefix}/'$libdirname
 
 
 DEPDIR="${am__leading_dot}deps"
@@ -12569,7 +12573,6 @@ CC="$lt_save_CC"
 
 
 # Only expand once:
-
 
 
 

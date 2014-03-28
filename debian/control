@@ -1,11 +1,10 @@
 Source: util-linux
-Build-Depends: libncurses5-dev, libslang2-dev (>=2.0.4), gettext:any, zlib1g-dev, dpkg-dev (>=1.16.0), libselinux1-dev [linux-any], debhelper (>=5), lsb-release, pkg-config, po-debconf
+Build-Depends: libncurses5-dev, libslang2-dev (>=2.0.4), gettext, zlib1g-dev, dpkg-dev (>=1.16.0), libselinux1-dev [linux-any], debhelper (>=5), lsb-release, pkg-config, po-debconf, autoconf, automake, autopoint, libtool
 Section: base
 Priority: required
 Uploaders: Scott James Remnant <scott@ubuntu.com>, Adam Conrad <adconrad@0c3.net>
 Standards-Version: 3.9.2
-Maintainer: Ubuntu Core Developers <ubuntu-devel-discuss@lists.ubuntu.com>
-XSBC-Original-Maintainer: LaMont Jones <lamont@debian.org>
+Maintainer: LaMont Jones <lamont@debian.org>
 Vcs-Browser: http://git.debian.org/?p=users/lamont/util-linux.git
 Vcs-Git: git://git.debian.org/~lamont/util-linux.git
 Homepage: http://userweb.kernel.org/~kzak/util-linux/
@@ -15,7 +14,7 @@ Architecture: any
 Section: utils
 Priority: required
 Essential: yes
-Depends: lsb-base (>= 3.0-6), tzdata (>=2006c-2), dpkg (>= 1.15.4) | install-info, ${misc:Depends}
+Depends: lsb-base (>= 3.0-6), tzdata (>=2006c-2), initscripts, dpkg (>= 1.15.4) | install-info, ${misc:Depends}
 Pre-Depends: ${shlibs:Depends}
 Suggests: util-linux-locales, kbd | console-tools, dosfstools
 Replaces: fstrim, schedutils, miscutils, setterm, fdisk, linux32, sparc-utils, e2fsprogs, ${util-linux:Conflicts}
@@ -65,7 +64,7 @@ Description: Basic utilities from 4.4BSD-Lite
  The remaining standard BSD utilities are provided by bsdmainutils.
 
 Package: fdisk-udeb
-Architecture: linux-any
+Architecture: linux-any hurd-any
 Priority: extra
 Section: debian-installer
 Depends: ${shlibs:Depends}, ${misc:Depends}
@@ -74,7 +73,7 @@ XB-Installer-Menu-Item: 99999
 Description: Manually partition a hard drive (fdisk)
 
 Package: cfdisk-udeb
-Architecture: linux-any
+Architecture: linux-any hurd-any
 Priority: extra
 Section: debian-installer
 Depends: ${shlibs:Depends}, ${misc:Depends}
@@ -102,6 +101,7 @@ Section: debian-installer
 Priority: optional
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Architecture: any
+Multi-Arch: same
 Description: block device id library
  The blkid library which allows system programs like fsck and
  mount to quickly and easily find block devices by filesystem UUID and
@@ -129,9 +129,8 @@ Package: libmount1
 Section: libs
 Priority: required
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Architecture: linux-any
-Multi-Arch: same
 Pre-Depends: multiarch-support
+Architecture: linux-any
 Description: block device id library
  The device mounting library, used by mount and mount helpers.
 

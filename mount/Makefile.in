@@ -83,7 +83,7 @@ am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(sbindir)" \
 	"$(DESTDIR)$(man5dir)" "$(DESTDIR)$(man8dir)"
 PROGRAMS = $(bin_PROGRAMS) $(noinst_PROGRAMS) $(sbin_PROGRAMS)
 am__objects_1 = losetup-sundries.$(OBJEXT) losetup-xmalloc.$(OBJEXT) \
-	losetup-canonicalize.$(OBJEXT) losetup-rmd160.$(OBJEXT)
+	losetup-canonicalize.$(OBJEXT)
 am_losetup_OBJECTS = losetup-lomount.$(OBJEXT) $(am__objects_1) \
 	losetup-strutils.$(OBJEXT)
 losetup_OBJECTS = $(am_losetup_OBJECTS)
@@ -92,12 +92,11 @@ AM_V_lt = $(am__v_lt_$(V))
 am__v_lt_ = $(am__v_lt_$(AM_DEFAULT_VERBOSITY))
 am__v_lt_0 = --silent
 am__losetup_static_SOURCES_DIST = lomount.c sundries.c xmalloc.c \
-	$(top_srcdir)/lib/canonicalize.c sundries.h xmalloc.h rmd160.c \
-	loop.h lomount.h $(top_srcdir)/lib/strutils.c
+	$(top_srcdir)/lib/canonicalize.c sundries.h xmalloc.h loop.h \
+	lomount.h $(top_srcdir)/lib/strutils.c
 am__objects_2 = losetup_static-sundries.$(OBJEXT) \
 	losetup_static-xmalloc.$(OBJEXT) \
-	losetup_static-canonicalize.$(OBJEXT) \
-	losetup_static-rmd160.$(OBJEXT)
+	losetup_static-canonicalize.$(OBJEXT)
 am__objects_3 = losetup_static-lomount.$(OBJEXT) $(am__objects_2) \
 	losetup_static-strutils.$(OBJEXT)
 @HAVE_STATIC_LOSETUP_TRUE@am_losetup_static_OBJECTS =  \
@@ -109,7 +108,7 @@ losetup_static_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_CFLAGS) $(CFLAGS) $(losetup_static_LDFLAGS) $(LDFLAGS) -o \
 	$@
 am__objects_4 = mount-sundries.$(OBJEXT) mount-xmalloc.$(OBJEXT) \
-	mount-canonicalize.$(OBJEXT) mount-rmd160.$(OBJEXT)
+	mount-canonicalize.$(OBJEXT)
 am__objects_5 =
 am__objects_6 = mount-fstab.$(OBJEXT) mount-mount_mntent.$(OBJEXT) \
 	mount-getusername.$(OBJEXT) mount-lomount.$(OBJEXT) \
@@ -130,15 +129,14 @@ mount_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 am__mount_static_SOURCES_DIST = mount.c fstab.c mount_mntent.c \
 	getusername.c lomount.c devname.c devname.h sundries.c \
 	xmalloc.c $(top_srcdir)/lib/canonicalize.c sundries.h \
-	xmalloc.h rmd160.c fstab.h mount_mntent.h mount_constants.h \
-	lomount.h getusername.h loop.h $(top_srcdir)/lib/env.c \
+	xmalloc.h fstab.h mount_mntent.h mount_constants.h lomount.h \
+	getusername.h loop.h $(top_srcdir)/lib/env.c \
 	$(top_srcdir)/lib/linux_version.c $(top_srcdir)/lib/blkdev.c \
 	$(top_srcdir)/lib/fsprobe.c $(top_srcdir)/lib/mangle.c \
 	$(top_srcdir)/lib/setproctitle.c $(top_srcdir)/lib/strutils.c
 am__objects_7 = mount_static-sundries.$(OBJEXT) \
 	mount_static-xmalloc.$(OBJEXT) \
-	mount_static-canonicalize.$(OBJEXT) \
-	mount_static-rmd160.$(OBJEXT)
+	mount_static-canonicalize.$(OBJEXT)
 am__objects_8 = mount_static-fstab.$(OBJEXT) \
 	mount_static-mount_mntent.$(OBJEXT) \
 	mount_static-getusername.$(OBJEXT) \
@@ -158,13 +156,12 @@ mount_static_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(mount_static_CFLAGS) \
 	$(CFLAGS) $(mount_static_LDFLAGS) $(LDFLAGS) -o $@
 am__mtab_lock_test_SOURCES_DIST = fstab.c sundries.c xmalloc.c \
-	$(top_srcdir)/lib/canonicalize.c sundries.h xmalloc.h rmd160.c \
-	fstab.h mount_mntent.h mount_constants.h lomount.h \
-	getusername.h loop.h
+	$(top_srcdir)/lib/canonicalize.c sundries.h xmalloc.h fstab.h \
+	mount_mntent.h mount_constants.h lomount.h getusername.h \
+	loop.h
 am__objects_10 = mtab_lock_test-sundries.$(OBJEXT) \
 	mtab_lock_test-xmalloc.$(OBJEXT) \
-	mtab_lock_test-canonicalize.$(OBJEXT) \
-	mtab_lock_test-rmd160.$(OBJEXT)
+	mtab_lock_test-canonicalize.$(OBJEXT)
 @BUILD_LIBMOUNT_MOUNT_FALSE@am_mtab_lock_test_OBJECTS =  \
 @BUILD_LIBMOUNT_MOUNT_FALSE@	mtab_lock_test-fstab.$(OBJEXT) \
 @BUILD_LIBMOUNT_MOUNT_FALSE@	$(am__objects_10) $(am__objects_5)
@@ -180,7 +177,7 @@ swapon_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(swapon_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
 am__objects_11 = umount-sundries.$(OBJEXT) umount-xmalloc.$(OBJEXT) \
-	umount-canonicalize.$(OBJEXT) umount-rmd160.$(OBJEXT)
+	umount-canonicalize.$(OBJEXT)
 am__objects_12 = umount-fstab.$(OBJEXT) umount-mount_mntent.$(OBJEXT) \
 	umount-getusername.$(OBJEXT) umount-lomount.$(OBJEXT) \
 	umount-devname.$(OBJEXT) $(am__objects_11) $(am__objects_5) \
@@ -197,15 +194,14 @@ umount_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 am__umount_static_SOURCES_DIST = umount.c fstab.c mount_mntent.c \
 	getusername.c lomount.c devname.c devname.h sundries.c \
 	xmalloc.c $(top_srcdir)/lib/canonicalize.c sundries.h \
-	xmalloc.h rmd160.c fstab.h mount_mntent.h mount_constants.h \
-	lomount.h getusername.h loop.h $(top_srcdir)/lib/env.c \
+	xmalloc.h fstab.h mount_mntent.h mount_constants.h lomount.h \
+	getusername.h loop.h $(top_srcdir)/lib/env.c \
 	$(top_srcdir)/lib/linux_version.c $(top_srcdir)/lib/blkdev.c \
 	$(top_srcdir)/lib/fsprobe.c $(top_srcdir)/lib/mangle.c \
 	$(top_srcdir)/lib/strutils.c
 am__objects_13 = umount_static-sundries.$(OBJEXT) \
 	umount_static-xmalloc.$(OBJEXT) \
-	umount_static-canonicalize.$(OBJEXT) \
-	umount_static-rmd160.$(OBJEXT)
+	umount_static-canonicalize.$(OBJEXT)
 am__objects_14 = umount_static-fstab.$(OBJEXT) \
 	umount_static-mount_mntent.$(OBJEXT) \
 	umount_static-getusername.$(OBJEXT) \
@@ -415,6 +411,7 @@ includedir = @includedir@
 infodir = @infodir@
 install_sh = @install_sh@
 libdir = @libdir@
+libdirname = @libdirname@
 libexecdir = @libexecdir@
 localedir = @localedir@
 localstatedir = @localstatedir@
@@ -474,7 +471,7 @@ EXTRA_DIST = README.mount
 dist_man_MANS = fstab.5 mount.8 swapoff.8 swapon.8 umount.8 losetup.8
 
 # generic sources for all programs (mount, umount, losetup)
-srcs_common = sundries.c xmalloc.c $(top_srcdir)/lib/canonicalize.c sundries.h xmalloc.h rmd160.c
+srcs_common = sundries.c xmalloc.c $(top_srcdir)/lib/canonicalize.c sundries.h xmalloc.h
 
 # generic header for mount and umount
 hdrs_mount = fstab.h mount_mntent.h mount_constants.h \
@@ -693,13 +690,11 @@ distclean-compile:
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/losetup-canonicalize.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/losetup-lomount.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/losetup-rmd160.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/losetup-strutils.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/losetup-sundries.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/losetup-xmalloc.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/losetup_static-canonicalize.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/losetup_static-lomount.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/losetup_static-rmd160.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/losetup_static-strutils.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/losetup_static-sundries.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/losetup_static-xmalloc.Po@am__quote@
@@ -715,7 +710,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount-mangle.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount-mount.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount-mount_mntent.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount-rmd160.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount-setproctitle.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount-strutils.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount-sundries.Po@am__quote@
@@ -732,14 +726,12 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_static-mangle.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_static-mount.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_static-mount_mntent.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_static-rmd160.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_static-setproctitle.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_static-strutils.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_static-sundries.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_static-xmalloc.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mtab_lock_test-canonicalize.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mtab_lock_test-fstab.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mtab_lock_test-rmd160.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mtab_lock_test-sundries.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mtab_lock_test-xmalloc.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/swapon-blkdev.Po@am__quote@
@@ -759,7 +751,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/umount-lomount.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/umount-mangle.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/umount-mount_mntent.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/umount-rmd160.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/umount-strutils.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/umount-sundries.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/umount-umount.Po@am__quote@
@@ -775,7 +766,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/umount_static-lomount.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/umount_static-mangle.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/umount_static-mount_mntent.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/umount_static-rmd160.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/umount_static-strutils.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/umount_static-sundries.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/umount_static-umount.Po@am__quote@
@@ -869,22 +859,6 @@ losetup-canonicalize.obj: $(top_srcdir)/lib/canonicalize.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(losetup_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o losetup-canonicalize.obj `if test -f '$(top_srcdir)/lib/canonicalize.c'; then $(CYGPATH_W) '$(top_srcdir)/lib/canonicalize.c'; else $(CYGPATH_W) '$(srcdir)/$(top_srcdir)/lib/canonicalize.c'; fi`
 
-losetup-rmd160.o: rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(losetup_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT losetup-rmd160.o -MD -MP -MF $(DEPDIR)/losetup-rmd160.Tpo -c -o losetup-rmd160.o `test -f 'rmd160.c' || echo '$(srcdir)/'`rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/losetup-rmd160.Tpo $(DEPDIR)/losetup-rmd160.Po
-@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='rmd160.c' object='losetup-rmd160.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(losetup_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o losetup-rmd160.o `test -f 'rmd160.c' || echo '$(srcdir)/'`rmd160.c
-
-losetup-rmd160.obj: rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(losetup_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT losetup-rmd160.obj -MD -MP -MF $(DEPDIR)/losetup-rmd160.Tpo -c -o losetup-rmd160.obj `if test -f 'rmd160.c'; then $(CYGPATH_W) 'rmd160.c'; else $(CYGPATH_W) '$(srcdir)/rmd160.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/losetup-rmd160.Tpo $(DEPDIR)/losetup-rmd160.Po
-@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='rmd160.c' object='losetup-rmd160.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(losetup_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o losetup-rmd160.obj `if test -f 'rmd160.c'; then $(CYGPATH_W) 'rmd160.c'; else $(CYGPATH_W) '$(srcdir)/rmd160.c'; fi`
-
 losetup-strutils.o: $(top_srcdir)/lib/strutils.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(losetup_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT losetup-strutils.o -MD -MP -MF $(DEPDIR)/losetup-strutils.Tpo -c -o losetup-strutils.o `test -f '$(top_srcdir)/lib/strutils.c' || echo '$(srcdir)/'`$(top_srcdir)/lib/strutils.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/losetup-strutils.Tpo $(DEPDIR)/losetup-strutils.Po
@@ -964,22 +938,6 @@ losetup_static-canonicalize.obj: $(top_srcdir)/lib/canonicalize.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/lib/canonicalize.c' object='losetup_static-canonicalize.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(losetup_static_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o losetup_static-canonicalize.obj `if test -f '$(top_srcdir)/lib/canonicalize.c'; then $(CYGPATH_W) '$(top_srcdir)/lib/canonicalize.c'; else $(CYGPATH_W) '$(srcdir)/$(top_srcdir)/lib/canonicalize.c'; fi`
-
-losetup_static-rmd160.o: rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(losetup_static_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT losetup_static-rmd160.o -MD -MP -MF $(DEPDIR)/losetup_static-rmd160.Tpo -c -o losetup_static-rmd160.o `test -f 'rmd160.c' || echo '$(srcdir)/'`rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/losetup_static-rmd160.Tpo $(DEPDIR)/losetup_static-rmd160.Po
-@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='rmd160.c' object='losetup_static-rmd160.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(losetup_static_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o losetup_static-rmd160.o `test -f 'rmd160.c' || echo '$(srcdir)/'`rmd160.c
-
-losetup_static-rmd160.obj: rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(losetup_static_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT losetup_static-rmd160.obj -MD -MP -MF $(DEPDIR)/losetup_static-rmd160.Tpo -c -o losetup_static-rmd160.obj `if test -f 'rmd160.c'; then $(CYGPATH_W) 'rmd160.c'; else $(CYGPATH_W) '$(srcdir)/rmd160.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/losetup_static-rmd160.Tpo $(DEPDIR)/losetup_static-rmd160.Po
-@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='rmd160.c' object='losetup_static-rmd160.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(losetup_static_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o losetup_static-rmd160.obj `if test -f 'rmd160.c'; then $(CYGPATH_W) 'rmd160.c'; else $(CYGPATH_W) '$(srcdir)/rmd160.c'; fi`
 
 losetup_static-strutils.o: $(top_srcdir)/lib/strutils.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(losetup_static_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT losetup_static-strutils.o -MD -MP -MF $(DEPDIR)/losetup_static-strutils.Tpo -c -o losetup_static-strutils.o `test -f '$(top_srcdir)/lib/strutils.c' || echo '$(srcdir)/'`$(top_srcdir)/lib/strutils.c
@@ -1140,22 +1098,6 @@ mount-canonicalize.obj: $(top_srcdir)/lib/canonicalize.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/lib/canonicalize.c' object='mount-canonicalize.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mount_CFLAGS) $(CFLAGS) -c -o mount-canonicalize.obj `if test -f '$(top_srcdir)/lib/canonicalize.c'; then $(CYGPATH_W) '$(top_srcdir)/lib/canonicalize.c'; else $(CYGPATH_W) '$(srcdir)/$(top_srcdir)/lib/canonicalize.c'; fi`
-
-mount-rmd160.o: rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mount_CFLAGS) $(CFLAGS) -MT mount-rmd160.o -MD -MP -MF $(DEPDIR)/mount-rmd160.Tpo -c -o mount-rmd160.o `test -f 'rmd160.c' || echo '$(srcdir)/'`rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/mount-rmd160.Tpo $(DEPDIR)/mount-rmd160.Po
-@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='rmd160.c' object='mount-rmd160.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mount_CFLAGS) $(CFLAGS) -c -o mount-rmd160.o `test -f 'rmd160.c' || echo '$(srcdir)/'`rmd160.c
-
-mount-rmd160.obj: rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mount_CFLAGS) $(CFLAGS) -MT mount-rmd160.obj -MD -MP -MF $(DEPDIR)/mount-rmd160.Tpo -c -o mount-rmd160.obj `if test -f 'rmd160.c'; then $(CYGPATH_W) 'rmd160.c'; else $(CYGPATH_W) '$(srcdir)/rmd160.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/mount-rmd160.Tpo $(DEPDIR)/mount-rmd160.Po
-@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='rmd160.c' object='mount-rmd160.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mount_CFLAGS) $(CFLAGS) -c -o mount-rmd160.obj `if test -f 'rmd160.c'; then $(CYGPATH_W) 'rmd160.c'; else $(CYGPATH_W) '$(srcdir)/rmd160.c'; fi`
 
 mount-env.o: $(top_srcdir)/lib/env.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mount_CFLAGS) $(CFLAGS) -MT mount-env.o -MD -MP -MF $(DEPDIR)/mount-env.Tpo -c -o mount-env.o `test -f '$(top_srcdir)/lib/env.c' || echo '$(srcdir)/'`$(top_srcdir)/lib/env.c
@@ -1413,22 +1355,6 @@ mount_static-canonicalize.obj: $(top_srcdir)/lib/canonicalize.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mount_static_CFLAGS) $(CFLAGS) -c -o mount_static-canonicalize.obj `if test -f '$(top_srcdir)/lib/canonicalize.c'; then $(CYGPATH_W) '$(top_srcdir)/lib/canonicalize.c'; else $(CYGPATH_W) '$(srcdir)/$(top_srcdir)/lib/canonicalize.c'; fi`
 
-mount_static-rmd160.o: rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mount_static_CFLAGS) $(CFLAGS) -MT mount_static-rmd160.o -MD -MP -MF $(DEPDIR)/mount_static-rmd160.Tpo -c -o mount_static-rmd160.o `test -f 'rmd160.c' || echo '$(srcdir)/'`rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/mount_static-rmd160.Tpo $(DEPDIR)/mount_static-rmd160.Po
-@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='rmd160.c' object='mount_static-rmd160.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mount_static_CFLAGS) $(CFLAGS) -c -o mount_static-rmd160.o `test -f 'rmd160.c' || echo '$(srcdir)/'`rmd160.c
-
-mount_static-rmd160.obj: rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mount_static_CFLAGS) $(CFLAGS) -MT mount_static-rmd160.obj -MD -MP -MF $(DEPDIR)/mount_static-rmd160.Tpo -c -o mount_static-rmd160.obj `if test -f 'rmd160.c'; then $(CYGPATH_W) 'rmd160.c'; else $(CYGPATH_W) '$(srcdir)/rmd160.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/mount_static-rmd160.Tpo $(DEPDIR)/mount_static-rmd160.Po
-@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='rmd160.c' object='mount_static-rmd160.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mount_static_CFLAGS) $(CFLAGS) -c -o mount_static-rmd160.obj `if test -f 'rmd160.c'; then $(CYGPATH_W) 'rmd160.c'; else $(CYGPATH_W) '$(srcdir)/rmd160.c'; fi`
-
 mount_static-env.o: $(top_srcdir)/lib/env.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mount_static_CFLAGS) $(CFLAGS) -MT mount_static-env.o -MD -MP -MF $(DEPDIR)/mount_static-env.Tpo -c -o mount_static-env.o `test -f '$(top_srcdir)/lib/env.c' || echo '$(srcdir)/'`$(top_srcdir)/lib/env.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/mount_static-env.Tpo $(DEPDIR)/mount_static-env.Po
@@ -1604,22 +1530,6 @@ mtab_lock_test-canonicalize.obj: $(top_srcdir)/lib/canonicalize.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/lib/canonicalize.c' object='mtab_lock_test-canonicalize.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mtab_lock_test_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o mtab_lock_test-canonicalize.obj `if test -f '$(top_srcdir)/lib/canonicalize.c'; then $(CYGPATH_W) '$(top_srcdir)/lib/canonicalize.c'; else $(CYGPATH_W) '$(srcdir)/$(top_srcdir)/lib/canonicalize.c'; fi`
-
-mtab_lock_test-rmd160.o: rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mtab_lock_test_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT mtab_lock_test-rmd160.o -MD -MP -MF $(DEPDIR)/mtab_lock_test-rmd160.Tpo -c -o mtab_lock_test-rmd160.o `test -f 'rmd160.c' || echo '$(srcdir)/'`rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/mtab_lock_test-rmd160.Tpo $(DEPDIR)/mtab_lock_test-rmd160.Po
-@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='rmd160.c' object='mtab_lock_test-rmd160.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mtab_lock_test_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o mtab_lock_test-rmd160.o `test -f 'rmd160.c' || echo '$(srcdir)/'`rmd160.c
-
-mtab_lock_test-rmd160.obj: rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mtab_lock_test_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT mtab_lock_test-rmd160.obj -MD -MP -MF $(DEPDIR)/mtab_lock_test-rmd160.Tpo -c -o mtab_lock_test-rmd160.obj `if test -f 'rmd160.c'; then $(CYGPATH_W) 'rmd160.c'; else $(CYGPATH_W) '$(srcdir)/rmd160.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/mtab_lock_test-rmd160.Tpo $(DEPDIR)/mtab_lock_test-rmd160.Po
-@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='rmd160.c' object='mtab_lock_test-rmd160.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mtab_lock_test_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o mtab_lock_test-rmd160.obj `if test -f 'rmd160.c'; then $(CYGPATH_W) 'rmd160.c'; else $(CYGPATH_W) '$(srcdir)/rmd160.c'; fi`
 
 swapon-swapon.o: swapon.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(swapon_CFLAGS) $(CFLAGS) -MT swapon-swapon.o -MD -MP -MF $(DEPDIR)/swapon-swapon.Tpo -c -o swapon-swapon.o `test -f 'swapon.c' || echo '$(srcdir)/'`swapon.c
@@ -1861,22 +1771,6 @@ umount-canonicalize.obj: $(top_srcdir)/lib/canonicalize.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(umount_CFLAGS) $(CFLAGS) -c -o umount-canonicalize.obj `if test -f '$(top_srcdir)/lib/canonicalize.c'; then $(CYGPATH_W) '$(top_srcdir)/lib/canonicalize.c'; else $(CYGPATH_W) '$(srcdir)/$(top_srcdir)/lib/canonicalize.c'; fi`
 
-umount-rmd160.o: rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(umount_CFLAGS) $(CFLAGS) -MT umount-rmd160.o -MD -MP -MF $(DEPDIR)/umount-rmd160.Tpo -c -o umount-rmd160.o `test -f 'rmd160.c' || echo '$(srcdir)/'`rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/umount-rmd160.Tpo $(DEPDIR)/umount-rmd160.Po
-@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='rmd160.c' object='umount-rmd160.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(umount_CFLAGS) $(CFLAGS) -c -o umount-rmd160.o `test -f 'rmd160.c' || echo '$(srcdir)/'`rmd160.c
-
-umount-rmd160.obj: rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(umount_CFLAGS) $(CFLAGS) -MT umount-rmd160.obj -MD -MP -MF $(DEPDIR)/umount-rmd160.Tpo -c -o umount-rmd160.obj `if test -f 'rmd160.c'; then $(CYGPATH_W) 'rmd160.c'; else $(CYGPATH_W) '$(srcdir)/rmd160.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/umount-rmd160.Tpo $(DEPDIR)/umount-rmd160.Po
-@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='rmd160.c' object='umount-rmd160.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(umount_CFLAGS) $(CFLAGS) -c -o umount-rmd160.obj `if test -f 'rmd160.c'; then $(CYGPATH_W) 'rmd160.c'; else $(CYGPATH_W) '$(srcdir)/rmd160.c'; fi`
-
 umount-env.o: $(top_srcdir)/lib/env.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(umount_CFLAGS) $(CFLAGS) -MT umount-env.o -MD -MP -MF $(DEPDIR)/umount-env.Tpo -c -o umount-env.o `test -f '$(top_srcdir)/lib/env.c' || echo '$(srcdir)/'`$(top_srcdir)/lib/env.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/umount-env.Tpo $(DEPDIR)/umount-env.Po
@@ -2116,22 +2010,6 @@ umount_static-canonicalize.obj: $(top_srcdir)/lib/canonicalize.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/lib/canonicalize.c' object='umount_static-canonicalize.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(umount_static_CFLAGS) $(CFLAGS) -c -o umount_static-canonicalize.obj `if test -f '$(top_srcdir)/lib/canonicalize.c'; then $(CYGPATH_W) '$(top_srcdir)/lib/canonicalize.c'; else $(CYGPATH_W) '$(srcdir)/$(top_srcdir)/lib/canonicalize.c'; fi`
-
-umount_static-rmd160.o: rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(umount_static_CFLAGS) $(CFLAGS) -MT umount_static-rmd160.o -MD -MP -MF $(DEPDIR)/umount_static-rmd160.Tpo -c -o umount_static-rmd160.o `test -f 'rmd160.c' || echo '$(srcdir)/'`rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/umount_static-rmd160.Tpo $(DEPDIR)/umount_static-rmd160.Po
-@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='rmd160.c' object='umount_static-rmd160.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(umount_static_CFLAGS) $(CFLAGS) -c -o umount_static-rmd160.o `test -f 'rmd160.c' || echo '$(srcdir)/'`rmd160.c
-
-umount_static-rmd160.obj: rmd160.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(umount_static_CFLAGS) $(CFLAGS) -MT umount_static-rmd160.obj -MD -MP -MF $(DEPDIR)/umount_static-rmd160.Tpo -c -o umount_static-rmd160.obj `if test -f 'rmd160.c'; then $(CYGPATH_W) 'rmd160.c'; else $(CYGPATH_W) '$(srcdir)/rmd160.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/umount_static-rmd160.Tpo $(DEPDIR)/umount_static-rmd160.Po
-@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='rmd160.c' object='umount_static-rmd160.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(umount_static_CFLAGS) $(CFLAGS) -c -o umount_static-rmd160.obj `if test -f 'rmd160.c'; then $(CYGPATH_W) 'rmd160.c'; else $(CYGPATH_W) '$(srcdir)/rmd160.c'; fi`
 
 umount_static-env.o: $(top_srcdir)/lib/env.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(umount_static_CFLAGS) $(CFLAGS) -MT umount_static-env.o -MD -MP -MF $(DEPDIR)/umount_static-env.Tpo -c -o umount_static-env.o `test -f '$(top_srcdir)/lib/env.c' || echo '$(srcdir)/'`$(top_srcdir)/lib/env.c
