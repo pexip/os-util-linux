@@ -82,12 +82,11 @@ mtab_is_writable() {
 
 /* Contents of mtab and fstab ---------------------------------*/
 
-struct mntentchn mounttable, fstab, mountall;
+struct mntentchn mounttable, fstab;
 static int got_mtab = 0;
 static int got_fstab = 0;
-static int got_mountall = 0;
 
-static void read_mounttable(void), read_fstab(void), read_mountall(void);
+static void read_mounttable(void), read_fstab(void);
 
 struct mntentchn *
 mtab_head() {
@@ -102,14 +101,6 @@ fstab_head() {
 		read_fstab();
 	return &fstab;
 }
-
-struct mntentchn *
-mountall_head() {
-	if (!got_mountall)
-		read_mountall();
-	return &mountall;
-}
-
 
 static void
 my_free_mc(struct mntentchn *mc) {
@@ -256,27 +247,6 @@ read_fstab() {
 	read_mntentchn(mfp, fnam, mc);
 }
 
-static void
-read_mountall() {
-	mntFILE *mfp = NULL;
-	const char *fnam;
-	struct mntentchn *mc = &mountall;
-
-	got_mountall = 1;
-	mc->nxt = mc->prev = NULL;
-
-	fnam = "/lib/init/fstab";
-	mfp = my_setmntent (fnam, "r");
-	if (mfp == NULL || mfp->mntent_fp == NULL) {
-		int errsv = errno;
-		error(_("warning: can't open %s: %s"),
-		      fnam, strerror (errsv));
-		return;
-	}
-	read_mntentchn(mfp, fnam, mc);
-}
-
-
 
 /* Given the name NAME, try to find it in mtab.  */
 struct mntentchn *
@@ -363,19 +333,6 @@ getmntdevbackward (const char *name, struct mntentchn *mcprev) {
 
 	return NULL;
 }
-
-/* Given the directory name DIR, try to find it in mountall's fstab.  */
-struct mntentchn *
-getmountalldir (const char *dir) {
-	struct mntentchn *mc, *mc0;
-
-	mc0 = mountall_head();
-	for (mc = mc0->nxt; mc && mc != mc0; mc = mc->nxt)
-		if (streq(mc->m.mnt_dir, dir))
-			return mc;
-	return NULL;
-}
-
 
 /*
  * Given the name NAME, check that it occurs precisely once as dir or dev.

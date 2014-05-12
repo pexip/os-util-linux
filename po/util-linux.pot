@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: util-linux@vger.kernel.org\n"
-"POT-Creation-Date: 2011-10-20 10:13+0200\n"
+"POT-Creation-Date: 2012-08-15 10:51-0400\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -242,12 +242,12 @@ msgstr ""
 
 #: disk-utils/fdformat.c:129 disk-utils/mkfs.bfs.c:88
 #: disk-utils/mkfs.cramfs.c:767 disk-utils/mkswap.c:498 fdisk/sfdisk.c:2654
-#: fsck/fsck.c:1414 getopt/getopt.c:430 hwclock/hwclock.c:1354
+#: fsck/fsck.c:1414 getopt/getopt.c:430 hwclock/hwclock.c:1364
 #: misc-utils/cal.c:351 misc-utils/kill.c:195 misc-utils/logger.c:234
 #: misc-utils/look.c:124 misc-utils/mcookie.c:116 misc-utils/namei.c:458
 #: misc-utils/rename.c:99 misc-utils/uuidd.c:509 misc-utils/uuidgen.c:75
-#: misc-utils/whereis.c:403 misc-utils/wipefs.c:361 schedutils/ionice.c:169
-#: sys-utils/dmesg.c:684 term-utils/agetty.c:664 term-utils/mesg.c:103
+#: misc-utils/whereis.c:402 misc-utils/wipefs.c:361 schedutils/ionice.c:169
+#: sys-utils/dmesg.c:684 term-utils/agetty.c:675 term-utils/mesg.c:103
 #: term-utils/script.c:211 term-utils/scriptreplay.c:170
 #: term-utils/setterm.c:811 term-utils/wall.c:139 term-utils/write.c:110
 #: text-utils/col.c:210 text-utils/colcrt.c:116 text-utils/colrm.c:171
@@ -5267,11 +5267,11 @@ msgid ""
 "Usually you only need to specify <start> and <size> (and perhaps <type>).\n"
 msgstr ""
 
-#: fdisk/sfdisk.c:2368 getopt/getopt.c:314 hwclock/hwclock.c:1374
+#: fdisk/sfdisk.c:2368 getopt/getopt.c:314 hwclock/hwclock.c:1384
 #: misc-utils/cal.c:786 misc-utils/logger.c:138 misc-utils/look.c:366
 #: misc-utils/mcookie.c:66 misc-utils/namei.c:411 misc-utils/rename.c:64
-#: misc-utils/uuidd.c:54 misc-utils/uuidgen.c:33 misc-utils/whereis.c:132
-#: misc-utils/wipefs.c:303 mount/lomount.c:1015 mount/swapon.c:103
+#: misc-utils/uuidd.c:54 misc-utils/uuidgen.c:33 misc-utils/whereis.c:131
+#: misc-utils/wipefs.c:303 mount/lomount.c:1084 mount/swapon.c:103
 #: mount/swapon.c:124 partx/partx.c:581 sys-utils/dmesg.c:132
 #: sys-utils/fallocate.c:53 sys-utils/flock.c:65 sys-utils/fsfreeze.c:40
 #: sys-utils/fstrim.c:55 sys-utils/ipcmk.c:86 sys-utils/ldattach.c:149
@@ -5289,11 +5289,11 @@ msgstr ""
 msgid " %s [options] <device> [...]\n"
 msgstr ""
 
-#: fdisk/sfdisk.c:2372 getopt/getopt.c:322 hwclock/hwclock.c:1394
+#: fdisk/sfdisk.c:2372 getopt/getopt.c:322 hwclock/hwclock.c:1404
 #: misc-utils/cal.c:791 misc-utils/logger.c:142 misc-utils/look.c:370
 #: misc-utils/mcookie.c:70 misc-utils/namei.c:415 misc-utils/rename.c:69
-#: misc-utils/uuidd.c:58 misc-utils/uuidgen.c:37 misc-utils/whereis.c:136
-#: misc-utils/wipefs.c:307 mount/lomount.c:1026 mount/swapon.c:106
+#: misc-utils/uuidd.c:58 misc-utils/uuidgen.c:37 misc-utils/whereis.c:135
+#: misc-utils/wipefs.c:307 mount/lomount.c:1095 mount/swapon.c:106
 #: mount/swapon.c:127 partx/partx.c:586 sys-utils/dmesg.c:136
 #: sys-utils/fallocate.c:57 sys-utils/flock.c:71 sys-utils/fsfreeze.c:44
 #: sys-utils/fstrim.c:59 sys-utils/ipcmk.c:90 sys-utils/lscpu.c:1075
@@ -6208,28 +6208,28 @@ msgstr ""
 msgid "Needed adjustment is less than one second, so not setting clock.\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1134
+#: hwclock/hwclock.c:1144
 #, c-format
 msgid "Using %s.\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1136
+#: hwclock/hwclock.c:1146
 #, c-format
 msgid "No usable clock interface found.\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1266 hwclock/hwclock.c:1272
+#: hwclock/hwclock.c:1276 hwclock/hwclock.c:1282
 #, c-format
 msgid "Unable to set system clock.\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1285
+#: hwclock/hwclock.c:1295
 #, c-format
 msgid ""
 "At %ld seconds after 1969, RTC is predicted to read %ld seconds after 1969.\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1314
+#: hwclock/hwclock.c:1324
 msgid ""
 "The kernel keeps an epoch value for the Hardware Clock only on an Alpha "
 "machine.\n"
@@ -6237,49 +6237,49 @@ msgid ""
 "(and thus is presumably not running on an Alpha now).  No action taken."
 msgstr ""
 
-#: hwclock/hwclock.c:1331
+#: hwclock/hwclock.c:1341
 msgid "Unable to get the epoch value from the kernel."
 msgstr ""
 
-#: hwclock/hwclock.c:1333
+#: hwclock/hwclock.c:1343
 #, c-format
 msgid "Kernel is assuming an epoch value of %lu\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1338
+#: hwclock/hwclock.c:1348
 msgid ""
 "To set the epoch value, you must use the 'epoch' option to tell to what "
 "value to set it."
 msgstr ""
 
-#: hwclock/hwclock.c:1342
+#: hwclock/hwclock.c:1352
 #, c-format
 msgid "Not setting the epoch to %d - testing only.\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1346
+#: hwclock/hwclock.c:1356
 #, c-format
 msgid "Unable to set the epoch value in the kernel.\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1375
+#: hwclock/hwclock.c:1385
 msgid " hwclock [function] [option...]\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1377
+#: hwclock/hwclock.c:1387
 msgid ""
 "\n"
 "Functions:\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1378
+#: hwclock/hwclock.c:1388
 msgid ""
 " -h, --help           show this help text and exit\n"
 " -r, --show           read hardware clock and print result\n"
 "     --set            set the RTC to the time given with --date\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1381
+#: hwclock/hwclock.c:1391
 msgid ""
 " -s, --hctosys        set the system time from the hardware clock\n"
 " -w, --systohc        set the hardware clock from the current system time\n"
@@ -6288,30 +6288,30 @@ msgid ""
 "                        the clock was last set or adjusted\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1387
+#: hwclock/hwclock.c:1397
 msgid ""
 "     --getepoch       print out the kernel's hardware clock epoch value\n"
 "     --setepoch       set the kernel's hardware clock epoch value to the \n"
 "                        value given with --epoch\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1391
+#: hwclock/hwclock.c:1401
 msgid ""
 "     --predict        predict RTC reading at time given with --date\n"
 " -V, --version        display version information and exit\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1395
+#: hwclock/hwclock.c:1405
 msgid ""
 " -u, --utc            the hardware clock is kept in UTC\n"
 "     --localtime      the hardware clock is kept in local time\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1398
+#: hwclock/hwclock.c:1408
 msgid " -f, --rtc <file>     special /dev/... file to use instead of default\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1401
+#: hwclock/hwclock.c:1411
 #, c-format
 msgid ""
 "     --directisa      access the ISA bus directly instead of %s\n"
@@ -6321,7 +6321,7 @@ msgid ""
 "                        hardware clock's epoch value\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1407
+#: hwclock/hwclock.c:1417
 #, c-format
 msgid ""
 "     --noadjfile      do not access %s; this requires the use of\n"
@@ -6330,83 +6330,83 @@ msgid ""
 "                        the default is %s\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1411
+#: hwclock/hwclock.c:1421
 msgid ""
 "     --test           do not update anything, just show what would happen\n"
 " -D, --debug          debugging mode\n"
 "\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1414
+#: hwclock/hwclock.c:1424
 msgid ""
 " -J|--jensen, -A|--arc, -S|--srm, -F|--funky-toy\n"
 "      tell hwclock the type of Alpha you have (see hwclock(8))\n"
 "\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1511
+#: hwclock/hwclock.c:1521
 msgid "Unable to connect to audit system"
 msgstr ""
 
-#: hwclock/hwclock.c:1602
+#: hwclock/hwclock.c:1612
 msgid "failed to parse epoch"
 msgstr ""
 
-#: hwclock/hwclock.c:1641
+#: hwclock/hwclock.c:1651
 #, c-format
 msgid "%s takes no non-option arguments.  You supplied %d.\n"
 msgstr ""
 
-#: hwclock/hwclock.c:1648
+#: hwclock/hwclock.c:1658
 msgid ""
 "You have specified multiple functions.\n"
 "You can only perform one function at a time."
 msgstr ""
 
-#: hwclock/hwclock.c:1654
+#: hwclock/hwclock.c:1664
 msgid ""
 "The --utc and --localtime options are mutually exclusive.  You specified "
 "both."
 msgstr ""
 
-#: hwclock/hwclock.c:1660
+#: hwclock/hwclock.c:1670
 msgid ""
 "The --adjust and --noadjfile options are mutually exclusive.  You specified "
 "both."
 msgstr ""
 
-#: hwclock/hwclock.c:1666
+#: hwclock/hwclock.c:1676
 msgid ""
 "The --adjfile and --noadjfile options are mutually exclusive.  You specified "
 "both."
 msgstr ""
 
-#: hwclock/hwclock.c:1674
+#: hwclock/hwclock.c:1684
 msgid "With --noadjfile, you must specify either --utc or --localtime"
 msgstr ""
 
-#: hwclock/hwclock.c:1687
+#: hwclock/hwclock.c:1697
 msgid "No usable set-to time.  Cannot set clock."
 msgstr ""
 
-#: hwclock/hwclock.c:1702
+#: hwclock/hwclock.c:1712
 msgid "Sorry, only the superuser can change the Hardware Clock."
 msgstr ""
 
-#: hwclock/hwclock.c:1706
+#: hwclock/hwclock.c:1716
 msgid "Sorry, only the superuser can change the System Clock."
 msgstr ""
 
-#: hwclock/hwclock.c:1710
+#: hwclock/hwclock.c:1720
 msgid ""
 "Sorry, only the superuser can change the Hardware Clock epoch in the kernel."
 msgstr ""
 
-#: hwclock/hwclock.c:1733
+#: hwclock/hwclock.c:1743
 msgid "Cannot access the Hardware Clock via any known method."
 msgstr ""
 
-#: hwclock/hwclock.c:1736
+#: hwclock/hwclock.c:1746
 msgid ""
 "Use the --debug option to see the details of our search for an access method."
 msgstr ""
@@ -6802,7 +6802,8 @@ msgid "%s: PAM failure, aborting: %s"
 msgstr ""
 
 #: login-utils/chfn.c:212 login-utils/chsh.c:204 login-utils/login.c:835
-#: login-utils/newgrp.c:82 mount/lomount.c:863 mount/lomount.c:866
+#: login-utils/newgrp.c:82 mount/lomount.c:868 mount/lomount.c:893
+#: mount/lomount.c:921 mount/lomount.c:935
 msgid "Password: "
 msgstr ""
 
@@ -8196,12 +8197,12 @@ msgid ""
 "\n"
 msgstr ""
 
-#: misc-utils/whereis.c:134
+#: misc-utils/whereis.c:133
 #, c-format
 msgid " %s [options] file\n"
 msgstr ""
 
-#: misc-utils/whereis.c:137
+#: misc-utils/whereis.c:136
 msgid ""
 " -f <file>  define search scope\n"
 " -b         search only binaries\n"
@@ -8216,7 +8217,7 @@ msgid ""
 "\n"
 msgstr ""
 
-#: misc-utils/whereis.c:148
+#: misc-utils/whereis.c:147
 msgid "See how to use file and dirs arguments from whereis(1) manual.\n"
 msgstr ""
 
@@ -8310,180 +8311,180 @@ msgstr ""
 msgid "mount: could not open %s - using %s instead\n"
 msgstr ""
 
-#: mount/fstab.c:679
+#: mount/fstab.c:681
 #, c-format
 msgid "can't create lock file %s: %s (use -n flag to override)"
 msgstr ""
 
-#: mount/fstab.c:705
+#: mount/fstab.c:707
 #, c-format
 msgid "can't link lock file %s: %s (use -n flag to override)"
 msgstr ""
 
-#: mount/fstab.c:721
+#: mount/fstab.c:723
 #, c-format
 msgid "can't open lock file %s: %s (use -n flag to override)"
 msgstr ""
 
-#: mount/fstab.c:736
+#: mount/fstab.c:738
 #, c-format
 msgid "Can't lock lock file %s: %s\n"
 msgstr ""
 
-#: mount/fstab.c:750
+#: mount/fstab.c:752
 #, c-format
 msgid "can't lock lock file %s: %s"
 msgstr ""
 
-#: mount/fstab.c:752
+#: mount/fstab.c:754
 msgid "timed out"
 msgstr ""
 
-#: mount/fstab.c:759
+#: mount/fstab.c:761
 #, c-format
 msgid ""
 "Cannot create link %s\n"
 "Perhaps there is a stale lock file?\n"
 msgstr ""
 
-#: mount/fstab.c:901 mount/fstab.c:958
+#: mount/fstab.c:903 mount/fstab.c:960
 #, c-format
 msgid "cannot open %s (%s) - mtab not updated"
 msgstr ""
 
-#: mount/fstab.c:966
+#: mount/fstab.c:968
 #, c-format
 msgid "error writing %s: %s"
 msgstr ""
 
-#: mount/fstab.c:981
+#: mount/fstab.c:983
 #, c-format
 msgid "%s: cannot fflush changes: %s"
 msgstr ""
 
-#: mount/fstab.c:998
+#: mount/fstab.c:1000
 #, c-format
 msgid "error changing mode of %s: %s\n"
 msgstr ""
 
-#: mount/fstab.c:1011
+#: mount/fstab.c:1013
 #, c-format
 msgid "error changing owner of %s: %s\n"
 msgstr ""
 
-#: mount/fstab.c:1022
+#: mount/fstab.c:1024
 #, c-format
 msgid "can't rename %s to %s: %s\n"
 msgstr ""
 
-#: mount/lomount.c:430 mount/lomount.c:568 mount/lomount.c:600
-#: mount/lomount.c:663 mount/lomount.c:708
+#: mount/lomount.c:431 mount/lomount.c:569 mount/lomount.c:601
+#: mount/lomount.c:664 mount/lomount.c:709
 #, c-format
 msgid "%s: /dev directory does not exist."
 msgstr ""
 
-#: mount/lomount.c:469
+#: mount/lomount.c:470
 #, c-format
 msgid "loop: can't set capacity on device %s: %s\n"
 msgstr ""
 
-#: mount/lomount.c:506
+#: mount/lomount.c:507
 #, c-format
 msgid ", offset %<PRIu64>"
 msgstr ""
 
-#: mount/lomount.c:509
+#: mount/lomount.c:510
 #, c-format
 msgid ", sizelimit %<PRIu64>"
 msgstr ""
 
-#: mount/lomount.c:517
+#: mount/lomount.c:518
 #, c-format
 msgid ", encryption %s (type %<PRIu32>)"
 msgstr ""
 
-#: mount/lomount.c:530
+#: mount/lomount.c:531
 #, c-format
 msgid ", offset %d"
 msgstr ""
 
-#: mount/lomount.c:533
+#: mount/lomount.c:534
 #, c-format
 msgid ", encryption type %d\n"
 msgstr ""
 
-#: mount/lomount.c:541
+#: mount/lomount.c:542
 #, c-format
 msgid "loop: can't get info on device %s: %s\n"
 msgstr ""
 
-#: mount/lomount.c:552
+#: mount/lomount.c:553
 #, c-format
 msgid "loop: can't open device %s: %s\n"
 msgstr ""
 
-#: mount/lomount.c:579 mount/lomount.c:721
+#: mount/lomount.c:580 mount/lomount.c:722
 #, c-format
 msgid "%s: no permission to look at /dev/loop%s<N>"
 msgstr ""
 
-#: mount/lomount.c:724
+#: mount/lomount.c:725
 #, c-format
 msgid "%s: could not find any free loop device"
 msgstr ""
 
-#: mount/lomount.c:727
+#: mount/lomount.c:728
 #, c-format
 msgid ""
 "%s: Could not find any loop device. Maybe this kernel does not know\n"
 "       about the loop device? (If so, recompile or `modprobe loop'.)"
 msgstr ""
 
-#: mount/lomount.c:757
+#: mount/lomount.c:758
 msgid "Out of memory while reading passphrase"
 msgstr ""
 
-#: mount/lomount.c:800
+#: mount/lomount.c:802
 #, c-format
 msgid "warning: %s is already associated with %s\n"
 msgstr ""
 
-#: mount/lomount.c:816
+#: mount/lomount.c:818
 #, c-format
 msgid "warning: %s: is write-protected, using read-only.\n"
 msgstr ""
 
-#: mount/lomount.c:852
+#: mount/lomount.c:854
 #, c-format
 msgid "Couldn't lock into memory, exiting.\n"
 msgstr ""
 
-#: mount/lomount.c:879
+#: mount/lomount.c:948
 #, c-format
 msgid "ioctl LOOP_SET_FD failed: %s\n"
 msgstr ""
 
-#: mount/lomount.c:936
+#: mount/lomount.c:1005
 #, c-format
 msgid "set_loop(%s,%s,%llu,%llu): success\n"
 msgstr ""
 
-#: mount/lomount.c:957
+#: mount/lomount.c:1026
 #, c-format
 msgid "del_loop(%s): success\n"
 msgstr ""
 
-#: mount/lomount.c:961
+#: mount/lomount.c:1030
 #, c-format
 msgid "loop: can't delete device %s: %s\n"
 msgstr ""
 
-#: mount/lomount.c:972
+#: mount/lomount.c:1041
 #, c-format
 msgid "This mount was compiled without loop support. Please recompile.\n"
 msgstr ""
 
-#: mount/lomount.c:1017
+#: mount/lomount.c:1086
 #, c-format
 msgid ""
 " %1$s loop_device                             give info\n"
@@ -8496,7 +8497,7 @@ msgid ""
 " %1$s [options] {-f|--find|loopdev} <file>    setup\n"
 msgstr ""
 
-#: mount/lomount.c:1027
+#: mount/lomount.c:1096
 msgid ""
 " -e, --encryption <type> enable data encryption with specified <name/num>\n"
 " -h, --help              this help\n"
@@ -8505,41 +8506,47 @@ msgid ""
 " -p, --pass-fd <num>     read passphrase from file descriptor <num>\n"
 " -r, --read-only         setup read-only loop device\n"
 "     --show              print device name (with -f <file>)\n"
+" -N | --nohashpass       Do not hash the given password (Debian hashes)\n"
+" -k | --keybits <num>    specify number of bits in the hashed key given\n"
+"                         to the cipher.  Some ciphers support several key\n"
+"                         sizes and might be more efficient with a smaller\n"
+"                         key size.  Key sizes < 128 are generally not\n"
+"                         recommended\n"
 " -v, --verbose           verbose mode\n"
 "\n"
 msgstr ""
 
-#: mount/lomount.c:1153
+#: mount/lomount.c:1240
 #, c-format
 msgid "%s: invalid offset '%s' specified"
 msgstr ""
 
-#: mount/lomount.c:1157
+#: mount/lomount.c:1244
 #, c-format
 msgid "%s: invalid sizelimit '%s' specified"
 msgstr ""
 
-#: mount/lomount.c:1172 mount/lomount.c:1212
+#: mount/lomount.c:1259 mount/lomount.c:1301
 #, c-format
 msgid "Loop device is %s\n"
 msgstr ""
 
-#: mount/lomount.c:1199
+#: mount/lomount.c:1288
 #, c-format
 msgid "stolen loop=%s...trying again\n"
 msgstr ""
 
-#: mount/lomount.c:1209
+#: mount/lomount.c:1298
 #, c-format
 msgid "%s: %s: device is busy"
 msgstr ""
 
-#: mount/lomount.c:1226
+#: mount/lomount.c:1315
 #, c-format
 msgid "No loop support was available at compile time. Please recompile.\n"
 msgstr ""
 
-#: mount/mount.c:313
+#: mount/mount.c:325
 #, c-format
 msgid ""
 "\n"
@@ -8550,92 +8557,92 @@ msgid ""
 "\n"
 msgstr ""
 
-#: mount/mount.c:363
+#: mount/mount.c:375
 #, c-format
 msgid "mount: improperly quoted option string '%s'"
 msgstr ""
 
-#: mount/mount.c:396
+#: mount/mount.c:408
 #, c-format
 msgid "mount: translated %s '%s' to '%s'\n"
 msgstr ""
 
-#: mount/mount.c:453
+#: mount/mount.c:465
 #, c-format
 msgid "mount: SELinux *context= options are ignore on remount.\n"
 msgstr ""
 
-#: mount/mount.c:626
+#: mount/mount.c:638
 #, c-format
 msgid "mount: according to mtab, %s is already mounted on %s"
 msgstr ""
 
-#: mount/mount.c:631
+#: mount/mount.c:643
 #, c-format
 msgid "mount: according to mtab, %s is mounted on %s"
 msgstr ""
 
-#: mount/mount.c:655
+#: mount/mount.c:667
 #, c-format
 msgid "mount: can't open %s for writing: %s"
 msgstr ""
 
-#: mount/mount.c:672
+#: mount/mount.c:684
 #, c-format
 msgid "mount: error writing %s: %s"
 msgstr ""
 
-#: mount/mount.c:680
+#: mount/mount.c:692
 #, c-format
 msgid "mount: error changing mode of %s: %s"
 msgstr ""
 
-#: mount/mount.c:786
+#: mount/mount.c:798
 #, c-format
 msgid "mount: cannot set group id: %s"
 msgstr ""
 
-#: mount/mount.c:789
+#: mount/mount.c:801
 #, c-format
 msgid "mount: cannot set user id: %s"
 msgstr ""
 
-#: mount/mount.c:836 mount/mount.c:2214
+#: mount/mount.c:848 mount/mount.c:2229
 #, c-format
 msgid "mount: cannot fork: %s"
 msgstr ""
 
-#: mount/mount.c:972
+#: mount/mount.c:984
 #, c-format
 msgid "Trying %s\n"
 msgstr ""
 
-#: mount/mount.c:1000
+#: mount/mount.c:1012
 #, c-format
 msgid "mount: you didn't specify a filesystem type for %s\n"
 msgstr ""
 
-#: mount/mount.c:1003
+#: mount/mount.c:1015
 #, c-format
 msgid "       I will try all types mentioned in %s or %s\n"
 msgstr ""
 
-#: mount/mount.c:1006
+#: mount/mount.c:1018
 #, c-format
 msgid "       and it looks like this is swapspace\n"
 msgstr ""
 
-#: mount/mount.c:1008
+#: mount/mount.c:1020
 #, c-format
 msgid "       I will try type %s\n"
 msgstr ""
 
-#: mount/mount.c:1033
+#: mount/mount.c:1045
 #, c-format
 msgid "%s looks like swapspace - not mounted"
 msgstr ""
 
-#: mount/mount.c:1041
+#: mount/mount.c:1053
 #, c-format
 msgid ""
 "mount: %s: more filesystems detected. This should not happen,\n"
@@ -8643,299 +8650,299 @@ msgid ""
 "       use wipefs(8) to clean up the device.\n"
 msgstr ""
 
-#: mount/mount.c:1129
+#: mount/mount.c:1141
 msgid "mount failed"
 msgstr ""
 
-#: mount/mount.c:1131
+#: mount/mount.c:1143
 #, c-format
 msgid "mount: only root can mount %s on %s"
 msgstr ""
 
-#: mount/mount.c:1218
+#: mount/mount.c:1230
 msgid "mount: loop device specified twice"
 msgstr ""
 
-#: mount/mount.c:1223
+#: mount/mount.c:1235
 msgid "mount: type specified twice"
-msgstr ""
-
-#: mount/mount.c:1251
-#, c-format
-msgid "mount: skipping the setup of a loop device\n"
 msgstr ""
 
 #: mount/mount.c:1263
 #, c-format
-msgid "mount: enabling autoclear loopdev flag\n"
-msgstr ""
-
-#: mount/mount.c:1271
-#, c-format
-msgid "mount: invalid offset '%s' specified"
+msgid "mount: skipping the setup of a loop device\n"
 msgstr ""
 
 #: mount/mount.c:1275
 #, c-format
+msgid "mount: enabling autoclear loopdev flag\n"
+msgstr ""
+
+#: mount/mount.c:1283
+#, c-format
+msgid "mount: invalid offset '%s' specified"
+msgstr ""
+
+#: mount/mount.c:1287
+#, c-format
 msgid "mount: invalid sizelimit '%s' specified"
 msgstr ""
 
-#: mount/mount.c:1280
+#: mount/mount.c:1292
 #, c-format
 msgid "mount: according to mtab %s is already mounted on %s as loop"
 msgstr ""
 
-#: mount/mount.c:1290
+#: mount/mount.c:1302
 #, c-format
 msgid "mount: going to use the loop device %s\n"
 msgstr ""
 
-#: mount/mount.c:1299
+#: mount/mount.c:1314
 #, c-format
 msgid "mount: stolen loop=%s ...trying again\n"
 msgstr ""
 
-#: mount/mount.c:1304
+#: mount/mount.c:1319
 #, c-format
 msgid "mount: stolen loop=%s"
 msgstr ""
 
-#: mount/mount.c:1309
+#: mount/mount.c:1324
 #, c-format
 msgid "mount: failed setting up loop device\n"
 msgstr ""
 
-#: mount/mount.c:1320
+#: mount/mount.c:1335
 #, c-format
 msgid "mount: setup loop device successfully\n"
 msgstr ""
 
-#: mount/mount.c:1404 mount/mount.c:1436
+#: mount/mount.c:1419 mount/mount.c:1451
 #, c-format
 msgid "mount: no %s found - creating it..\n"
 msgstr ""
 
-#: mount/mount.c:1459
+#: mount/mount.c:1474
 msgid "mount: argument to -p or --pass-fd must be a number"
 msgstr ""
 
-#: mount/mount.c:1472
+#: mount/mount.c:1487
 #, c-format
 msgid "mount: cannot open %s for setting speed"
 msgstr ""
 
-#: mount/mount.c:1475
+#: mount/mount.c:1490
 #, c-format
 msgid "mount: cannot set speed: %s"
 msgstr ""
 
-#: mount/mount.c:1567
+#: mount/mount.c:1582
 #, c-format
 msgid "mount: according to mtab, %s is already mounted on %s\n"
 msgstr ""
 
-#: mount/mount.c:1654
+#: mount/mount.c:1669
 #, c-format
 msgid "mount: warning: %s seems to be mounted read-write.\n"
 msgstr ""
 
-#: mount/mount.c:1666
+#: mount/mount.c:1681
 #, c-format
 msgid "mount: warning: %s seems to be mounted read-only.\n"
 msgstr ""
 
-#: mount/mount.c:1707
+#: mount/mount.c:1722
 msgid ""
 "mount: I could not determine the filesystem type, and none was specified"
 msgstr ""
 
-#: mount/mount.c:1710
+#: mount/mount.c:1725
 msgid "mount: you must specify the filesystem type"
 msgstr ""
 
-#: mount/mount.c:1713
+#: mount/mount.c:1728
 msgid "mount: mount failed"
 msgstr ""
 
-#: mount/mount.c:1719 mount/mount.c:1756
+#: mount/mount.c:1734 mount/mount.c:1771
 #, c-format
 msgid "mount: mount point %s is not a directory"
 msgstr ""
 
-#: mount/mount.c:1721
+#: mount/mount.c:1736
 msgid "mount: permission denied"
 msgstr ""
 
-#: mount/mount.c:1723
+#: mount/mount.c:1738
 msgid "mount: must be superuser to use mount"
 msgstr ""
 
-#: mount/mount.c:1727 mount/mount.c:1731
+#: mount/mount.c:1742 mount/mount.c:1746
 #, c-format
 msgid "mount: %s is busy"
 msgstr ""
 
-#: mount/mount.c:1733
+#: mount/mount.c:1748
 msgid "mount: proc already mounted"
 msgstr ""
 
-#: mount/mount.c:1735
+#: mount/mount.c:1750
 #, c-format
 msgid "mount: %s already mounted or %s busy"
 msgstr ""
 
-#: mount/mount.c:1741
+#: mount/mount.c:1756
 #, c-format
 msgid "mount: mount point %s does not exist"
 msgstr ""
 
-#: mount/mount.c:1743
+#: mount/mount.c:1758
 #, c-format
 msgid "mount: mount point %s is a symbolic link to nowhere"
 msgstr ""
 
-#: mount/mount.c:1748
+#: mount/mount.c:1763
 #, c-format
 msgid "mount: special device %s does not exist"
 msgstr ""
 
-#: mount/mount.c:1760
+#: mount/mount.c:1775
 #, c-format
 msgid ""
 "mount: special device %s does not exist\n"
 "       (a path prefix is not a directory)\n"
 msgstr ""
 
-#: mount/mount.c:1772
+#: mount/mount.c:1787
 #, c-format
 msgid "mount: %s not mounted or bad option"
 msgstr ""
 
-#: mount/mount.c:1774
+#: mount/mount.c:1789
 #, c-format
 msgid ""
 "mount: wrong fs type, bad option, bad superblock on %s,\n"
 "       missing codepage or helper program, or other error"
 msgstr ""
 
-#: mount/mount.c:1781
+#: mount/mount.c:1796
 msgid ""
 "       (for several filesystems (e.g. nfs, cifs) you might\n"
 "       need a /sbin/mount.<type> helper program)"
 msgstr ""
 
-#: mount/mount.c:1790
+#: mount/mount.c:1805
 msgid ""
 "       (could this be the IDE device where you in fact use\n"
 "       ide-scsi so that sr0 or sda or so is needed?)"
 msgstr ""
 
-#: mount/mount.c:1795
+#: mount/mount.c:1810
 msgid ""
 "       (aren't you trying to mount an extended partition,\n"
 "       instead of some logical partition inside?)"
 msgstr ""
 
-#: mount/mount.c:1802
+#: mount/mount.c:1817
 msgid ""
 "       In some cases useful info is found in syslog - try\n"
 "       dmesg | tail  or so\n"
 msgstr ""
 
-#: mount/mount.c:1808
+#: mount/mount.c:1823
 msgid "mount table full"
 msgstr ""
 
-#: mount/mount.c:1810
+#: mount/mount.c:1825
 #, c-format
 msgid "mount: %s: can't read superblock"
 msgstr ""
 
-#: mount/mount.c:1816
+#: mount/mount.c:1831
 #, c-format
 msgid "mount: %s: unknown device"
 msgstr ""
 
-#: mount/mount.c:1821
+#: mount/mount.c:1836
 #, c-format
 msgid "mount: unknown filesystem type '%s'"
 msgstr ""
 
-#: mount/mount.c:1833
+#: mount/mount.c:1848
 #, c-format
 msgid "mount: probably you meant %s"
 msgstr ""
 
-#: mount/mount.c:1836
+#: mount/mount.c:1851
 msgid "mount: maybe you meant 'iso9660'?"
 msgstr ""
 
-#: mount/mount.c:1839
+#: mount/mount.c:1854
 msgid "mount: maybe you meant 'vfat'?"
 msgstr ""
 
-#: mount/mount.c:1842
+#: mount/mount.c:1857
 #, c-format
 msgid "mount: %s has wrong device number or fs type %s not supported"
 msgstr ""
 
-#: mount/mount.c:1850
+#: mount/mount.c:1865
 #, c-format
 msgid "mount: %s is not a block device, and stat fails?"
 msgstr ""
 
-#: mount/mount.c:1852
+#: mount/mount.c:1867
 #, c-format
 msgid ""
 "mount: the kernel does not recognize %s as a block device\n"
 "       (maybe `modprobe driver'?)"
 msgstr ""
 
-#: mount/mount.c:1855
+#: mount/mount.c:1870
 #, c-format
 msgid "mount: %s is not a block device (maybe try `-o loop'?)"
 msgstr ""
 
-#: mount/mount.c:1858
+#: mount/mount.c:1873
 #, c-format
 msgid "mount: %s is not a block device"
 msgstr ""
 
-#: mount/mount.c:1863
+#: mount/mount.c:1878
 #, c-format
 msgid "mount: %s is not a valid block device"
 msgstr ""
 
-#: mount/mount.c:1866
+#: mount/mount.c:1881
 msgid "block device "
 msgstr ""
 
-#: mount/mount.c:1868
+#: mount/mount.c:1883
 #, c-format
 msgid "mount: cannot mount %s%s read-only"
 msgstr ""
 
-#: mount/mount.c:1872
+#: mount/mount.c:1887
 #, c-format
 msgid "mount: %s%s is write-protected but explicit `-w' flag given"
 msgstr ""
 
-#: mount/mount.c:1876
+#: mount/mount.c:1891
 #, c-format
 msgid "mount: cannot remount %s%s read-write, is write-protected"
 msgstr ""
 
-#: mount/mount.c:1891
+#: mount/mount.c:1906
 #, c-format
 msgid "mount: %s%s is write-protected, mounting read-only"
 msgstr ""
 
-#: mount/mount.c:1899
+#: mount/mount.c:1914
 #, c-format
 msgid "mount: no medium found on %s"
 msgstr ""
 
-#: mount/mount.c:1917
+#: mount/mount.c:1932
 #, c-format
 msgid ""
 "mount: %s does not contain SELinux labels.\n"
@@ -8945,27 +8952,27 @@ msgid ""
 "       this file system.  For more details see restorecon(8) and mount(8).\n"
 msgstr ""
 
-#: mount/mount.c:1997
+#: mount/mount.c:2012
 #, c-format
 msgid "mount: no type was given - I'll assume nfs because of the colon\n"
 msgstr ""
 
-#: mount/mount.c:2003
+#: mount/mount.c:2018
 #, c-format
 msgid "mount: no type was given - I'll assume cifs because of the // prefix\n"
 msgstr ""
 
-#: mount/mount.c:2102
+#: mount/mount.c:2117
 #, c-format
 msgid "mount: ignore %s (unparsable offset= option)\n"
 msgstr ""
 
-#: mount/mount.c:2115
+#: mount/mount.c:2130
 #, c-format
 msgid "mount: %s already mounted on %s\n"
 msgstr ""
 
-#: mount/mount.c:2296
+#: mount/mount.c:2312
 #, c-format
 msgid ""
 "Usage: mount -V                 : print version\n"
@@ -9002,24 +9009,28 @@ msgid ""
 "For many more details, say  man 8 mount .\n"
 msgstr ""
 
-#: mount/mount.c:2628
+#: mount/mount.c:2648
 #, c-format
 msgid "mount: only root can do that (effective UID is %u)"
 msgstr ""
 
-#: mount/mount.c:2631
+#: mount/mount.c:2651
 msgid "mount: only root can do that"
 msgstr ""
 
-#: mount/mount.c:2642
+#: mount/mount.c:2656
+msgid "mount: argument to --keybits or -k must be a number"
+msgstr ""
+
+#: mount/mount.c:2665
 msgid "nothing was mounted"
 msgstr ""
 
-#: mount/mount.c:2660 mount/mount.c:2686
+#: mount/mount.c:2683 mount/mount.c:2709
 msgid "mount: no such partition found"
 msgstr ""
 
-#: mount/mount.c:2663
+#: mount/mount.c:2686
 #, c-format
 msgid "mount: can't find %s in %s or %s"
 msgstr ""
@@ -10585,23 +10596,23 @@ msgid "shmid"
 msgstr ""
 
 #: sys-utils/ipcs.c:317 sys-utils/ipcs.c:336 sys-utils/ipcs.c:437
-#: sys-utils/ipcs.c:452 sys-utils/ipcs.c:535 sys-utils/ipcs.c:553
+#: sys-utils/ipcs.c:452 sys-utils/ipcs.c:537 sys-utils/ipcs.c:555
 msgid "perms"
 msgstr ""
 
-#: sys-utils/ipcs.c:317 sys-utils/ipcs.c:437 sys-utils/ipcs.c:535
+#: sys-utils/ipcs.c:317 sys-utils/ipcs.c:437 sys-utils/ipcs.c:537
 msgid "cuid"
 msgstr ""
 
-#: sys-utils/ipcs.c:317 sys-utils/ipcs.c:437 sys-utils/ipcs.c:535
+#: sys-utils/ipcs.c:317 sys-utils/ipcs.c:437 sys-utils/ipcs.c:537
 msgid "cgid"
 msgstr ""
 
-#: sys-utils/ipcs.c:317 sys-utils/ipcs.c:437 sys-utils/ipcs.c:535
+#: sys-utils/ipcs.c:317 sys-utils/ipcs.c:437 sys-utils/ipcs.c:537
 msgid "uid"
 msgstr ""
 
-#: sys-utils/ipcs.c:317 sys-utils/ipcs.c:437 sys-utils/ipcs.c:535
+#: sys-utils/ipcs.c:317 sys-utils/ipcs.c:437 sys-utils/ipcs.c:537
 msgid "gid"
 msgstr ""
 
@@ -10611,8 +10622,8 @@ msgid "------ Shared Memory Attach/Detach/Change Times --------\n"
 msgstr ""
 
 #: sys-utils/ipcs.c:323 sys-utils/ipcs.c:330 sys-utils/ipcs.c:336
-#: sys-utils/ipcs.c:443 sys-utils/ipcs.c:452 sys-utils/ipcs.c:541
-#: sys-utils/ipcs.c:547 sys-utils/ipcs.c:553
+#: sys-utils/ipcs.c:443 sys-utils/ipcs.c:452 sys-utils/ipcs.c:543
+#: sys-utils/ipcs.c:549 sys-utils/ipcs.c:555
 msgid "owner"
 msgstr ""
 
@@ -10646,7 +10657,7 @@ msgstr ""
 msgid "------ Shared Memory Segments --------\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:336 sys-utils/ipcs.c:452 sys-utils/ipcs.c:553
+#: sys-utils/ipcs.c:336 sys-utils/ipcs.c:452 sys-utils/ipcs.c:555
 msgid "key"
 msgstr ""
 
@@ -10663,10 +10674,10 @@ msgid "status"
 msgstr ""
 
 #: sys-utils/ipcs.c:358 sys-utils/ipcs.c:360 sys-utils/ipcs.c:362
-#: sys-utils/ipcs.c:473 sys-utils/ipcs.c:475 sys-utils/ipcs.c:574
-#: sys-utils/ipcs.c:576 sys-utils/ipcs.c:578 sys-utils/ipcs.c:629
-#: sys-utils/ipcs.c:631 sys-utils/ipcs.c:659 sys-utils/ipcs.c:661
-#: sys-utils/ipcs.c:663 sys-utils/ipcs.c:686
+#: sys-utils/ipcs.c:473 sys-utils/ipcs.c:475 sys-utils/ipcs.c:576
+#: sys-utils/ipcs.c:578 sys-utils/ipcs.c:580 sys-utils/ipcs.c:631
+#: sys-utils/ipcs.c:633 sys-utils/ipcs.c:661 sys-utils/ipcs.c:663
+#: sys-utils/ipcs.c:665 sys-utils/ipcs.c:688
 msgid "Not set"
 msgstr ""
 
@@ -10789,199 +10800,199 @@ msgstr ""
 msgid "------ Messages Status --------\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:527
+#: sys-utils/ipcs.c:528
 #, c-format
 msgid "allocated queues = %d\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:528
+#: sys-utils/ipcs.c:529
 #, c-format
 msgid "used headers = %d\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:529
+#: sys-utils/ipcs.c:531
 #, c-format
 msgid "used space = %d bytes\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:533
+#: sys-utils/ipcs.c:535
 #, c-format
 msgid "------ Message Queues Creators/Owners --------\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:535 sys-utils/ipcs.c:541 sys-utils/ipcs.c:547
-#: sys-utils/ipcs.c:553
+#: sys-utils/ipcs.c:537 sys-utils/ipcs.c:543 sys-utils/ipcs.c:549
+#: sys-utils/ipcs.c:555
 msgid "msqid"
 msgstr ""
 
-#: sys-utils/ipcs.c:539
+#: sys-utils/ipcs.c:541
 #, c-format
 msgid "------ Message Queues Send/Recv/Change Times --------\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:541
+#: sys-utils/ipcs.c:543
 msgid "send"
 msgstr ""
 
-#: sys-utils/ipcs.c:541
+#: sys-utils/ipcs.c:543
 msgid "recv"
 msgstr ""
 
-#: sys-utils/ipcs.c:541
+#: sys-utils/ipcs.c:543
 msgid "change"
 msgstr ""
 
-#: sys-utils/ipcs.c:545
+#: sys-utils/ipcs.c:547
 #, c-format
 msgid "------ Message Queues PIDs --------\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:547
+#: sys-utils/ipcs.c:549
 msgid "lspid"
 msgstr ""
 
-#: sys-utils/ipcs.c:547
+#: sys-utils/ipcs.c:549
 msgid "lrpid"
 msgstr ""
 
-#: sys-utils/ipcs.c:551
+#: sys-utils/ipcs.c:553
 #, c-format
 msgid "------ Message Queues --------\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:554
+#: sys-utils/ipcs.c:556
 msgid "used-bytes"
 msgstr ""
 
-#: sys-utils/ipcs.c:554
+#: sys-utils/ipcs.c:556
 msgid "messages"
 msgstr ""
 
-#: sys-utils/ipcs.c:618
+#: sys-utils/ipcs.c:620
 msgid "shmctl failed"
 msgstr ""
 
-#: sys-utils/ipcs.c:620
+#: sys-utils/ipcs.c:622
 #, c-format
 msgid ""
 "\n"
 "Shared memory Segment shmid=%d\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:621
+#: sys-utils/ipcs.c:623
 #, c-format
 msgid "uid=%u\tgid=%u\tcuid=%u\tcgid=%u\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:623
+#: sys-utils/ipcs.c:625
 #, c-format
 msgid "mode=%#o\taccess_perms=%#o\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:625
+#: sys-utils/ipcs.c:627
 #, c-format
 msgid "bytes=%lu\tlpid=%d\tcpid=%d\tnattch=%ld\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:628
+#: sys-utils/ipcs.c:630
 #, c-format
 msgid "att_time=%-26.24s\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:630
+#: sys-utils/ipcs.c:632
 #, c-format
 msgid "det_time=%-26.24s\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:632 sys-utils/ipcs.c:662
+#: sys-utils/ipcs.c:634 sys-utils/ipcs.c:664
 #, c-format
 msgid "change_time=%-26.24s\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:644
+#: sys-utils/ipcs.c:646
 msgid "msgctl failed"
 msgstr ""
 
-#: sys-utils/ipcs.c:646
+#: sys-utils/ipcs.c:648
 #, c-format
 msgid ""
 "\n"
 "Message Queue msqid=%d\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:647
+#: sys-utils/ipcs.c:649
 #, c-format
 msgid "uid=%u\tgid=%u\tcuid=%u\tcgid=%u\tmode=%#o\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:649
+#: sys-utils/ipcs.c:651
 #, c-format
 msgid "cbytes=%ld\tqbytes=%ld\tqnum=%ld\tlspid=%d\tlrpid=%d\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:658
+#: sys-utils/ipcs.c:660
 #, c-format
 msgid "send_time=%-26.24s\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:660
+#: sys-utils/ipcs.c:662
 #, c-format
 msgid "rcv_time=%-26.24s\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:677 sys-utils/ipcs.c:699
+#: sys-utils/ipcs.c:679 sys-utils/ipcs.c:701
 msgid "semctl failed"
 msgstr ""
 
-#: sys-utils/ipcs.c:679
+#: sys-utils/ipcs.c:681
 #, c-format
 msgid ""
 "\n"
 "Semaphore Array semid=%d\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:680
+#: sys-utils/ipcs.c:682
 #, c-format
 msgid "uid=%u\t gid=%u\t cuid=%u\t cgid=%u\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:682
+#: sys-utils/ipcs.c:684
 #, c-format
 msgid "mode=%#o, access_perms=%#o\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:684
+#: sys-utils/ipcs.c:686
 #, c-format
 msgid "nsems = %ld\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:685
+#: sys-utils/ipcs.c:687
 #, c-format
 msgid "otime = %-26.24s\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:687
+#: sys-utils/ipcs.c:689
 #, c-format
 msgid "ctime = %-26.24s\n"
 msgstr ""
 
-#: sys-utils/ipcs.c:690
+#: sys-utils/ipcs.c:692
 msgid "semnum"
 msgstr ""
 
-#: sys-utils/ipcs.c:690
+#: sys-utils/ipcs.c:692
 msgid "value"
 msgstr ""
 
-#: sys-utils/ipcs.c:690
+#: sys-utils/ipcs.c:692
 msgid "ncount"
 msgstr ""
 
-#: sys-utils/ipcs.c:690
+#: sys-utils/ipcs.c:692
 msgid "zcount"
 msgstr ""
 
-#: sys-utils/ipcs.c:690
+#: sys-utils/ipcs.c:692
 msgid "pid"
 msgstr ""
 
@@ -11585,7 +11596,7 @@ msgstr ""
 msgid "Not enough arguments"
 msgstr ""
 
-#: sys-utils/setarch.c:272 sys-utils/setarch.c:328
+#: sys-utils/setarch.c:276 sys-utils/setarch.c:332
 #, c-format
 msgid "Failed to set personality to %s"
 msgstr ""
@@ -11697,104 +11708,104 @@ msgstr ""
 msgid "cannot set user id"
 msgstr ""
 
-#: term-utils/agetty.c:434
+#: term-utils/agetty.c:445
 #, c-format
 msgid "%s: can't change root directory %s: %m"
 msgstr ""
 
-#: term-utils/agetty.c:439
+#: term-utils/agetty.c:450
 #, c-format
 msgid "%s: can't change working directory %s: %m"
 msgstr ""
 
-#: term-utils/agetty.c:444
+#: term-utils/agetty.c:455
 #, c-format
 msgid "%s: can't change process priority: %m"
 msgstr ""
 
-#: term-utils/agetty.c:450
+#: term-utils/agetty.c:461
 #, c-format
 msgid "%s: can't exec %s: %m"
 msgstr ""
 
-#: term-utils/agetty.c:479 term-utils/agetty.c:729 term-utils/agetty.c:741
-#: term-utils/agetty.c:1502 term-utils/agetty.c:1858
+#: term-utils/agetty.c:490 term-utils/agetty.c:740 term-utils/agetty.c:752
+#: term-utils/agetty.c:1557 term-utils/agetty.c:1913
 #, c-format
 msgid "failed to allocate memory: %m"
 msgstr ""
 
-#: term-utils/agetty.c:649
+#: term-utils/agetty.c:660
 #, c-format
 msgid "bad timeout value: %s"
 msgstr ""
 
-#: term-utils/agetty.c:677 term-utils/agetty.c:686
+#: term-utils/agetty.c:688 term-utils/agetty.c:697
 msgid "not enough arguments"
 msgstr ""
 
-#: term-utils/agetty.c:759
+#: term-utils/agetty.c:770
 #, c-format
 msgid "bad speed: %s"
 msgstr ""
 
-#: term-utils/agetty.c:761
+#: term-utils/agetty.c:772
 msgid "too many alternate speeds"
 msgstr ""
 
-#: term-utils/agetty.c:882 term-utils/agetty.c:899 term-utils/agetty.c:933
+#: term-utils/agetty.c:893 term-utils/agetty.c:910 term-utils/agetty.c:944
 #, c-format
 msgid "/dev/%s: cannot open as standard input: %m"
 msgstr ""
 
-#: term-utils/agetty.c:903 term-utils/agetty.c:907
+#: term-utils/agetty.c:914 term-utils/agetty.c:918
 #, c-format
 msgid "/dev/%s: not a character device"
 msgstr ""
 
-#: term-utils/agetty.c:947
+#: term-utils/agetty.c:958
 #, c-format
 msgid "%s: not open for read/write"
 msgstr ""
 
-#: term-utils/agetty.c:964
+#: term-utils/agetty.c:975
 #, c-format
 msgid "%s: dup problem: %m"
 msgstr ""
 
-#: term-utils/agetty.c:1313
+#: term-utils/agetty.c:1368
 msgid "Num Lock off"
 msgstr ""
 
-#: term-utils/agetty.c:1316
+#: term-utils/agetty.c:1371
 msgid "Num Lock on"
 msgstr ""
 
-#: term-utils/agetty.c:1319
+#: term-utils/agetty.c:1374
 msgid "Caps Lock on"
 msgstr ""
 
-#: term-utils/agetty.c:1322
+#: term-utils/agetty.c:1377
 msgid "Scroll Lock on"
 msgstr ""
 
-#: term-utils/agetty.c:1325
+#: term-utils/agetty.c:1380
 #, c-format
 msgid ""
 "Hint: %s\n"
 "\n"
 msgstr ""
 
-#: term-utils/agetty.c:1428
+#: term-utils/agetty.c:1483
 #, c-format
 msgid "%s: read: %m"
 msgstr ""
 
-#: term-utils/agetty.c:1482
+#: term-utils/agetty.c:1537
 #, c-format
 msgid "%s: input overrun"
 msgstr ""
 
-#: term-utils/agetty.c:1632
+#: term-utils/agetty.c:1687
 #, c-format
 msgid ""
 "\n"
@@ -11803,7 +11814,7 @@ msgid ""
 " %1$s [options] baud_rate,... line [termtype]\n"
 msgstr ""
 
-#: term-utils/agetty.c:1637
+#: term-utils/agetty.c:1692
 #, c-format
 msgid ""
 "\n"
@@ -11836,12 +11847,12 @@ msgid ""
 "\n"
 msgstr ""
 
-#: term-utils/agetty.c:1842
+#: term-utils/agetty.c:1897
 #, c-format
 msgid "user"
 msgstr ""
 
-#: term-utils/agetty.c:1842
+#: term-utils/agetty.c:1897
 #, c-format
 msgid "users"
 msgstr ""
