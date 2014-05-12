@@ -122,6 +122,7 @@ endif
 	rmdir  debian/util-linux/usr/share/getopt
 	for pkg in bsdutils mount uuid-runtime; do install -m 644 debian/$${pkg}.lintian-overrides debian/$${pkg}/usr/share/lintian/overrides/$${pkg}; done
 	install -m 644 debian/mime.util-linux debian/util-linux/usr/lib/mime/packages/util-linux
+ifeq ($(DISTRO),Debian)
 	if [ -f debian/util-linux/sbin/hwclock ] ; then \
 	    install -m 755 debian/hwclock.sh debian/util-linux/etc/init.d/hwclock.sh; \
 	    install -m 644 debian/hwclock.default debian/util-linux/etc/default/hwclock; \
@@ -129,9 +130,11 @@ endif
 	    install -m 644 debian/hwclock.rules debian/util-linux/lib/udev/rules.d/85-hwclock.rules; \
 	    install -m 755 debian/hwclock-set debian/util-linux/lib/udev/hwclock-set; \
 	fi
+else
 	# blkid.conf file and blkid.tab symlink
 	install -m 644 debian/blkid.conf debian/libblkid1/etc/
 	ln -s /dev/.blkid.tab debian/libblkid1/etc/blkid.tab
+endif
 ifeq ($(DEB_HOST_ARCH_OS),linux)
 	# copy mount library and symlink into udeb
 	ln debian/libmount1/lib/*/libmount.so.1.* debian/libmount1-udeb/lib/
@@ -198,7 +201,12 @@ binary-arch: build install
 	dh_testdir -s
 	dh_testroot -s
 	dh_lintian -s
+ifeq ($(DISTRO),Debian)
 	dh_installinit -s -- defaults 15 85
+else
+	dh_installinit -putil-linux --name=hwclock --no-start
+	dh_installinit -putil-linux --name=hwclock-save --upstart-only --no-start
+endif
 	[ -n "$(STRIP)" ] || dh_strip -s
 	dh_makeshlibs -s
 	dh_installdebconf -s

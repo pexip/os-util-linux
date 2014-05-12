@@ -16,7 +16,7 @@ Architecture: any
 Section: utils
 Priority: required
 Essential: yes
-Depends: lsb-base (>= 3.0-6), tzdata (>=2006c-2), initscripts, dpkg (>= 1.15.4) | install-info, ${misc:Depends}
+Depends: lsb-base (>= 3.0-6), tzdata (>=2006c-2), dpkg (>= 1.15.4) | install-info, ${misc:Depends}
 Pre-Depends: ${shlibs:Depends}
 Suggests: util-linux-locales, kbd | console-tools, dosfstools
 Replaces: fstrim, schedutils, miscutils, setterm, fdisk, linux32, sparc-utils, e2fsprogs, ${util-linux:Conflicts}
