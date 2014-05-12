@@ -134,6 +134,8 @@ else
 	# blkid.conf file and blkid.tab symlink
 	install -m 644 debian/blkid.conf debian/libblkid1/etc/
 	ln -s /dev/.blkid.tab debian/libblkid1/etc/blkid.tab
+	# initramfs hook script
+	install -m 755 debian/util-linux.initramfs debian/util-linux/usr/share/initramfs-tools/hooks/util_linux
 endif
 ifeq ($(DEB_HOST_ARCH_OS),linux)
 	# copy mount library and symlink into udeb

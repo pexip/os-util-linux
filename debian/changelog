@@ -3,6 +3,7 @@ util-linux (2.20.1-5.7pexip1) pexip; urgency=low
   * Prepare Pexip packaging
   * Custom blkid.conf from Ubuntu
   * Upstart-based hwclock handling from Ubuntu
+  * Add initramfs-tools hook script to install /sbin/blkid
 
  -- John-Mark Bell <jmb@pexip.com>  Mon, 12 May 2014 12:56:19 +0100
 

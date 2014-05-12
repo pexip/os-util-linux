@@ -17,6 +17,8 @@ usr/share/info/
 usr/share/doc/
 usr/share/doc/util-linux/
 usr/share/doc/util-linux/examples/
+usr/share/initramfs-tools/
+usr/share/initramfs-tools/hooks/
 usr/share/lintian/
 usr/share/lintian/overrides/
 lib/
