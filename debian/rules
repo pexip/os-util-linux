@@ -129,6 +129,9 @@ endif
 	    install -m 644 debian/hwclock.rules debian/util-linux/lib/udev/rules.d/85-hwclock.rules; \
 	    install -m 755 debian/hwclock-set debian/util-linux/lib/udev/hwclock-set; \
 	fi
+	# blkid.conf file and blkid.tab symlink
+	install -m 644 debian/blkid.conf debian/libblkid1/etc/
+	ln -s /dev/.blkid.tab debian/libblkid1/etc/blkid.tab
 ifeq ($(DEB_HOST_ARCH_OS),linux)
 	# copy mount library and symlink into udeb
 	ln debian/libmount1/lib/*/libmount.so.1.* debian/libmount1-udeb/lib/
