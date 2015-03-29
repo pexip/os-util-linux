@@ -32,7 +32,7 @@
  */
 
 /*
- * 1999-02-22 Arkadiusz Mi∂kiewicz <misiek@pld.ORG.PL>
+ * 1999-02-22 Arkadiusz Mi≈õkiewicz <misiek@pld.ORG.PL>
  * 	added Native Language Support
  * 1999-09-19 Bruno Haible <haible@clisp.cons.org>
  * 	modified to work correctly in multi-byte locales
@@ -47,6 +47,7 @@
 
 #include "widechar.h"
 #include "c.h"
+#include "closestream.h"
 
 int plus(wchar_t c, wchar_t d);
 void move(int l, int m);
@@ -93,6 +94,7 @@ int main(int argc, char **argv) {
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	/* Take care of lonely hyphen option. */
 	for (i = 0; i < argc; i++)
@@ -141,8 +143,6 @@ int main(int argc, char **argv) {
 			fclose(f);
 	} while (argc > 0);
 	fflush(stdout);
-	if (ferror(stdout) || fclose(stdout))
-		return EXIT_FAILURE;
 	return EXIT_SUCCESS;
 }
 
@@ -197,6 +197,7 @@ void colcrt(FILE *f) {
 			outcol &= ~7;
 			outcol--;
 			c = ' ';
+			/* fallthrough */
 		default:
 			w = wcwidth(c);
 			if (outcol + w > 132) {

@@ -65,7 +65,7 @@ static int probe_btrfs(blkid_probe pr, const struct blkid_idmag *mag)
 
 	bfs = blkid_probe_get_sb(pr, mag, struct btrfs_super_block);
 	if (!bfs)
-		return -1;
+		return errno ? -errno : 1;
 
 	if (*bfs->label)
 		blkid_probe_set_label(pr,
@@ -83,11 +83,11 @@ const struct blkid_idinfo btrfs_idinfo =
 	.name		= "btrfs",
 	.usage		= BLKID_USAGE_FILESYSTEM,
 	.probefunc	= probe_btrfs,
-	.minsz		= 256 * 1024 * 1024,
+	.minsz		= 1024 * 1024,
 	.magics		=
 	{
-		{ .magic = "_BHRfS_M", .len = 8, .kboff = 64, .sboff = 0x40 },
-		{ NULL }
+	  { .magic = "_BHRfS_M", .len = 8, .sboff = 0x40, .kboff = 64 },
+	  { NULL }
 	}
 };
 

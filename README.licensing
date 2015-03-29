@@ -2,8 +2,6 @@
 The project util-linux doesn't use the same license for all of the code.
 There is code under:
 
-   * GPLv3+ (GNU General Public License version 3, or any later version)
-
    * GPLv2+ (GNU General Public License version 2, or any later version)
 
    * GPLv2 (GNU General Public License version 2)
@@ -17,6 +15,6 @@ There is code under:
 Please, check the source code for more details. A license is usually at the start
 of each source file.
 
-The /COPYING file (GPLv2+) is the default license for code without an explicitly
+The ./COPYING file (GPLv2+) is the default license for code without an explicitly
 defined license.
 

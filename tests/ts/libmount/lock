@@ -2,7 +2,7 @@
 
 # Copyright (C) 2010 Karel Zak <kzak@redhat.com>
 
-TS_TOPDIR="$(dirname $0)/../.."
+TS_TOPDIR="${0%/*}/../.."
 TS_DESC="lock"
 
 . $TS_TOPDIR/functions.sh
@@ -31,7 +31,7 @@ echo 0 > $TS_OUTPUT
 SYNCTIME=$(( $(date +%s) + 5 ))
 
 for id in $(seq 0 $(( $NPROCESSES - 1 ))); do
-	$TESTPROG --lock --synctime $SYNCTIME $TS_OUTPUT $NLOOPS >> $TS_OUTPUT.debug 2>&1 &
+	ts_valgrind $TESTPROG --lock --synctime $SYNCTIME $TS_OUTPUT $NLOOPS >> $TS_OUTPUT.debug 2>&1 &
 done
 
 wait

@@ -84,7 +84,8 @@
 #include "bitops.h"
 #include "exitcodes.h"
 #include "strutils.h"
-#include "writeall.h"
+#include "all-io.h"
+#include "closestream.h"
 
 #define MINIX_ROOT_INO 1
 #define MINIX_BAD_INO 2
@@ -121,7 +122,6 @@ static int badblocks;
 static size_t namelen = 30;
 static size_t dirsize = 32;
 static int magic = MINIX_SUPER_MAGIC2;
-static int version2;
 
 static char root_block[MINIX_BLOCK_SIZE];
 
@@ -146,7 +146,7 @@ static char *zone_map;
 
 static void __attribute__((__noreturn__))
 usage(void) {
-	errx(MKFS_USAGE, _("Usage: %s [-c | -l filename] [-nXX] [-iXX] /dev/name [blocks]"),
+	errx(MKFS_EX_USAGE, _("Usage: %s [-c | -l filename] [-nXX] [-iXX] /dev/name [blocks]"),
 	     program_name);
 }
 
@@ -168,7 +168,7 @@ static void check_mount(void) {
 	if (!mnt)
 		return;
 
-	errx(MKFS_ERROR, _("%s is mounted; will not make a filesystem here!"),
+	errx(MKFS_EX_ERROR, _("%s is mounted; will not make a filesystem here!"),
 			device_name);
 }
 
@@ -180,44 +180,46 @@ static void super_set_state(void)
 		Super.s_state |= MINIX_VALID_FS;
 		Super.s_state &= ~MINIX_ERROR_FS;
 		break;
+	default: /* v3 */
+		break;
 	}
 }
 
 static void write_tables(void) {
 	unsigned long imaps = get_nimaps();
 	unsigned long zmaps = get_nzmaps();
-	unsigned long buffsz = get_inode_buffer_size();
+	size_t buffsz = get_inode_buffer_size();
 
 	/* Mark the super block valid. */
 	super_set_state();
 
 	if (lseek(DEV, 0, SEEK_SET))
-		err(MKFS_ERROR, _("%s: seek to boot block failed "
+		err(MKFS_EX_ERROR, _("%s: seek to boot block failed "
 				   " in write_tables"), device_name);
 	if (write_all(DEV, boot_block_buffer, 512))
-		err(MKFS_ERROR, _("%s: unable to clear boot sector"), device_name);
+		err(MKFS_EX_ERROR, _("%s: unable to clear boot sector"), device_name);
 	if (MINIX_BLOCK_SIZE != lseek(DEV, MINIX_BLOCK_SIZE, SEEK_SET))
-		err(MKFS_ERROR, _("%s: seek failed in write_tables"), device_name);
+		err(MKFS_EX_ERROR, _("%s: seek failed in write_tables"), device_name);
 
 	if (write_all(DEV, super_block_buffer, MINIX_BLOCK_SIZE))
-		err(MKFS_ERROR, _("%s: unable to write super-block"), device_name);
+		err(MKFS_EX_ERROR, _("%s: unable to write super-block"), device_name);
 
 	if (write_all(DEV, inode_map, imaps * MINIX_BLOCK_SIZE))
-		err(MKFS_ERROR, _("%s: unable to write inode map"), device_name);
+		err(MKFS_EX_ERROR, _("%s: unable to write inode map"), device_name);
 
 	if (write_all(DEV, zone_map, zmaps * MINIX_BLOCK_SIZE))
-		err(MKFS_ERROR, _("%s: unable to write zone map"), device_name);
+		err(MKFS_EX_ERROR, _("%s: unable to write zone map"), device_name);
 
 	if (write_all(DEV, inode_buffer, buffsz))
-		err(MKFS_ERROR, _("%s: unable to write inodes"), device_name);
+		err(MKFS_EX_ERROR, _("%s: unable to write inodes"), device_name);
 }
 
 static void write_block(int blk, char * buffer) {
 	if (blk*MINIX_BLOCK_SIZE != lseek(DEV, blk*MINIX_BLOCK_SIZE, SEEK_SET))
-		errx(MKFS_ERROR, _("%s: seek failed in write_block"), device_name);
+		errx(MKFS_EX_ERROR, _("%s: seek failed in write_block"), device_name);
 
 	if (write_all(DEV, buffer, MINIX_BLOCK_SIZE))
-		errx(MKFS_ERROR, _("%s: write failed in write_block"), device_name);
+		errx(MKFS_EX_ERROR, _("%s: write failed in write_block"), device_name);
 }
 
 static int get_free_block(void) {
@@ -226,7 +228,7 @@ static int get_free_block(void) {
 	unsigned int first_zone = get_first_zone();
 
 	if (used_good_blocks+1 >= MAX_GOOD_BLOCKS)
-		errx(MKFS_ERROR, _("%s: too many bad blocks"), device_name);
+		errx(MKFS_EX_ERROR, _("%s: too many bad blocks"), device_name);
 	if (used_good_blocks)
 		blk = good_blocks_table[used_good_blocks-1]+1;
 	else
@@ -234,7 +236,7 @@ static int get_free_block(void) {
 	while (blk < zones && zone_in_use(blk))
 		blk++;
 	if (blk >= zones)
-		errx(MKFS_ERROR, _("%s: not enough good blocks"), device_name);
+		errx(MKFS_EX_ERROR, _("%s: not enough good blocks"), device_name);
 	good_blocks_table[used_good_blocks] = blk;
 	used_good_blocks++;
 	return blk;
@@ -301,7 +303,7 @@ static void make_bad_inode_v1(void)
 				goto end_bad;
 		}
 	}
-	errx(MKFS_ERROR, _("%s: too many bad blocks"), device_name);
+	errx(MKFS_EX_ERROR, _("%s: too many bad blocks"), device_name);
 end_bad:
 	if (ind)
 		write_block(ind, (char *) ind_block);
@@ -350,7 +352,7 @@ static void make_bad_inode_v2_v3 (void)
 		}
 	}
 	/* Could make triple indirect block here */
-	errx(MKFS_ERROR, _("%s: too many bad blocks"), device_name);
+	errx(MKFS_EX_ERROR, _("%s: too many bad blocks"), device_name);
  end_bad:
 	if (ind)
 		write_block (ind, (char *) ind_block);
@@ -360,9 +362,11 @@ static void make_bad_inode_v2_v3 (void)
 
 static void make_bad_inode(void)
 {
-	if (fs_version < 2)
-		return make_bad_inode_v1();
-	return make_bad_inode_v2_v3();
+	if (fs_version < 2) {
+		make_bad_inode_v1();
+		return;
+	}
+	make_bad_inode_v2_v3();
 }
 
 static void make_root_inode_v1(void) {
@@ -398,8 +402,7 @@ static void make_root_inode_v2_v3 (void) {
 		inode->i_size = 3 * dirsize;
 	else {
 		root_block[2 * dirsize] = '\0';
-		if (fs_version == 2)
-			inode->i_size = 2 * dirsize;
+		inode->i_size = 2 * dirsize;
 	}
 
 	inode->i_mode = S_IFDIR + 0755;
@@ -411,15 +414,19 @@ static void make_root_inode_v2_v3 (void) {
 
 static void make_root_inode(void)
 {
-	if (fs_version < 2)
-		return make_root_inode_v1();
-	return make_root_inode_v2_v3();
+	if (fs_version < 2) {
+		make_root_inode_v1();
+		return;
+	}
+	make_root_inode_v2_v3();
 }
 
 static void super_set_nzones(void)
 {
 	switch (fs_version) {
 	case 3:
+		Super3.s_zones = BLOCKS;
+		break;
 	case 2:
 		Super.s_zones = BLOCKS;
 		break;
@@ -479,7 +486,7 @@ static void setup_tables(void) {
 
 	super_block_buffer = calloc(1, MINIX_BLOCK_SIZE);
 	if (!super_block_buffer)
-		err(MKFS_ERROR, _("%s: unable to alloc buffer for superblock"),
+		err(MKFS_EX_ERROR, _("%s: unable to allocate buffer for superblock"),
 				device_name);
 
 	memset(boot_block_buffer,0,512);
@@ -487,7 +494,7 @@ static void setup_tables(void) {
 
 	if (fs_version == 3) {
 		Super3.s_log_zone_size = 0;
-		Super3.s_blocksize = BLOCKS;
+		Super3.s_blocksize = MINIX_BLOCK_SIZE;
 	}
 	else {
 		Super.s_log_zone_size = 0;
@@ -509,12 +516,14 @@ static void setup_tables(void) {
 	else
 		inodes = ((inodes + MINIX_INODES_PER_BLOCK - 1) &
 			  ~(MINIX_INODES_PER_BLOCK - 1));
-	if (inodes > MINIX_MAX_INODES)
-		inodes = MINIX_MAX_INODES;
+
 	if (fs_version == 3)
 		Super3.s_ninodes = inodes;
-	else
+	else {
 		Super.s_ninodes = inodes;
+		if (inodes > MINIX_MAX_INODES)
+			inodes = MINIX_MAX_INODES;
+	}
 
 	super_set_map_blocks(inodes);
 	imaps = get_nimaps();
@@ -523,7 +532,7 @@ static void setup_tables(void) {
 	inode_map = malloc(imaps * MINIX_BLOCK_SIZE);
 	zone_map = malloc(zmaps * MINIX_BLOCK_SIZE);
 	if (!inode_map || !zone_map)
-		err(MKFS_ERROR, _("%s: unable to allocate buffers for maps"),
+		err(MKFS_EX_ERROR, _("%s: unable to allocate buffers for maps"),
 				device_name);
 	memset(inode_map,0xff,imaps * MINIX_BLOCK_SIZE);
 	memset(zone_map,0xff,zmaps * MINIX_BLOCK_SIZE);
@@ -533,27 +542,27 @@ static void setup_tables(void) {
 		unmark_inode(i);
 	inode_buffer = malloc(get_inode_buffer_size());
 	if (!inode_buffer)
-		err(MKFS_ERROR, _("%s: unable to allocate buffer for inodes"),
+		err(MKFS_EX_ERROR, _("%s: unable to allocate buffer for inodes"),
 				device_name);
 	memset(inode_buffer,0, get_inode_buffer_size());
-	printf(_("%lu inodes\n"), inodes);
-	printf(_("%lu blocks\n"), zones);
-	printf(_("Firstdatazone=%ld (%ld)\n"), get_first_zone(), first_zone_data());
-	printf(_("Zonesize=%d\n"),MINIX_BLOCK_SIZE<<get_zone_size());
-	printf(_("Maxsize=%ld\n\n"),get_max_size());
+	printf(P_("%lu inode\n", "%lu inodes\n", inodes), inodes);
+	printf(P_("%lu block\n", "%lu blocks\n", zones), zones);
+	printf(_("Firstdatazone=%jd (%jd)\n"), get_first_zone(), first_zone_data());
+	printf(_("Zonesize=%zu\n"), (size_t) MINIX_BLOCK_SIZE << get_zone_size());
+	printf(_("Maxsize=%zu\n\n"),get_max_size());
 }
 
 /*
  * Perform a test of a block; return the number of
  * blocks readable/writeable.
  */
-static long do_check(char * buffer, int try, unsigned int current_block) {
-	long got;
+static size_t do_check(char * buffer, int try, unsigned int current_block) {
+	ssize_t got;
 	
 	/* Seek to the correct loc. */
 	if (lseek(DEV, current_block * MINIX_BLOCK_SIZE, SEEK_SET) !=
 		       current_block * MINIX_BLOCK_SIZE )
-		err(MKFS_ERROR, _("%s: seek failed during testing of blocks"),
+		err(MKFS_EX_ERROR, _("%s: seek failed during testing of blocks"),
 				device_name);
 
 	/* Try the read */
@@ -582,7 +591,7 @@ static void alarm_intr(int alnum __attribute__ ((__unused__))) {
 }
 
 static void check_blocks(void) {
-	int try,got;
+	size_t try, got;
 	static char buffer[MINIX_BLOCK_SIZE * TEST_BUFFER_BLOCKS];
 	unsigned long zones = get_nzones();
 	unsigned long first_zone = get_first_zone();
@@ -593,7 +602,7 @@ static void check_blocks(void) {
 	while (currently_testing < zones) {
 		if (lseek(DEV,currently_testing*MINIX_BLOCK_SIZE,SEEK_SET) !=
 		    currently_testing*MINIX_BLOCK_SIZE)
-			errx(MKFS_ERROR, _("%s: seek failed in check_blocks"),
+			errx(MKFS_EX_ERROR, _("%s: seek failed in check_blocks"),
 					device_name);
 		try = TEST_BUFFER_BLOCKS;
 		if (currently_testing + try > zones)
@@ -603,16 +612,14 @@ static void check_blocks(void) {
 		if (got == try)
 			continue;
 		if (currently_testing < first_zone)
-			errx(MKFS_ERROR, _("%s: bad blocks before data-area: "
+			errx(MKFS_EX_ERROR, _("%s: bad blocks before data-area: "
 					"cannot make fs"), device_name);
 		mark_zone(currently_testing);
 		badblocks++;
 		currently_testing++;
 	}
-	if (badblocks > 1)
-		printf(_("%d bad blocks\n"), badblocks);
-	else if (badblocks == 1)
-		printf(_("one bad block\n"));
+	if (badblocks > 0)
+		printf(P_("%d bad block\n", "%d bad blocks\n", badblocks), badblocks);
 }
 
 static void get_list_blocks(char *filename) {
@@ -621,13 +628,13 @@ static void get_list_blocks(char *filename) {
 
 	listfile = fopen(filename,"r");
 	if (listfile == NULL)
-		err(MKFS_ERROR, _("%s: can't open file of bad blocks"),
+		err(MKFS_EX_ERROR, _("%s: can't open file of bad blocks"),
 				device_name);
 
 	while (!feof(listfile)) {
-		if (fscanf(listfile,"%ld\n", &blockno) != 1) {
+		if (fscanf(listfile,"%lu\n", &blockno) != 1) {
 			printf(_("badblock number input error on line %d\n"), badblocks + 1);
-			errx(MKFS_ERROR, _("%s: cannot read badblocks file"),
+			errx(MKFS_EX_ERROR, _("%s: cannot read badblocks file"),
 					device_name);
 		}
 		mark_zone(blockno);
@@ -635,10 +642,8 @@ static void get_list_blocks(char *filename) {
 	}
 	fclose(listfile);
 
-	if(badblocks > 1)
-		printf(_("%d bad blocks\n"), badblocks);
-	else if (badblocks == 1)
-		printf(_("one bad block\n"));
+	if (badblocks > 0)
+		printf(P_("%d bad block\n", "%d bad blocks\n", badblocks), badblocks);
 }
 
 int main(int argc, char ** argv) {
@@ -656,17 +661,18 @@ int main(int argc, char ** argv) {
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	if (argc == 2 &&
 	    (!strcmp(argv[1], "-V") || !strcmp(argv[1], "--version"))) {
 		printf(_("%s (%s)\n"), program_name, PACKAGE_STRING);
-		exit(0);
+		exit(MKFS_EX_OK);
 	}
 
 	if (INODE_SIZE * MINIX_INODES_PER_BLOCK != MINIX_BLOCK_SIZE)
-		errx(MKFS_ERROR, _("%s: bad inode size"), device_name);
+		errx(MKFS_EX_ERROR, _("%s: bad inode size"), device_name);
 	if (INODE2_SIZE * MINIX2_INODES_PER_BLOCK != MINIX_BLOCK_SIZE)
-		errx(MKFS_ERROR, _("%s: bad inode size"), device_name);
+		errx(MKFS_EX_ERROR, _("%s: bad inode size"), device_name);
 
 	opterr = 0;
 	while ((i = getopt(argc, argv, "ci:l:n:v123")) != -1)
@@ -674,14 +680,14 @@ int main(int argc, char ** argv) {
 		case 'c':
 			check=1; break;
 		case 'i':
-			req_nr_inodes = (unsigned long) atol(optarg);
+			req_nr_inodes = strtoul_or_err(optarg,
+					_("failed to parse number of inodes"));
 			break;
 		case 'l':
 			listfile = optarg; break;
 		case 'n':
-			i = strtoul(optarg,&tmp,0);
-			if (*tmp)
-				usage();
+			i = strtoul_or_err(optarg,
+					_("failed to parse maximum length of filenames"));
 			if (i == 14)
 				magic = MINIX_SUPER_MAGIC;
 			else if (i == 30)
@@ -697,10 +703,11 @@ int main(int argc, char ** argv) {
 		case '2':
 		case 'v': /* kept for backwards compatiblitly */
 			fs_version = 2;
-			version2 = 1;
 			break;
 		case '3':
 			fs_version = 3;
+			namelen = 60;
+			dirsize = 64;
 			break;
 		default:
 			usage();
@@ -712,36 +719,42 @@ int main(int argc, char ** argv) {
 		argc--;
 		argv++;
 	}
-	if (argc > 0) {
-		BLOCKS = strtol(argv[0],&tmp,0);
-		if (*tmp) {
-			printf(_("strtol error: number of blocks not specified"));
-			usage();
-		}
-	}
+	if (argc > 0)
+		BLOCKS = strtoul_or_err(argv[0], _("failed to parse number of blocks"));
 
 	if (!device_name) {
 		usage();
 	}
 	check_mount();		/* is it already mounted? */
 	tmp = root_block;
-	*(short *)tmp = 1;
-	strcpy(tmp+2,".");
-	tmp += dirsize;
-	*(short *)tmp = 1;
-	strcpy(tmp+2,"..");
-	tmp += dirsize;
-	*(short *)tmp = 2;
-	strcpy(tmp+2,".badblocks");
+	if (fs_version == 3) {
+		*(uint32_t *)tmp = 1;
+		strcpy(tmp+4,".");
+		tmp += dirsize;
+		*(uint32_t *)tmp = 1;
+		strcpy(tmp+4,"..");
+		tmp += dirsize;
+		*(uint32_t *)tmp = 2;
+		strcpy(tmp+4, ".badblocks");
+	} else {
+		*(uint16_t *)tmp = 1;
+		strcpy(tmp+2,".");
+		tmp += dirsize;
+		*(uint16_t *)tmp = 1;
+		strcpy(tmp+2,"..");
+		tmp += dirsize;
+		*(uint16_t *)tmp = 2;
+		strcpy(tmp+2, ".badblocks");
+	}
 	if (stat(device_name, &statbuf) < 0)
-		err(MKFS_ERROR, _("%s: stat failed"), device_name);
+		err(MKFS_EX_ERROR, _("stat failed %s"), device_name);
 	if (S_ISBLK(statbuf.st_mode))
 		DEV = open(device_name,O_RDWR | O_EXCL);
 	else
 		DEV = open(device_name,O_RDWR);
 
 	if (DEV<0)
-		err(MKFS_ERROR, _("%s: open failed"), device_name);
+		err(MKFS_EX_ERROR, _("cannot open %s"), device_name);
 
 	if (S_ISBLK(statbuf.st_mode)) {
 		int sectorsize;
@@ -753,11 +766,11 @@ int main(int argc, char ** argv) {
 			warnx(_("%s: device is misaligned"), device_name);
 
 		if (MINIX_BLOCK_SIZE < sectorsize)
-			errx(MKFS_ERROR, _("block size smaller than physical "
+			errx(MKFS_EX_ERROR, _("block size smaller than physical "
 					"sector size of %s"), device_name);
 		if (!BLOCKS) {
 			if (blkdev_get_size(DEV, &BLOCKS) == -1)
-				errx(MKFS_ERROR, _("cannot determine size of %s"),
+				errx(MKFS_EX_ERROR, _("cannot determine size of %s"),
 					device_name);
 			BLOCKS /= MINIX_BLOCK_SIZE;
 		}
@@ -766,19 +779,18 @@ int main(int argc, char ** argv) {
 			BLOCKS = statbuf.st_size / MINIX_BLOCK_SIZE;
 		check=0;
 	} else if (statbuf.st_rdev == 0x0300 || statbuf.st_rdev == 0x0340)
-		errx(MKFS_ERROR, _("will not try to make filesystem on '%s'"), device_name);
+		errx(MKFS_EX_ERROR, _("will not try to make filesystem on '%s'"), device_name);
 	if (BLOCKS < 10)
-		errx(MKFS_ERROR, _("%s: number of blocks too small"), device_name);
+		errx(MKFS_EX_ERROR, _("%s: number of blocks too small"), device_name);
 
 	if (fs_version == 3)
 		magic = MINIX3_SUPER_MAGIC;
-
-	if (fs_version == 2) {
+	else if (fs_version == 2) {
 		if (namelen == 14)
 			magic = MINIX2_SUPER_MAGIC;
 		else
 			magic = MINIX2_SUPER_MAGIC2;
-	} else
+	} else /* fs_version == 1 */
 		if (BLOCKS > MINIX_MAX_INODES)
 			BLOCKS = MINIX_MAX_INODES;
 	setup_tables();
@@ -792,7 +804,8 @@ int main(int argc, char ** argv) {
 
 	mark_good_blocks();
 	write_tables();
-	close(DEV);
+	if (close_fd(DEV) != 0)
+		err(MKFS_EX_ERROR, _("write failed"));
 
-	return 0;
+	return MKFS_EX_OK;
 }

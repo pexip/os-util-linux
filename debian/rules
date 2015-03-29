@@ -1,215 +1,154 @@
 #!/usr/bin/make -f
-# Sample debian/rules that uses debhelper.
-# GNU copyright 1997 to 1999 by Joey Hess.
 
-# Uncomment this to turn on verbose mode.
-#export DH_VERBOSE=1
+include /usr/share/dpkg/architecture.mk
+include /usr/share/dpkg/pkg-info.mk
 
-DISTRO :=$(shell lsb_release -is 2>/dev/null || echo Debian)
+CONFOPTS = --with-slang
+CONFOPTS += --enable-line
+CONFOPTS += --libdir=/lib/$(DEB_HOST_MULTIARCH)
+CONFOPTS += --libexecdir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH)
 
-DEB_HOST_GNU_TYPE=$(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
-DEB_BUILD_GNU_TYPE=$(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
-DEB_HOST_MULTIARCH=$(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
-ifneq ($(DEB_HOST_GNU_TYPE),$(DEB_BUILD_GNU_TYPE))
-CROSS= --build $(DEB_BUILD_GNU_TYPE) --host $(DEB_HOST_GNU_TYPE) --cache-file=$(DEB_HOST_GNU_TYPE).cache
+ifeq ($(DEB_HOST_ARCH_OS),linux)
+CONFOPTS += --enable-raw
+CONFOPTS += --with-selinux
+CONFOPTS += --enable-partx
+CONFOPTS += --with-systemd
+CONFOPTS += --enable-tunelp
+endif
+
+CONFOPTS += --localstatedir=/run
+CONFOPTS += --disable-silent-rules
+CONFOPTS += --without-python
+
+# disable utilities shipped by other packages
+# => login
+CONFOPTS += --disable-login
+CONFOPTS += --disable-nologin
+CONFOPTS += --disable-su
+# => sysvinit-utils
+CONFOPTS += --disable-sulogin
+CONFOPTS += --disable-last
+CONFOPTS += --disable-mesg
+# => initscripts
+CONFOPTS += --disable-mountpoint
+# => procps
+CONFOPTS += --disable-kill
+# => eject
+CONFOPTS += --disable-eject
+# => passwd
+CONFOPTS += --disable-chfn-chsh
+
+ifeq ($(DEB_BUILD_GNU_TYPE),$(DEB_HOST_GNU_TYPE))
+	CROSS :=
 else
-CROSS=
+	CROSS := CC="$(DEB_HOST_GNU_TYPE)-gcc -std=gnu99"
 endif
 
-ifneq (,$(findstring nostrip,$(DEB_BUILD_OPTIONS)))
-STRIP=y
-endif
+%:
+	dh $@ --with autoreconf,systemd
 
-ifndef DEB_HOST_ARCH
-DEB_BUILD_ARCH := $(shell dpkg --print-architecture)
-DEB_HOST_ARCH = $(DEB_BUILD_ARCH)
-endif
+override_dh_autoreconf:
+	AM_OPTS=--copy LT_OPTS=--copy dh_autoreconf ./autogen.sh
 
-ifndef DEB_HOST_ARCH_OS
-DEB_HOST_ARCH_OS := $(shell dpkg-architecture -qDEB_HOST_ARCH_OS)
-endif
+override_dh_auto_configure:
+	dh_auto_configure -- $(CONFOPTS) $(CROSS)
 
-export arch = $(DEB_HOST_ARCH)
-version := $(shell sed -e '1{;s|^util-linux (\(.*\))\ .*|\1|;q;}' debian/changelog)
-Upstream := $(shell sed 's/^.*(\(.*\)-.*).*/\1/; q' debian/changelog)
+override_dh_auto_build:
+	dh_auto_build -- $(CROSS)
 
-CONFOPTS= --enable-raw --enable-rdev --with-slang --enable-ddate --enable-line
-CONFOPTS += --libdir=/lib/$(DEB_HOST_MULTIARCH) --libexecdir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH)
-ifeq ($(DEB_HOST_ARCH_OS),linux)
-CONFOPTS += --with-selinux --enable-libmount-mount --enable-partx
-endif
-
-build: build-arch build-indep
-build-arch: build-stamp
-build-indep: build-stamp
-build-stamp:
-	dh_testdir
-	autoreconf -vfi
-	./configure  $(shell dpkg-buildflags --export=configure) $(CONFOPTS) $(CROSS)
-	$(MAKE) all CPU=$(arch) arch=$(arch)
-	touch build-stamp
-
-autofiles:
-	AM_OPTS=--copy LT_OPTS=--copy ./autogen.sh
-	rm -rf autom4te.cache
-
-newtemplate:
-	debconf-updatepo
-
-msgstats:
-	@cd debian/po && for i in *.po; do x=$$(msgfmt --statistics $$i 2>&1); echo $$i $$x; done; rm -f messages.mo *.po~
-
-msg-email:
-	@podebconf-report-po
-
-clean-preunpatch: 
-	dh_testdir
-	dh_testroot
-	dh_clean
-	test ! -d ${base} || rm -rf ${base}
-	-$(MAKE) distclean
-
-clean: clean-preunpatch
-	find . -name \*.o -exec rm {} \;
-	rm -f build-stamp
-
-install: build
-	dh_testdir
-	dh_testroot
-	dh_clean -k
-	dh_installdirs
-	$(MAKE) install DESTDIR=`pwd`/debian/util-linux INSTALL_STRIP_FLAG=""
-	dh_installdocs -i -s
-	install -m 644 term-utils/README.modems-with-agetty debian/util-linux/usr/share/doc/util-linux/README.modems-with-agetty
-	dh_installexamples -i -s
-	dh_installmenu -i -s
-	dh_installcron -i -s
-	dh_installinfo -i -s
-	dh_installchangelogs docs/v$(Upstream)-ReleaseNotes -i -s
-	dh_movefiles --sourcedir=debian/util-linux -i -s
-	rm -rf debian/util-linux/usr/share/locale
+override_dh_auto_install:
+	dh_auto_install
 	#
-	# XXX - push things to where debian has always(?) had them...
-ifeq ($(DEB_HOST_ARCH_OS),linux)
-	mv debian/util-linux/usr/sbin/*part* debian/util-linux/usr/bin
-	mv debian/util-linux/usr/bin/cytune debian/util-linux/usr/sbin
-endif
-	mv debian/util-linux/usr/bin/tailf debian/util-linux/bin
-	mv debian/util-linux/usr/bin/isosize debian/util-linux/sbin
-	mv debian/util-linux/usr/share/man/man8/linux32.8 debian/util-linux/usr/share/man/man1/linux32.1
-	mv debian/util-linux/usr/share/man/man8/linux64.8 debian/util-linux/usr/share/man/man1/linux64.1
-	# initscripts delivers this
-	rm -f debian/util-linux/bin/mountpoint debian/util-linux/usr/share/man/man1/mountpoint.1*
-	install -d -m 755 debian/util-linux/etc/fstab.d
 	# the version in bsdmainutils seems newer.
-	rm -f debian/bsdutils/usr/bin/look debian/bsdutils/usr/share/man/man1/look.1
-	rm -f debian/bsdutils/usr/bin/hexdump debian/bsdutils/usr/share/man/man1/hexdump.1
+	rm -f debian/tmp/usr/bin/look debian/tmp/usr/share/man/man1/look.1
+	rm -f debian/tmp/usr/bin/hexdump debian/tmp/usr/share/man/man1/hexdump.1
 	# and it's less pain to just let bsmainutils deliver col for now.
-	rm -f debian/bsdutils/usr/bin/col* debian/bsdutils/usr/share/man/man1/col*.1
-	rm -f debian/bsdutils/usr/bin/ul debian/bsdutils/usr/share/man/man1/ul*.1
-	rm -f debian/bsdutils/usr/bin/cal debian/bsdutils/usr/share/man/man1/cal.1
-	# remove *.la files and empty directories which do not belong into util-linux
-	rm -f debian/util-linux/usr/lib/*/*.la
-	rm -rf debian/util-linux/usr/include
-	rm -rf debian/util-linux/usr/lib/$(DEB_HOST_MULTIARCH)/pkgconfig
-	# perl gets to do rename, not us.
-	mv debian/util-linux/usr/bin/rename debian/util-linux/usr/bin/rename.ul
-	mv debian/util-linux/usr/share/man/man1/rename.1 debian/util-linux/usr/share/man/man1/rename.ul.1
-	rm -f debian/util-linux/usr/share/info/dir
+	rm -f debian/tmp/usr/bin/col* debian/tmp/usr/share/man/man1/col*.1
+	rm -f debian/tmp/usr/bin/ul debian/tmp/usr/share/man/man1/ul*.1
+	rm -f debian/tmp/usr/bin/cal debian/tmp/usr/share/man/man1/cal.1
+	# remove *.la files
+	rm -f debian/tmp/usr/lib/*/*.la
+
+override_dh_auto_clean:
+	dh_auto_clean
+	# drop arch-overrides, generated in dh_install by dh-exec usage.
+	rm -f debian/uuid-runtime.install.$(DEB_HOST_ARCH) \
+		debian/util-linux.install.$(DEB_HOST_ARCH)
+
+override_dh_install:
+	# generate arch-override, as dh-exec install-rename can only run once.
+	[ -f debian/util-linux.install.$(DEB_HOST_ARCH) ] || \
+		debian/util-linux.install > \
+		debian/util-linux.install.$(DEB_HOST_ARCH)
+	[ -f debian/uuid-runtime.install.$(DEB_HOST_ARCH) ] || \
+		debian/uuid-runtime.install > \
+		debian/uuid-runtime.install.$(DEB_HOST_ARCH)
 	#
+	dh_install \
+		-Nfdisk-udeb -Ncfdisk-udeb -Nlibblkid1-udeb \
+		-Nlibsmartcols1-udeb -Nlibuuid1-udeb -Nutil-linux-udeb
+	dh_install --remaining-packages
 	#
-	mv debian/util-linux/usr/share/getopt/* debian/util-linux/usr/share/doc/util-linux/examples
-	rmdir  debian/util-linux/usr/share/getopt
-	for pkg in bsdutils mount uuid-runtime; do install -m 644 debian/$${pkg}.lintian-overrides debian/$${pkg}/usr/share/lintian/overrides/$${pkg}; done
-	install -m 644 debian/mime.util-linux debian/util-linux/usr/lib/mime/packages/util-linux
-	if [ -f debian/util-linux/sbin/hwclock ] ; then \
-	    install -m 755 debian/hwclock.sh debian/util-linux/etc/init.d/hwclock.sh; \
-	    install -m 644 debian/hwclock.default debian/util-linux/etc/default/hwclock; \
-	    install -m 644 debian/hwclock.5 debian/util-linux/usr/share/man/man5; \
-	    install -m 644 debian/hwclock.rules debian/util-linux/lib/udev/rules.d/85-hwclock.rules; \
-	    install -m 755 debian/hwclock-set debian/util-linux/lib/udev/hwclock-set; \
-	fi
-ifeq ($(DEB_HOST_ARCH_OS),linux)
-	# copy mount library and symlink into udeb
-	ln debian/libmount1/lib/*/libmount.so.1.* debian/libmount1-udeb/lib/
-	ln debian/libmount1/lib/*/libmount.so.1   debian/libmount1-udeb/lib/
-endif
-	# copy blkid library and symlink into udeb
-	ln debian/libblkid1/lib/*/libblkid.so.1.* debian/libblkid1-udeb/lib/
-	ln debian/libblkid1/lib/*/libblkid.so.1   debian/libblkid1-udeb/lib/
-	ln debian/util-linux/sbin/blkid debian/util-linux-udeb/sbin/
-	# overwrite copyright
-	install -m 644 debian/libblkid.copyright debian/libblkid1/usr/share/doc/libblkid1/copyright
-	install -m 644 debian/libblkid.copyright debian/libblkid-dev/usr/share/doc/libblkid-dev/copyright
-	# copy uuid library and symlink into udeb
-	ln debian/libuuid1/lib/*/libuuid.so.1.* debian/libuuid1-udeb/lib/
-	ln debian/libuuid1/lib/*/libuuid.so.1   debian/libuuid1-udeb/lib/
-	# overwrite copyright
-	install -m 644 debian/libuuid.copyright debian/libuuid1/usr/share/doc/libuuid1/copyright
-	install -m 644 debian/libuuid.copyright debian/uuid-dev/usr/share/doc/uuid-dev/copyright
-	install -m 644 debian/libuuid.copyright debian/uuid-runtime/usr/share/doc/uuid-runtime/copyright
+	# Install bash-completions only for binaries we ship
+	for PACKAGE in util-linux uuid-runtime bsdutils mount; do \
+	for BINARY in debian/$$PACKAGE/bin/* debian/$$PACKAGE/sbin/* \
+			debian/$$PACKAGE/usr/bin/* \
+			debian/$$PACKAGE/usr/sbin/* ; \
+	do \
+		BASENAME=$$(basename $$BINARY); \
+		BCDIR=usr/share/bash-completion/completions/; \
+		BCNAME=$$BCDIR/$$BASENAME ; \
+		if [ "$$BASENAME" != '*' ] && [ -e "debian/tmp/$$BCNAME" ]; \
+		then \
+			echo "$$PACKAGE: Installing $$BCNAME"; \
+			[ -d debian/$$PACKAGE/$$BCDIR ] || \
+				mkdir -p debian/$$PACKAGE/$$BCDIR; \
+			mv debian/tmp/$$BCNAME debian/$$PACKAGE/$$BCNAME; \
+		fi; \
+	done; \
+	done
+	# Removed these conflicting ones for now, see Bug#755986
+	rm -f debian/util-linux/usr/share/bash-completion/completions/dmesg
+	rm -f debian/bsdutils/usr/share/bash-completion/completions/renice
 	#
-	cd debian; if [ -f util-linux/sbin/fdisk ]; then \
-	    ln util-linux/sbin/*fdisk fdisk-udeb/usr/sbin/; \
-	    S=fdisk-udeb/usr/sbin/cfdisk; if [ -f $$S ]; then mv $$S cfdisk-udeb/usr/sbin/; fi; \
-	fi
-	if [ -d debian/cfdisk-udeb ]; then \
-		cd debian/util-linux-locales && find usr/share/locale -type f | while read x; do ln $$x ../cfdisk-udeb/$$x; done \
-	fi
-ifeq ($(DEB_HOST_ARCH_OS),linux)
-	install -m 644 debian/mount.fstab debian/mount/usr/share/doc/mount/examples/fstab
-ifeq ($(arch),$(findstring $(arch),powerpc ppc64))
-	mv -f debian/util-linux/sbin/fdisk debian/util-linux/sbin/ddisk
-	mv -f debian/util-linux/usr/share/man/man8/fdisk.8 debian/util-linux/usr/share/man/man8/ddisk.8
-else
-	cd debian/util-linux && if [ -f sbin/hwclock ] ; then ln -sf hwclock.8.gz usr/share/man/man8/clock.8.gz; fi
-endif
-endif
-ifneq ($(DEB_HOST_ARCH_OS),hurd)
-	cd debian/util-linux/sbin ; ln agetty getty
-	cd debian/util-linux/usr/share/man/man8 ; ln agetty.8 getty.8
-endif
-ifneq ($(DEB_HOST_ARCH_OS),linux)
-	cd debian/util-linux/sbin ; mv mkswap mkswap.linux
-	cd debian/util-linux/usr/share/man/man8 ; mv mkswap.8 mkswap.linux.8
-endif
-	dh_compress -i -s
-	dh_fixperms -i -s -Xusr/bin/wall -Xbin/mount -Xbin/umount
 	rm -rf debian/*-udeb/usr/share/doc
-	dh_link -i -s
 
+override_dh_installman:
+	dh_installman --language=C
 
-# Build architecture-independent files here.
-binary-indep: build install
-	dh_testdir -i
-	dh_testroot -i
-	dh_lintian -i
-	dh_installdebconf -i
-	dh_installdeb -i
-	dh_gencontrol -i -- -VUpstream=$(Upstream)
-	dh_md5sums -i
-	dh_builddeb -i
+override_dh_gencontrol:
+	dh_gencontrol --package=bsdutils -- -v1:$(DEB_VERSION_UPSTREAM_REVISION)
+	dh_gencontrol --remaining-packages
 
-# Build architecture-dependent files here.
-binary-arch: build install
-	dh_testdir -s
-	dh_testroot -s
-	dh_lintian -s
-	dh_installinit -s -- defaults 15 85
-	[ -n "$(STRIP)" ] || dh_strip -s
-	dh_makeshlibs -s
-	dh_installdebconf -s
-	dh_installdeb -s
-	dh_shlibdeps -s
-ifeq ($(DEB_HOST_ARCH_OS),hurd)
-	echo util-linux:Conflicts=getty >> debian/util-linux.substvars
-endif
-	dh_gencontrol -s -Xbsdutils
-	dh_gencontrol -pbsdutils -u-v1:$(version)
-	dh_md5sums -s
-	rm -f debian/*-udeb/DEBIAN/md5sums
-	dh_builddeb -s
+override_dh_installinit:
+	# install /etc/init.d/hwclock.sh
+	# - update-rc.d manually handled in maintainers scripts as there
+	#   is special per-arch considerations.
+	dh_installinit --name=hwclock.sh --noscripts
+	# install /etc/default/hwclock
+	dh_installinit --name=hwclock
+	# install uuidd sysvinit script
+	make misc-utils/uuidd.rc
+	ln -s ../misc-utils/uuidd.rc debian/uuid-runtime.uuidd.init
+	dh_installinit --name=uuidd --restart-after-upgrade
+	rm -f debian/uuid-runtime.uuidd.init
 
+override_dh_installpam:
+	dh_installpam --package=util-linux --name=runuser
+	dh_installpam --package=util-linux --name=runuser-l
 
-binary: binary-indep binary-arch
-.PHONY: build build-arch build-indep clean binary-indep binary-arch binary install configure
+override_dh_makeshlibs:
+	dh_makeshlibs -N libsmartcols1 -N libblkid1 -N libuuid1
+	dh_makeshlibs -plibsmartcols1 -V \
+		--add-udeb=libsmartcols1-udeb
+	dh_makeshlibs -plibblkid1 -V \
+		--add-udeb=libblkid1-udeb
+	dh_makeshlibs -plibuuid1 -V \
+		--add-udeb=libuuid1-udeb
+
+override_dh_fixperms:
+	dh_fixperms -i -s -Xusr/bin/wall -Xbin/mount -Xbin/umount
+
+override_dh_auto_test:
+	TERM=xterm dh_auto_test || true
+

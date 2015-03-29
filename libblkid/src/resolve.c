@@ -11,7 +11,7 @@
  */
 
 #include <stdio.h>
-#if HAVE_UNISTD_H
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 #include <stdlib.h>
@@ -32,19 +32,16 @@ char *blkid_get_tag_value(blkid_cache cache, const char *tagname,
 	blkid_cache c = cache;
 	char *ret = NULL;
 
-	DBG(DEBUG_RESOLVE, printf("looking for %s on %s\n", tagname, devname));
+	DBG(RESOLVE, ul_debug("looking for %s on %s", tagname, devname));
 
 	if (!devname)
 		return NULL;
-
-	if (!cache) {
-		if (blkid_get_cache(&c, NULL) < 0)
-			return NULL;
-	}
+	if (!cache && blkid_get_cache(&c, NULL) < 0)
+		return NULL;
 
 	if ((dev = blkid_get_dev(c, devname, BLKID_DEV_NORMAL)) &&
 	    (found = blkid_find_tag_dev(dev, tagname)))
-		ret = blkid_strdup(found->bit_val);
+		ret = found->bit_val ? strdup(found->bit_val) : NULL;
 
 	if (!cache)
 		blkid_put_cache(c);
@@ -68,19 +65,15 @@ char *blkid_get_devname(blkid_cache cache, const char *token,
 
 	if (!token)
 		return NULL;
+	if (!cache && blkid_get_cache(&c, NULL) < 0)
+		return NULL;
 
-	if (!cache) {
-		if (blkid_get_cache(&c, NULL) < 0)
-			return NULL;
-	}
-
-	DBG(DEBUG_RESOLVE,
-	    printf("looking for %s%s%s %s\n", token, value ? "=" : "",
+	DBG(RESOLVE, ul_debug("looking for %s%s%s %s", token, value ? "=" : "",
 		   value ? value : "", cache ? "in cache" : "from disk"));
 
 	if (!value) {
 		if (!strchr(token, '=')) {
-			ret = blkid_strdup(token);
+			ret = strdup(token);
 			goto out;
 		}
 		blkid_parse_tag_string(token, &t, &v);
@@ -94,15 +87,13 @@ char *blkid_get_devname(blkid_cache cache, const char *token,
 	if (!dev)
 		goto out;
 
-	ret = blkid_strdup(blkid_dev_devname(dev));
-
+	ret = dev->bid_name ? strdup(dev->bid_name) : NULL;
 out:
 	free(t);
 	free(v);
-	if (!cache) {
+	if (!cache)
 		blkid_put_cache(c);
-	}
-	return (ret);
+	return ret;
 }
 
 #ifdef TEST_PROGRAM
@@ -111,7 +102,7 @@ int main(int argc, char **argv)
 	char *value;
 	blkid_cache cache;
 
-	blkid_init_debug(DEBUG_ALL);
+	blkid_init_debug(BLKID_DEBUG_ALL);
 	if (argc != 2 && argc != 3) {
 		fprintf(stderr, "Usage:\t%s tagname=value\n"
 			"\t%s tagname devname\n"

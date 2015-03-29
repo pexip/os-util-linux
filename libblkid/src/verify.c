@@ -19,7 +19,9 @@
 #ifdef HAVE_ERRNO_H
 #include <errno.h>
 #endif
+
 #include "blkidP.h"
+#include "sysfs.h"
 
 static void blkid_probe_to_tags(blkid_probe pr, blkid_dev dev)
 {
@@ -31,8 +33,19 @@ static void blkid_probe_to_tags(blkid_probe pr, blkid_dev dev)
 	nvals = blkid_probe_numof_values(pr);
 
 	for (n = 0; n < nvals; n++) {
-		if (blkid_probe_get_value(pr, n, &name, &data, &len) == 0)
+		if (blkid_probe_get_value(pr, n, &name, &data, &len) != 0)
+			continue;
+		if (strncmp(name, "PART_ENTRY_", 11) == 0) {
+			if (strcmp(name, "PART_ENTRY_UUID") == 0)
+				blkid_set_tag(dev, "PARTUUID", data, len);
+			else if (strcmp(name, "PART_ENTRY_NAME") == 0)
+				blkid_set_tag(dev, "PARTLABEL", data, len);
+
+		} else if (!strstr(name, "_ID")) {
+			/* superblock UUID, LABEL, ...
+			 * but not {SYSTEM,APPLICATION,..._ID} */
 			blkid_set_tag(dev, name, data, len);
+		}
 	}
 }
 
@@ -47,26 +60,26 @@ static void blkid_probe_to_tags(blkid_probe pr, blkid_dev dev)
  */
 blkid_dev blkid_verify(blkid_cache cache, blkid_dev dev)
 {
+	blkid_tag_iterate iter;
+	const char *type, *value;
 	struct stat st;
 	time_t diff, now;
-	char *fltr[2];
 	int fd;
 
-	if (!dev)
+	if (!dev || !cache)
 		return NULL;
 
 	now = time(0);
 	diff = now - dev->bid_time;
 
 	if (stat(dev->bid_name, &st) < 0) {
-		DBG(DEBUG_PROBE,
-		    printf("blkid_verify: error %s (%d) while "
-			   "trying to stat %s\n", strerror(errno), errno,
+		DBG(PROBE, ul_debug("blkid_verify: error %m (%d) while "
+			   "trying to stat %s", errno,
 			   dev->bid_name));
 	open_err:
 		if ((errno == EPERM) || (errno == EACCES) || (errno == ENOENT)) {
 			/* We don't have read permission, just return cache data. */
-			DBG(DEBUG_PROBE, printf("returning unverified data for %s\n",
+			DBG(PROBE, ul_debug("returning unverified data for %s",
 						dev->bid_name));
 			return dev;
 		}
@@ -88,21 +101,23 @@ blkid_dev blkid_verify(blkid_cache cache, blkid_dev dev)
 		return dev;
 
 #ifndef HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
-	DBG(DEBUG_PROBE,
-	    printf("need to revalidate %s (cache time %lu, stat time %lu,\n\t"
-		   "time since last check %lu)\n",
+	DBG(PROBE, ul_debug("need to revalidate %s (cache time %lu, stat time %lu,\t"
+		   "time since last check %lu)",
 		   dev->bid_name, (unsigned long)dev->bid_time,
 		   (unsigned long)st.st_mtime, (unsigned long)diff));
 #else
-	DBG(DEBUG_PROBE,
-	    printf("need to revalidate %s (cache time %lu.%lu, stat time %lu.%lu,\n\t"
-		   "time since last check %lu)\n",
+	DBG(PROBE, ul_debug("need to revalidate %s (cache time %lu.%lu, stat time %lu.%lu,\t"
+		   "time since last check %lu)",
 		   dev->bid_name,
 		   (unsigned long)dev->bid_time, (unsigned long)dev->bid_utime,
 		   (unsigned long)st.st_mtime, (unsigned long)st.st_mtim.tv_nsec / 1000,
 		   (unsigned long)diff));
 #endif
 
+	if (sysfs_devno_is_lvm_private(st.st_rdev)) {
+		blkid_free_dev(dev);
+		return NULL;
+	}
 	if (!cache->probe) {
 		cache->probe = blkid_new_probe();
 		if (!cache->probe) {
@@ -111,10 +126,10 @@ blkid_dev blkid_verify(blkid_cache cache, blkid_dev dev)
 		}
 	}
 
-	fd = open(dev->bid_name, O_RDONLY);
+	fd = open(dev->bid_name, O_RDONLY|O_CLOEXEC);
 	if (fd < 0) {
-		DBG(DEBUG_PROBE, printf("blkid_verify: error %s (%d) while "
-					"opening %s\n", strerror(errno), errno,
+		DBG(PROBE, ul_debug("blkid_verify: error %m (%d) while "
+					"opening %s", errno,
 					dev->bid_name));
 		goto open_err;
 	}
@@ -126,51 +141,29 @@ blkid_dev blkid_verify(blkid_cache cache, blkid_dev dev)
 		return NULL;
 	}
 
-	blkid_probe_enable_superblocks(cache->probe, TRUE);
+	/* remove old cache info */
+	iter = blkid_tag_iterate_begin(dev);
+	while (blkid_tag_next(iter, &type, &value) == 0)
+		blkid_set_tag(dev, type, NULL, 0);
+	blkid_tag_iterate_end(iter);
 
+	/* enable superblocks probing */
+	blkid_probe_enable_superblocks(cache->probe, TRUE);
 	blkid_probe_set_superblocks_flags(cache->probe,
 		BLKID_SUBLKS_LABEL | BLKID_SUBLKS_UUID |
 		BLKID_SUBLKS_TYPE | BLKID_SUBLKS_SECTYPE);
 
-	/*
-	 * If we already know the type, then try that first.
-	 */
-	if (dev->bid_type) {
-		blkid_tag_iterate iter;
-		const char *type, *value;
+	/* enable partitions probing */
+	blkid_probe_enable_partitions(cache->probe, TRUE);
+	blkid_probe_set_partitions_flags(cache->probe, BLKID_PARTS_ENTRY_DETAILS);
 
-		fltr[0] = dev->bid_type;
-		fltr[1] = NULL;
-
-		blkid_probe_filter_superblocks_type(cache->probe,
-				BLKID_FLTR_ONLYIN, fltr);
-
-		if (!blkid_do_probe(cache->probe))
-			goto found_type;
-		blkid_probe_invert_superblocks_filter(cache->probe);
-
-		/*
-		 * Zap the device filesystem information and try again
-		 */
-		DBG(DEBUG_PROBE,
-		    printf("previous fs type %s not valid, "
-			   "trying full probe\n", dev->bid_type));
-		iter = blkid_tag_iterate_begin(dev);
-		while (blkid_tag_next(iter, &type, &value) == 0)
-			blkid_set_tag(dev, type, 0, 0);
-		blkid_tag_iterate_end(iter);
-	}
-
-	/*
-	 * Probe for all types.
-	 */
+	/* probe */
 	if (blkid_do_safeprobe(cache->probe)) {
 		/* found nothing or error */
 		blkid_free_dev(dev);
 		dev = NULL;
 	}
 
-found_type:
 	if (dev) {
 #ifdef HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
 		struct timeval tv;
@@ -187,7 +180,7 @@ found_type:
 
 		blkid_probe_to_tags(cache->probe, dev);
 
-		DBG(DEBUG_PROBE, printf("%s: devno 0x%04llx, type %s\n",
+		DBG(PROBE, ul_debug("%s: devno 0x%04llx, type %s",
 			   dev->bid_name, (long long)st.st_rdev, dev->bid_type));
 	}
 

@@ -163,7 +163,6 @@ global:
 	mnt_table_find_tag;
 	mnt_table_find_target;
 	mnt_table_get_cache;
-	mnt_table_get_name;
 	mnt_table_get_nents;
 	mnt_table_get_root_fs;
 	mnt_table_next_child_fs;
@@ -205,3 +204,93 @@ global:
 	mnt_tabdiff_next_change;
 	mnt_table_is_fs_mounted;
 } MOUNT_2.19;
+
+MOUNT_2.21 {
+global:
+	mnt_context_enable_fork;
+	mnt_context_get_helper_status;
+	mnt_context_get_syscall_errno;
+	mnt_context_helper_executed;
+	mnt_context_is_child;
+	mnt_context_is_fork;
+	mnt_context_is_parent;
+	mnt_context_next_umount;
+	mnt_context_reset_status;
+	mnt_context_set_passwd_cb;
+	mnt_context_syscall_called;
+	mnt_context_wait_for_children;
+	mnt_fs_is_netfs;
+	mnt_fs_is_pseudofs;
+	mnt_fs_is_swaparea;
+	mnt_get_library_features;
+	mnt_table_parse_dir;
+} MOUNT_2.20;
+
+MOUNT_2.22 {
+global:
+	mnt_context_disable_swapmatch;
+	mnt_context_get_options;
+	mnt_context_is_loopdel;
+	mnt_context_is_nocanonicalize;
+	mnt_context_is_nohelpers;
+	mnt_context_is_swapmatch;
+	mnt_context_tab_applied;
+	mnt_fs_get_priority;
+	mnt_fs_get_size;
+	mnt_fs_get_swaptype;
+	mnt_fs_get_tid;
+	mnt_fs_get_usedsize;
+	mnt_fs_streq_srcpath;
+	mnt_fs_streq_target;
+	mnt_get_mountpoint;
+	mnt_get_swaps_path;
+	mnt_optstr_deduplicate_option;
+	mnt_table_find_devno;
+	mnt_table_parse_swaps;
+} MOUNT_2.21;
+
+MOUNT_2.23 {
+global:
+	mnt_fs_get_optional_fields;
+	mnt_fs_get_propagation;
+	mnt_context_find_umount_fs;
+	mnt_table_find_mountpoint;
+} MOUNT_2.22;
+
+MOUNT_2.24 {
+global:
+	mnt_context_get_fstab_userdata;
+	mnt_context_get_fs_userdata;
+	mnt_context_get_mtab_userdata;
+	mnt_fs_append_comment;
+	mnt_fs_get_comment;
+	mnt_fs_set_comment;
+	mnt_ref_cache;
+	mnt_ref_fs;
+	mnt_ref_table;
+	mnt_table_append_intro_comment;
+	mnt_table_append_trailing_comment;
+	mnt_table_enable_comments;
+	mnt_table_first_fs;
+	mnt_table_get_intro_comment;
+	mnt_table_get_trailing_comment;
+	mnt_table_get_userdata;
+	mnt_table_is_empty;
+	mnt_table_last_fs;
+	mnt_table_replace_file;
+	mnt_table_set_intro_comment;
+	mnt_table_set_trailing_comment;
+	mnt_table_set_userdata;
+	mnt_table_with_comments;
+	mnt_table_write_file;
+	mnt_unref_cache;
+	mnt_unref_fs;
+	mnt_unref_table;
+} MOUNT_2.23;
+
+MOUNT_2.25 {
+	mnt_cache_set_targets;
+	mnt_resolve_target;
+	mnt_table_uniq_fs;
+	mnt_tag_is_valid;
+} MOUNT_2.24;

@@ -31,120 +31,88 @@
 .\"
 .\"     @(#)renice.8   8.1 (Berkeley) 6/9/93
 .\"
-.Dd November 2010 "  "
-.Dt RENICE(1) "" "User Commands"
-.Os util-linux
-.Sh NAME
-.Nm renice
-.Nd alter priority of running processes
-.Sh SYNOPSIS
-.Nm renice
-.Op Fl n
-.Ar priority
-.Oo
-.Op Fl p
-.Ar pid ...
-.Oc
-.Oo
-.Op Fl g
-.Ar pgrp ...
-.Oc
-.Oo
-.Op Fl u
-.Ar user ...
-.Oc
-.Nm renice
-.Fl h | Fl v
-.Sh DESCRIPTION
-.Nm Renice
-alters the
-scheduling priority of one or more running processes.
-The following
-.Ar who
-parameters are interpreted as process ID's, process group
-ID's, or user names.
-.Nm Renice Ns 'ing
-a process group causes all processes in the process group
-to have their scheduling priority altered.
-.Nm Renice Ns 'ing
-a user causes all processes owned by the user to have
-their scheduling priority altered.
-By default, the processes to be affected are specified by
-their process ID's.
-.Pp
-Options supported by
-.Nm renice :
-.Bl -tag -width Ds
-.It Fl n, Fl Fl priority
-The scheduling
-.Ar priority
-of the process, process group, or user.
-.It Fl g, Fl Fl pgrp
-Force
-.Ar who
-parameters to be interpreted as process group ID's.
-.It Fl u, Fl Fl user
-Force the
-.Ar who
-parameters to be interpreted as user names.
-.It Fl p, Fl Fl pid
-Resets the
-.Ar who
-interpretation to be (the default) process ID's.
-.It Fl v, Fl Fl version
-Print version.
-.It Fl h, Fl Fl help
-Print help.
-.El
-.Pp
-For example,
-.Bd -literal -offset
-renice +1 987 -u daemon root -p 32
-.Ed
-.Pp
-would change the priority of process ID's 987 and 32, and
-all processes owned by users daemon and root.
-.Pp
-Users other than the super-user may only alter the priority of
-processes they own,
-and can only monotonically increase their ``nice value'' (for security reasons)
-within the range 0 to
-.Dv PRIO_MAX
-(20),
-unless a nice resource limit is set (Linux 2.6.12 and higher).
-The super-user
-may alter the priority of any process
-and set the priority to any value in the range
-.Dv PRIO_MIN
-(\-20)
-to
-.Dv PRIO_MAX .
-Useful priorities are:
-20 (the affected processes will run only when nothing else
-in the system wants to),
-0 (the ``base'' scheduling priority),
-anything negative (to make things go very fast).
-.Sh FILES
-.Bl -tag -width /etc/passwd -compact
-.It Pa /etc/passwd
-to map user names to user ID's
-.El
-.Sh SEE ALSO
-.Xr getpriority 2 ,
-.Xr setpriority 2
-.Sh BUGS
-Non super-users can not increase scheduling priorities of their own processes,
+.TH RENICE "1" "July 2014" "util-linux" "User Commands"
+.SH NAME
+renice \- alter priority of running processes
+.SH SYNOPSIS
+.B renice
+.RB [ \-n ]
+.I priority
+.RB [ \-g | \-p | \-u ]
+.IR identifier ...
+.SH DESCRIPTION
+.B renice
+alters the scheduling priority of one or more running processes.  The
+first argument is the \fIpriority\fR value to be used.
+The other arguments are interpreted as process IDs (by default),
+process group IDs, user IDs, or user names.
+.BR renice 'ing
+a process group causes all processes in the process group to have their
+scheduling priority altered.
+.BR renice 'ing
+a user causes all processes owned by the user to have their scheduling
+priority altered.
+.PP
+.SH OPTIONS
+.TP
+.BR \-n , " \-\-priority " \fIpriority\fR
+Specify the scheduling
+.I priority
+to be used for the process, process group, or user.  Use of the option
+.BR \-n " or " \-\-priority
+is optional, but when used it must be the first argument.
+.TP
+.BR \-g , " \-\-pgrp
+Interpret the succeeding arguments as process group IDs.
+.TP
+.BR \-p , " \-\-pid
+Interpret the succeeding arguments as process IDs
+(the default).
+.TP
+.BR \-u , " \-\-user
+Interpret the succeeding arguments as usernames or UIDs.
+.TP
+.BR \-h , " \-\-help"
+Display help text and exit.
+.TP
+.BR \-V , " \-\-version"
+Display version information and exit.
+.SH EXAMPLES
+The following command would change the priority of the processes with
+PIDs 987 and 32, plus all processes owned by the users daemon and root:
+.TP
+.B "       renice" +1 987 -u daemon root -p 32
+.SH NOTES
+Users other than the superuser may only alter the priority of processes they
+own, and can only monotonically increase their ``nice value'' (for security
+reasons) within the range 0 to 19,
+unless a nice resource limit is set (Linux 2.6.12 and higher).  The
+superuser may alter the priority of any process and set the priority to any
+value in the range \-20 to 19.
+Useful priorities are: 19 (the affected processes will run only when nothing
+else in the system wants to), 0 (the ``base'' scheduling priority), anything
+negative (to make things go very fast).
+.SH FILES
+.TP
+.B /etc/passwd
+to map user names to user IDs
+.SH SEE ALSO
+.BR getpriority (2),
+.BR setpriority (2)
+.SH BUGS
+Non-superusers cannot increase scheduling priorities of their own processes,
 even if they were the ones that decreased the priorities in the first place.
-.br
-The Linux kernel (at least version 2.0.0) and linux libc (at least
-version 5.2.18) does not agree entirely on what the specifics of the
-systemcall interface to set nice values is.  Thus causes renice to
-report bogus previous nice values.
-.Sh HISTORY
+.PP
+The Linux kernel (at least version 2.0.0) and linux libc (at least version
+5.2.18) does not agree entirely on what the specifics of the systemcall
+interface to set nice values is.  Thus causes renice to report bogus previous
+nice values.
+.SH HISTORY
 The
-.Nm
-command appeared in
-.Bx 4.0 .
-.Sh AVAILABILITY
+.B renice
+command appeared in 4.0BSD.
+.SH AVAILABILITY
 The renice command is part of the util-linux package and is available from
-ftp://ftp.kernel.org/pub/linux/utils/util-linux/.
+.UR ftp://\:ftp.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
+Linux Kernel Archive
+.UE .

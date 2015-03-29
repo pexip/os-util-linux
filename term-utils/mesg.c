@@ -39,7 +39,7 @@
  * Modified Mon Jul  1 18:14:10 1996, janl@ifi.uio.no, writing to stdout
  *	as suggested by Michael Meskes <meskes@Informatik.RWTH-Aachen.DE>
  *
- * 1999-02-22 Arkadiusz Mi∂kiewicz <misiek@pld.ORG.PL>
+ * 1999-02-22 Arkadiusz Mi≈õkiewicz <misiek@pld.ORG.PL>
  * - added Native Language Support
  *
  * 2010-12-01 Marek Polacek <mmpolacek@gmail.com>
@@ -54,8 +54,11 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <getopt.h>
+
+#include "closestream.h"
 #include "nls.h"
 #include "c.h"
+#include "rpmatch.h"
 
 /* exit codes */
 
@@ -65,14 +68,16 @@
 
 static void __attribute__ ((__noreturn__)) usage(FILE * out)
 {
-	fputs(_("\nUsage:\n"), out);
+	fputs(USAGE_HEADER, out);
+	/* TRANSLATORS: this program uses for y and n rpmatch(3),
+	 * which means they can be translated.  */
 	fprintf(out,
 	      _(" %s [options] [y | n]\n"), program_invocation_short_name);
-
-	fputs(_("\nOptions:\n"), out);
-	fputs(_(" -v, --verbose      explain what is being done\n"
-		" -V, --version      output version information and exit\n"
-		" -h, --help         output help screen and exit\n\n"), out);
+	fputs(USAGE_OPTIONS, out);
+	fputs(_(" -v, --verbose  explain what is being done\n"), out);
+	fputs(USAGE_HELP, out);
+	fputs(USAGE_VERSION, out);
+	fprintf(out, USAGE_MAN_TAIL("mesg(1)"));
 
 	exit(out == stderr ? MESG_EXIT_FAILURE : EXIT_SUCCESS);
 }
@@ -83,10 +88,6 @@ int main(int argc, char *argv[])
 	char *tty;
 	int ch, verbose = FALSE;
 
-	setlocale(LC_ALL, "");
-	bindtextdomain(PACKAGE, LOCALEDIR);
-	textdomain(PACKAGE);
-
 	static const struct option longopts[] = {
 		{ "verbose",    no_argument,       0, 'v' },
 		{ "version",    no_argument,       0, 'V' },
@@ -94,14 +95,18 @@ int main(int argc, char *argv[])
 		{ NULL,         0, 0, 0 }
 	};
 
+	setlocale(LC_ALL, "");
+	bindtextdomain(PACKAGE, LOCALEDIR);
+	textdomain(PACKAGE);
+	atexit(close_stdout);
+
 	while ((ch = getopt_long(argc, argv, "vVh", longopts, NULL)) != -1)
 		switch (ch) {
 		case 'v':
 			verbose = TRUE;
 			break;
 		case 'V':
-			printf(_("%s from %s\n"), program_invocation_short_name,
-			PACKAGE_STRING);
+			printf(UTIL_LINUX_VERSION);
 			exit(EXIT_SUCCESS);
 		case 'h':
 			usage(stdout);
@@ -116,7 +121,7 @@ int main(int argc, char *argv[])
 		err(MESG_EXIT_FAILURE, _("ttyname failed"));
 
 	if (stat(tty, &sb) < 0)
-		err(MESG_EXIT_FAILURE, _("stat %s failed"), tty);
+		err(MESG_EXIT_FAILURE, _("stat failed %s"), tty);
 
 	if (!*argv) {
 		if (sb.st_mode & (S_IWGRP | S_IWOTH)) {
@@ -127,8 +132,8 @@ int main(int argc, char *argv[])
 		return IS_NOT_ALLOWED;
 	}
 
-	switch (*argv[0]) {
-	case 'y':
+	switch (rpmatch(argv[0])) {
+	case 1:
 #ifdef USE_TTY_GROUP
 		if (chmod(tty, sb.st_mode | S_IWGRP) < 0)
 #else
@@ -138,14 +143,16 @@ int main(int argc, char *argv[])
 		if (verbose)
 			puts(_("write access to your terminal is allowed"));
 		return IS_ALLOWED;
-	case 'n':
+	case 0:
 		if (chmod(tty, sb.st_mode & ~(S_IWGRP|S_IWOTH)) < 0)
 			 err(MESG_EXIT_FAILURE, _("change %s mode failed"), tty);
 		if (verbose)
 			puts(_("write access to your terminal is denied"));
 		return IS_NOT_ALLOWED;
-	default:
-		warnx(_("invalid argument: %c"), *argv[0]);
+        case -1:
+		warnx(_("invalid argument: %s"), argv[0]);
 		usage(stderr);
+        default:
+                abort();
 	}
 }

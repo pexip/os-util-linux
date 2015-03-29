@@ -26,7 +26,7 @@
  * V1_MAX_PAGES fixes, jj, 990325.
  * sparc64 fixes, jj, 000219.
  *
- * 1999-02-22 Arkadiusz Mi∂kiewicz <misiek@pld.ORG.PL>
+ * 1999-02-22 Arkadiusz Mi≈õkiewicz <misiek@pld.ORG.PL>
  * - added Native Language Support
  *
  */
@@ -53,10 +53,11 @@
 #include "nls.h"
 #include "blkdev.h"
 #include "pathnames.h"
-#include "wholedisk.h"
-#include "writeall.h"
+#include "all-io.h"
 #include "xalloc.h"
 #include "c.h"
+#include "closestream.h"
+#include "ismounted.h"
 
 #ifdef HAVE_LIBUUID
 # include <uuid.h>
@@ -143,21 +144,21 @@ is_sparc64(void)
  * What to do? Let us allow the user to specify the pagesize explicitly.
  *
  */
-static long user_pagesize;
-static int pagesize;
+static unsigned int user_pagesize;
+static unsigned int pagesize;
 static unsigned long *signature_page = NULL;
 
 static void
 init_signature_page(void)
 {
 
-	int kernel_pagesize = pagesize = getpagesize();
+	unsigned int kernel_pagesize = pagesize = getpagesize();
 
 	if (user_pagesize) {
-		if ((user_pagesize & (user_pagesize - 1)) ||
-		    user_pagesize < (long) sizeof(struct swap_header_v1_2) + 10)
+		if (!is_power_of_2(user_pagesize) ||
+		    user_pagesize < sizeof(struct swap_header_v1_2) + 10)
 			errx(EXIT_FAILURE,
-				_("Bad user-specified page size %lu"),
+				_("Bad user-specified page size %u"),
 				user_pagesize);
 		pagesize = user_pagesize;
 	}
@@ -175,7 +176,7 @@ write_signature(char *sig)
 {
 	char *sp = (char *) signature_page;
 
-	strncpy(sp + pagesize - 10, sig, 10);
+	strncpy(sp + pagesize - SWAP_SIGNATURE_SZ, sig, SWAP_SIGNATURE_SZ);
 }
 
 static void
@@ -184,8 +185,7 @@ write_uuid_and_label(unsigned char *uuid, char *volume_name)
 	struct swap_header_v1_2 *h;
 
 	/* Sanity check */
-	if (sizeof(struct swap_header_v1) !=
-	    sizeof(struct swap_header_v1_2)) {
+	if (sizeof(struct swap_header_v1_2) != SWAP_HEADER_SIZE) {
 		warnx(_("Bad swap header size, no label written."));
 		return;
 	}
@@ -314,17 +314,20 @@ check_blocks(void)
 	buffer = xmalloc(pagesize);
 	current_page = 0;
 	while (current_page < PAGES) {
+
+		ssize_t rc;
+
 		if (do_seek && lseek(DEV,current_page*pagesize,SEEK_SET) !=
 		    current_page*pagesize)
 			errx(EXIT_FAILURE, _("seek failed in check_blocks"));
-		if ((do_seek = (pagesize != read(DEV, buffer, pagesize))))
+
+		rc = read(DEV, buffer, pagesize);
+		do_seek = (rc < 0 || (size_t) rc != pagesize);
+		if (do_seek)
 			page_bad(current_page);
 		current_page++;
 	}
-	if (badpages == 1)
-		printf(_("one bad page\n"));
-	else if (badpages > 1)
-		printf(_("%lu bad pages\n"), badpages);
+	printf(P_("%lu bad page\n", "%lu bad pages\n", badpages), badpages);
 	free(buffer);
 }
 
@@ -347,72 +350,52 @@ get_size(const char *file)
 	return size;
 }
 
-/*
- * Check to make certain that our new filesystem won't be created on
- * an already mounted partition.  Code adapted from mke2fs, Copyright
- * (C) 1994 Theodore Ts'o.  Also licensed under GPL.
- * (C) 2006 Karel Zak -- port to mkswap
- */
-static int
-check_mount(void)
+#ifdef HAVE_LIBBLKID
+static blkid_probe
+new_prober(int fd)
 {
-	FILE *f;
-	struct mntent *mnt;
-
-	if ((f = setmntent (_PATH_MOUNTED, "r")) == NULL)
-		return 0;
-	while ((mnt = getmntent (f)) != NULL)
-		if (strcmp (device_name, mnt->mnt_fsname) == 0)
-			break;
-	endmntent (f);
-	if (!mnt)
-		return 0;
-	return 1;
+	blkid_probe pr = blkid_new_probe();
+	if (!pr)
+		errx(EXIT_FAILURE, _("unable to alloc new libblkid probe"));
+	if (blkid_probe_set_device(pr, fd, 0, 0))
+		errx(EXIT_FAILURE, _("unable to assign device to libblkid probe"));
+	return pr;
 }
+#endif
 
 static void
-zap_bootbits(int fd, const char *devname, int force, int is_blkdev)
+wipe_device(int fd, const char *devname, int force)
 {
 	char *type = NULL;
-	int whole = 0;
 	int zap = 1;
-
+#ifdef HAVE_LIBBLKID
+	blkid_probe pr = NULL;
+#endif
 	if (!force) {
 		if (lseek(fd, 0, SEEK_SET) != 0)
 			errx(EXIT_FAILURE, _("unable to rewind swap-device"));
 
-		if (is_blkdev && is_whole_disk_fd(fd, devname)) {
-			/* don't zap bootbits on whole disk -- we know nothing
-			 * about bootloaders on the device */
-			whole = 1;
-			zap = 0;
-		} else {
 #ifdef HAVE_LIBBLKID
-			blkid_probe pr = blkid_new_probe();
-			if (!pr)
-				errx(EXIT_FAILURE, _("unable to alloc new libblkid probe"));
-			if (blkid_probe_set_device(pr, fd, 0, 0))
-				errx(EXIT_FAILURE, _("unable to assign device to libblkid probe"));
+		pr = new_prober(fd);
+		blkid_probe_enable_partitions(pr, 1);
+		blkid_probe_enable_superblocks(pr, 0);
 
-			blkid_probe_enable_partitions(pr, 1);
-			blkid_probe_enable_superblocks(pr, 0);
-
-			if (blkid_do_fullprobe(pr) == 0)
-				blkid_probe_lookup_value(pr, "PTTYPE",
-						(const char **) &type, NULL);
-			if (type) {
-				type = xstrdup(type);
-				zap = 0;
-			}
-			blkid_free_probe(pr);
-#else
-			/* don't zap if compiled without libblkid */
+		if (blkid_do_fullprobe(pr) == 0 &&
+		    blkid_probe_lookup_value(pr, "PTTYPE",
+				(const char **) &type, NULL) == 0 && type) {
+			type = xstrdup(type);
 			zap = 0;
-#endif
 		}
+#else
+		/* don't zap if compiled without libblkid */
+		zap = 0;
+#endif
 	}
 
 	if (zap) {
+		/*
+		 * Wipe boodbits
+		 */
 		char buf[1024];
 
 		if (lseek(fd, 0, SEEK_SET) != 0)
@@ -421,18 +404,37 @@ zap_bootbits(int fd, const char *devname, int force, int is_blkdev)
 		memset(buf, 0, sizeof(buf));
 		if (write_all(fd, buf, sizeof(buf)))
 			errx(EXIT_FAILURE, _("unable to erase bootbits sectors"));
-		return;
-	}
+#ifdef HAVE_LIBBLKID
+		/*
+		 * Wipe rest of the device
+		 */
+		if (!pr)
+			pr = new_prober(fd);
 
-	warnx(_("%s: warning: don't erase bootbits sectors"),
-		devname);
-	if (type)
-		fprintf(stderr, _("        (%s partition table detected). "), type);
-	else if (whole)
-		fprintf(stderr, _("        on whole disk. "));
-	else
-		fprintf(stderr, _("        (compiled without libblkid). "));
-	fprintf(stderr, "Use -f to force.\n");
+		blkid_probe_enable_superblocks(pr, 1);
+		blkid_probe_enable_partitions(pr, 0);
+		blkid_probe_set_superblocks_flags(pr, BLKID_SUBLKS_MAGIC|BLKID_SUBLKS_TYPE);
+
+		while (blkid_do_probe(pr) == 0) {
+			const char *data = NULL;
+
+			if (blkid_probe_lookup_value(pr, "TYPE", &data, NULL) == 0 && data)
+				warnx(_("%s: warning: wiping old %s signature."), devname, data);
+			blkid_do_wipe(pr, 0);
+		}
+#endif
+	} else {
+		warnx(_("%s: warning: don't erase bootbits sectors"),
+			devname);
+		if (type)
+			fprintf(stderr, _("        (%s partition table detected). "), type);
+		else
+			fprintf(stderr, _("        (compiled without libblkid). "));
+		fprintf(stderr, _("Use -f to force.\n"));
+	}
+#ifdef HAVE_LIBBLKID
+	blkid_free_probe(pr);
+#endif
 }
 
 int
@@ -445,7 +447,7 @@ main(int argc, char **argv) {
 	unsigned long long sz;
 	off_t offset;
 	int force = 0;
-	long version = 1;
+	int version = SWAP_VERSION;
 	char *block_count = 0;
 	char *opt_label = NULL;
 	unsigned char *uuid = NULL;
@@ -468,6 +470,7 @@ main(int argc, char **argv) {
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	while((c = getopt_long(argc, argv, "cfp:L:v:U:Vh", longopts, NULL)) != -1) {
 		switch (c) {
@@ -478,25 +481,24 @@ main(int argc, char **argv) {
 			force=1;
 			break;
 		case 'p':
-			user_pagesize = strtol_or_err(optarg, _("parse page size failed"));
+			user_pagesize = strtou32_or_err(optarg, _("parsing page size failed"));
 			break;
 		case 'L':
 			opt_label = optarg;
 			break;
 		case 'v':
-			version = strtol_or_err(optarg, _("parse version number failed"));
+			version = strtos32_or_err(optarg, _("parsing version number failed"));
 			break;
 		case 'U':
 #ifdef HAVE_LIBUUID
 			opt_uuid = optarg;
 #else
-			warnx(_("warning: ignore -U (UUIDs are unsupported by %s)"),
+			warnx(_("warning: ignoring -U (UUIDs are unsupported by %s)"),
 				program_invocation_short_name);
 #endif
 			break;
 		case 'V':
-			printf(_("%s from %s\n"), program_invocation_short_name,
-						  PACKAGE_STRING);
+			printf(UTIL_LINUX_VERSION);
 			exit(EXIT_SUCCESS);
 		case 'h':
 			usage(stdout);
@@ -509,19 +511,18 @@ main(int argc, char **argv) {
 	if (optind < argc)
 		block_count = argv[optind++];
 	if (optind != argc) {
-		warnx(("only one device as argument is currently supported."));
+		warnx(_("only one device argument is currently supported"));
 		usage(stderr);
 	}
 
-	if (version != 1)
+	if (version != SWAP_VERSION)
 		errx(EXIT_FAILURE,
-			_("does not support swapspace version %lu."),
-			version);
+			_("swapspace version %d is not supported"), version);
 
 #ifdef HAVE_LIBUUID
 	if(opt_uuid) {
 		if (uuid_parse(opt_uuid, uuid_dat) != 0)
-			errx(EXIT_FAILURE, _("error: UUID parsing failed"));
+			errx(EXIT_FAILURE, _("error: parsing UUID failed"));
 	} else
 		uuid_generate(uuid_dat);
 	uuid = uuid_dat;
@@ -535,29 +536,23 @@ main(int argc, char **argv) {
 	}
 	if (block_count) {
 		/* this silly user specified the number of blocks explicitly */
-		long long blks;
-
-		blks = strtoll_or_err(block_count, "parse block count failed");
-		if (blks < 0)
-			usage(stderr);
-
+		uint64_t blks = strtou64_or_err(block_count,
+					_("invalid block count argument"));
 		PAGES = blks / (pagesize / 1024);
 	}
 	sz = get_size(device_name);
 	if (!PAGES)
 		PAGES = sz;
-	else if (PAGES > sz && !force) {
+	else if (PAGES > sz && !force)
 		errx(EXIT_FAILURE,
 			_("error: "
 			  "size %llu KiB is larger than device size %llu KiB"),
 			PAGES*(pagesize/1024), sz*(pagesize/1024));
-	}
 
-	if (PAGES < MIN_GOODPAGES) {
-		warnx(_("error: swap area needs to be at least %ld KiB"),
-			(long)(MIN_GOODPAGES * pagesize/1024));
-		usage(stderr);
-	}
+	if (PAGES < MIN_GOODPAGES)
+		errx(EXIT_FAILURE,
+		     _("error: swap area needs to be at least %ld KiB"),
+		     (long)(MIN_GOODPAGES * pagesize / 1024));
 
 #ifdef __linux__
 	if (get_linux_version() >= KERNEL_VERSION(2,3,4))
@@ -574,6 +569,11 @@ main(int argc, char **argv) {
 			PAGES * pagesize / 1024);
 	}
 
+	if (is_mounted(device_name))
+		errx(EXIT_FAILURE, _("error: "
+			"%s is mounted; will not make swapspace"),
+			device_name);
+
 	if (stat(device_name, &statbuf) < 0) {
 		perror(device_name);
 		exit(EXIT_FAILURE);
@@ -588,27 +588,18 @@ main(int argc, char **argv) {
 		exit(EXIT_FAILURE);
 	}
 
-	/* Want a block device. Probably not /dev/hda or /dev/hdb. */
 	if (!S_ISBLK(statbuf.st_mode))
 		check=0;
-	else if (statbuf.st_rdev == 0x0300 || statbuf.st_rdev == 0x0340)
-		errx(EXIT_FAILURE, _("error: "
-			"will not try to make swapdevice on '%s'"),
-			device_name);
-	else if (check_mount())
-		errx(EXIT_FAILURE, _("error: "
-			"%s is mounted; will not make swapspace."),
-			device_name);
 	else if (blkdev_is_misaligned(DEV))
 		warnx(_("warning: %s is misaligned"), device_name);
 
 	if (check)
 		check_blocks();
 
-	zap_bootbits(DEV, device_name, force, S_ISBLK(statbuf.st_mode));
+	wipe_device(DEV, device_name, force);
 
 	hdr = (struct swap_header_v1_2 *) signature_page;
-	hdr->version = 1;
+	hdr->version = version;
 	hdr->last_page = PAGES - 1;
 	hdr->nr_badpages = badpages;
 
@@ -616,10 +607,10 @@ main(int argc, char **argv) {
 		errx(EXIT_FAILURE, _("Unable to set up swap-space: unreadable"));
 
 	goodpages = PAGES - badpages - 1;
-	printf(_("Setting up swapspace version 1, size = %llu KiB\n"),
-		goodpages * pagesize / 1024);
+	printf(_("Setting up swapspace version %d, size = %llu KiB\n"),
+		version, goodpages * pagesize / 1024);
 
-	write_signature("SWAPSPACE2");
+	write_signature(SWAP_SIGNATURE);
 	write_uuid_and_label(uuid, opt_label);
 
 	offset = 1024;
@@ -630,15 +621,6 @@ main(int argc, char **argv) {
 		err(EXIT_FAILURE,
 			_("%s: unable to write signature page"),
 			device_name);
-
-	/*
-	 * A subsequent swapon() will fail if the signature
-	 * is not actually on disk. (This is a kernel bug.)
-	 */
-#ifdef HAVE_FSYNC
-	if (fsync(DEV))
-		errx(EXIT_FAILURE, _("fsync failed"));
-#endif
 
 #ifdef HAVE_LIBSELINUX
 	if (S_ISREG(statbuf.st_mode) && is_selinux_enabled() > 0) {
@@ -670,5 +652,12 @@ main(int argc, char **argv) {
 		freecon(oldcontext);
 	}
 #endif
+	/*
+	 * A subsequent swapon() will fail if the signature
+	 * is not actually on disk. (This is a kernel bug.)
+	 * The fsync() in close_fd() will take care of writing.
+	 */
+	if (close_fd(DEV) != 0)
+		err(EXIT_FAILURE, _("write failed"));
 	return EXIT_SUCCESS;
 }

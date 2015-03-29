@@ -11,9 +11,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  *
  * Copyright (C) 2004 Robert Love
  * Copyright (C) 2010 Karel Zak <kzak@redhat.com>
@@ -34,6 +34,7 @@
 #include "xalloc.h"
 #include "procutils.h"
 #include "c.h"
+#include "closestream.h"
 
 struct taskset {
 	pid_t		pid;		/* task PID */
@@ -92,8 +93,7 @@ static void print_affinity(struct taskset *ts, int isnew)
 	}
 
 	if (!str)
-		/* this is internal error... */
-		errx(EXIT_FAILURE, _("conversion from cpuset to string failed"));
+		errx(EXIT_FAILURE, _("internal error: conversion from cpuset to string failed"));
 
 	printf(msg, ts->pid, str);
 }
@@ -130,7 +130,7 @@ int main(int argc, char **argv)
 	cpu_set_t *new_set;
 	pid_t pid = 0;
 	int c, all_tasks = 0;
-	unsigned int ncpus;
+	int ncpus;
 	size_t new_setsize, nbits;
 	struct taskset ts;
 
@@ -146,6 +146,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	memset(&ts, 0, sizeof(ts));
 
@@ -155,14 +156,14 @@ int main(int argc, char **argv)
 			all_tasks = 1;
 			break;
 		case 'p':
-			pid = strtol_or_err(argv[argc - 1],
-					    _("failed to parse pid"));
+			pid = strtos32_or_err(argv[argc - 1],
+					    _("invalid PID argument"));
 			break;
 		case 'c':
 			ts.use_list = 1;
 			break;
 		case 'V':
-			printf("%s from %s\n", program_invocation_short_name,
+			printf(_("%s from %s\n"), program_invocation_short_name,
 			       PACKAGE_STRING);
 			return EXIT_SUCCESS;
 		case 'h':
@@ -208,7 +209,7 @@ int main(int argc, char **argv)
 		ts.get_only = 1;
 
 	else if (ts.use_list) {
-		if (cpulist_parse(argv[optind], new_set, new_setsize))
+		if (cpulist_parse(argv[optind], new_set, new_setsize, 0))
 			errx(EXIT_FAILURE, _("failed to parse CPU list: %s"),
 			     argv[optind]);
 	} else if (cpumask_parse(argv[optind], new_set, new_setsize)) {
@@ -216,7 +217,7 @@ int main(int argc, char **argv)
 		     argv[optind]);
 	}
 
-	if (all_tasks) {
+	if (all_tasks && pid) {
 		struct proc_tasks *tasks = proc_open_tasks(pid);
 		while (!proc_next_tid(tasks, &ts.pid))
 			do_taskset(&ts, new_setsize, new_set);
@@ -233,7 +234,7 @@ int main(int argc, char **argv)
 	if (!pid) {
 		argv += optind + 1;
 		execvp(argv[0], argv);
-		err(EXIT_FAILURE, _("executing %s failed"), argv[0]);
+		err(EXIT_FAILURE, _("failed to execute %s"), argv[0]);
 	}
 
 	return EXIT_SUCCESS;

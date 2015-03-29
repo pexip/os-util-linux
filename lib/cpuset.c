@@ -7,6 +7,9 @@
  *
  * Based on code from taskset.c and Linux kernel.
  *
+ * This file may be redistributed under the terms of the
+ * GNU Lesser General Public License.
+ *
  * Copyright (C) 2010 Karel Zak <kzak@redhat.com>
  */
 
@@ -59,6 +62,7 @@ static const char *nexttoken(const char *q,  int sep)
  */
 int get_max_number_of_cpus(void)
 {
+#ifdef SYS_sched_getaffinity
 	int n, cpus = 2048;
 	size_t setsize;
 	cpu_set_t *set = cpuset_alloc(cpus, &setsize, NULL);
@@ -83,6 +87,7 @@ int get_max_number_of_cpus(void)
 		cpuset_free(set);
 		return n * 8;
 	}
+#endif
 	return -1;
 }
 
@@ -221,7 +226,7 @@ char *cpumask_create(char *str, size_t len,
 }
 
 /*
- * Parses string with list of CPU ranges.
+ * Parses string with CPUs mask.
  */
 int cpumask_parse(const char *str, cpu_set_t *set, size_t setsize)
 {
@@ -262,13 +267,20 @@ int cpumask_parse(const char *str, cpu_set_t *set, size_t setsize)
 }
 
 /*
- * Parses string with CPUs mask.
+ * Parses string with list of CPU ranges.
+ * Returns 0 on success.
+ * Returns 1 on error.
+ * Returns 2 if fail is set and a cpu number passed in the list doesn't fit
+ * into the cpu_set. If fail is not set cpu numbers that do not fit are
+ * ignored and 0 is returned instead.
  */
-int cpulist_parse(const char *str, cpu_set_t *set, size_t setsize)
+int cpulist_parse(const char *str, cpu_set_t *set, size_t setsize, int fail)
 {
+	size_t max = cpuset_nbits(setsize);
 	const char *p, *q;
-	q = str;
+	int r = 0;
 
+	q = str;
 	CPU_ZERO_S(setsize, set);
 
 	while (p = q, q = nexttoken(q, ','), p) {
@@ -276,8 +288,9 @@ int cpulist_parse(const char *str, cpu_set_t *set, size_t setsize)
 		unsigned int b;	/* end of range */
 		unsigned int s;	/* stride */
 		const char *c1, *c2;
+		char c;
 
-		if (sscanf(p, "%u", &a) < 1)
+		if ((r = sscanf(p, "%u%c", &a, &c)) < 1)
 			return 1;
 		b = a;
 		s = 1;
@@ -285,11 +298,13 @@ int cpulist_parse(const char *str, cpu_set_t *set, size_t setsize)
 		c1 = nexttoken(p, '-');
 		c2 = nexttoken(p, ',');
 		if (c1 != NULL && (c2 == NULL || c1 < c2)) {
-			if (sscanf(c1, "%u", &b) < 1)
+			if ((r = sscanf(c1, "%u%c", &b, &c)) < 1)
 				return 1;
 			c1 = nexttoken(c1, ':');
-			if (c1 != NULL && (c2 == NULL || c1 < c2))
-				if (sscanf(c1, "%u", &s) < 1) {
+			if (c1 != NULL && (c2 == NULL || c1 < c2)) {
+				if ((r = sscanf(c1, "%u%c", &s, &c)) < 1)
+					return 1;
+				if (s == 0)
 					return 1;
 			}
 		}
@@ -297,11 +312,15 @@ int cpulist_parse(const char *str, cpu_set_t *set, size_t setsize)
 		if (!(a <= b))
 			return 1;
 		while (a <= b) {
+			if (fail && (a >= max))
+				return 2;
 			CPU_SET_S(a, setsize, set);
 			a += s;
 		}
 	}
 
+	if (r == 2)
+		return 1;
 	return 0;
 }
 
@@ -359,7 +378,7 @@ int main(int argc, char *argv[])
 	if (mask)
 		rc = cpumask_parse(mask, set, setsize);
 	else
-		rc = cpulist_parse(range, set, setsize);
+		rc = cpulist_parse(range, set, setsize, 0);
 
 	if (rc)
 		errx(EXIT_FAILURE, "failed to parse string: %s", mask ? : range);

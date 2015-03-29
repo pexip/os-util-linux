@@ -18,9 +18,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <stdio.h>
@@ -37,15 +37,17 @@
 #include "nls.h"
 #include "xalloc.h"
 #include "c.h"
+#include "closestream.h"
+#include "pathnames.h"
 
 static int quiet;
 
-static dev_t dir_to_device(const char *spec)
+static int dir_to_device(const char *spec, dev_t *dev)
 {
-	struct libmnt_table *tb = mnt_new_table_from_file("/proc/self/mountinfo");
+	struct libmnt_table *tb = mnt_new_table_from_file(_PATH_PROC_MOUNTINFO);
 	struct libmnt_fs *fs;
 	struct libmnt_cache *cache;
-	dev_t res = 0;
+	int rc = -1;
 
 	if (!tb) {
 		/*
@@ -57,7 +59,7 @@ static dev_t dir_to_device(const char *spec)
 		int len;
 
 		if (stat(spec, &st) != 0)
-			return 0;
+			return -1;
 
 		cn = mnt_resolve_path(spec, NULL);	/* canonicalize */
 
@@ -65,28 +67,32 @@ static dev_t dir_to_device(const char *spec)
 		free(cn);
 
 		if (len < 0 || (size_t) len + 1 > sizeof(buf))
-			return 0;
+			return -1;
 		if (stat(buf, &pst) !=0)
-			return 0;
+			return -1;
 
 		if ((st.st_dev != pst.st_dev) ||
-		    (st.st_dev == pst.st_dev && st.st_ino == pst.st_ino))
-			return st.st_dev;
+		    (st.st_dev == pst.st_dev && st.st_ino == pst.st_ino)) {
+			*dev = st.st_dev;
+			return 0;
+		}
 
-		return 0;
+		return -1;
 	}
 
 	/* to canonicalize all necessary paths */
 	cache = mnt_new_cache();
 	mnt_table_set_cache(tb, cache);
+	mnt_unref_cache(cache);
 
 	fs = mnt_table_find_target(tb, spec, MNT_ITER_BACKWARD);
-	if (fs && mnt_fs_get_target(fs))
-		res = mnt_fs_get_devno(fs);
+	if (fs && mnt_fs_get_target(fs)) {
+		*dev = mnt_fs_get_devno(fs);
+		rc = 0;
+	}
 
-	mnt_free_table(tb);
-	mnt_free_cache(cache);
-	return res;
+	mnt_unref_table(tb);
+	return rc;
 }
 
 static int print_devno(const char *devname, struct stat *st)
@@ -108,18 +114,19 @@ static int print_devno(const char *devname, struct stat *st)
 
 static void __attribute__((__noreturn__)) usage(FILE *out)
 {
-	fputs(_("\nUsage:\n"), out);
+	fputs(USAGE_HEADER, out);
 	fprintf(out,
 	      _(" %1$s [-qd] /path/to/directory\n"
 		" %1$s -x /dev/device\n"), program_invocation_short_name);
 
-	fputs(_("\nOptions:\n"), out);
+	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -q, --quiet        quiet mode - don't print anything\n"
 		" -d, --fs-devno     print maj:min device number of the filesystem\n"
-		" -x, --devno        print maj:min device number of the block device\n"
-		" -h, --help         this help\n"), out);
-
-	fprintf(out, _("\nFor more information see mountpoint(1).\n"));
+		" -x, --devno        print maj:min device number of the block device\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+	fputs(USAGE_HELP, out);
+	fputs(USAGE_VERSION, out);
+	fprintf(out, USAGE_MAN_TAIL("mountpoint(1)"));
 
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
@@ -135,16 +142,18 @@ int main(int argc, char **argv)
 		{ "fs-devno", 0, 0, 'd' },
 		{ "devno", 0, 0, 'x' },
 		{ "help", 0, 0, 'h' },
+		{ "version", 0, 0, 'V' },
 		{ NULL, 0, 0, 0 }
 	};
 
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	mnt_init_debug(0);
 
-	while ((c = getopt_long(argc, argv, "qdxh", longopts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "qdxhV", longopts, NULL)) != -1) {
 
 		switch(c) {
 		case 'q':
@@ -159,6 +168,9 @@ int main(int argc, char **argv)
 		case 'h':
 			usage(stdout);
 			break;
+		case 'V':
+			printf(UTIL_LINUX_VERSION);
+			return EXIT_SUCCESS;
 		default:
 			usage(stderr);
 			break;
@@ -185,8 +197,8 @@ int main(int argc, char **argv)
 				errx(EXIT_FAILURE, _("%s: not a directory"), spec);
 			return EXIT_FAILURE;
 		}
-		src = dir_to_device(spec);
-		if (!src) {
+
+		if ( dir_to_device(spec, &src)) {
 			if (!quiet)
 				printf(_("%s is not a mountpoint\n"), spec);
 			return EXIT_FAILURE;

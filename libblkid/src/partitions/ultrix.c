@@ -15,7 +15,9 @@
 #include "partitions.h"
 
 #define ULTRIX_MAXPARTITIONS	8
+
 #define ULTRIX_MAGIC		0x032957
+#define ULTRIX_MAGIC_STR	"\x02\x29\x57"
 
 /* sector with partition table */
 #define ULTRIX_SECTOR		((16384 - sizeof(struct ultrix_disklabel)) >> 9)
@@ -42,21 +44,29 @@ static int probe_ultrix_pt(blkid_probe pr,
 	int i;
 
 	data = blkid_probe_get_sector(pr, ULTRIX_SECTOR);
-	if (!data)
+	if (!data) {
+		if (errno)
+			return -errno;
 		goto nothing;
+	}
 
 	l = (struct ultrix_disklabel *) (data + ULTRIX_OFFSET);
 
 	if (l->pt_magic != ULTRIX_MAGIC || l->pt_valid != 1)
 		goto nothing;
 
+	if (blkid_probe_set_magic(pr, (ULTRIX_SECTOR << 9) + ULTRIX_OFFSET,
+			sizeof(ULTRIX_MAGIC_STR) - 1,
+			(unsigned char *) ULTRIX_MAGIC_STR))
+		goto err;
+
 	if (blkid_partitions_need_typeonly(pr))
 		/* caller does not ask for details about partitions */
-		return 0;
+		return BLKID_PROBE_OK;
 
 	ls = blkid_probe_get_partlist(pr);
 	if (!ls)
-		goto err;
+		goto nothing;
 
 	tab = blkid_partlist_new_parttable(ls, "ultrix", 0);
 	if (!tab)
@@ -73,11 +83,11 @@ static int probe_ultrix_pt(blkid_probe pr,
 		}
 	}
 
-	return 0;
+	return BLKID_PROBE_OK;
 nothing:
-	return 1;
+	return BLKID_PROBE_NONE;
 err:
-	return -1;
+	return -ENOMEM;
 }
 
 const struct blkid_idinfo ultrix_pt_idinfo =

@@ -31,7 +31,7 @@
  * SUCH DAMAGE.
  */
 
- /* 1999-02-22 Arkadiusz Mi∂kiewicz <misiek@pld.ORG.PL>
+ /* 1999-02-22 Arkadiusz Mi≈õkiewicz <misiek@pld.ORG.PL>
   * - added Native Language Support
   */
 
@@ -46,6 +46,7 @@
 #include <errno.h>
 #include "nls.h"
 #include "c.h"
+#include "closestream.h"
 
 static int donice(int,int,int);
 
@@ -53,18 +54,18 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 {
 	fputs(_("\nUsage:\n"), out);
 	fprintf(out,
-	      _(" %1$s [-n] <priority> [-p] <pid> [<pid>  ...]\n"
-		" %1$s [-n] <priority>  -g <pgrp> [<pgrp> ...]\n"
-		" %1$s [-n] <priority>  -u <user> [<user> ...]\n"),
+	      _(" %1$s [-n] <priority> [-p|--pid] <pid>...\n"
+		" %1$s [-n] <priority>  -g|--pgrp <pgid>...\n"
+		" %1$s [-n] <priority>  -u|--user <user>...\n"),
 		program_invocation_short_name);
 
 	fputs(_("\nOptions:\n"), out);
-	fputs(_(" -g, --pgrp <id>        interpret as process group ID\n"
-		" -h, --help             print help\n"
-		" -n, --priority <num>   set the nice increment value\n"
-		" -p, --pid <id>         force to be interpreted as process ID\n"
-		" -u, --user <name|id>   interpret as username or user ID\n"
-		" -v, --version          print version\n"), out);
+	fputs(_(" -g, --pgrp <id>        interpret argument as process group ID\n"
+		" -n, --priority <num>   specify the nice increment value\n"
+		" -p, --pid <id>         interpret argument as process ID (default)\n"
+		" -u, --user <name|id>   interpret argument as username or user ID\n"
+		" -h, --help             display help text and exit\n"
+		" -V, --version          display version information and exit\n"), out);
 
 	fputs(_("\nFor more information see renice(1).\n"), out);
 
@@ -72,9 +73,8 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 }
 
 /*
- * Change the priority (nice) of processes
- * or groups of processes which are already
- * running.
+ * Change the priority (the nice value) of processes
+ * or groups of processes which are already running.
  */
 int
 main(int argc, char **argv)
@@ -86,6 +86,7 @@ main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	argc--;
 	argv++;
@@ -96,8 +97,10 @@ main(int argc, char **argv)
 			usage(stdout);
 
 		if (strcmp(*argv, "-v") == 0 ||
+		    strcmp(*argv, "-V") == 0 ||
 		    strcmp(*argv, "--version") == 0) {
-			printf(_("renice from %s\n"), PACKAGE_STRING);
+			printf(_("%s from %s\n"),
+			       program_invocation_short_name, PACKAGE_STRING);
 			exit(EXIT_SUCCESS);
 		}
 	}
@@ -135,6 +138,7 @@ main(int argc, char **argv)
 
 			if (pwd == NULL) {
 				warnx(_("unknown user %s"), *argv);
+				errs = 1;
 				continue;
 			}
 			who = pwd->pw_uid;
@@ -142,10 +146,11 @@ main(int argc, char **argv)
 			who = strtol(*argv, &endptr, 10);
 			if (who < 0 || *endptr) {
 				warnx(_("bad value %s"), *argv);
+				errs = 1;
 				continue;
 			}
 		}
-		errs += donice(which, who, prio);
+		errs |= donice(which, who, prio);
 	}
 	return errs != 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }

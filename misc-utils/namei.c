@@ -13,10 +13,10 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * The original namei(1) was writtent by:
+ * The original namei(1) was written by:
  *	Roger S. Southwick (May 2, 1990)
  *	Steve Tell (March 28, 1991)
- *	Arkadiusz Mikiewicz (1999-02-22)
+ *	Arkadiusz Miśkiewicz (1999-02-22)
  *	Li Zefan (2007-09-10).
  */
 
@@ -24,7 +24,6 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <string.h>
-#include <strings.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <sys/types.h>
@@ -38,6 +37,7 @@
 #include "nls.h"
 #include "widechar.h"
 #include "strutils.h"
+#include "closestream.h"
 
 #ifndef MAXSYMLINKS
 #define MAXSYMLINKS 256
@@ -123,8 +123,8 @@ add_id(struct idcache **ic, char *name, unsigned long int id, int *width)
 	/* note, we ignore names with non-printable widechars */
 	if (w > 0)
 		nc->name = xstrdup(name);
-	else if (asprintf(&nc->name, "%lu", id) == -1)
-		nc->name = NULL;
+	else
+		xasprintf(&nc->name, "%lu", id);
 
 	for (x = *ic; x && x->next; x = x->next);
 
@@ -134,9 +134,9 @@ add_id(struct idcache **ic, char *name, unsigned long int id, int *width)
 	else
 		*ic = nc;
 	if (w <= 0)
-		w = strlen(nc->name);
-	*width = *width < w ? w : *width;
+		w = nc->name ? strlen(nc->name) : 0;
 
+	*width = *width < w ? w : *width;
 	return;
 }
 
@@ -179,6 +179,7 @@ readlink_to_namei(struct namei *nm, const char *path)
 {
 	char sym[PATH_MAX];
 	ssize_t sz;
+	int isrel = 0;
 
 	sz = readlink(path, sym, sizeof(sym));
 	if (sz < 1)
@@ -186,20 +187,26 @@ readlink_to_namei(struct namei *nm, const char *path)
 	if (*sym != '/') {
 		char *p = strrchr(path, '/');
 
-		nm->relstart = p ? p - path : 0;
-		if (nm->relstart)
+		if (p) {
+			isrel = 1;
+			nm->relstart = p - path;
 			sz += nm->relstart + 1;
+		}
 	}
 	nm->abslink = xmalloc(sz + 1);
 
-	if (*sym != '/' && nm->relstart) {
+	if (*sym != '/' && isrel) {
 		/* create the absolute path from the relative symlink */
 		memcpy(nm->abslink, path, nm->relstart);
 		*(nm->abslink + nm->relstart) = '/';
 		nm->relstart++;
 		memcpy(nm->abslink + nm->relstart, sym, sz - nm->relstart);
 	} else
+		/* - absolute link (foo -> /path/bar)
+		 * - or link without any subdir (foo -> bar)
+		 */
 		memcpy(nm->abslink, sym, sz);
+
 	nm->abslink[sz] = '\0';
 }
 
@@ -221,7 +228,7 @@ dotdot_stat(const char *dirname, struct stat *st)
 	memcpy(path + len, DOTDOTDIR, sizeof(DOTDOTDIR));
 
 	if (stat(path, st))
-		err(EXIT_FAILURE, _("could not stat '%s'"), path);
+		err(EXIT_FAILURE, _("stat failed %s"), path);
 	free(path);
 	return st;
 }
@@ -360,6 +367,15 @@ print_namei(struct namei *nm, char *path)
 		char md[11];
 
 		if (nm->noent) {
+			int blanks = 1;
+			if (flags & NAMEI_MODES)
+				blanks += 9;
+			if (flags & NAMEI_OWNERS)
+				blanks += uwidth + gwidth + 2;
+			if (!(flags & NAMEI_VERTICAL))
+				blanks += 1;
+			blanks += nm->level * 2;
+			printf("%*s ", blanks, "");
 			printf(_("%s - No such file or directory\n"), nm->name);
 			return -1;
 		}
@@ -410,7 +426,7 @@ static void usage(int rc)
 
 	fputs(_("\nUsage:\n"), out);
 	fprintf(out,
-	      _(" %s [options] pathname [pathname ...]\n"), p);
+	      _(" %s [options] <pathname>...\n"), p);
 
 	fputs(_("\nOptions:\n"), out);
 	fputs(_(" -h, --help          displays this help text\n"
@@ -448,6 +464,7 @@ main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	while ((c = getopt_long(argc, argv, "hVlmnovx", longopts, NULL)) != -1) {
 		switch(c) {
@@ -455,8 +472,7 @@ main(int argc, char **argv)
 			usage(EXIT_SUCCESS);
 			break;
 		case 'V':
-			printf(_("%s from %s\n"), program_invocation_short_name,
-						  PACKAGE_STRING);
+			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'l':
 			flags |= (NAMEI_OWNERS | NAMEI_MODES | NAMEI_VERTICAL);

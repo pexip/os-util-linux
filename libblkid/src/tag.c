@@ -30,26 +30,24 @@ static blkid_tag blkid_new_tag(void)
 	return tag;
 }
 
-#ifdef CONFIG_BLKID_DEBUG
 void blkid_debug_dump_tag(blkid_tag tag)
 {
 	if (!tag) {
-		printf("    tag: NULL\n");
+		fprintf(stderr, "    tag: NULL\n");
 		return;
 	}
 
-	printf("    tag: %s=\"%s\"\n", tag->bit_name, tag->bit_val);
+	fprintf(stderr, "    tag: %s=\"%s\"\n", tag->bit_name, tag->bit_val);
 }
-#endif
 
 void blkid_free_tag(blkid_tag tag)
 {
 	if (!tag)
 		return;
 
-	DBG(DEBUG_TAG, printf("    freeing tag %s=%s\n", tag->bit_name,
+	DBG(TAG, ul_debug("    freeing tag %s=%s", tag->bit_name,
 		   tag->bit_val ? tag->bit_val : "(NULL)"));
-	DBG(DEBUG_TAG, blkid_debug_dump_tag(tag));
+	DBG(TAG, blkid_debug_dump_tag(tag));
 
 	list_del(&tag->bit_tags);	/* list of tags for this device */
 	list_del(&tag->bit_names);	/* list of tags with this type */
@@ -81,13 +79,10 @@ blkid_tag blkid_find_tag_dev(blkid_dev dev, const char *type)
 	return NULL;
 }
 
-extern int blkid_dev_has_tag(blkid_dev dev, const char *type,
+int blkid_dev_has_tag(blkid_dev dev, const char *type,
 			     const char *value)
 {
 	blkid_tag		tag;
-
-	if (!dev || !type)
-		return -1;
 
 	tag = blkid_find_tag_dev(dev, type);
 	if (!value)
@@ -112,8 +107,7 @@ static blkid_tag blkid_find_head_cache(blkid_cache cache, const char *type)
 	list_for_each(p, &cache->bic_tags) {
 		tmp = list_entry(p, struct blkid_struct_tag, bit_tags);
 		if (!strcmp(tmp->bit_name, type)) {
-			DBG(DEBUG_TAG,
-			    printf("    found cache tag head %s\n", type));
+			DBG(TAG, ul_debug("    found cache tag head %s", type));
 			head = tmp;
 			break;
 		}
@@ -136,7 +130,7 @@ int blkid_set_tag(blkid_dev dev, const char *name,
 	if (!dev || !name)
 		return -BLKID_ERR_PARAM;
 
-	if (!(val = blkid_strndup(value, vlength)) && value)
+	if (value && !(val = strndup(value, vlength)))
 		return -BLKID_ERR_MEM;
 
 	/*
@@ -167,7 +161,7 @@ int blkid_set_tag(blkid_dev dev, const char *name,
 		/* Existing tag not present, add to device */
 		if (!(t = blkid_new_tag()))
 			goto errout;
-		t->bit_name = blkid_strdup(name);
+		t->bit_name = name ? strdup(name) : NULL;
 		t->bit_val = val;
 		t->bit_dev = dev;
 
@@ -181,9 +175,8 @@ int blkid_set_tag(blkid_dev dev, const char *name,
 				if (!head)
 					goto errout;
 
-				DBG(DEBUG_TAG,
-				    printf("    creating new cache tag head %s\n", name));
-				head->bit_name = blkid_strdup(name);
+				DBG(TAG, ul_debug("    creating new cache tag head %s", name));
+				head->bit_name = name ? strdup(name) : NULL;
 				if (!head->bit_name)
 					goto errout;
 				list_add_tail(&head->bit_tags,
@@ -226,12 +219,12 @@ int blkid_parse_tag_string(const char *token, char **ret_type, char **ret_val)
 {
 	char *name, *value, *cp;
 
-	DBG(DEBUG_TAG, printf("trying to parse '%s' as a tag\n", token));
+	DBG(TAG, ul_debug("trying to parse '%s' as a tag", token));
 
 	if (!token || !(cp = strchr(token, '=')))
 		return -1;
 
-	name = blkid_strdup(token);
+	name = strdup(token);
 	if (!name)
 		return -1;
 	value = name + (cp - token);
@@ -242,16 +235,23 @@ int blkid_parse_tag_string(const char *token, char **ret_type, char **ret_val)
 			goto errout; /* missing closing quote */
 		*cp = '\0';
 	}
-	value = blkid_strdup(value);
-	if (!value)
-		goto errout;
 
-	*ret_type = name;
-	*ret_val = value;
+	if (ret_val) {
+		value = value && *value ? strdup(value) : NULL;
+		if (!value)
+			goto errout;
+		*ret_val = value;
+	}
+
+	if (ret_type)
+		*ret_type = name;
+	else
+		free(name);
 
 	return 0;
 
 errout:
+	DBG(TAG, ul_debug("parse error: '%s'", token));
 	free(name);
 	return -1;
 }
@@ -279,9 +279,14 @@ struct blkid_struct_tag_iterate {
 	struct list_head	*p;
 };
 
-extern blkid_tag_iterate blkid_tag_iterate_begin(blkid_dev dev)
+blkid_tag_iterate blkid_tag_iterate_begin(blkid_dev dev)
 {
 	blkid_tag_iterate	iter;
+
+	if (!dev) {
+		errno = EINVAL;
+		return NULL;
+	}
 
 	iter = malloc(sizeof(struct blkid_struct_tag_iterate));
 	if (iter) {
@@ -295,16 +300,18 @@ extern blkid_tag_iterate blkid_tag_iterate_begin(blkid_dev dev)
 /*
  * Return 0 on success, -1 on error
  */
-extern int blkid_tag_next(blkid_tag_iterate iter,
+int blkid_tag_next(blkid_tag_iterate iter,
 			  const char **type, const char **value)
 {
 	blkid_tag tag;
 
-	*type = 0;
-	*value = 0;
-	if (!iter || iter->magic != TAG_ITERATE_MAGIC ||
+	if (!type || !value ||
+	    !iter || iter->magic != TAG_ITERATE_MAGIC ||
 	    iter->p == &iter->dev->bid_tags)
 		return -1;
+
+	*type = 0;
+	*value = 0;
 	tag = list_entry(iter->p, struct blkid_struct_tag, bit_tags);
 	*type = tag->bit_name;
 	*value = tag->bit_val;
@@ -312,7 +319,7 @@ extern int blkid_tag_next(blkid_tag_iterate iter,
 	return 0;
 }
 
-extern void blkid_tag_iterate_end(blkid_tag_iterate iter)
+void blkid_tag_iterate_end(blkid_tag_iterate iter)
 {
 	if (!iter || iter->magic != TAG_ITERATE_MAGIC)
 		return;
@@ -326,7 +333,7 @@ extern void blkid_tag_iterate_end(blkid_tag_iterate iter)
  * search specification, it returns the one with the highest priority
  * value.  This allows us to give preference to EVMS or LVM devices.
  */
-extern blkid_dev blkid_find_dev_with_tag(blkid_cache cache,
+blkid_dev blkid_find_dev_with_tag(blkid_cache cache,
 					 const char *type,
 					 const char *value)
 {
@@ -341,7 +348,7 @@ extern blkid_dev blkid_find_dev_with_tag(blkid_cache cache,
 
 	blkid_read_cache(cache);
 
-	DBG(DEBUG_TAG, printf("looking for %s=%s in cache\n", type, value));
+	DBG(TAG, ul_debug("looking for %s=%s in cache", type, value));
 
 try_again:
 	pri = -1;
@@ -390,7 +397,7 @@ extern char *optarg;
 extern int optind;
 #endif
 
-void usage(char *prog)
+void __attribute__((__noreturn__)) usage(char *prog)
 {
 	fprintf(stderr, "Usage: %s [-f blkid_file] [-m debug_mask] device "
 		"[type value]\n",

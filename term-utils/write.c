@@ -40,7 +40,7 @@
  *      - Added fix from David.Chapell@mail.trincoll.edu enabeling daemons
  *	  to use write.
  *      - ANSIed it since I was working on it anyway.
- * 1999-02-22 Arkadiusz Mi∂kiewicz <misiek@pld.ORG.PL>
+ * 1999-02-22 Arkadiusz Mi≈õkiewicz <misiek@pld.ORG.PL>
  * - added Native Language Support
  *
  */
@@ -57,11 +57,13 @@
 #include <sys/param.h>
 #include <sys/stat.h>
 #include <paths.h>
-#include <asm/param.h>
 #include <getopt.h>
+
 #include "c.h"
 #include "carefulputc.h"
+#include "closestream.h"
 #include "nls.h"
+#include "xalloc.h"
 
 static void __attribute__ ((__noreturn__)) usage(FILE * out);
 void search_utmp(char *, char *, char *, uid_t);
@@ -71,7 +73,7 @@ static void __attribute__ ((__noreturn__)) done(int);
 int term_chk(char *, int *, time_t *, int);
 int utmp_chk(char *, char *);
 
-static gid_t myegid;
+static gid_t root_access;
 
 static void __attribute__ ((__noreturn__)) usage(FILE * out)
 {
@@ -92,7 +94,7 @@ int main(int argc, char **argv)
 	time_t atime;
 	uid_t myuid;
 	int msgsok, myttyfd, c;
-	char tty[MAXPATHLEN], *mytty;
+	char tty[PATH_MAX], *mytty;
 
 	static const struct option longopts[] = {
 		{"version", no_argument, NULL, 'V'},
@@ -103,6 +105,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	while ((c = getopt_long(argc, argv, "Vh", longopts, NULL)) != -1)
 		switch (c) {
@@ -117,7 +120,7 @@ int main(int argc, char **argv)
 			usage(stderr);
 		}
 
-	myegid = getegid();
+	root_access = !getegid();
 
 	/* check that sender has write enabled */
 	if (isatty(fileno(stdin)))
@@ -198,7 +201,7 @@ int utmp_chk(char *user, char *tty)
 
 	while ((uptr = getutent())) {
 		memcpy(&u, uptr, sizeof(u));
-		if (strncmp(user, u.ut_name, sizeof(u.ut_name)) == 0 &&
+		if (strncmp(user, u.ut_user, sizeof(u.ut_user)) == 0 &&
 		    strncmp(tty, u.ut_line, sizeof(u.ut_line)) == 0) {
 			res = 0;
 			break;
@@ -236,7 +239,7 @@ void search_utmp(char *user, char *tty, char *mytty, uid_t myuid)
 	user_is_me = 0;
 	while ((uptr = getutent())) {
 		memcpy(&u, uptr, sizeof(u));
-		if (strncmp(user, u.ut_name, sizeof(u.ut_name)) == 0) {
+		if (strncmp(user, u.ut_user, sizeof(u.ut_user)) == 0) {
 			++nloggedttys;
 			strncpy(atty, u.ut_line, sizeof(u.ut_line));
 			atty[sizeof(u.ut_line)] = '\0';
@@ -285,7 +288,7 @@ void search_utmp(char *user, char *tty, char *mytty, uid_t myuid)
 int term_chk(char *tty, int *msgsokP, time_t * atimeP, int showerror)
 {
 	struct stat s;
-	char path[MAXPATHLEN];
+	char path[PATH_MAX];
 
 	if (strlen(tty) + 6 > sizeof(path))
 		return 1;
@@ -296,8 +299,9 @@ int term_chk(char *tty, int *msgsokP, time_t * atimeP, int showerror)
 		return 1;
 	}
 
-	/* group write bit and group ownership */
-	*msgsokP = (s.st_mode & (S_IWRITE >> 3)) && myegid == s.st_gid;
+	*msgsokP = !access(path, W_OK);
+	if (!root_access && *msgsokP)
+		*msgsokP = s.st_mode & S_IWGRP;
 	*atimeP = s.st_atime;
 	return 0;
 }
@@ -310,7 +314,7 @@ void do_write(char *tty, char *mytty, uid_t myuid)
 	char *login, *pwuid, *nows;
 	struct passwd *pwd;
 	time_t now;
-	char path[MAXPATHLEN], host[MAXHOSTNAMELEN], line[512];
+	char path[PATH_MAX], *host, line[512];
 
 	/* Determine our login name(s) before the we reopen() stdout */
 	if ((pwd = getpwuid(myuid)) != NULL)
@@ -330,8 +334,10 @@ void do_write(char *tty, char *mytty, uid_t myuid)
 	signal(SIGHUP, done);
 
 	/* print greeting */
-	if (gethostname(host, sizeof(host)) < 0)
-		strcpy(host, "???");
+	host = xgethostname();
+	if (!host)
+		host = xstrdup("???");
+
 	now = time((time_t *) NULL);
 	nows = ctime(&now);
 	nows[16] = '\0';
@@ -342,6 +348,7 @@ void do_write(char *tty, char *mytty, uid_t myuid)
 	else
 		printf(_("Message from %s@%s on %s at %s ..."),
 		       login, host, mytty, nows + 11);
+	free(host);
 	printf("\r\n");
 
 	while (fgets(line, sizeof(line), stdin) != NULL)
@@ -366,7 +373,7 @@ void wr_fputs(char *s)
 {
 	char c;
 
-#define	PUTC(c)	if (carefulputc(c, stdout) == EOF) \
+#define	PUTC(c)	if (fputc_careful(c, stdout, '^') == EOF) \
     err(EXIT_FAILURE, _("carefulputc failed"));
 	while (*s) {
 		c = *s++;

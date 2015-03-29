@@ -12,7 +12,6 @@
 #include <stdint.h>
 
 #include "partitions.h"
-#include "dos.h"
 #include "minix.h"
 
 static int probe_minix_pt(blkid_probe pr,
@@ -26,12 +25,15 @@ static int probe_minix_pt(blkid_probe pr,
 	int i;
 
 	data = blkid_probe_get_sector(pr, 0);
-	if (!data)
+	if (!data) {
+		if (errno)
+			return -errno;
 		goto nothing;
+	}
 
 	ls = blkid_probe_get_partlist(pr);
 	if (!ls)
-		goto err;
+		goto nothing;
 
 	/* Parent is required, because Minix uses the same PT as DOS and
 	 * difference is only in primary partition (parent) type.
@@ -40,33 +42,33 @@ static int probe_minix_pt(blkid_probe pr,
 	if (!parent)
 		goto nothing;
 
-	if (blkid_partition_get_type(parent) != BLKID_MINIX_PARTITION)
+	if (blkid_partition_get_type(parent) != MBR_MINIX_PARTITION)
 		goto nothing;
 
 	if (blkid_partitions_need_typeonly(pr))
 		/* caller does not ask for details about partitions */
-		return 0;
+		return BLKID_PROBE_OK;
 
-	p = (struct dos_partition *) (data + BLKID_MSDOS_PT_OFFSET);
-
-	tab = blkid_partlist_new_parttable(ls, "minix", BLKID_MSDOS_PT_OFFSET);
+	tab = blkid_partlist_new_parttable(ls, "minix", MBR_PT_OFFSET);
 	if (!tab)
 		goto err;
 
-	for (i = 0; i < MINIX_MAXPARTITIONS; i++, p++) {
+	for (i = 0, p = mbr_get_partition(data, 0);
+			i < MINIX_MAXPARTITIONS; i++, p++) {
+
 		uint32_t start, size;
 		blkid_partition par;
 
-		if (p->sys_type != BLKID_MINIX_PARTITION)
+		if (p->sys_ind != MBR_MINIX_PARTITION)
 			continue;
 
-		start = dos_partition_start(p);
-		size = dos_partition_size(p);
+		start = dos_partition_get_start(p);
+		size = dos_partition_get_size(p);
 
 		if (parent && !blkid_is_nested_dimension(parent, start, size)) {
-			DBG(DEBUG_LOWPROBE, printf(
+			DBG(LOWPROBE, ul_debug(
 				"WARNING: minix partition (%d) overflow "
-				"detected, ignore\n", i));
+				"detected, ignore", i));
 			continue;
 		}
 
@@ -74,16 +76,16 @@ static int probe_minix_pt(blkid_probe pr,
 		if (!par)
 			goto err;
 
-		blkid_partition_set_type(par, p->sys_type);
+		blkid_partition_set_type(par, p->sys_ind);
 		blkid_partition_set_flags(par, p->boot_ind);
 	}
 
-	return 0;
+	return BLKID_PROBE_OK;
 
 nothing:
-	return 1;
+	return BLKID_PROBE_NONE;
 err:
-	return -1;
+	return -ENOMEM;
 }
 
 /* same as DOS */

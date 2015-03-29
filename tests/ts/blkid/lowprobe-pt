@@ -16,16 +16,14 @@
 # GNU General Public License for more details.
 #
 
-TS_TOPDIR="$(dirname $0)/../.."
+TS_TOPDIR="${0%/*}/../.."
 TS_DESC="partitions probing"
 
 . $TS_TOPDIR/functions.sh
 
 ts_init "$*"
 
-if [ ! -x "$TS_HELPER_PARTITIONS" ]; then
-	ts_skip "blkid disabled"
-fi
+ts_check_test_command "$TS_HELPER_PARTITIONS"
 
 mkdir -p $TS_OUTDIR/images-pt
 

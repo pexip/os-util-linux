@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2009 Karel Zak <kzak@redhat.com>
+ * Copyright (C) 2008,2009,2012 Karel Zak <kzak@redhat.com>
  *
  * This file may be redistributed under the terms of the
  * GNU Lesser General Public License.
@@ -8,10 +8,10 @@
 /**
  * SECTION: optstr
  * @title: Options string
- * @short_description: low-level API for work with mount options
+ * @short_description: low-level API for working with mount options
  *
- * This is simple and low-level API to work with mount options that are stored
- * in string.
+ * This is a simple and low-level API to working with mount options that are stored
+ * in a string.
  */
 #include <ctype.h>
 
@@ -35,9 +35,12 @@ struct libmnt_optloc {
 
 #define mnt_init_optloc(_ol)	(memset((_ol), 0, sizeof(struct libmnt_optloc)))
 
+#define mnt_optmap_entry_novalue(e) \
+		(e && (e)->name && !strchr((e)->name, '=') && !((e)->mask & MNT_PREFIX))
+
 /*
- * Parses the first option from @optstr. The @optstr pointer is set to begin of
- * the next option.
+ * Parses the first option from @optstr. The @optstr pointer is set to the beginning
+ * of the next option.
  *
  * Returns -EINVAL on parse error, 1 at the end of optstr and 0 on success.
  */
@@ -62,14 +65,19 @@ static int mnt_optstr_parse_next(char **optstr,	 char **name, size_t *namesz,
 	if (valsz)
 		*valsz = 0;
 
+	/* trim leading commas as to not invalidate option
+	 * strings with multiple consecutive commas */
+	while (optstr0 && *optstr0 == ',')
+		optstr0++;
+
 	for (p = optstr0; p && *p; p++) {
 		if (!start)
-			start = p;		/* begin of the option item */
+			start = p;		/* beginning of the option item */
 		if (*p == '"')
 			open_quote ^= 1;	/* reverse the status */
 		if (open_quote)
 			continue;		/* still in quoted block */
-		if (!sep && *p == '=')
+		if (!sep && p > start && *p == '=')
 			sep = p;		/* name and value separator */
 		if (*p == ',')
 			stop = p;		/* terminate the option item */
@@ -98,12 +106,12 @@ static int mnt_optstr_parse_next(char **optstr,	 char **name, size_t *namesz,
 	return 1;				/* end of optstr */
 
 error:
-	DBG(OPTIONS, mnt_debug("parse error: \"%s\"", optstr0));
+	DBG(OPTIONS, ul_debug("parse error: \"%s\"", optstr0));
 	return -EINVAL;
 }
 
 /*
- * Locates the first option that match with @name. The @end is set to
+ * Locates the first option that matches @name. The @end is set to the
  * char behind the option (it means ',' or \0).
  *
  * Returns negative number on parse error, 1 when not found and 0 on success.
@@ -142,11 +150,11 @@ static int mnt_optstr_locate_option(char *optstr, const char *name,
 
 /**
  * mnt_optstr_next_option:
- * @optstr: option string, returns position to next option
- * @name: returns option name
- * @namesz: returns option name length
- * @value: returns option value or NULL
- * @valuesz: returns option value length or zero
+ * @optstr: option string, returns the position of the next option
+ * @name: returns the option name
+ * @namesz: returns the option name length
+ * @value: returns the option value or NULL
+ * @valuesz: returns the option value length or zero
  *
  * Parses the first option in @optstr.
  *
@@ -169,6 +177,9 @@ static int __mnt_optstr_append_option(char **optstr,
 	size_t sz, osz;
 
 	assert(name);
+	assert(*name);
+	assert(nsz);
+	assert(optstr);
 
 	osz = *optstr ? strlen(*optstr) : 0;
 
@@ -203,18 +214,20 @@ static int __mnt_optstr_append_option(char **optstr,
 
 /**
  * mnt_optstr_append_option:
- * @optstr: option string or NULL, returns reallocated string
+ * @optstr: option string or NULL, returns a reallocated string
  * @name: value name
  * @value: value
  *
- * Returns: 0 on success or -1 in case of error. After error the @optstr should
+ * Returns: 0 on success or -1 in case of error. After an error the @optstr should
  *          be unmodified.
  */
 int mnt_optstr_append_option(char **optstr, const char *name, const char *value)
 {
 	size_t vsz, nsz;
 
-	if (!name)
+	assert(optstr);
+
+	if (!name || !*name)
 		return 0;
 
 	nsz = strlen(name);
@@ -225,17 +238,22 @@ int mnt_optstr_append_option(char **optstr, const char *name, const char *value)
 
 /**
  * mnt_optstr_prepend_option:
- * @optstr: option string or NULL, returns reallocated string
+ * @optstr: option string or NULL, returns a reallocated string
  * @name: value name
  * @value: value
  *
- * Returns: 0 on success or -1 in case of error. After error the @optstr should
+ * Returns: 0 on success or -1 in case of error. After an error the @optstr should
  *          be unmodified.
  */
 int mnt_optstr_prepend_option(char **optstr, const char *name, const char *value)
 {
 	int rc = 0;
 	char *tmp = *optstr;
+
+	assert(optstr);
+
+	if (!name || !*name)
+		return 0;
 
 	*optstr = NULL;
 
@@ -250,16 +268,16 @@ int mnt_optstr_prepend_option(char **optstr, const char *name, const char *value
 	free(*optstr);
 	*optstr = tmp;
 
-	DBG(OPTIONS, mnt_debug("failed to prepend '%s[=%s]' to '%s'",
+	DBG(OPTIONS, ul_debug("failed to prepend '%s[=%s]' to '%s'",
 				name, value, *optstr));
 	return rc;
 }
 
 /**
  * mnt_optstr_get_option:
- * @optstr: string with comma separated list of options
+ * @optstr: string with a comma separated list of options
  * @name: requested option name
- * @value: returns pointer to the begin of the value (e.g. name=VALUE) or NULL
+ * @value: returns a pointer to the beginning of the value (e.g. name=VALUE) or NULL
  * @valsz: returns size of the value or 0
  *
  * Returns: 0 on success, 1 when not found the @name or negative number in case
@@ -270,6 +288,9 @@ int mnt_optstr_get_option(const char *optstr, const char *name,
 {
 	struct libmnt_optloc ol;
 	int rc;
+
+	assert(optstr);
+	assert(name);
 
 	mnt_init_optloc(&ol);
 
@@ -283,8 +304,54 @@ int mnt_optstr_get_option(const char *optstr, const char *name,
 	return rc;
 }
 
+/**
+ * mnt_optstr_deduplicate_option:
+ * @optstr: string with a comma separated list of options
+ * @name: requested option name
+ *
+ * Removes all instances of @name except the last one.
+ *
+ * Returns: 0 on success, 1 when not found the @name or negative number in case
+ * of error.
+ */
+int mnt_optstr_deduplicate_option(char **optstr, const char *name)
+{
+	int rc;
+	char *begin = NULL, *end = NULL, *opt;
+
+	assert(optstr);
+	assert(name);
+
+	opt = *optstr;
+	do {
+		struct libmnt_optloc ol;
+
+		mnt_init_optloc(&ol);
+
+		rc = mnt_optstr_locate_option(opt, name, &ol);
+		if (!rc) {
+			if (begin) {
+				/* remove the previous instance */
+				size_t shift = strlen(*optstr);
+
+				mnt_optstr_remove_option_at(optstr, begin, end);
+
+				/* now all the offsets are not valid anymore - recount */
+				shift -= strlen(*optstr);
+				ol.begin -= shift;
+				ol.end -= shift;
+			}
+			begin = ol.begin;
+			end = ol.end;
+			opt = end && *end ? end + 1 : NULL;
+		}
+	} while (rc == 0 && opt && *opt);
+
+	return rc < 0 ? rc : begin ? 0 : 1;
+}
+
 /*
- * The result never starts or ends with comma or contains two commas
+ * The result never starts or ends with a comma or contains two commas
  *    (e.g. ",aaa,bbb" or "aaa,,bbb" or "aaa,")
  */
 int mnt_optstr_remove_option_at(char **optstr, char *begin, char *end)
@@ -300,14 +367,15 @@ int mnt_optstr_remove_option_at(char **optstr, char *begin, char *end)
 	sz = strlen(end);
 
 	memmove(begin, end, sz + 1);
-	if (!*begin && *(begin - 1) == ',')
+	if (!*begin && (begin > *optstr) && *(begin - 1) == ',')
 		*(begin - 1) = '\0';
 
 	return 0;
 }
 
 /* insert 'substr' or '=substr' to @str on position @pos */
-static int insert_value(char **str, char *pos, const char *substr, char **next)
+static int __attribute__((nonnull(1,2,3)))
+insert_value(char **str, char *pos, const char *substr, char **next)
 {
 	size_t subsz = strlen(substr);			/* substring size */
 	size_t strsz = strlen(*str);
@@ -319,14 +387,14 @@ static int insert_value(char **str, char *pos, const char *substr, char **next)
 	/* is it necessary to prepend '=' before the substring ? */
 	sep = !(pos > *str && *(pos - 1) == '=');
 
-	/* save an offset of the place where we need add substr */
+	/* save an offset of the place where we need to add substr */
 	posoff = pos - *str;
 
 	p = realloc(*str, strsz + sep + subsz + 1);
 	if (!p)
 		return -ENOMEM;
 
-	/* zeroize new allocated memory -- valgind loves is... */
+	/* zeroize the newly allocated memory -- valgrind loves us... */
 	memset(p + strsz, 0, sep + subsz + 1);
 
 	/* set pointers to the reallocated string */
@@ -334,7 +402,7 @@ static int insert_value(char **str, char *pos, const char *substr, char **next)
 	pos = p + posoff;
 
 	if (possz)
-		/* create a room for new substring */
+		/* create a room for the new substring */
 		memmove(pos + subsz + sep, pos, possz + 1);
 	if (sep)
 		*pos++ = '=';
@@ -343,7 +411,7 @@ static int insert_value(char **str, char *pos, const char *substr, char **next)
 
 	if (next) {
 		/* set pointer to the next option */
-		*next = pos + subsz + sep + 1;
+		*next = pos + subsz;
 		if (**next == ',')
 			(*next)++;
 	}
@@ -352,11 +420,11 @@ static int insert_value(char **str, char *pos, const char *substr, char **next)
 
 /**
  * mnt_optstr_set_option:
- * @optstr: string with comma separated list of options
+ * @optstr: string with a comma separated list of options
  * @name: requested option
  * @value: new value or NULL
  *
- * Set or unset option @value.
+ * Set or unset the option @value.
  *
  * Returns: 0 on success, 1 when not found the @name or negative number in case
  * of error.
@@ -366,6 +434,9 @@ int mnt_optstr_set_option(char **optstr, const char *name, const char *value)
 	struct libmnt_optloc ol;
 	char *nameend;
 	int rc = 1;
+
+	assert(optstr);
+	assert(name);
 
 	if (!optstr)
 		return -EINVAL;
@@ -402,7 +473,7 @@ int mnt_optstr_set_option(char **optstr, const char *name, const char *value)
 
 /**
  * mnt_optstr_remove_option:
- * @optstr: string with comma separated list of options
+ * @optstr: string with a comma separated list of options
  * @name: requested option name
  *
  * Returns: 0 on success, 1 when not found the @name or negative number in case
@@ -412,6 +483,9 @@ int mnt_optstr_remove_option(char **optstr, const char *name)
 {
 	struct libmnt_optloc ol;
 	int rc;
+
+	assert(optstr);
+	assert(name);
 
 	mnt_init_optloc(&ol);
 
@@ -436,13 +510,13 @@ int mnt_optstr_remove_option(char **optstr, const char *name)
  *
  *	mnt_split_optstr(optstr, &u, NULL, NULL, MNT_NOMTAB, 0);
  *
- * returns all userspace options, the options that does not belong to
+ * returns all userspace options, the options that do not belong to
  * mtab are ignored.
  *
  * Note that FS options are all options that are undefined in MNT_USERSPACE_MAP
  * or MNT_LINUX_MAP.
  *
- * Returns: 0 on success, or negative number in case of error.
+ * Returns: 0 on success, or a negative number in case of error.
  */
 int mnt_split_optstr(const char *optstr, char **user, char **vfs,
 		     char **fs, int ignore_user, int ignore_vfs)
@@ -466,7 +540,7 @@ int mnt_split_optstr(const char *optstr, char **user, char **vfs,
 	if (user)
 		*user = NULL;
 
-	while(!mnt_optstr_next_option(&str, &name, &namesz, &val, &valsz)) {
+	while (!mnt_optstr_next_option(&str, &name, &namesz, &val, &valsz)) {
 		int rc = 0;
 		const struct libmnt_optmap *ent = NULL;
 		const struct libmnt_optmap *m =
@@ -474,6 +548,10 @@ int mnt_split_optstr(const char *optstr, char **user, char **vfs,
 
 		if (ent && !ent->id)
 			continue;	/* ignore undefined options (comments) */
+
+		/* ignore name=<value> if options map expects <name> only */
+		if (valsz && mnt_optmap_entry_novalue(ent))
+			m = NULL;
 
 		if (ent && m && m == maps[0] && vfs) {
 			if (ignore_vfs && (ent->mask & ignore_vfs))
@@ -489,12 +567,18 @@ int mnt_split_optstr(const char *optstr, char **user, char **vfs,
 			rc = __mnt_optstr_append_option(fs, name, namesz,
 								val, valsz);
 		if (rc) {
-			if (vfs)
+			if (vfs) {
 				free(*vfs);
-			if (fs)
+				*vfs = NULL;
+			}
+			if (fs) {
 				free(*fs);
-			if (user)
+				*fs = NULL;
+			}
+			if (user) {
 				free(*user);
+				*user = NULL;
+			}
 			return rc;
 		}
 	}
@@ -504,21 +588,21 @@ int mnt_split_optstr(const char *optstr, char **user, char **vfs,
 
 /**
  * mnt_optstr_get_options
- * @optstr: string with comma separated list of options
+ * @optstr: string with a comma separated list of options
  * @subset: returns newly allocated string with options
  * @map: options map
  * @ignore: mask of the options that should be ignored
  *
- * Extracts options from @optstr that belongs to the @map, for example:
+ * Extracts options from @optstr that belong to the @map, for example:
  *
  *	 mnt_optstr_get_options(optstr, &p,
  *			mnt_get_builtin_optmap(MNT_LINUX_MAP),
  *			MNT_NOMTAB);
  *
- * the 'p' returns all VFS options, the options that does not belong to mtab
+ * the 'p' returns all VFS options, the options that do not belong to mtab
  * are ignored.
  *
- * Returns: 0 on success, or negative number in case of error.
+ * Returns: 0 on success, or a negative number in case of error.
  */
 int mnt_optstr_get_options(const char *optstr, char **subset,
 			    const struct libmnt_optmap *map, int ignore)
@@ -544,6 +628,11 @@ int mnt_optstr_get_options(const char *optstr, char **subset,
 
 		if (ignore && (ent->mask & ignore))
 			continue;
+
+		/* ignore name=<value> if options map expects <name> only */
+		if (valsz && mnt_optmap_entry_novalue(ent))
+			continue;
+
 		rc = __mnt_optstr_append_option(subset, name, namesz, val, valsz);
 		if (rc) {
 			free(*subset);
@@ -569,8 +658,8 @@ int mnt_optstr_get_options(const char *optstr, char **subset,
  *
  *	"bind,noexec,foo,bar" --returns->   MS_BIND|MS_NOEXEC
  *
- * Note that @flags are not zeroized by this function! This function set/unset
- * bites in the @flags only.
+ * Note that @flags are not zeroized by this function! This function sets/unsets
+ * bits in the @flags only.
  *
  * Returns: 0 on success or negative number in case of error
  */
@@ -579,7 +668,7 @@ int mnt_optstr_get_flags(const char *optstr, unsigned long *flags,
 {
 	struct libmnt_optmap const *maps[2];
 	char *name, *str = (char *) optstr;
-	size_t namesz = 0;
+	size_t namesz = 0, valsz = 0;
 	int nmaps = 0;
 
 	assert(optstr);
@@ -596,12 +685,16 @@ int mnt_optstr_get_flags(const char *optstr, unsigned long *flags,
 		 */
 		maps[nmaps++] = mnt_get_builtin_optmap(MNT_USERSPACE_MAP);
 
-	while(!mnt_optstr_next_option(&str, &name, &namesz, NULL, NULL)) {
+	while(!mnt_optstr_next_option(&str, &name, &namesz, NULL, &valsz)) {
 		const struct libmnt_optmap *ent;
 		const struct libmnt_optmap *m;
 
 		m = mnt_optmap_get_entry(maps, nmaps, name, namesz, &ent);
 		if (!m || !ent || !ent->id)
+			continue;
+
+		/* ignore name=<value> if options map expects <name> only */
+		if (valsz && mnt_optmap_entry_novalue(ent))
 			continue;
 
 		if (m == map) {				/* requested map */
@@ -610,9 +703,10 @@ int mnt_optstr_get_flags(const char *optstr, unsigned long *flags,
 			else
 				*flags |= ent->id;
 
-		} else if (nmaps == 2 && m == maps[1]) {
+		} else if (nmaps == 2 && m == maps[1] && valsz == 0) {
 			/*
-			 * Special case -- translate "user" to MS_ options
+			 * Special case -- translate "user" (but no user=) to
+			 * MS_ options
 			 */
 			if (ent->mask & MNT_INVERT)
 				continue;
@@ -652,15 +746,15 @@ int mnt_optstr_apply_flags(char **optstr, unsigned long flags,
 	if (!optstr || !map)
 		return -EINVAL;
 
-	DBG(CXT, mnt_debug("appling 0x%08lu flags '%s'", flags, *optstr));
+	DBG(CXT, ul_debug("applying 0x%08lu flags to '%s'", flags, *optstr));
 
 	maps[0] = map;
 	next = *optstr;
 	fl = flags;
 
 	/*
-	 * There is a convetion that 'rw/ro' flags is always at the begin of
-	 * the string (athough the 'rw' is unnecessary).
+	 * There is a convention that 'rw/ro' flags are always at the beginning of
+	 * the string (although the 'rw' is unnecessary).
 	 */
 	if (map == mnt_get_builtin_optmap(MNT_LINUX_MAP)) {
 		const char *o = (fl & MS_RDONLY) ? "ro" : "rw";
@@ -686,7 +780,7 @@ int mnt_optstr_apply_flags(char **optstr, unsigned long flags,
 	if (next && *next) {
 		/*
 		 * scan @optstr and remove options that are missing in
-		 * the @flags
+		 * @flags
 		 */
 		while(!mnt_optstr_next_option(&next, &name, &namesz,
 							&val, &valsz)) {
@@ -696,11 +790,15 @@ int mnt_optstr_apply_flags(char **optstr, unsigned long flags,
 				/*
 				 * remove unwanted option (rw/ro is already set)
 				 */
-				if (!ent->id)
+				if (!ent || !ent->id)
 					continue;
+				/* ignore name=<value> if options map expects <name> only */
+				if (valsz && mnt_optmap_entry_novalue(ent))
+					continue;
+
 				if (ent->id == MS_RDONLY ||
 				    (ent->mask & MNT_INVERT) ||
-				    !(fl & ent->id)) {
+				    (fl & ent->id) != (unsigned long) ent->id) {
 
 					char *end = val ? val + valsz :
 							  name + namesz;
@@ -722,13 +820,15 @@ int mnt_optstr_apply_flags(char **optstr, unsigned long flags,
 		char *p;
 
 		for (ent = map; ent && ent->name; ent++) {
-			if ((ent->mask & MNT_INVERT) || !(fl & ent->id))
+			if ((ent->mask & MNT_INVERT)
+			    || ent->id == 0
+			    || (fl & ent->id) != (unsigned long) ent->id)
 				continue;
 
 			/* don't add options which require values (e.g. offset=%d) */
 			p = strchr(ent->name, '=');
 			if (p) {
-				if (*(p - 1) == '[')
+				if (p > ent->name && *(p - 1) == '[')
 					p--;			/* name[=] */
 				else
 					continue;		/* name= */
@@ -745,9 +845,10 @@ int mnt_optstr_apply_flags(char **optstr, unsigned long flags,
 		}
 	}
 
+	DBG(CXT, ul_debug("new optstr '%s'", *optstr));
 	return rc;
 err:
-	DBG(CXT, mnt_debug("failed to apply flags [rc=%d]", rc));
+	DBG(CXT, ul_debug("failed to apply flags [rc=%d]", rc));
 	return rc;
 }
 
@@ -761,13 +862,24 @@ err:
  * modify @optstr and returns zero if libmount is compiled without SELinux
  * support.
  *
- * Returns: 0 on success, negative number in case of error.
+ * Returns: 0 on success, a negative number in case of error.
  */
-int mnt_optstr_fix_secontext(char **optstr, char *value, size_t valsz, char **next)
+#ifndef HAVE_LIBSELINUX
+int mnt_optstr_fix_secontext(char **optstr __attribute__ ((__unused__)),
+			     char *value   __attribute__ ((__unused__)),
+			     size_t valsz  __attribute__ ((__unused__)),
+			     char **next   __attribute__ ((__unused__)))
+{
+	return 0;
+}
+#else
+int mnt_optstr_fix_secontext(char **optstr,
+			     char *value,
+			     size_t valsz,
+			     char **next)
 {
 	int rc = 0;
 
-#ifdef HAVE_LIBSELINUX
 	security_context_t raw = NULL;
 	char *p, *val, *begin, *end;
 	size_t sz;
@@ -775,7 +887,7 @@ int mnt_optstr_fix_secontext(char **optstr, char *value, size_t valsz, char **ne
 	if (!optstr || !*optstr || !value || !valsz)
 		return -EINVAL;
 
-	DBG(CXT, mnt_debug("fixing SELinux context"));
+	DBG(CXT, ul_debug("fixing SELinux context"));
 
 	begin = value;
 	end = value + valsz;
@@ -796,7 +908,7 @@ int mnt_optstr_fix_secontext(char **optstr, char *value, size_t valsz, char **ne
 	/* translate the context */
 	rc = selinux_trans_to_raw_context((security_context_t) p, &raw);
 
-	DBG(CXT, mnt_debug("SELinux context '%s' translated to '%s'",
+	DBG(CXT, ul_debug("SELinux context '%s' translated to '%s'",
 			p, rc == -1 ? "FAILED" : (char *) raw));
 
 	free(p);
@@ -804,7 +916,7 @@ int mnt_optstr_fix_secontext(char **optstr, char *value, size_t valsz, char **ne
 		return -EINVAL;
 
 
-	/* create quoted string from the raw context */
+	/* create a quoted string from the raw context */
 	sz = strlen((char *) raw);
 	if (!sz)
 		return -EINVAL;
@@ -825,9 +937,10 @@ int mnt_optstr_fix_secontext(char **optstr, char *value, size_t valsz, char **ne
 	mnt_optstr_remove_option_at(optstr, begin, end);
 	rc = insert_value(optstr, begin, val, next);
 	free(val);
-#endif
+
 	return rc;
 }
+#endif
 
 static int set_uint_value(char **optstr, unsigned int num,
 			char *begin, char *end, char **next)
@@ -840,18 +953,18 @@ static int set_uint_value(char **optstr, unsigned int num,
 }
 
 /*
- * @optstr: string with comma separated list of options
- * @value: pointer to the begin of the uid value
+ * @optstr: string with a comma separated list of options
+ * @value: pointer to the beginning of the uid value
  * @valsz: size of the value
  * @next: returns pointer to the next option (optional argument)
 
- * Translates "<username>" or "useruid" to the real UID.
+ * Translates "username" or "useruid" to the real UID.
  *
  * For example:
  *	if (!mnt_optstr_get_option(optstr, "uid", &val, &valsz))
  *		mnt_optstr_fix_uid(&optstr, val, valsz, NULL);
  *
- * Returns: 0 on success, negative number in case of error.
+ * Returns: 0 on success, a negative number in case of error.
  */
 int mnt_optstr_fix_uid(char **optstr, char *value, size_t valsz, char **next)
 {
@@ -861,7 +974,7 @@ int mnt_optstr_fix_uid(char **optstr, char *value, size_t valsz, char **next)
 	if (!optstr || !*optstr || !value || !valsz)
 		return -EINVAL;
 
-	DBG(CXT, mnt_debug("fixing uid"));
+	DBG(CXT, ul_debug("fixing uid"));
 
 	end = value + valsz;
 
@@ -891,14 +1004,14 @@ int mnt_optstr_fix_uid(char **optstr, char *value, size_t valsz, char **next)
 }
 
 /*
- * @optstr: string with comma separated list of options
- * @value: pointer to the begin of the uid value
+ * @optstr: string with a comma separated list of options
+ * @value: pointer to the beginning of the uid value
  * @valsz: size of the value
  * @next: returns pointer to the next option (optional argument)
 
- * Translates "<groupname>" or "usergid" to the real GID.
+ * Translates "groupname" or "usergid" to the real GID.
  *
- * Returns: 0 on success, negative number in case of error.
+ * Returns: 0 on success, a negative number in case of error.
  */
 int mnt_optstr_fix_gid(char **optstr, char *value, size_t valsz, char **next)
 {
@@ -908,7 +1021,7 @@ int mnt_optstr_fix_gid(char **optstr, char *value, size_t valsz, char **next)
 	if (!optstr || !*optstr || !value || !valsz)
 		return -EINVAL;
 
-	DBG(CXT, mnt_debug("fixing gid"));
+	DBG(CXT, ul_debug("fixing gid"));
 
 	end = value + valsz;
 
@@ -947,7 +1060,7 @@ int mnt_optstr_fix_user(char **optstr)
 	struct libmnt_optloc ol;
 	int rc = 0;
 
-	DBG(CXT, mnt_debug("fixing user"));
+	DBG(CXT, ul_debug("fixing user"));
 
 	mnt_init_optloc(&ol);
 
@@ -991,6 +1104,7 @@ int test_append(struct libmnt_test *ts, int argc, char *argv[])
 	rc = mnt_optstr_append_option(&optstr, name, value);
 	if (!rc)
 		printf("result: >%s<\n", optstr);
+	free(optstr);
 	return rc;
 }
 
@@ -1011,6 +1125,7 @@ int test_prepend(struct libmnt_test *ts, int argc, char *argv[])
 	rc = mnt_optstr_prepend_option(&optstr, name, value);
 	if (!rc)
 		printf("result: >%s<\n", optstr);
+	free(optstr);
 	return rc;
 }
 
@@ -1158,6 +1273,25 @@ int test_remove(struct libmnt_test *ts, int argc, char *argv[])
 	rc = mnt_optstr_remove_option(&optstr, name);
 	if (!rc)
 		printf("result: >%s<\n", optstr);
+	free(optstr);
+	return rc;
+}
+
+int test_dedup(struct libmnt_test *ts, int argc, char *argv[])
+{
+	const char *name;
+	char *optstr;
+	int rc;
+
+	if (argc < 3)
+		return -EINVAL;
+	optstr = strdup(argv[1]);
+	name = argv[2];
+
+	rc = mnt_optstr_deduplicate_option(&optstr, name);
+	if (!rc)
+		printf("result: >%s<\n", optstr);
+	free(optstr);
 	return rc;
 }
 
@@ -1200,10 +1334,11 @@ int main(int argc, char *argv[])
 {
 	struct libmnt_test tss[] = {
 		{ "--append", test_append, "<optstr> <name> [<value>]  append value to optstr" },
-		{ "--prepend",test_prepend,"<optstr> <name> [<value>]  prepend  value to optstr" },
+		{ "--prepend",test_prepend,"<optstr> <name> [<value>]  prepend value to optstr" },
 		{ "--set",    test_set,    "<optstr> <name> [<value>]  (un)set value" },
 		{ "--get",    test_get,    "<optstr> <name>            search name in optstr" },
 		{ "--remove", test_remove, "<optstr> <name>            remove name in optstr" },
+		{ "--dedup",  test_dedup,  "<optstr> <name>            deduplicate name in optstr" },
 		{ "--split",  test_split,  "<optstr>                   split into FS, VFS and userspace" },
 		{ "--flags",  test_flags,  "<optstr>                   convert options to MS_* flags" },
 		{ "--apply",  test_apply,  "--{linux,user} <optstr> <mask>    apply mask to optstr" },

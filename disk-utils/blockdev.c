@@ -15,6 +15,8 @@
 #include "nls.h"
 #include "blkdev.h"
 #include "pathnames.h"
+#include "closestream.h"
+#include "sysfs.h"
 
 struct bdc {
 	long		ioc;		/* ioctl code */
@@ -126,7 +128,7 @@ static const struct bdc bdcms[] =
 		.argname = "<bytes>",
 		.argtype = ARG_INT,
 		.flags = FL_NORESULT,
-	        .help = N_("set blocksize")
+	        .help = N_("set blocksize on file descriptor opening the block device")
 	},{
 		IOCTL_ENTRY(BLKGETSIZE),
 		.name = "--getsize",
@@ -209,10 +211,10 @@ static int find_cmd(char *s)
 	return -1;
 }
 
-void do_commands(int fd, char **argv, int d);
-void report_header(void);
-void report_device(char *device, int quiet);
-void report_all_devices(void);
+static void do_commands(int fd, char **argv, int d);
+static void report_header(void);
+static void report_device(char *device, int quiet);
+static void report_all_devices(void);
 
 int main(int argc, char **argv)
 {
@@ -221,14 +223,14 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	if (argc < 2)
 		usage(stderr);
 
 	/* -V not together with commands */
 	if (!strcmp(argv[1], "-V") || !strcmp(argv[1], "--version")) {
-		printf(_("%s (%s)\n"), program_invocation_short_name,
-		       PACKAGE_STRING);
+		printf(UTIL_LINUX_VERSION);
 		return EXIT_SUCCESS;
 	}
 	if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help"))
@@ -278,16 +280,16 @@ int main(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 
-void do_commands(int fd, char **argv, int d)
+static void do_commands(int fd, char **argv, int d)
 {
 	int res, i, j;
-	int iarg;
-	unsigned int uarg;
-	unsigned short huarg;
-	long larg;
-	long long llarg;
-	unsigned long lu;
-	unsigned long long llu;
+	int iarg = 0;
+	unsigned int uarg = 0;
+	unsigned short huarg = 0;
+	long larg = 0;
+	long long llarg = 0;
+	unsigned long lu = 0;
+	unsigned long long llu = 0;
 	int verbose = 0;
 
 	for (i = 1; i < d; i++) {
@@ -405,11 +407,11 @@ void do_commands(int fd, char **argv, int d)
 	}
 }
 
-void report_all_devices(void)
+static void report_all_devices(void)
 {
 	FILE *procpt;
 	char line[200];
-	char ptname[200];
+	char ptname[200 + 1];
 	char device[210];
 	int ma, mi, sz;
 
@@ -429,13 +431,15 @@ void report_all_devices(void)
 	fclose(procpt);
 }
 
-void report_device(char *device, int quiet)
+static void report_device(char *device, int quiet)
 {
 	int fd;
 	int ro, ssz, bsz;
 	long ra;
 	unsigned long long bytes;
-	struct hd_geometry g;
+	uint64_t start = 0;
+	struct sysfs_cxt cxt;
+	struct stat st;
 
 	fd = open(device, O_RDONLY | O_NONBLOCK);
 	if (fd < 0) {
@@ -445,15 +449,22 @@ void report_device(char *device, int quiet)
 	}
 
 	ro = ssz = bsz = 0;
-	g.start = ra = 0;
+	ra = 0;
+	if (fstat(fd, &st) == 0) {
+		if (sysfs_init(&cxt, st.st_rdev, NULL))
+			err(EXIT_FAILURE,
+				_("%s: failed to initialize sysfs handler"),
+				device);
+		sysfs_read_u64(&cxt, "start", &start);
+		sysfs_deinit(&cxt);
+	}
 	if (ioctl(fd, BLKROGET, &ro) == 0 &&
 	    ioctl(fd, BLKRAGET, &ra) == 0 &&
 	    ioctl(fd, BLKSSZGET, &ssz) == 0 &&
 	    ioctl(fd, BLKBSZGET, &bsz) == 0 &&
-	    ioctl(fd, HDIO_GETGEO, &g) == 0 &&
 	    blkdev_get_size(fd, &bytes) == 0) {
-		printf("%s %5ld %5d %5d %10ld %15lld   %s\n",
-		       ro ? "ro" : "rw", ra, ssz, bsz, g.start, bytes, device);
+		printf("%s %5ld %5d %5d %10ju %15lld   %s\n",
+		       ro ? "ro" : "rw", ra, ssz, bsz, start, bytes, device);
 	} else {
 		if (!quiet)
 			warnx(_("ioctl error on %s"), device);
@@ -462,7 +473,7 @@ void report_device(char *device, int quiet)
 	close(fd);
 }
 
-void report_header()
+static void report_header(void)
 {
 	printf(_("RO    RA   SSZ   BSZ   StartSec            Size   Device\n"));
 }

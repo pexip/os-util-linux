@@ -34,13 +34,14 @@
  *
  */
 
- /* 1999-02-22 Arkadiusz Mi∂kiewicz <misiek@pld.ORG.PL>
+ /* 1999-02-22 Arkadiusz Mi≈õkiewicz <misiek@pld.ORG.PL>
   * - added Native Language Support
   * Sun Mar 21 1999 - Arnaldo Carvalho de Melo <acme@conectiva.com.br>
   * - fixed strerr(errno) in gettext calls
   */
 
 #include <sys/types.h>
+#include <sys/param.h>
 #include <sys/uio.h>
 #include <signal.h>
 #include <fcntl.h>
@@ -51,10 +52,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include "nls.h"
 
+#include "nls.h"
+#include "closestream.h"
 #include "pathnames.h"
 #include "ttymsg.h"
+
+#define ERR_BUFLEN	(MAXNAMLEN + 1024)
 
 /*
  * Display the contents of a uio structure on a terminal.  Used by wall(1),
@@ -66,14 +70,17 @@
 char *
 ttymsg(struct iovec *iov, size_t iovcnt, char *line, int tmout) {
 	static char device[MAXNAMLEN];
-	static char errbuf[MAXNAMLEN+1024];
+	static char errbuf[ERR_BUFLEN];
 	size_t cnt, left;
 	ssize_t wret;
 	struct iovec localiov[6];
-	int fd, forked = 0, errsv;
+	int fd, forked = 0;
+	ssize_t	len = 0;
 
-	if (iovcnt > sizeof(localiov) / sizeof(localiov[0]))
-		return (_("too many iov's (change code in wall/ttymsg.c)"));
+	if (iovcnt > ARRAY_SIZE(localiov)) {
+		snprintf(errbuf, sizeof(errbuf), _("internal error: too many iov's"));
+		return errbuf;
+	}
 
 	/* The old code here rejected the line argument when it contained a '/',
 	   saying: "A slash may be an attempt to break security...".
@@ -82,11 +89,11 @@ ttymsg(struct iovec *iov, size_t iovcnt, char *line, int tmout) {
 	   already. So, this test was worthless, and these days it is
 	   also wrong since people use /dev/pts/xxx. */
 
-	if (strlen(line) + sizeof(_PATH_DEV) + 1 > sizeof(device)) {
-		(void) sprintf(errbuf, _("excessively long line arg"));
-		return (errbuf);
+	len = snprintf(device, sizeof(device), "%s%s", _PATH_DEV, line);
+	if (len < 0 || len + 1 > (ssize_t) sizeof(device)) {
+		snprintf(errbuf, sizeof(errbuf), _("excessively long line arg"));
+		return errbuf;
 	}
-	(void) sprintf(device, "%s%s", _PATH_DEV, line);
 
 	/*
 	 * open will fail on slip lines or exclusive-use lines
@@ -94,12 +101,12 @@ ttymsg(struct iovec *iov, size_t iovcnt, char *line, int tmout) {
 	 */
 	if ((fd = open(device, O_WRONLY|O_NONBLOCK, 0)) < 0) {
 		if (errno == EBUSY || errno == EACCES)
-			return (NULL);
-		if (strlen(strerror(errno)) > 1000)
-			return (NULL);
-		(void) sprintf(errbuf, "%s: %s", device, strerror(errno));
-		errbuf[1024] = 0;
-		return (errbuf);
+			return NULL;
+
+		len = snprintf(errbuf, sizeof(errbuf), "%s: %m", device);
+		if (len < 0 || len + 1 > (ssize_t) sizeof(errbuf))
+			snprintf(errbuf, sizeof(errbuf), _("open failed"));
+		return errbuf;
 	}
 
 	for (cnt = left = 0; cnt < iovcnt; ++cnt)
@@ -132,32 +139,28 @@ ttymsg(struct iovec *iov, size_t iovcnt, char *line, int tmout) {
 			sigset_t sigmask;
 
 			if (forked) {
-				(void) close(fd);
+				close(fd);
 				_exit(EXIT_FAILURE);
 			}
 			cpid = fork();
 			if (cpid < 0) {
-				if (strlen(strerror(errno)) > 1000)
-					(void) sprintf(errbuf, _("cannot fork"));
-				else {
-					errsv = errno;
-					(void) sprintf(errbuf,
-						 _("fork: %s"), strerror(errsv));
-				}
-				(void) close(fd);
-				return (errbuf);
+				len = snprintf(errbuf, sizeof(errbuf), _("fork: %m"));
+				if (len < 0 || len + 1 > (ssize_t) sizeof(errbuf))
+					snprintf(errbuf, sizeof(errbuf), _("cannot fork"));
+				close(fd);
+				return errbuf;
 			}
 			if (cpid) {	/* parent */
-				(void) close(fd);
-				return (NULL);
+				close(fd);
+				return NULL;
 			}
 			forked++;
 			/* wait at most tmout seconds */
-			(void) signal(SIGALRM, SIG_DFL);
-			(void) signal(SIGTERM, SIG_DFL); /* XXX */
+			signal(SIGALRM, SIG_DFL);
+			signal(SIGTERM, SIG_DFL); /* XXX */
 			sigemptyset(&sigmask);
 			sigprocmask (SIG_SETMASK, &sigmask, NULL);
-			(void) alarm((u_int)tmout);
+			alarm((u_int)tmout);
 			flags = fcntl(fd, F_GETFL);
 			fcntl(flags, F_SETFL, (long) (flags & ~O_NONBLOCK));
 			continue;
@@ -168,23 +171,20 @@ ttymsg(struct iovec *iov, size_t iovcnt, char *line, int tmout) {
 		 */
 		if (errno == ENODEV || errno == EIO)
 			break;
-		(void) close(fd);
+		if (close_fd(fd) != 0)
+			warn(_("write failed: %s"), device);
 		if (forked)
 			_exit(EXIT_FAILURE);
-		if (strlen(strerror(errno)) > 1000)
-			(void) sprintf(errbuf, _("%s: BAD ERROR, message is "
-						 "far too long"), device);
-		else {
-			errsv = errno;
-			(void) sprintf(errbuf, "%s: %s", device,
-				       strerror(errsv));
-		}
-		errbuf[1024] = 0;
-		return (errbuf);
+
+		len = snprintf(errbuf, sizeof(errbuf), "%s: %m", device);
+		if (len < 0 || len + 1 > (ssize_t) sizeof(errbuf))
+			snprintf(errbuf, sizeof(errbuf),
+					_("%s: BAD ERROR, message is "
+					  "far too long"), device);
+		return errbuf;
 	}
 
-	(void) close(fd);
 	if (forked)
 		_exit(EXIT_SUCCESS);
-	return (NULL);
+	return NULL;
 }

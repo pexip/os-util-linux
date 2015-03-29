@@ -8,38 +8,39 @@
 /**
  * SECTION: init
  * @title: Library initialization
- * @short_description: initialize debuging
+ * @short_description: initialize debugging
  */
 
 #include <stdarg.h>
 
 #include "mountP.h"
 
-int libmount_debug_mask;
+UL_DEBUG_DEFINE_MASK(libmount);
 
 /**
  * mnt_init_debug:
- * @mask: debug mask (0xffff to enable full debuging)
+ * @mask: debug mask (0xffff to enable full debugging)
  *
- * If the @mask is not specified then this function reads
- * LIBMOUNT_DEBUG environment variable to get the mask.
+ * If the @mask is not specified, then this function reads
+ * the LIBMOUNT_DEBUG environment variable to get the mask.
  *
- * Already initialized debugging stuff cannot be changed. It does not
- * have effect to call this function twice.
+ * Already initialized debugging stuff cannot be changed. Calling
+ * this function twice has no effect.
  */
 void mnt_init_debug(int mask)
 {
-	if (libmount_debug_mask & MNT_DEBUG_INIT)
-		return;
-	if (!mask) {
-		char *str = getenv("LIBMOUNT_DEBUG");
-		if (str)
-			libmount_debug_mask = strtoul(str, 0, 0);
-	} else
-		libmount_debug_mask = mask;
+	__UL_INIT_DEBUG(libmount, MNT_DEBUG_, mask, LIBMOUNT_DEBUG);
 
-	if (libmount_debug_mask)
-		printf("libmount: debug mask set to 0x%04x.\n",
-				libmount_debug_mask);
-	libmount_debug_mask |= MNT_DEBUG_INIT;
+	if (libmount_debug_mask != MNT_DEBUG_INIT) {
+		const char *ver = NULL;
+		const char **features = NULL, **p;
+
+		mnt_get_library_version(&ver);
+		mnt_get_library_features(&features);
+
+		DBG(INIT, ul_debug("library version: %s", ver));
+		p = features;
+		while (p && *p)
+			DBG(INIT, ul_debug("    feature: %s", *p++));
+	}
 }

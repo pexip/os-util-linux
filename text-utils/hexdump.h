@@ -32,9 +32,21 @@
  *
  *	@(#)hexdump.h	5.4 (Berkeley) 6/1/90
  */
+#include "c.h"
+#include "list.h"
 
-typedef struct _pr {
-	struct _pr *nextpr;		/* next print unit */
+struct hexdump_clr {
+	struct list_head colorlist;	/* next color unit */
+	const char *fmt;		/* the color, UL_COLOR_* */
+	off_t offt;			/* offset where unit is valid... */
+	int range;			/* ... and it's range */
+	int val;			/* value ... */
+	char *str;			/* ... or string to match */
+	int invert;			/* invert condition? */
+};
+
+struct hexdump_pr {
+	struct list_head prlist;		/* next print unit */
 #define	F_ADDRESS	0x001		/* print offset */
 #define	F_BPAD		0x002		/* blank pad */
 #define	F_C		0x004		/* %_c */
@@ -49,45 +61,48 @@ typedef struct _pr {
 	unsigned int flags;		/* flag values */
 	int bcnt;			/* byte count */
 	char *cchar;			/* conversion character */
+	struct list_head *colorlist;	/* color settings */
 	char *fmt;			/* printf format */
 	char *nospace;			/* no whitespace version */
-} PR;
+};
 
-typedef struct _fu {
-	struct _fu *nextfu;		/* next format unit */
-	struct _pr *nextpr;		/* next print unit */
+struct hexdump_fu {
+	struct list_head fulist;		/* next format unit */
+	struct list_head prlist;		/* next print unit */
 #define	F_IGNORE	0x01		/* %_A */
 #define	F_SETREP	0x02		/* rep count set, not default */
 	unsigned int flags;		/* flag values */
 	int reps;			/* repetition count */
 	int bcnt;			/* byte count */
 	char *fmt;			/* format string */
-} FU;
+};
 
-typedef struct _fs {			/* format strings */
-	struct _fs *nextfs;		/* linked list of format strings */
-	struct _fu *nextfu;		/* linked list of format units */
+struct hexdump_fs {			/* format strings */
+	struct list_head fslist;		/* linked list of format strings */
+	struct list_head fulist;		/* linked list of format units */
 	int bcnt;
-} FS;
+};
 
-extern FU *endfu;
-extern FS *fshead;			/* head of format strings list */
-extern int blocksize;			/* data block size */
-extern int deprecated;			/* od compatibility */
-extern int exitval;			/* final exit value */
-extern int length;			/* max bytes to read */
-extern off_t skip;                      /* bytes to skip */
+struct hexdump {
+  struct list_head fshead;				/* head of format strings */
+  ssize_t blocksize;			/* data block size */
+  int exitval;				/* final exit value */
+  ssize_t length;			/* max bytes to read */
+  off_t skip;				/* bytes to skip */
+};
+
+extern struct hexdump_fu *endfu;
 
 enum _vflag { ALL, DUP, FIRST, WAIT };	/* -v values */
 extern enum _vflag vflag;
 
-int size(FS *);
-void add(const char *);
-void rewrite(FS *);
-void addfile(char *);
-void display(void);
+int block_size(struct hexdump_fs *);
+void add_fmt(const char *, struct hexdump *);
+void rewrite_rules(struct hexdump_fs *, struct hexdump *);
+void addfile(char *, struct hexdump *);
+void display(struct hexdump *);
 void __attribute__((__noreturn__)) usage(FILE *out);
-void conv_c(PR *, u_char *);
-void conv_u(PR *, u_char *);
-int  next(char **);
-void newsyntax(int, char ***);
+void conv_c(struct hexdump_pr *, u_char *);
+void conv_u(struct hexdump_pr *, u_char *);
+int  next(char **, struct hexdump *);
+int parse_args(int, char **, struct hexdump *);
