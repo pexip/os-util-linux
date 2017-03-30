@@ -3,6 +3,7 @@ util-linux (2.25.2-6pexip1) pexip; urgency=low
   * New upstream release
   * Remaining changes:
     - Upstart-based hwclock handling from Ubuntu
+  * debian/libblkid1.maintscript: clean up /etc/blkid.conf
 
  -- John-Mark Bell <jmb@pexip.com>  Thu, 30 Mar 2017 22:51:04 +0100
 
