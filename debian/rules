@@ -12,7 +12,7 @@ ifeq ($(DEB_HOST_ARCH_OS),linux)
 CONFOPTS += --enable-raw
 CONFOPTS += --with-selinux
 CONFOPTS += --enable-partx
-CONFOPTS += --with-systemd
+#CONFOPTS += --with-systemd
 CONFOPTS += --enable-tunelp
 endif
 
@@ -45,7 +45,7 @@ else
 endif
 
 %:
-	dh $@ --with autoreconf,systemd
+	dh $@ --with autoreconf
 
 override_dh_autoreconf:
 	AM_OPTS=--copy LT_OPTS=--copy dh_autoreconf ./autogen.sh

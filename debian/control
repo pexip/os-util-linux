@@ -12,12 +12,12 @@ Build-Depends: autoconf,
                libpam0g-dev,
                libselinux1-dev [linux-any],
                libslang2-dev (>=2.0.4),
-               libsystemd-dev [linux-any],
+#               libsystemd-dev [linux-any],
                libtool,
                lsb-release,
                pkg-config,
                po-debconf,
-               systemd [linux-any],
+#               systemd [linux-any],
                zlib1g-dev
 Section: base
 Priority: required
