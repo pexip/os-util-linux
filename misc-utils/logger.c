@@ -30,20 +30,20 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * 1999-02-22 Arkadiusz Mi∂kiewicz <misiek@pld.ORG.PL>
+ * 1999-02-22 Arkadiusz Mi≈õkiewicz <misiek@pld.ORG.PL>
  * - added Native Language Support
  * Sun Mar 21 1999 - Arnaldo Carvalho de Melo <acme@conectiva.com.br>
  * - fixed strerr(errno) in gettext calls
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include <time.h>
+#include <sys/time.h>
 #include <stdio.h>
 #include <ctype.h>
 #include <string.h>
-#include <strings.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -52,61 +52,214 @@
 #include <getopt.h>
 
 #include "c.h"
+#include "closestream.h"
 #include "nls.h"
 #include "strutils.h"
+#include "xalloc.h"
 
 #define	SYSLOG_NAMES
 #include <syslog.h>
 
-int	decode __P((char *, CODE *));
-int	pencode __P((char *));
+#ifdef HAVE_LIBSYSTEMD
+# include <systemd/sd-journal.h>
+#endif
 
-static int optd = 0;
-static int udpport = 514;
+enum {
+	TYPE_UDP = (1 << 1),
+	TYPE_TCP = (1 << 2),
+	ALL_TYPES = TYPE_UDP | TYPE_TCP
+};
 
-static int
-myopenlog(const char *sock) {
-       int fd;
-       static struct sockaddr_un s_addr; /* AF_UNIX address of local logger */
+enum {
+	OPT_PRIO_PREFIX = CHAR_MAX + 1,
+	OPT_JOURNALD
+};
 
-       if (strlen(sock) >= sizeof(s_addr.sun_path))
-	       errx(EXIT_FAILURE, _("openlog %s: pathname too long"), sock);
 
-       s_addr.sun_family = AF_UNIX;
-       (void)strcpy(s_addr.sun_path, sock);
+static char* get_prio_prefix(char *msg, int *prio)
+{
+	int p;
+	char *end = NULL;
+	int facility = *prio & LOG_FACMASK;
 
-       if ((fd = socket(AF_UNIX, optd ? SOCK_DGRAM : SOCK_STREAM, 0)) == -1)
-	       err(EXIT_FAILURE, _("socket %s"), sock);
+	errno = 0;
+	p = strtoul(msg + 1, &end, 10);
 
-       if (connect(fd, (struct sockaddr *) &s_addr, sizeof(s_addr)) == -1)
-	       err(EXIT_FAILURE, _("connect %s"), sock);
+	if (errno || !end || end == msg + 1 || end[0] != '>')
+		return msg;
 
-       return fd;
+	if (p & LOG_FACMASK)
+		facility = p & LOG_FACMASK;
+
+	*prio = facility | (p & LOG_PRIMASK);
+	return end + 1;
 }
 
-static int
-udpopenlog(const char *servername,int port) {
-	int fd;
-	struct sockaddr_in s_addr;
-	struct hostent *serverhost;
+static int decode(char *name, CODE *codetab)
+{
+	register CODE *c;
 
-	if ((serverhost = gethostbyname(servername)) == NULL )
-		errx(EXIT_FAILURE, _("unable to resolve '%s'"), servername);
+	if (name == NULL || *name == '\0')
+		return -1;
+	if (isdigit(*name)) {
+		int num;
+		char *end = NULL;
 
-	if ((fd = socket(AF_INET, SOCK_DGRAM , 0)) == -1)
-		err(EXIT_FAILURE, _("socket"));
+		num = strtol(name, &end, 10);
+		if (errno || name == end || (end && *end))
+			return -1;
+		for (c = codetab; c->c_name; c++)
+			if (num == c->c_val)
+				return num;
+		return -1;
+	}
+	for (c = codetab; c->c_name; c++)
+		if (!strcasecmp(name, c->c_name))
+			return (c->c_val);
 
-	bcopy(serverhost->h_addr,&s_addr.sin_addr,serverhost->h_length);
-        s_addr.sin_family=AF_INET;
-        s_addr.sin_port=htons(port);
+	return -1;
+}
 
-        if (connect(fd, (struct sockaddr *) &s_addr, sizeof(s_addr)) == -1)
-		err(EXIT_FAILURE, _("connect"));
+static int pencode(char *s)
+{
+	char *save;
+	int fac, lev;
+
+	for (save = s; *s && *s != '.'; ++s);
+	if (*s) {
+		*s = '\0';
+		fac = decode(save, facilitynames);
+		if (fac < 0)
+			errx(EXIT_FAILURE, _("unknown facility name: %s"), save);
+		*s++ = '.';
+	}
+	else {
+		fac = LOG_USER;
+		s = save;
+	}
+	lev = decode(s, prioritynames);
+	if (lev < 0)
+		errx(EXIT_FAILURE, _("unknown priority name: %s"), save);
+	return ((lev & LOG_PRIMASK) | (fac & LOG_FACMASK));
+}
+
+static int unix_socket(const char *path, const int socket_type)
+{
+	int fd, i;
+	static struct sockaddr_un s_addr;	/* AF_UNIX address of local logger */
+
+	if (strlen(path) >= sizeof(s_addr.sun_path))
+		errx(EXIT_FAILURE, _("openlog %s: pathname too long"), path);
+
+	s_addr.sun_family = AF_UNIX;
+	strcpy(s_addr.sun_path, path);
+
+	for (i = 2; i; i--) {
+		int st = -1;
+
+		if (i == 2 && socket_type & TYPE_UDP)
+			st = SOCK_DGRAM;
+		if (i == 1 && socket_type & TYPE_TCP)
+			st = SOCK_STREAM;
+		if (st == -1 || (fd = socket(AF_UNIX, st, 0)) == -1)
+			continue;
+		if (connect(fd, (struct sockaddr *)&s_addr, sizeof(s_addr)) == -1) {
+			close(fd);
+			continue;
+		}
+		break;
+	}
+
+	if (i == 0)
+		err(EXIT_FAILURE, _("socket %s"), path);
 
 	return fd;
 }
-static void
-mysyslog(int fd, int logflags, int pri, char *tag, char *msg) {
+
+static int inet_socket(const char *servername, const char *port,
+		       const int socket_type)
+{
+	int fd, errcode, i;
+	struct addrinfo hints, *res;
+	const char *p = port;
+
+	for (i = 2; i; i--) {
+		memset(&hints, 0, sizeof(hints));
+		if (i == 2 && socket_type & TYPE_UDP) {
+			hints.ai_socktype = SOCK_DGRAM;
+			if (port == NULL)
+				p = "syslog";
+		}
+		if (i == 1 && socket_type & TYPE_TCP) {
+			hints.ai_socktype = SOCK_STREAM;
+			if (port == NULL)
+				p = "syslog-conn";
+		}
+		if (hints.ai_socktype == 0)
+			continue;
+		hints.ai_family = AF_UNSPEC;
+		errcode = getaddrinfo(servername, p, &hints, &res);
+		if (errcode != 0)
+			errx(EXIT_FAILURE, _("failed to resolve name %s port %s: %s"),
+			     servername, p, gai_strerror(errcode));
+		if ((fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1) {
+			freeaddrinfo(res);
+			continue;
+		}
+		if (connect(fd, res->ai_addr, res->ai_addrlen) == -1) {
+			freeaddrinfo(res);
+			close(fd);
+			continue;
+		}
+
+		freeaddrinfo(res);
+		break;
+	}
+
+	if (i == 0)
+		errx(EXIT_FAILURE, _("failed to connect to %s port %s"), servername, p);
+
+	return fd;
+}
+
+#ifdef HAVE_LIBSYSTEMD
+static int journald_entry(FILE *fp)
+{
+	struct iovec *iovec;
+	char *buf = NULL;
+	ssize_t sz;
+	int n, lines, vectors = 8, ret;
+	size_t dummy = 0;
+
+	iovec = xmalloc(vectors * sizeof(struct iovec));
+	for (lines = 0; /* nothing */ ; lines++) {
+		buf = NULL;
+		sz = getline(&buf, &dummy, fp);
+		if (sz == -1)
+			break;
+		if (0 < sz && buf[sz - 1] == '\n') {
+			sz--;
+			buf[sz] = '\0';
+		}
+		if (lines == vectors) {
+			vectors *= 2;
+			if (IOV_MAX < vectors)
+				errx(EXIT_FAILURE, _("maximum input lines (%d) exceeded"), IOV_MAX);
+			iovec = xrealloc(iovec, vectors * sizeof(struct iovec));
+		}
+		iovec[lines].iov_base = buf;
+		iovec[lines].iov_len = sz;
+	}
+	ret = sd_journal_sendv(iovec, lines);
+	for (n = 0; n < lines; n++)
+		free(iovec[n].iov_base);
+	free(iovec);
+	return ret;
+}
+#endif
+
+static void mysyslog(int fd, int logflags, int pri, char *tag, char *msg)
+{
        char buf[1000], pid[30], *cp, *tp;
        time_t now;
 
@@ -122,7 +275,7 @@ mysyslog(int fd, int logflags, int pri, char *tag, char *msg) {
 		       if (!cp)
 			       cp = "<someone>";
 	       }
-               (void)time(&now);
+	       time(&now);
 	       tp = ctime(&now)+4;
 
                snprintf(buf, sizeof(buf), "<%d>%.15s %.200s%s: %.400s",
@@ -135,22 +288,29 @@ mysyslog(int fd, int logflags, int pri, char *tag, char *msg) {
 
 static void __attribute__ ((__noreturn__)) usage(FILE *out)
 {
-	fputs(_("\nUsage:\n"), out);
-	fprintf(out,
-	      _(" %s [options] [message]\n"), program_invocation_short_name);
+	fputs(USAGE_HEADER, out);
+	fprintf(out, _(" %s [options] [<message>]\n"), program_invocation_short_name);
 
-	fputs(_("\nOptions:\n"), out);
-	fputs(_(" -d, --udp             use UDP (TCP is default)\n"
-		" -i, --id              log the process ID too\n"
-		" -f, --file <file>     log the contents of this file\n"
-		" -h, --help            display this help text and exit\n"), out);
-	fputs(_(" -n, --server <name>   write to this remote syslog server\n"
-		" -P, --port <number>   use this UDP port\n"
-		" -p, --priority <prio> mark given message with this priority\n"
-		" -s, --stderr          output message to standard error as well\n"), out);
-	fputs(_(" -t, --tag <tag>       mark every line with this tag\n"
-		" -u, --socket <socket> write to this Unix socket\n"
-		" -V, --version         output version information and exit\n\n"), out);
+	fputs(USAGE_OPTIONS, out);
+	fputs(_(" -T, --tcp             use TCP only\n"), out);
+	fputs(_(" -d, --udp             use UDP only\n"), out);
+	fputs(_(" -i, --id              log the process ID too\n"), out);
+	fputs(_(" -f, --file <file>     log the contents of this file\n"), out);
+	fputs(_(" -n, --server <name>   write to this remote syslog server\n"), out);
+	fputs(_(" -P, --port <number>   use this UDP port\n"), out);
+	fputs(_(" -p, --priority <prio> mark given message with this priority\n"), out);
+	fputs(_("     --prio-prefix     look for a prefix on every line read from stdin\n"), out);
+	fputs(_(" -s, --stderr          output message to standard error as well\n"), out);
+	fputs(_(" -t, --tag <tag>       mark every line with this tag\n"), out);
+	fputs(_(" -u, --socket <socket> write to this Unix socket\n"), out);
+#ifdef HAVE_LIBSYSTEMD
+	fputs(_("     --journald[=<file>]  write journald entry\n"), out);
+#endif
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(USAGE_HELP, out);
+	fputs(USAGE_VERSION, out);
+	fprintf(out, USAGE_MAN_TAIL("logger(1)"));
 
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
@@ -161,15 +321,17 @@ static void __attribute__ ((__noreturn__)) usage(FILE *out)
  *	Reads from an input and arranges to write the result on the system
  *	log.
  */
-int
-main(int argc, char **argv) {
-	int ch, logflags, pri;
+int main(int argc, char **argv)
+{
+	int ch, logflags, pri, prio_prefix;
 	char *tag, buf[1024];
 	char *usock = NULL;
-	char *udpserver = NULL;
-	int LogSock = -1;
-	long tmpport;
-
+	char *server = NULL;
+	char *port = NULL;
+	int LogSock = -1, socket_type = ALL_TYPES;
+#ifdef HAVE_LIBSYSTEMD
+	FILE *jfd = NULL;
+#endif
 	static const struct option longopts[] = {
 		{ "id",		no_argument,	    0, 'i' },
 		{ "stderr",	no_argument,	    0, 's' },
@@ -178,23 +340,30 @@ main(int argc, char **argv) {
 		{ "tag",	required_argument,  0, 't' },
 		{ "socket",	required_argument,  0, 'u' },
 		{ "udp",	no_argument,	    0, 'd' },
+		{ "tcp",	no_argument,	    0, 'T' },
 		{ "server",	required_argument,  0, 'n' },
 		{ "port",	required_argument,  0, 'P' },
 		{ "version",	no_argument,	    0, 'V' },
 		{ "help",	no_argument,	    0, 'h' },
+		{ "prio-prefix", no_argument, 0, OPT_PRIO_PREFIX },
+#ifdef HAVE_LIBSYSTEMD
+		{ "journald",   optional_argument,  0, OPT_JOURNALD },
+#endif
 		{ NULL,		0, 0, 0 }
 	};
 
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	tag = NULL;
 	pri = LOG_NOTICE;
 	logflags = 0;
-	while ((ch = getopt_long(argc, argv, "f:ip:st:u:dn:P:Vh",
+	prio_prefix = 0;
+	while ((ch = getopt_long(argc, argv, "f:ip:st:u:dTn:P:Vh",
 					    longopts, NULL)) != -1) {
-		switch((char)ch) {
+		switch (ch) {
 		case 'f':		/* file to log */
 			if (freopen(optarg, "r", stdin) == NULL)
 				err(EXIT_FAILURE, _("file %s"),
@@ -216,26 +385,36 @@ main(int argc, char **argv) {
 			usock = optarg;
 			break;
 		case 'd':
-			optd = 1;	/* use datagrams */
+			socket_type = TYPE_UDP;
 			break;
-		case 'n':		/* udp socket */
-			optd = 1;	/* use datagrams because udp */
-			udpserver = optarg;
+		case 'T':
+			socket_type = TYPE_TCP;
 			break;
-		case 'P':		/* change udp port */
-			tmpport = strtol_or_err(optarg,
-						_("failed to parse port number"));
-			if (tmpport < 0 || 65535 < tmpport)
-				errx(EXIT_FAILURE, _("port `%ld' out of range"),
-						tmpport);
-			udpport = (int) tmpport;
+		case 'n':
+			server = optarg;
+			break;
+		case 'P':
+			port = optarg;
 			break;
 		case 'V':
-			printf(_("%s from %s\n"), program_invocation_short_name,
-						  PACKAGE_STRING);
+			printf(UTIL_LINUX_VERSION);
 			exit(EXIT_SUCCESS);
 		case 'h':
 			usage(stdout);
+		case OPT_PRIO_PREFIX:
+			prio_prefix = 1;
+			break;
+#ifdef HAVE_LIBSYSTEMD
+		case OPT_JOURNALD:
+			if (optarg) {
+				jfd = fopen(optarg, "r");
+				if (!jfd)
+					err(EXIT_FAILURE, _("cannot open %s"),
+					    optarg);
+			} else
+				jfd = stdin;
+			break;
+#endif
 		case '?':
 		default:
 			usage(stderr);
@@ -245,14 +424,22 @@ main(int argc, char **argv) {
 	argv += optind;
 
 	/* setup for logging */
-	if (!usock && !udpserver)
-		openlog(tag ? tag : getlogin(), logflags, 0);
-	else if (udpserver)
-		LogSock = udpopenlog(udpserver,udpport);
+#ifdef HAVE_LIBSYSTEMD
+	if (jfd) {
+		int ret = journald_entry(jfd);
+		if (stdin != jfd)
+			fclose(jfd);
+		if (ret)
+			errx(EXIT_FAILURE, "journald entry could not be wrote");
+		return EXIT_SUCCESS;
+	}
+#endif
+	if (server)
+		LogSock = inet_socket(server, port, socket_type);
+	else if (usock)
+		LogSock = unix_socket(usock, socket_type);
 	else
-		LogSock = myopenlog(usock);
-
-	(void) fclose(stdout);
+		openlog(tag ? tag : getlogin(), logflags, 0);
 
 	/* log input line if appropriate */
 	if (argc > 0) {
@@ -262,14 +449,14 @@ main(int argc, char **argv) {
 		for (p = buf, endp = buf + sizeof(buf) - 2; *argv;) {
 			len = strlen(*argv);
 			if (p + len > endp && p > buf) {
-			    if (!usock && !udpserver)
+			    if (!usock && !server)
 				syslog(pri, "%s", buf);
 			    else
 				mysyslog(LogSock, logflags, pri, tag, buf);
 				p = buf;
 			}
 			if (len > sizeof(buf) - 1) {
-			    if (!usock && !udpserver)
+			    if (!usock && !server)
 				syslog(pri, "%s", *argv++);
 			    else
 				mysyslog(LogSock, logflags, pri, tag, *argv++);
@@ -281,12 +468,14 @@ main(int argc, char **argv) {
 			}
 		}
 		if (p != buf) {
-		    if (!usock)
+		    if (!usock && !server)
 			syslog(pri, "%s", buf);
 		    else
 			mysyslog(LogSock, logflags, pri, tag, buf);
 		}
 	} else {
+		char *msg;
+		int default_priority = pri;
 		while (fgets(buf, sizeof(buf), stdin) != NULL) {
 		    /* glibc is buggy and adds an additional newline,
 		       so we have to remove it here until glibc is fixed */
@@ -295,63 +484,21 @@ main(int argc, char **argv) {
 		    if (len > 0 && buf[len - 1] == '\n')
 			    buf[len - 1] = '\0';
 
-		    if (!usock)
-			syslog(pri, "%s", buf);
+			msg = buf;
+			pri = default_priority;
+			if (prio_prefix && msg[0] == '<')
+				msg = get_prio_prefix(msg, &pri);
+
+		    if (!usock && !server)
+			syslog(pri, "%s", msg);
 		    else
-			mysyslog(LogSock, logflags, pri, tag, buf);
+			mysyslog(LogSock, logflags, pri, tag, msg);
 		}
 	}
-	if (!usock)
+	if (!usock && !server)
 		closelog();
 	else
 		close(LogSock);
 
 	return EXIT_SUCCESS;
-}
-
-/*
- *  Decode a symbolic name to a numeric value
- */
-int
-pencode(s)
-	register char *s;
-{
-	char *save;
-	int fac, lev;
-
-	for (save = s; *s && *s != '.'; ++s);
-	if (*s) {
-		*s = '\0';
-		fac = decode(save, facilitynames);
-		if (fac < 0)
-			errx(EXIT_FAILURE,
-			    _("unknown facility name: %s."), save);
-		*s++ = '.';
-	}
-	else {
-		fac = LOG_USER;
-		s = save;
-	}
-	lev = decode(s, prioritynames);
-	if (lev < 0)
-		errx(EXIT_FAILURE,
-		    _("unknown priority name: %s."), save);
-	return ((lev & LOG_PRIMASK) | (fac & LOG_FACMASK));
-}
-
-int
-decode(name, codetab)
-	char *name;
-	CODE *codetab;
-{
-	register CODE *c;
-
-	if (isdigit(*name))
-		return (atoi(name));
-
-	for (c = codetab; c->c_name; c++)
-		if (!strcasecmp(name, c->c_name))
-			return (c->c_val);
-
-	return (-1);
 }

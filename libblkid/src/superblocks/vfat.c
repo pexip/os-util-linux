@@ -123,9 +123,8 @@ static unsigned char *search_fat_label(blkid_probe pr,
 	struct vfat_dir_entry *ent, *dir = NULL;
 	uint32_t i;
 
-	DBG(DEBUG_LOWPROBE,
-		printf("\tlook for label in root-dir "
-			"(entries: %d, offset: %jd)\n", entries, offset));
+	DBG(LOWPROBE, ul_debug("\tlook for label in root-dir "
+			"(entries: %d, offset: %jd)", entries, offset));
 
 	if (!blkid_probe_is_tiny(pr)) {
 		/* large disk, read whole root directory */
@@ -163,8 +162,7 @@ static unsigned char *search_fat_label(blkid_probe pr,
 
 		if ((ent->attr & (FAT_ATTR_VOLUME_ID | FAT_ATTR_DIR)) ==
 		    FAT_ATTR_VOLUME_ID) {
-			DBG(DEBUG_LOWPROBE,
-				printf("\tfound fs LABEL at entry %d\n", i));
+			DBG(LOWPROBE, ul_debug("\tfound fs LABEL at entry %d", i));
 			return ent->name;
 		}
 	}
@@ -257,16 +255,20 @@ int blkid_probe_is_vfat(blkid_probe pr)
 	struct vfat_super_block *vs;
 	struct msdos_super_block *ms;
 	const struct blkid_idmag *mag = NULL;
+	int rc;
 
-	if (blkid_probe_get_idmag(pr, &vfat_idinfo, NULL, &mag) || !mag)
+	rc = blkid_probe_get_idmag(pr, &vfat_idinfo, NULL, &mag);
+	if (rc < 0)
+		return rc;	/* error */
+	if (rc != BLKID_PROBE_OK || !mag)
 		return 0;
 
 	ms = blkid_probe_get_sb(pr, mag, struct msdos_super_block);
 	if (!ms)
-		return 0;
+		return errno ? -errno : 0;
 	vs = blkid_probe_get_sb(pr, mag, struct vfat_super_block);
 	if (!vs)
-		return 0;
+		return errno ? -errno : 0;
 
 	return fat_valid_superblock(mag, ms, vs, NULL, NULL);
 }
@@ -285,10 +287,12 @@ static int probe_vfat(blkid_probe pr, const struct blkid_idmag *mag)
 
 	ms = blkid_probe_get_sb(pr, mag, struct msdos_super_block);
 	if (!ms)
-		return 0;
+		return errno ? -errno : 1;
+
 	vs = blkid_probe_get_sb(pr, mag, struct vfat_super_block);
 	if (!vs)
-		return 0;
+		return errno ? -errno : 1;
+
 	if (!fat_valid_superblock(mag, ms, vs, &cluster_count, &fat_size))
 		return 1;
 
@@ -349,7 +353,7 @@ static int probe_vfat(blkid_probe pr, const struct blkid_idmag *mag)
 			}
 
 			/* get FAT entry */
-			fat_entry_off = (reserved * sector_size) +
+			fat_entry_off = ((uint64_t) reserved * sector_size) +
 				(next * sizeof(uint32_t));
 			buf = blkid_probe_get_buffer(pr, fat_entry_off, buf_size);
 			if (buf == NULL)
@@ -378,16 +382,16 @@ static int probe_vfat(blkid_probe pr, const struct blkid_idmag *mag)
 					(blkid_loff_t) fsinfo_sect * sector_size,
 					sizeof(struct fat32_fsinfo));
 			if (buf == NULL)
-				return -1;
+				return errno ? -errno : 1;
 
 			fsinfo = (struct fat32_fsinfo *) buf;
 			if (memcmp(fsinfo->signature1, "\x52\x52\x61\x41", 4) != 0 &&
 			    memcmp(fsinfo->signature1, "\x52\x52\x64\x41", 4) != 0 &&
 			    memcmp(fsinfo->signature1, "\x00\x00\x00\x00", 4) != 0)
-				return -1;
+				return 1;
 			if (memcmp(fsinfo->signature2, "\x72\x72\x41\x61", 4) != 0 &&
 			    memcmp(fsinfo->signature2, "\x00\x00\x00\x00", 4) != 0)
-				return -1;
+				return 1;
 		}
 	}
 

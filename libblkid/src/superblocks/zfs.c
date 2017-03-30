@@ -64,7 +64,7 @@ struct nvlist {
 };
 
 #define nvdebug(fmt, ...)	do { } while(0)
-/*#define nvdebug(fmt, a...)	printf(fmt, ##a)*/
+/*#define nvdebug(fmt, a...)	fprintf(stderr, fmt, ##a)*/
 
 static void zfs_extract_guid_name(blkid_probe pr, loff_t offset)
 {
@@ -157,7 +157,7 @@ static void zfs_extract_guid_name(blkid_probe pr, loff_t offset)
 }
 
 #define zdebug(fmt, ...)	do {} while(0)
-/*#define zdebug(fmt, a...)	printf(fmt, ##a)*/
+/*#define zdebug(fmt, a...)	fprintf(stderr, fmt, ##a)*/
 
 /* ZFS has 128x1kB host-endian root blocks, stored in 2 areas at the start
  * of the disk, and 2 areas at the end of the disk.  Check only some of them...
@@ -168,7 +168,7 @@ static int probe_zfs(blkid_probe pr,
 	uint64_t swab_magic = swab64(UBERBLOCK_MAGIC);
 	struct zfs_uberblock *ub;
 	int swab_endian;
-	loff_t offset;
+	loff_t offset, ub_offset = 0;
 	int tried;
 	int found;
 
@@ -185,20 +185,24 @@ static int probe_zfs(blkid_probe pr,
 			blkid_probe_get_buffer(pr, offset,
 					       sizeof(struct zfs_uberblock));
 		if (ub == NULL)
-			return -1;
+			return errno ? -errno : 1;
 
-		if (ub->ub_magic == UBERBLOCK_MAGIC)
+		if (ub->ub_magic == UBERBLOCK_MAGIC) {
+			ub_offset = offset;
 			found++;
+		}
 
-		if ((swab_endian = (ub->ub_magic == swab_magic)))
+		if ((swab_endian = (ub->ub_magic == swab_magic))) {
+			ub_offset = offset;
 			found++;
+		}
 
 		zdebug("probe_zfs: found %s-endian uberblock at %llu\n",
 		       swab_endian ? "big" : "little", offset >> 10);
 	}
 
 	if (found < 4)
-		return -1;
+		return 1;
 
 	/* If we found the 4th uberblock, then we will have exited from the
 	 * scanning loop immediately, and ub will be a valid uberblock. */
@@ -207,10 +211,10 @@ static int probe_zfs(blkid_probe pr,
 
 	zfs_extract_guid_name(pr, offset);
 
-	if (blkid_probe_set_magic(pr, offset,
+	if (blkid_probe_set_magic(pr, ub_offset,
 				sizeof(ub->ub_magic),
 				(unsigned char *) &ub->ub_magic))
-		return -1;
+		return 1;
 
 	return 0;
 }

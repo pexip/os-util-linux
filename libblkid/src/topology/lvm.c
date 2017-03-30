@@ -67,8 +67,7 @@ static int probe_lvm_tp(blkid_probe pr,
 		goto nothing;
 
 	if (pipe(lvpipe) < 0) {
-		DBG(DEBUG_LOWPROBE,
-			printf("Failed to open pipe: errno=%d", errno));
+		DBG(LOWPROBE, ul_debug("Failed to open pipe: errno=%d", errno));
 		goto nothing;
 	}
 
@@ -95,19 +94,17 @@ static int probe_lvm_tp(blkid_probe pr,
 
 		execv(lvargv[0], lvargv);
 
-		DBG(DEBUG_LOWPROBE,
-			printf("Failed to execute %s: errno=%d", cmd, errno));
+		DBG(LOWPROBE, ul_debug("Failed to execute %s: errno=%d", cmd, errno));
 		exit(1);
 	}
 	case -1:
-		DBG(DEBUG_LOWPROBE,
-			printf("Failed to forking: errno=%d", errno));
+		DBG(LOWPROBE, ul_debug("Failed to forking: errno=%d", errno));
 		goto nothing;
 	default:
 		break;
 	}
 
-	stream = fdopen(lvpipe[0], "r");
+	stream = fdopen(lvpipe[0], "r" UL_CLOEXECSTR);
 	if (!stream)
 		goto nothing;
 

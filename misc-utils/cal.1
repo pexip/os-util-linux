@@ -51,7 +51,7 @@ Display single month output.
 (This is the default.)
 .TP
 \fB\-3\fR, \fB\-\-three\fR
-Display prev/current/next month output.
+Display three months spanning the date.
 .TP
 \fB\-s\fR, \fB\-\-sunday\fR
 Display Sunday as the first day of the week.
@@ -63,15 +63,32 @@ Display Monday as the first day of the week.
 Display Julian dates (days one-based, numbered from January 1).
 .TP
 \fB\-y\fR, \fB\-\-year\fR
-Display a calendar for the current year.
+Display a calendar for the whole year.
+.TP
+\fB\-w\fR, \fB\-\-week\fR[\fI=number\fR]
+Display week numbers in the calendar (US or ISO-8601).
+.TP
+\fB\-\-color\fR[\fI=when\fR]
+Colorize output.  The
+.I when
+can be
+.IR never ,
+.IR auto ,
+or
+.IR always .
+Never will turn off colorizing in all situations.  Auto is default, and
+it will make colorizing to be in use if output is done to terminal.
+Always will allow colors to be outputed when
+.B cal
+outputs to pipe, or is called from a script.
 .TP
 \fB\-V\fR, \fB\-\-version\fR
 Display version information and exit.
 .TP
 \fB\-h\fR, \fB\-\-help\fR
-Display help screen and exit.
+Display help text and exit.
 .SH PARAMETERS
-A single parameter specifies the year (1 - 9999) to be displayed; note the
+A single parameter specifies the year to be displayed; note the
 year must be fully specified:
 .B "cal 89"
 will not display a calendar for 1989.
@@ -85,11 +102,35 @@ specified, the current month's calendar is displayed.
 A year starts on Jan 1. The first day of the week is determined by the
 locale.
 .PP
-The Gregorian Reformation is assumed to have occurred in 1752 on the 3rd of
-September. By this time, most countries had recognized the reformation
-(although a few did not recognize it until the early 1900's). Ten days
-following that date were eliminated by the reformation, so the calendar for
-that month is a bit unusual.
+The week numbering depends on the choice of the first day of the week.  If Sunday
+(the default) is used for the first day of the week, then the customary North
+American numbering will be used, i.e. the first Sunday of the year starts the
+first week.  If Monday is selected, then the ISO-8601 standard week numbering
+is used, where the first Thursday of the year is in week number 1.
+.SH COLORS
+Implicit coloring can be disabled as follows:
+.RS
+
+.br
+.BI "touch /etc/terminal-colors.d/cal.disable"
+.br
+
+.RE
+For more details see
+.BR terminal-colors.d (5).
+.SH BUGS
+.PP
+The
+.B cal
+program uses the 3rd of September 1752 as the date of the Gregorian calendar
+reformation -- that is when it happened in Great Britain and its colonies
+(including what is now the USA).  Ten days following that date were eliminated
+by this reformation, so the calendar for that month is rather unusual.
+The actual historical dates at which the calendar reform happened in all the
+different countries (locales) are ignored.
+.PP
+Alternative calendars, such as the Umm al-Qura, the Solar Hijri, the Ge'ez,
+or the lunisolar Hindu, are not supported.
 .SH HISTORY
 A cal command appeared in Version 6 AT&T UNIX.
 .SH AVAILABILITY

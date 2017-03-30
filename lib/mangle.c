@@ -13,40 +13,40 @@
 #include "mangle.h"
 #include "c.h"
 
-#define isoctal(a) (((a) & ~7) == '0')
+#define isoctal(a)		(((a) & ~7) == '0')
 
-static unsigned char need_escaping[] = { ' ', '\t', '\n', '\\' };
+#define from_hex(c)		(isdigit(c) ? c - '0' : tolower(c) - 'a' + 10)
+
+#define is_unwanted_char(x)	(strchr(" \t\n\\", (unsigned int) x) != NULL)
+
 
 char *mangle(const char *s)
 {
 	char *ss, *sp;
-	size_t n;
 
 	if (!s)
 		return NULL;
 
-	n = strlen(s);
-	ss = sp = malloc(4*n+1);
+	ss = sp = malloc(4 * strlen(s) + 1);
 	if (!sp)
 		return NULL;
 	while(1) {
-		for (n = 0; n < sizeof(need_escaping); n++) {
-			if (*s == need_escaping[n]) {
-				*sp++ = '\\';
-				*sp++ = '0' + ((*s & 0300) >> 6);
-				*sp++ = '0' + ((*s & 070) >> 3);
-				*sp++ = '0' + (*s & 07);
-				goto next;
-			}
-		}
-		*sp++ = *s;
-		if (*s == 0)
+		if (!*s) {
+			*sp = '\0';
 			break;
-	next:
+		}
+		if (is_unwanted_char(*s)) {
+			*sp++ = '\\';
+			*sp++ = '0' + ((*s & 0300) >> 6);
+			*sp++ = '0' + ((*s & 070) >> 3);
+			*sp++ = '0' + (*s & 07);
+		} else
+			*sp++ = *s;
 		s++;
 	}
 	return ss;
 }
+
 
 void unmangle_to_buffer(const char *s, char *buf, size_t len)
 {
@@ -56,10 +56,32 @@ void unmangle_to_buffer(const char *s, char *buf, size_t len)
 		return;
 
 	while(*s && sz < len - 1) {
-		if (*s == '\\' && sz + 4 < len - 1 && isoctal(s[1]) &&
+		if (*s == '\\' && sz + 3 < len - 1 && isoctal(s[1]) &&
 		    isoctal(s[2]) && isoctal(s[3])) {
 
 			*buf++ = 64*(s[1] & 7) + 8*(s[2] & 7) + (s[3] & 7);
+			s += 4;
+			sz += 4;
+		} else {
+			*buf++ = *s++;
+			sz++;
+		}
+	}
+	*buf = '\0';
+}
+
+void unhexmangle_to_buffer(const char *s, char *buf, size_t len)
+{
+	size_t sz = 0;
+
+	if (!s)
+		return;
+
+	while(*s && sz < len - 1) {
+		if (*s == '\\' && sz + 3 < len - 1 && s[1] == 'x' &&
+		    isxdigit(s[2]) && isxdigit(s[3])) {
+
+			*buf++ = from_hex(s[2]) << 4 | from_hex(s[3]);
 			s += 4;
 			sz += 4;
 		} else {
@@ -109,14 +131,18 @@ char *unmangle(const char *s, char **end)
 #include <errno.h>
 int main(int argc, char *argv[])
 {
+	char *p = NULL;
 	if (argc < 3) {
-		fprintf(stderr, "usage: %s --mangle | --unmangle <string>\n",
+		fprintf(stderr, "usage: %s --mangle|unmangle <string>\n",
 						program_invocation_short_name);
 		return EXIT_FAILURE;
 	}
 
-	if (!strcmp(argv[1], "--mangle"))
-		printf("mangled: '%s'\n", mangle(argv[2]));
+	if (!strcmp(argv[1], "--mangle")) {
+		p = mangle(argv[2]);
+		printf("mangled: '%s'\n", p);
+		free(p);
+	}
 
 	else if (!strcmp(argv[1], "--unmangle")) {
 		char *x = unmangle(argv[2], NULL);

@@ -31,50 +31,215 @@
  * SUCH DAMAGE.
  */
 
- /* 1999-02-22 Arkadiusz Mi∂kiewicz <misiek@pld.ORG.PL>
+ /* 1999-02-22 Arkadiusz Mi≈õkiewicz <misiek@pld.ORG.PL>
   * - added Native Language Support
   */
 
 #include <sys/types.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <err.h>
+#include <limits.h>
+#include <getopt.h>
 #include "hexdump.h"
 
+#include "list.h"
 #include "nls.h"
 #include "c.h"
+#include "colors.h"
+#include "strutils.h"
+#include "xalloc.h"
+#include "closestream.h"
 
-FS *fshead;				/* head of format strings */
-int blocksize;				/* data block size */
-int exitval;				/* final exit value */
-int length = -1;			/* max bytes to read */
+void hex_free(struct hexdump *);
+
+int
+parse_args(int argc, char **argv, struct hexdump *hex)
+{
+	int ch;
+	int colormode = UL_COLORMODE_UNDEF;
+	char *hex_offt = "\"%07.7_Ax\n\"";
+
+
+	static const struct option longopts[] = {
+		{"one-byte-octal", no_argument, NULL, 'b'},
+		{"one-byte-char", required_argument, NULL, 'c'},
+		{"canonical", required_argument, NULL, 'C'},
+		{"two-bytes-decimal", no_argument, NULL, 'd'},
+		{"two-bytes-octal", required_argument, NULL, 'o'},
+		{"two-bytes-hex", no_argument, NULL, 'x'},
+		{"format", required_argument, NULL, 'e'},
+		{"format-file", required_argument, NULL, 'f'},
+		{"color", optional_argument, NULL, 'L'},
+		{"length", required_argument, NULL, 'n'},
+		{"skip", required_argument, NULL, 's'},
+		{"no-squeezing", no_argument, NULL, 'v'},
+		{"help", no_argument, NULL, 'h'},
+		{"version", no_argument, NULL, 'V'},
+		{NULL, no_argument, NULL, 0}
+	};
+
+	while ((ch = getopt_long(argc, argv, "bcCde:f:L::n:os:vxhV", longopts, NULL)) != -1) {
+		switch (ch) {
+		case 'b':
+			add_fmt(hex_offt, hex);
+			add_fmt("\"%07.7_ax \" 16/1 \"%03o \" \"\\n\"", hex);
+			break;
+		case 'c':
+			add_fmt(hex_offt, hex);
+			add_fmt("\"%07.7_ax \" 16/1 \"%3_c \" \"\\n\"", hex);
+			break;
+		case 'C':
+			add_fmt("\"%08.8_Ax\n\"", hex);
+			add_fmt("\"%08.8_ax  \" 8/1 \"%02x \" \"  \" 8/1 \"%02x \" ", hex);
+			add_fmt("\"  |\" 16/1 \"%_p\" \"|\\n\"", hex);
+			break;
+		case 'd':
+			add_fmt(hex_offt, hex);
+			add_fmt("\"%07.7_ax \" 8/2 \"  %05u \" \"\\n\"", hex);
+			break;
+		case 'e':
+			add_fmt(optarg, hex);
+			break;
+		case 'f':
+			addfile(optarg, hex);
+			break;
+                case 'L':
+			colormode = UL_COLORMODE_AUTO;
+			if (optarg)
+				colormode = colormode_or_err(optarg,
+						_("unsupported color mode"));
+                        break;
+		case 'n':
+			hex->length = strtosize_or_err(optarg, _("failed to parse length"));
+			break;
+		case 'o':
+			add_fmt(hex_offt, hex);
+			add_fmt("\"%07.7_ax \" 8/2 \" %06o \" \"\\n\"", hex);
+			break;
+		case 's':
+			hex->skip = strtosize_or_err(optarg, _("failed to parse offset"));
+			break;
+		case 'v':
+			vflag = ALL;
+			break;
+		case 'x':
+			add_fmt(hex_offt, hex);
+			add_fmt("\"%07.7_ax \" 8/2 \"   %04x \" \"\\n\"", hex);
+			break;
+		case 'h':
+			usage(stdout);
+		case 'V':
+			printf(UTIL_LINUX_VERSION);
+			exit(EXIT_SUCCESS);
+			break;
+		default:
+			usage(stderr);
+		}
+	}
+
+	if (list_empty(&hex->fshead)) {
+		add_fmt(hex_offt, hex);
+		add_fmt("\"%07.7_ax \" 8/2 \"%04x \" \"\\n\"", hex);
+	}
+	colors_init (colormode, "hexdump");
+	return optind;
+}
+
+void __attribute__((__noreturn__)) usage(FILE *out)
+{
+	fputs(USAGE_HEADER, out);
+	fprintf(out, _(" %s [options] <file>...\n"), program_invocation_short_name);
+	fputs(USAGE_OPTIONS, out);
+	fputs(_(" -b, --one-byte-octal      one-byte octal display\n"), out);
+	fputs(_(" -c, --one-byte-char       one-byte character display\n"), out);
+	fputs(_(" -C, --canonical           canonical hex+ASCII display\n"), out);
+	fputs(_(" -d, --two-bytes-decimal   two-byte decimal display\n"), out);
+	fputs(_(" -o, --two-bytes-octal     two-byte octal display\n"), out);
+	fputs(_(" -x, --two-bytes-hex       two-byte hexadecimal display\n"), out);
+	fputs(_(" -L, --color[=<mode>]      interpret color formatting specifiers\n"), out);
+	fputs(_(" -e, --format <format>     format string to be used for displaying data\n"), out);
+	fputs(_(" -f, --format-file <file>  file that contains format strings\n"), out);
+	fputs(_(" -n, --length <length>     interpret only length bytes of input\n"), out);
+	fputs(_(" -s, --skip <offset>       skip offset bytes from the beginning\n"), out);
+	fputs(_(" -v, --no-squeezing        output identical lines\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+	fputs(USAGE_HELP, out);
+	fputs(USAGE_VERSION, out);
+	fprintf(out, USAGE_MAN_TAIL("hexdump(1)"));
+
+	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+}
 
 int main(int argc, char **argv)
 {
-	FS *tfs;
-	char *p;
+	struct list_head *p;
+	struct hexdump_fs *tfs;
+	int ret;
+
+	struct hexdump *hex = xcalloc(1, sizeof (struct hexdump));
+	hex->length = -1;
+	INIT_LIST_HEAD(&hex->fshead);
 
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
-	if (!(p = strrchr(argv[0], 'o')) || strcmp(p, "od")) {
-		newsyntax(argc, &argv);
-	} else
-		errx(EXIT_FAILURE, _("calling hexdump as od has been deprecated "
-				     "in favour to GNU coreutils od."));
+	argv += parse_args(argc, argv, hex);
 
 	/* figure out the data block size */
-	for (blocksize = 0, tfs = fshead; tfs; tfs = tfs->nextfs) {
-		tfs->bcnt = size(tfs);
-		if (blocksize < tfs->bcnt)
-			blocksize = tfs->bcnt;
+	hex->blocksize = 0;
+	list_for_each(p, &hex->fshead) {
+		tfs = list_entry(p, struct hexdump_fs, fslist);
+		if ((tfs->bcnt = block_size(tfs)) > hex->blocksize)
+			hex->blocksize = tfs->bcnt;
 	}
-	/* rewrite the rules, do syntax checking */
-	for (tfs = fshead; tfs; tfs = tfs->nextfs)
-		rewrite(tfs);
 
-	(void)next(argv);
-	display();
-	return exitval;
+	/* rewrite the rules, do syntax checking */
+	list_for_each(p, &hex->fshead)
+		rewrite_rules(list_entry(p, struct hexdump_fs, fslist), hex);
+
+	next(argv, hex);
+	display(hex);
+
+	ret = hex->exitval;
+	hex_free(hex);
+
+	return ret;
+}
+
+void hex_free(struct hexdump *hex)
+{
+	struct list_head *p, *pn, *q, *qn, *r, *rn, *s, *sn;
+	struct hexdump_fs *fs;
+	struct hexdump_fu *fu;
+	struct hexdump_pr *pr;
+	struct hexdump_clr *clr;
+
+	list_for_each_safe(p, pn, &hex->fshead) {
+		fs = list_entry(p, struct hexdump_fs, fslist);
+		list_for_each_safe(q, qn, &fs->fulist) {
+			fu = list_entry(q, struct hexdump_fu, fulist);
+			list_for_each_safe(r, rn, &fu->prlist) {
+				pr = list_entry(r, struct hexdump_pr, prlist);
+				if (pr->colorlist) {
+					list_for_each_safe(s, sn, pr->colorlist) {
+						clr = list_entry (s, struct hexdump_clr, colorlist);
+						free(clr->str);
+						free(clr);
+					}
+				}
+				free(pr->fmt);
+				free(pr);
+			}
+			free(fu->fmt);
+			free(fu);
+		}
+		free(fs);
+	}
+	free (hex);
 }

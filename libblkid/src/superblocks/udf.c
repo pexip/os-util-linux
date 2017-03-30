@@ -17,6 +17,7 @@
 #include <stdint.h>
 
 #include "superblocks.h"
+#include "iso9660.h"
 
 struct volume_descriptor {
 	struct descriptor_tag {
@@ -63,67 +64,98 @@ static int probe_udf(blkid_probe pr,
 	struct volume_descriptor *vd;
 	struct volume_structure_descriptor *vsd;
 	unsigned int bs;
+	unsigned int pbs[2];
 	unsigned int b;
 	unsigned int type;
 	unsigned int count;
 	unsigned int loc;
+	unsigned int i;
 
-	/* search Volume Sequence Descriptor (VSD) to get the logical
-	 * block size of the volume */
-	for (bs = 0x800; bs < 0x8000; bs += 0x800) {
+	/* The block size of a UDF filesystem is that of the underlying
+	 * storage; we check later on for the special case of image files,
+	 * which may have the 2048-byte block size of optical media. */
+	pbs[0] = blkid_probe_get_sectorsize(pr);
+	pbs[1] = 0x800;
+
+	/* check for a Volume Structure Descriptor (VSD); each is
+	 * 2048 bytes long */
+	for (b = 0; b < 0x8000; b += 0x800) {
 		vsd = (struct volume_structure_descriptor *)
 			blkid_probe_get_buffer(pr,
-					UDF_VSD_OFFSET + bs,
+					UDF_VSD_OFFSET + b,
 					sizeof(*vsd));
 		if (!vsd)
-			return 1;
+			return errno ? -errno : 1;
 		if (vsd->id[0] != '\0')
 			goto nsr;
 	}
-	return -1;
+	return 1;
 
 nsr:
 	/* search the list of VSDs for a NSR descriptor */
 	for (b = 0; b < 64; b++) {
 		vsd = (struct volume_structure_descriptor *)
 			blkid_probe_get_buffer(pr,
-					UDF_VSD_OFFSET + ((blkid_loff_t) b * bs),
+					UDF_VSD_OFFSET + ((blkid_loff_t) b * 0x800),
 					sizeof(*vsd));
 		if (!vsd)
-			return -1;
+			return errno ? -errno : 1;
 		if (vsd->id[0] == '\0')
-			return -1;
+			return 1;
 		if (memcmp(vsd->id, "NSR02", 5) == 0)
 			goto anchor;
 		if (memcmp(vsd->id, "NSR03", 5) == 0)
 			goto anchor;
 	}
-	return -1;
+	return 1;
 
 anchor:
-	/* read Anchor Volume Descriptor (AVDP) */
-	vd = (struct volume_descriptor *)
-		blkid_probe_get_buffer(pr, 256 * bs, sizeof(*vd));
-	if (!vd)
-		return -1;
+	/* read Anchor Volume Descriptor (AVDP), checking block size */
+	for (i = 0; i < 2; i++) {
+		vd = (struct volume_descriptor *)
+			blkid_probe_get_buffer(pr, 256 * pbs[i], sizeof(*vd));
+		if (!vd)
+			return errno ? -errno : 1;
 
-	type = le16_to_cpu(vd->tag.id);
-	if (type != 2) /* TAG_ID_AVDP */
-		return 0;
+		type = le16_to_cpu(vd->tag.id);
+		if (type == 2) /* TAG_ID_AVDP */
+			goto real_blksz;
+	}
+	return 0;
 
-	/* get desriptor list address and block count */
+real_blksz:
+	/* Use the actual block size from here on out */
+	bs = pbs[i];
+
+	/* get descriptor list address and block count */
 	count = le32_to_cpu(vd->type.anchor.length) / bs;
 	loc = le32_to_cpu(vd->type.anchor.location);
 
-	/* pick the primary descriptor from the list */
+	/* check if the list is usable */
 	for (b = 0; b < count; b++) {
 		vd = (struct volume_descriptor *)
 			blkid_probe_get_buffer(pr,
 					(blkid_loff_t) (loc + b) * bs,
 					sizeof(*vd));
 		if (!vd)
-			return -1;
+			return errno ? -errno : 1;
+	}
 
+	/* Try extract all possible ISO9660 information -- if there is
+	 * usable LABEL in ISO header then use it, otherwise read UDF
+	 * specific LABEL */
+	if (probe_iso9660(pr, mag) == 0 &&
+	    __blkid_probe_lookup_value(pr, "LABEL") != NULL)
+		return 0;
+
+	/* Read UDF label */
+	for (b = 0; b < count; b++) {
+		vd = (struct volume_descriptor *)
+			blkid_probe_get_buffer(pr,
+					(blkid_loff_t) (loc + b) * bs,
+					sizeof(*vd));
+		if (!vd)
+			return errno ? -errno : 1;
 		type = le16_to_cpu(vd->tag.id);
 		if (type == 0)
 			break;

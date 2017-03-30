@@ -1,4 +1,9 @@
-
+/*
+ * No copyright is claimed.  This code is in the public domain; do with
+ * it what you wish.
+ *
+ * Written by Karel Zak <kzak@redhat.com>
+ */
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
@@ -20,9 +25,13 @@
 #include <sys/disk.h>
 #endif
 
+#ifdef __FreeBSD_kernel__
+#include <sys/disk.h>
+#endif
+
 #include "blkdev.h"
-#include "linux_version.h"
 #include "c.h"
+#include "linux_version.h"
 
 static long
 blkdev_valid_offset (int fd, off_t offset) {
@@ -33,6 +42,12 @@ blkdev_valid_offset (int fd, off_t offset) {
 	if (read (fd, &ch, 1) < 1)
 		return 0;
 	return 1;
+}
+
+int is_blkdev(int fd)
+{
+	struct stat st;
+	return (fstat(fd, &st) == 0 && S_ISBLK(st.st_mode));
 }
 
 off_t
@@ -243,8 +258,88 @@ int blkdev_is_misaligned(int fd)
 #endif
 }
 
+int blkdev_is_cdrom(int fd)
+{
+#ifdef CDROM_GET_CAPABILITY
+	int ret;
 
-#ifdef TEST_PROGRAM
+	if ((ret = ioctl(fd, CDROM_GET_CAPABILITY, NULL)) < 0)
+		return 0;
+	else
+		return ret;
+#else
+	return 0;
+#endif
+}
+
+/*
+ * Get kernel's interpretation of the device's geometry.
+ *
+ * Returns the heads and sectors - but not cylinders
+ * as it's truncated for disks with more than 65535 tracks.
+ *
+ * Note that this is deprecated in favor of LBA addressing.
+ */
+int blkdev_get_geometry(int fd, unsigned int *h, unsigned int *s)
+{
+#ifdef HDIO_GETGEO
+	struct hd_geometry geometry;
+
+	if (ioctl(fd, HDIO_GETGEO, &geometry) == 0) {
+		*h = geometry.heads;
+		*s = geometry.sectors;
+		return 0;
+	}
+#else
+	*h = 0;
+	*s = 0;
+#endif
+	return -1;
+}
+
+/*
+ * Convert scsi type to human readable string.
+ */
+const char *blkdev_scsi_type_to_name(int type)
+{
+	switch (type) {
+	case SCSI_TYPE_DISK:
+		return "disk";
+	case SCSI_TYPE_TAPE:
+		return "tape";
+	case SCSI_TYPE_PRINTER:
+		return "printer";
+	case SCSI_TYPE_PROCESSOR:
+		return "processor";
+	case SCSI_TYPE_WORM:
+		return "worm";
+	case SCSI_TYPE_ROM:
+		return "rom";
+	case SCSI_TYPE_SCANNER:
+		return "scanner";
+	case SCSI_TYPE_MOD:
+		return "mo-disk";
+	case SCSI_TYPE_MEDIUM_CHANGER:
+		return "changer";
+	case SCSI_TYPE_COMM:
+		return "comm";
+	case SCSI_TYPE_RAID:
+		return "raid";
+	case SCSI_TYPE_ENCLOSURE:
+		return "enclosure";
+	case SCSI_TYPE_RBC:
+		return "rbc";
+	case SCSI_TYPE_OSD:
+		return "osd";
+	case SCSI_TYPE_NO_LUN:
+		return "no-lun";
+	default:
+		break;
+	}
+	return NULL;
+}
+
+#ifdef TEST_PROGRAM_BLKDEV
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -261,7 +356,7 @@ main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	if ((fd = open(argv[1], O_RDONLY)) < 0)
+	if ((fd = open(argv[1], O_RDONLY|O_CLOEXEC)) < 0)
 		err(EXIT_FAILURE, "open %s failed", argv[1]);
 
 	if (blkdev_get_size(fd, &bytes) < 0)

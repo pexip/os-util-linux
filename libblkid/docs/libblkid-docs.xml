@@ -9,7 +9,7 @@
     <title>libblkid Reference Manual</title>
     <releaseinfo>for libblkid version &version;</releaseinfo>
     <copyright>
-      <year>2009-2011</year>
+      <year>2009-2013</year>
       <holder>Karel Zak &lt;kzak@redhat.com&gt;</holder>
     </copyright>
   </bookinfo>
@@ -50,6 +50,7 @@ available from ftp://ftp.kernel.org/pub/linux/utils/util-linux/.
   </part>
   <part>
     <title>Low-level</title>
+    <xi:include href="xml/init.xml"/>
     <xi:include href="xml/lowprobe.xml"/>
     <xi:include href="xml/lowprobe-tags.xml"/>
     <xi:include href="xml/superblocks.xml"/>

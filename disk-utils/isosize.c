@@ -28,8 +28,17 @@
 #include "nls.h"
 #include "c.h"
 #include "strutils.h"
+#include "closestream.h"
 
 #define ISODCL(from, to) (to - from + 1)
+
+static int is_iso(int fd)
+{
+	char label[8];
+	if (pread(fd, &label, 8, 0x8000) == -1)
+		return 1;
+	return memcmp(&label, &"\1CD001\1", 8);
+}
 
 static int isonum_721(unsigned char *p)
 {
@@ -116,13 +125,15 @@ struct iso_primary_descriptor
 	unsigned char unused5			[ISODCL (1396, 2048)];
 };
 
-static void isosize(char *filenamep, int xflag, long divisor)
+static void isosize(int argc, char *filenamep, int xflag, long divisor)
 {
 	int fd, nsecs, ssize;
 	struct iso_primary_descriptor ipd;
 
 	if ((fd = open(filenamep, O_RDONLY)) < 0)
-		err(EXIT_FAILURE, _("failed to open %s"), filenamep);
+		err(EXIT_FAILURE, _("cannot open %s"), filenamep);
+	if (is_iso(fd))
+		warnx(_("%s: might not be an ISO filesystem"), filenamep);
 
 	if (lseek(fd, 16 << 11, 0) == (off_t) - 1)
 		err(EXIT_FAILURE, _("seek error on %s"), filenamep);
@@ -134,6 +145,8 @@ static void isosize(char *filenamep, int xflag, long divisor)
 	/* isonum_723 returns nowadays always 2048 */
 	ssize = isonum_723(ipd.logical_block_size, xflag);
 
+	if (1 < argc)
+		printf("%s: ", filenamep);
 	if (xflag) {
 		printf(_("sector count: %d, sector size: %d\n"), nsecs, ssize);
 	} else {
@@ -152,15 +165,17 @@ static void isosize(char *filenamep, int xflag, long divisor)
 
 static void __attribute__((__noreturn__)) usage(FILE *out)
 {
-	fprintf(out, _("\nUsage:\n"
-		       " %s [options] iso9660_image_file\n"),
+	fputs(USAGE_HEADER, out);
+	fprintf(out,
+		_(" %s [options] <iso9660_image_file>\n"),
 		program_invocation_short_name);
-
-	fprintf(out, _("\nOptions:\n"
-		       " -d, --divisor=NUM      devide bytes NUM\n"
-		       " -x, --sectors          show sector count and size\n"
-		       " -V, --version          output version information and exit\n"
-		       " -H, --help             display this help and exit\n\n"));
+	fputs(USAGE_OPTIONS, out);
+	fputs(_(" -d, --divisor=<number>  divide the amount of bytes by <number>\n"), out);
+	fputs(_(" -x, --sectors           show sector count and size\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+	fputs(USAGE_HELP, out);
+	fputs(USAGE_VERSION, out);
+	fprintf(out, USAGE_MAN_TAIL("isosize(8)"));
 
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
@@ -171,7 +186,7 @@ int main(int argc, char **argv)
 	long divisor = 0;
 
 	static const struct option longopts[] = {
-		{"divisor", no_argument, 0, 'd'},
+		{"divisor", required_argument, 0, 'd'},
 		{"sectors", no_argument, 0, 'x'},
 		{"version", no_argument, 0, 'V'},
 		{"help", no_argument, 0, 'h'},
@@ -181,6 +196,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	while ((opt = getopt_long(argc, argv, "d:xVh", longopts, NULL)) != -1)
 		switch (opt) {
@@ -193,8 +209,7 @@ int main(int argc, char **argv)
 			xflag = 1;
 			break;
 		case 'V':
-			printf(_("%s (%s)\n"), program_invocation_short_name,
-			       PACKAGE_STRING);
+			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
 			usage(stdout);
@@ -207,11 +222,8 @@ int main(int argc, char **argv)
 	if (ct <= 0)
 		usage(stderr);
 
-	for (j = optind; j < argc; j++) {
-		if (ct > 1)
-			printf("%s: ", argv[j]);
-		isosize(argv[j], xflag, divisor);
-	}
+	for (j = optind; j < argc; j++)
+		isosize(ct, argv[j], xflag, divisor);
 
 	return EXIT_SUCCESS;
 }

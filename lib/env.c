@@ -1,7 +1,7 @@
 /*
  * Security checks of environment
  * Added from shadow-utils package
- * by Arkadiusz Mi∂kiewicz <misiek@pld.ORG.PL>
+ * by Arkadiusz Mi≈õkiewicz <misiek@pld.ORG.PL>
  *
  */
 
@@ -21,7 +21,9 @@
 
 #include "env.h"
 
+#ifndef HAVE_ENVIRON_DECL
 extern char **environ;
+#endif
 
 static char * const forbid[] = {
         "_RLD_=",
@@ -89,7 +91,7 @@ char *safe_getenv(const char *arg)
 
 	if (ruid != 0 || (ruid != geteuid()) || (getgid() != getegid()))
 		return NULL;
-#if HAVE_PRCTL
+#ifdef HAVE_PRCTL
 	if (prctl(PR_GET_DUMPABLE, 0, 0, 0, 0) == 0)
 		return NULL;
 #else
@@ -98,8 +100,9 @@ char *safe_getenv(const char *arg)
 		return NULL;
 #endif
 #endif
-
-#ifdef HAVE___SECURE_GETENV
+#ifdef HAVE_SECURE_GETENV
+return secure_getenv(arg);
+#elif HAVE___SECURE_GETENV
 	return __secure_getenv(arg);
 #else
 	return getenv(arg);

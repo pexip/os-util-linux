@@ -2,7 +2,11 @@
  * Copyright (C) 2008 Karel Zak <kzak@redhat.com>
  * Copyright (C) 1999-2008 by Theodore Ts'o
  *
+ * This file may be redistributed under the terms of the
+ * GNU Lesser General Public License.
+ *
  * (based on list.h from e2fsprogs)
+ * Merge sort based on kernel's implementation.
  */
 
 #ifndef UTIL_LINUX_LIST_H
@@ -126,11 +130,11 @@ _INLINE_ int list_empty(struct list_head *head)
 }
 
 /**
- * list_last_entry - tests whether is entry last in the list
+ * list_entry_is_last - tests whether is entry last in the list
  * @entry:	the entry to test.
  * @head:	the list to test.
  */
-_INLINE_ int list_last_entry(struct list_head *entry, struct list_head *head)
+_INLINE_ int list_entry_is_last(struct list_head *entry, struct list_head *head)
 {
 	return head->prev == entry;
 }
@@ -162,8 +166,16 @@ _INLINE_ void list_splice(struct list_head *list, struct list_head *head)
  * @type:	the type of the struct this is embedded in.
  * @member:	the name of the list_struct within the struct.
  */
-#define list_entry(ptr, type, member) \
-	((type *)((char *)(ptr)-(unsigned long)(&((type *)0)->member)))
+#define list_entry(ptr, type, member) ({              \
+	const typeof( ((type *)0)->member ) *__mptr = (ptr);   \
+	(type *)( (char *)__mptr - offsetof(type,member) );})
+
+
+#define list_first_entry(head, type, member) \
+	((head) && (head)->next != (head) ? list_entry((head)->next, type, member) : NULL)
+
+#define list_last_entry(head, type, member) \
+	((head) && (head)->prev != (head) ? list_entry((head)->prev, type, member) : NULL)
 
 /**
  * list_for_each - iterate over elements in a list
@@ -191,6 +203,143 @@ _INLINE_ void list_splice(struct list_head *list, struct list_head *head)
 #define list_for_each_safe(pos, pnext, head) \
 	for (pos = (head)->next, pnext = pos->next; pos != (head); \
 	     pos = pnext, pnext = pos->next)
+
+#define MAX_LIST_LENGTH_BITS 20
+
+/*
+ * Returns a list organized in an intermediate format suited
+ * to chaining of merge() calls: null-terminated, no reserved or
+ * sentinel head node, "prev" links not maintained.
+ */
+_INLINE_ struct list_head *merge(int (*cmp)(struct list_head *a,
+					  struct list_head *b,
+					  void *data),
+			       void *data,
+			       struct list_head *a, struct list_head *b)
+{
+	struct list_head head, *tail = &head;
+
+	while (a && b) {
+		/* if equal, take 'a' -- important for sort stability */
+		if ((*cmp)(a, b, data) <= 0) {
+			tail->next = a;
+			a = a->next;
+		} else {
+			tail->next = b;
+			b = b->next;
+		}
+		tail = tail->next;
+	}
+	tail->next = a ? a : b;
+	return head.next;
+}
+
+/*
+ * Combine final list merge with restoration of standard doubly-linked
+ * list structure.  This approach duplicates code from merge(), but
+ * runs faster than the tidier alternatives of either a separate final
+ * prev-link restoration pass, or maintaining the prev links
+ * throughout.
+ */
+_INLINE_ void merge_and_restore_back_links(int (*cmp)(struct list_head *a,
+						    struct list_head *b,
+						    void *data),
+					 void *data,
+					 struct list_head *head,
+					 struct list_head *a, struct list_head *b)
+{
+	struct list_head *tail = head;
+
+	while (a && b) {
+		/* if equal, take 'a' -- important for sort stability */
+		if ((*cmp)(a, b, data) <= 0) {
+			tail->next = a;
+			a->prev = tail;
+			a = a->next;
+		} else {
+			tail->next = b;
+			b->prev = tail;
+			b = b->next;
+		}
+		tail = tail->next;
+	}
+	tail->next = a ? a : b;
+
+	do {
+		/*
+		 * In worst cases this loop may run many iterations.
+		 * Continue callbacks to the client even though no
+		 * element comparison is needed, so the client's cmp()
+		 * routine can invoke cond_resched() periodically.
+		 */
+		(*cmp)(tail->next, tail->next, data);
+
+		tail->next->prev = tail;
+		tail = tail->next;
+	} while (tail->next);
+
+	tail->next = head;
+	head->prev = tail;
+}
+
+
+/**
+ * list_sort - sort a list
+ * @head: the list to sort
+ * @cmp: the elements comparison function
+ *
+ * This function implements "merge sort", which has O(nlog(n))
+ * complexity.
+ *
+ * The comparison function @cmp must return a negative value if @a
+ * should sort before @b, and a positive value if @a should sort after
+ * @b. If @a and @b are equivalent, and their original relative
+ * ordering is to be preserved, @cmp must return 0.
+ */
+_INLINE_ void list_sort(struct list_head *head,
+			int (*cmp)(struct list_head *a,
+				   struct list_head *b,
+				   void *data),
+			void *data)
+{
+	struct list_head *part[MAX_LIST_LENGTH_BITS+1]; /* sorted partial lists
+							   -- last slot is a sentinel */
+	size_t lev;  /* index into part[] */
+	size_t max_lev = 0;
+	struct list_head *list;
+
+	if (list_empty(head))
+		return;
+
+	memset(part, 0, sizeof(part));
+
+	head->prev->next = NULL;
+	list = head->next;
+
+	while (list) {
+		struct list_head *cur = list;
+		list = list->next;
+		cur->next = NULL;
+
+		for (lev = 0; part[lev]; lev++) {
+			cur = merge(cmp, data, part[lev], cur);
+			part[lev] = NULL;
+		}
+		if (lev > max_lev) {
+			/* list passed to list_sort() too long for efficiency */
+			if (lev >= ARRAY_SIZE(part) - 1)
+				lev--;
+			max_lev = lev;
+		}
+		part[lev] = cur;
+	}
+
+	for (lev = 0; lev < max_lev; lev++)
+		if (part[lev])
+			list = merge(cmp, data, part[lev], list);
+
+	merge_and_restore_back_links(cmp, data, head, part[max_lev], list);
+}
 
 #undef _INLINE_
 

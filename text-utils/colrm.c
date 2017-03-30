@@ -32,7 +32,7 @@
  */
 
 /*
- * 1999-02-22 Arkadiusz Mi∂kiewicz <misiek@pld.ORG.PL>
+ * 1999-02-22 Arkadiusz Mi≈õkiewicz <misiek@pld.ORG.PL>
  * 	added Native Language Support
  * 1999-09-19 Bruno Haible <haible@clisp.cons.org>
  * 	modified to work correctly in multi-byte locales
@@ -41,11 +41,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <getopt.h>
+#include <unistd.h>
 
 #include "nls.h"
 #include "widechar.h"
 #include "strutils.h"
 #include "c.h"
+#include "closestream.h"
 
 /*
 COLRM removes unwanted columns from a file
@@ -68,7 +70,7 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
 
-int process_input(unsigned long first, unsigned long last)
+static int process_input(unsigned long first, unsigned long last)
 {
 	unsigned long ct = 0;
 	wint_t c;
@@ -162,6 +164,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	while ((opt =
 		getopt_long(argc, argv, "bfhl:pxVH", longopts,
@@ -187,7 +190,5 @@ int main(int argc, char **argv)
 		;
 
 	fflush(stdout);
-	if (ferror(stdout) || fclose(stdout))
-		return EXIT_FAILURE;
 	return EXIT_SUCCESS;
 }

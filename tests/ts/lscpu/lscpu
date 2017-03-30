@@ -17,10 +17,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-TS_TOPDIR="$(dirname $0)/../.."
+TS_TOPDIR="${0%/*}/../.."
 . $TS_TOPDIR/functions.sh
 
 ts_init "$*"
+
+ts_check_test_command "$TS_CMD_LSCPU"
 
 for dump in $(ls $TS_SELF/dumps/*.tar.gz | sort); do
 	name=$(basename $dump .tar.gz)
@@ -29,7 +31,7 @@ for dump in $(ls $TS_SELF/dumps/*.tar.gz | sort); do
 	ts_init_subtest $name
 	mkdir -p $dumpdir
 
-	tar -C $dumpdir -zxf $dump 
+	tar -C $dumpdir -zxf $dump
 
 	# Architecture information is not applicable with -s.
 	"${TS_CMD_LSCPU}" -s "${dumpdir}/${name}" | \

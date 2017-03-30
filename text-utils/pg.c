@@ -35,7 +35,7 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #ifndef	TIOCGWINSZ
-#include <sys/ioctl.h>
+# include <sys/ioctl.h>
 #endif
 #include <sys/termios.h>
 #include <fcntl.h>
@@ -52,9 +52,9 @@
 #include <libgen.h>
 
 #ifdef HAVE_NCURSES_H
-#include <ncurses.h>
+# include <ncurses.h>
 #elif defined(HAVE_NCURSES_NCURSES_H)
-#include <ncurses/ncurses.h>
+# include <ncurses/ncurses.h>
 #endif
 
 #include <term.h>
@@ -62,25 +62,20 @@
 #include "nls.h"
 #include "xalloc.h"
 #include "widechar.h"
-#include "writeall.h"
+#include "all-io.h"
+#include "closestream.h"
+#include "strutils.h"
 
 #define	READBUF		LINE_MAX	/* size of input buffer */
 #define CMDBUF		255		/* size of command buffer */
 #define	TABSIZE		8		/* spaces consumed by tab character */
-
-/*
- * Avoid the message "`var' might be clobbered by `longjmp' or `vfork'"
- */
-#define	CLOBBGRD(a)	(void)(&(a));
 
 #define	cuc(c)		((c) & 0377)
 
 enum { FORWARD = 1, BACKWARD = 2 };	/* search direction */
 enum { TOP, MIDDLE, BOTTOM };		/* position of matching line */
 
-/*
- * States for syntax-aware command line editor.
- */
+/* States for syntax-aware command line editor. */
 enum {
 	COUNT,
 	SIGN,
@@ -92,9 +87,7 @@ enum {
 	INVALID
 };
 
-/*
- * Current command
- */
+/* Current command */
 struct {
 	char cmdline[CMDBUF];
 	size_t cmdlen;
@@ -104,47 +97,43 @@ struct {
 	char addon;
 } cmd;
 
-/*
- * Position of file arguments on argv[] to main()
- */
+/* Position of file arguments on argv[] to main() */
 struct {
 	int first;
 	int current;
 	int last;
 } files;
 
-void		(*oldint)(int);		/* old SIGINT handler */
-void		(*oldquit)(int);	/* old SIGQUIT handler */
-void		(*oldterm)(int);	/* old SIGTERM handler */
-char		*tty;			/* result of ttyname(1) */
-char		*progname;		/* program name */
-unsigned	ontty;			/* whether running on tty device */
-unsigned	exitstatus;		/* exit status */
-int		pagelen = 23;		/* lines on a single screen page */
-int		ttycols = 79;		/* screen columns (starting at 0) */
-struct termios	otio;			/* old termios settings */
-int		tinfostat = -1;		/* terminfo routines initialized */
-int		searchdisplay = TOP;	/* matching line position */
-regex_t		re;			/* regular expression to search for */
-int		remembered;		/* have a remembered search string */
-int		cflag;			/* clear screen before each page */
-int		eflag;			/* suppress (EOF) */
-int		fflag;			/* do not split lines */
-int		nflag;			/* no newline for commands required */
-int		rflag;			/* "restricted" pg */
-int		sflag;			/* use standout mode */
-char		*pstring = ":";		/* prompt string */
-char		*searchfor;		/* search pattern from argv[] */
-int		havepagelen;		/* page length is manually defined */
-long		startline;		/* start line from argv[] */
-int		nextfile = 1;		/* files to advance */
-jmp_buf		jmpenv;			/* jump from signal handlers */
-int		canjump;		/* jmpenv is valid */
-wchar_t		wbuf[READBUF];		/* used in several widechar routines */
+void (*oldint) (int);		/* old SIGINT handler */
+void (*oldquit) (int);		/* old SIGQUIT handler */
+void (*oldterm) (int);		/* old SIGTERM handler */
+char *tty;			/* result of ttyname(1) */
+unsigned ontty;			/* whether running on tty device */
+unsigned exitstatus;		/* exit status */
+int pagelen = 23;		/* lines on a single screen page */
+int ttycols = 79;		/* screen columns (starting at 0) */
+struct termios otio;		/* old termios settings */
+int tinfostat = -1;		/* terminfo routines initialized */
+int searchdisplay = TOP;	/* matching line position */
+regex_t re;			/* regular expression to search for */
+int remembered;			/* have a remembered search string */
+int cflag;			/* clear screen before each page */
+int eflag;			/* suppress (EOF) */
+int fflag;			/* do not split lines */
+int nflag;			/* no newline for commands required */
+int rflag;			/* "restricted" pg */
+int sflag;			/* use standout mode */
+const char *pstring = ":";	/* prompt string */
+char *searchfor;		/* search pattern from argv[] */
+int havepagelen;		/* page length is manually defined */
+long startline;			/* start line from argv[] */
+int nextfile = 1;		/* files to advance */
+jmp_buf jmpenv;			/* jump from signal handlers */
+int canjump;			/* jmpenv is valid */
+wchar_t wbuf[READBUF];		/* used in several widechar routines */
 
-const char *copyright =
-"@(#)pg 1.44 2/8/02. Copyright (c) 2000-2001 Gunnar Ritter. ";
-const char *helpscreen = N_("All rights reserved.\n\
+char *copyright;
+const char *helpscreen = N_("\
 -------------------------------------------------------\n\
   h                       this screen\n\
   q or Q                  quit program\n\
@@ -169,28 +158,34 @@ See pg(1) for more information.\n\
 -------------------------------------------------------\n");
 
 #ifndef HAVE_FSEEKO
-  static int fseeko(FILE *f, off_t off, int whence) {
-	return fseek(f, (long) off, whence);
-  }
-  static off_t ftello(FILE *f) {
+static int fseeko(FILE *f, off_t off, int whence)
+{
+	return fseek(f, (long)off, whence);
+}
+
+static off_t ftello(FILE *f)
+{
 	return (off_t) ftell(f);
-  }
+}
 #endif
 
 #ifdef USE_SIGSET	/* never defined */
 /* sigset and sigrelse are obsolete - use when POSIX stuff is unavailable */
-#define my_sigset	sigset
-#define my_sigrelse	sigrelse
+# define my_sigset	sigset
+# define my_sigrelse	sigrelse
 #else
-static int my_sigrelse(int sig) {
+static int my_sigrelse(int sig)
+{
 	sigset_t sigs;
 
 	if (sigemptyset(&sigs) || sigaddset(&sigs, sig))
 		return -1;
 	return sigprocmask(SIG_UNBLOCK, &sigs, NULL);
 }
-typedef void (*my_sighandler_t)(int);
-static my_sighandler_t my_sigset(int sig, my_sighandler_t disp) {
+
+typedef void (*my_sighandler_t) (int);
+static my_sighandler_t my_sigset(int sig, my_sighandler_t disp)
+{
 	struct sigaction act, oact;
 
 	act.sa_handler = disp;
@@ -203,55 +198,62 @@ static my_sighandler_t my_sigset(int sig, my_sighandler_t disp) {
 		return SIG_ERR;
 	return oact.sa_handler;
 }
-#endif
+#endif	/* USE_SIGSET */
 
-/*
- * Quit pg.
- */
-static void
-quit(int status)
+/* Quit pg. */
+static void __attribute__((__noreturn__)) quit(int status)
 {
 	exit(status < 0100 ? status : 077);
 }
 
-/*
- * Usage message and similar routines.
- */
-static void
-usage(void)
+/* Usage message and similar routines. */
+static void __attribute__((__noreturn__)) usage(FILE *out)
 {
-	fprintf(stderr, _("%s: Usage: %s [-number] [-p string] [-cefnrs] "
-			  "[+line] [+/pattern/] [files]\n"),
-			progname, progname);
-	quit(2);
+	fputs(USAGE_HEADER, out);
+	fprintf(out,
+		_(" %s [options] [+line] [+/pattern/] [files]\n"),
+		program_invocation_short_name);
+	fputs(USAGE_OPTIONS, out);
+	fputs(_(" -number      lines per page\n"), out);
+	fputs(_(" -c           clear screen before displaying\n"), out);
+	fputs(_(" -e           do not pause at end of a file\n"), out);
+	fputs(_(" -f           do not split long lines\n"), out);
+	fputs(_(" -n           terminate command with new line\n"), out);
+	fputs(_(" -p <prompt>  specify prompt\n"), out);
+	fputs(_(" -r           disallow shell escape\n"), out);
+	fputs(_(" -s           print messages to stdout\n"), out);
+	fputs(_(" +number      start at the given line\n"), out);
+	fputs(_(" +/pattern/   start at the line containing pattern\n"), out);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(USAGE_HELP, out);
+	fputs(USAGE_VERSION, out);
+
+	fprintf(out, USAGE_MAN_TAIL("pg(1)"));
+	quit(out == stderr ? 2 : 0);
 }
 
-static void
-needarg(char *s)
+static void __attribute__((__noreturn__)) needarg(const char *s)
 {
-	fprintf(stderr, _("%s: option requires an argument -- %s\n"),
-		progname, s);
-	usage();
+	warnx(_("option requires an argument -- %s"), s);
+	usage(stderr);
 }
 
-static void
-invopt(char *s)
+static void __attribute__((__noreturn__)) invopt(const char *s)
 {
-	fprintf(stderr, _("%s: illegal option -- %s\n"), progname, s);
-	usage();
+	warnx(_("illegal option -- %s"), s);
+	usage(stderr);
 }
 
 #ifdef HAVE_WIDECHAR
-/*
- * A mbstowcs()-alike function that transparently handles invalid sequences.
- */
-static size_t
-xmbstowcs(wchar_t *pwcs, const char *s, size_t nwcs)
+/* A mbstowcs()-alike function that transparently handles invalid
+ * sequences. */
+static size_t xmbstowcs(wchar_t * pwcs, const char *s, size_t nwcs)
 {
 	size_t n = nwcs;
 	int c;
 
-	ignore_result( mbtowc(pwcs, NULL, MB_CUR_MAX) );	/* reset shift state */
+	ignore_result(mbtowc(pwcs, NULL, MB_CUR_MAX));	/* reset shift state */
 	while (*s && n) {
 		if ((c = mbtowc(pwcs, s, MB_CUR_MAX)) < 0) {
 			s++;
@@ -263,41 +265,32 @@ xmbstowcs(wchar_t *pwcs, const char *s, size_t nwcs)
 	}
 	if (n)
 		*pwcs = L'\0';
-	ignore_result( mbtowc(pwcs, NULL, MB_CUR_MAX) );
+	ignore_result(mbtowc(pwcs, NULL, MB_CUR_MAX));
 	return nwcs - n;
 }
 #endif
 
-/*
- * Helper function for tputs().
- */
-static int
-outcap(int i)
+/* Helper function for tputs(). */
+static int outcap(int i)
 {
 	char c = i;
-	return write_all(1, &c, 1) == 0 ? 1 : -1;
+	return write_all(STDOUT_FILENO, &c, 1) == 0 ? 1 : -1;
 }
 
-/*
- * Write messages to terminal.
- */
-static void
-mesg(char *message)
+/* Write messages to terminal. */
+static void mesg(const char *message)
 {
 	if (ontty == 0)
 		return;
 	if (*message != '\n' && sflag)
 		vidputs(A_STANDOUT, outcap);
-	write_all(1, message, strlen(message));
+	write_all(STDOUT_FILENO, message, strlen(message));
 	if (*message != '\n' && sflag)
 		vidputs(A_NORMAL, outcap);
 }
 
-/*
- * Get the window size.
- */
-static void
-getwinsize(void)
+/* Get the window size. */
+static void getwinsize(void)
 {
 	static int initialized, envlines, envcols, deflines, defcols;
 #ifdef	TIOCGWINSZ
@@ -325,7 +318,7 @@ getwinsize(void)
 		initialized = 1;
 	}
 #ifdef	TIOCGWINSZ
-	badioctl = ioctl(1, TIOCGWINSZ, &winsz);
+	badioctl = ioctl(STDOUT_FILENO, TIOCGWINSZ, &winsz);
 #endif
 	if (envcols)
 		ttycols = envcols - 1;
@@ -347,11 +340,8 @@ getwinsize(void)
 	}
 }
 
-/*
- * Message if skipping parts of files.
- */
-static void
-skip(int direction)
+/* Message if skipping parts of files. */
+static void skip(int direction)
 {
 	if (direction > 0)
 		mesg(_("...skipping forward\n"));
@@ -359,23 +349,17 @@ skip(int direction)
 		mesg(_("...skipping backward\n"));
 }
 
-/*
- * Signal handler while reading from input file.
- */
-static void
-sighandler(int signum)
+/* Signal handler while reading from input file. */
+static void sighandler(int signum)
 {
 	if (canjump && (signum == SIGINT || signum == SIGQUIT))
 		longjmp(jmpenv, signum);
-	tcsetattr(1, TCSADRAIN, &otio);
+	tcsetattr(STDOUT_FILENO, TCSADRAIN, &otio);
 	quit(exitstatus);
 }
 
-/*
- * Check whether the requested file was specified on the command line.
- */
-static int
-checkf(void)
+/* Check whether the requested file was specified on the command line. */
+static int checkf(void)
 {
 	if (files.current + nextfile >= files.last) {
 		mesg(_("No next file"));
@@ -389,12 +373,9 @@ checkf(void)
 }
 
 #ifdef HAVE_WIDECHAR
-/*
- * Return the last character that will fit on the line at col columns
- * in case MB_CUR_MAX > 1.
- */
-static char *
-endline_for_mb(unsigned col, char *s)
+/* Return the last character that will fit on the line at col columns in
+ * case MB_CUR_MAX > 1. */
+static char *endline_for_mb(unsigned col, char *s)
 {
 	size_t pos = 0;
 	wchar_t *p = wbuf;
@@ -407,30 +388,22 @@ endline_for_mb(unsigned col, char *s)
 	wbuf[wl] = L'\0';
 	while (*p != L'\0') {
 		switch (*p) {
-			/*
-			 * Cursor left.
-			 */
+			/* Cursor left. */
 		case L'\b':
 			if (pos > 0)
 				pos--;
 			break;
-			/*
-			 * No cursor movement.
-			 */
+			/* No cursor movement. */
 		case L'\a':
 			break;
-			/*
-			 * Special.
-			 */
+			/* Special. */
 		case L'\r':
 			pos = 0;
 			break;
 		case L'\n':
 			end = p + 1;
 			goto ended;
-			/*
-			 * Cursor right.
-			 */
+			/* Cursor right. */
 		case L'\t':
 			pos += TABSIZE - (pos % TABSIZE);
 			break;
@@ -444,13 +417,10 @@ endline_for_mb(unsigned col, char *s)
 			if (*p == L'\t')
 				p++;
 			else if (pos > col + 1)
-				/*
-				 * wcwidth() found a character that
-				 * has multiple columns. What happens
-				 * now? Assume the terminal will print
-				 * the entire character onto the next
-				 * row.
-				 */
+				/* wcwidth() found a character that has
+				 * multiple columns.  What happens now?
+				 * Assume the terminal will print the
+				 * entire character onto the next row. */
 				p--;
 			if (*++p == L'\n')
 				p++;
@@ -463,17 +433,14 @@ endline_for_mb(unsigned col, char *s)
  ended:
 	*end = L'\0';
 	p = wbuf;
-	if ((pos = wcstombs(NULL, p, READBUF)) == (size_t) -1)
+	if ((pos = wcstombs(NULL, p, READBUF)) == (size_t)-1)
 		return s + 1;
 	return s + pos;
 }
-#endif
+#endif	/* HAVE_WIDECHAR */
 
-/*
- * Return the last character that will fit on the line at col columns.
- */
-static char *
-endline(unsigned col, char *s)
+/* Return the last character that will fit on the line at col columns. */
+static char *endline(unsigned col, char *s)
 {
 	unsigned pos = 0;
 	char *t = s;
@@ -485,30 +452,22 @@ endline(unsigned col, char *s)
 
 	while (*s != '\0') {
 		switch (*s) {
-			/*
-			 * Cursor left.
-			 */
+			/* Cursor left. */
 		case '\b':
 			if (pos > 0)
 				pos--;
 			break;
-			/*
-			 * No cursor movement.
-			 */
+			/* No cursor movement. */
 		case '\a':
 			break;
-			/*
-			 * Special.
-			 */
+			/* Special. */
 		case '\r':
 			pos = 0;
 			break;
 		case '\n':
 			t = s + 1;
 			goto cend;
-			/*
-			 * Cursor right.
-			 */
+			/* Cursor right. */
 		case '\t':
 			pos += TABSIZE - (pos % TABSIZE);
 			break;
@@ -530,57 +489,73 @@ endline(unsigned col, char *s)
 	return t;
 }
 
-/*
- * Clear the current line on the terminal's screen.
- */
-static void
-cline(void)
+/* Clear the current line on the terminal's screen. */
+static void cline(void)
 {
 	char *buf = xmalloc(ttycols + 2);
 	memset(buf, ' ', ttycols + 2);
 	buf[0] = '\r';
 	buf[ttycols + 1] = '\r';
-	write_all(1, buf, ttycols + 2);
+	write_all(STDOUT_FILENO, buf, ttycols + 2);
 	free(buf);
 }
 
-/*
- * Evaluate a command character's semantics.
- */
-static int
-getstate(int c)
+/* Evaluate a command character's semantics. */
+static int getstate(int c)
 {
 	switch (c) {
-	case '1': case '2': case '3': case '4': case '5':
-	case '6': case '7': case '8': case '9': case '0':
+	case '1':
+	case '2':
+	case '3':
+	case '4':
+	case '5':
+	case '6':
+	case '7':
+	case '8':
+	case '9':
+	case '0':
 	case '\0':
 		return COUNT;
-	case '-': case '+':
+	case '-':
+	case '+':
 		return SIGN;
-	case 'l': case 'd': case '\004': case 'f': case 'z':
-	case '.': case '\014': case '$': case 'n': case 'p':
-	case 'w': case 'h': case 'q': case 'Q':
+	case 'l':
+	case 'd':
+	case '\004':
+	case 'f':
+	case 'z':
+	case '.':
+	case '\014':
+	case '$':
+	case 'n':
+	case 'p':
+	case 'w':
+	case 'h':
+	case 'q':
+	case 'Q':
 		return CMD_FIN;
-	case '/': case '?': case '^':
+	case '/':
+	case '?':
+	case '^':
 		return SEARCH;
-	case 's': case '!':
+	case 's':
+	case '!':
 		return STRING;
-	case 'm': case 'b': case 't':
+	case 'm':
+	case 'b':
+	case 't':
 		return ADDON_FIN;
 	default:
 #ifdef PG_BELL
 		if (bell)
-			tputs(bell, 1, outcap);
-#endif  /*  PG_BELL  */
+			tputs(bell, STDOUT_FILENO, outcap);
+#endif
 		return INVALID;
 	}
 }
 
-/*
- * Get the count and ignore last character of string.
- */
-static int
-getcount(char *cmdstr)
+/* Get the count and ignore last character of string. */
+static int getcount(char *cmdstr)
 {
 	char *buf;
 	char *p;
@@ -597,8 +572,10 @@ getcount(char *cmdstr)
 		} else
 			*(buf + strlen(buf) - 1) = '\0';
 	}
-	if (*buf == '\0')
+	if (*buf == '\0') {
+		free(buf);
 		return 1;
+	}
 	if (buf[0] == '-' && buf[1] == '\0') {
 		i = -1;
 	} else {
@@ -611,12 +588,9 @@ getcount(char *cmdstr)
 	return i;
 }
 
-/*
- * Read what the user writes at the prompt. This is tricky because
- * we check for valid input.
- */
-static void
-prompt(long long pageno)
+/* Read what the user writes at the prompt. This is tricky because we
+ * check for valid input. */
+static void prompt(long long pageno)
 {
 	struct termios tio;
 	char key;
@@ -636,21 +610,23 @@ prompt(long long pageno)
 	}
 	cmd.key = cmd.addon = cmd.cmdline[0] = '\0';
 	cmd.cmdlen = 0;
-	tcgetattr(1, &tio);
+	tcgetattr(STDOUT_FILENO, &tio);
 	tio.c_lflag &= ~(ICANON | ECHO);
 	tio.c_cc[VMIN] = 1;
 	tio.c_cc[VTIME] = 0;
-	tcsetattr(1, TCSADRAIN, &tio);
-	tcflush(1, TCIFLUSH);
+	tcsetattr(STDOUT_FILENO, TCSADRAIN, &tio);
+	tcflush(STDOUT_FILENO, TCIFLUSH);
 	for (;;) {
-		switch (read(1, &key, 1)) {
-		case 0: quit(0);
-			/*NOTREACHED*/
-		case -1: quit(1);
+		switch (read(STDOUT_FILENO, &key, 1)) {
+		case 0:
+			quit(0);
+			/* NOTREACHED */
+		case -1:
+			quit(1);
 		}
 		if (key == tio.c_cc[VERASE]) {
 			if (cmd.cmdlen) {
-				write_all(1, "\b \b", 3);
+				write_all(STDOUT_FILENO, "\b \b", 3);
 				cmd.cmdline[--cmd.cmdlen] = '\0';
 				switch (state) {
 				case ADDON_FIN:
@@ -663,20 +639,19 @@ prompt(long long pageno)
 					break;
 				case SEARCH_FIN:
 					state = SEARCH;
-					/*FALLTHRU*/
+					/* FALLTHRU */
 				case SEARCH:
-					if (cmd.cmdline[cmd.cmdlen - 1]
-							== '\\') {
+					if (cmd.cmdline[cmd.cmdlen - 1] == '\\') {
 						escape = 1;
-						while(cmd.cmdline[cmd.cmdlen
-								- escape - 1]
-							== '\\') escape++;
+						while (cmd.cmdline[cmd.cmdlen
+								   - escape - 1]
+						       == '\\')
+							escape++;
 						escape %= 2;
-					}
-					else {
+					} else {
 						escape = 0;
 						if (strchr(cmd.cmdline, cmd.key)
-							== NULL) {
+						    == NULL) {
 							cmd.key = '\0';
 							state = COUNT;
 						}
@@ -743,7 +718,7 @@ prompt(long long pageno)
 					continue;
 				}
 				state = COUNT;
-				/*FALLTHRU*/
+				/* FALLTHRU */
 			case COUNT:
 				break;
 			case ADDON_FIN:
@@ -753,25 +728,21 @@ prompt(long long pageno)
 				cmd.key = key;
 			}
 		}
-		write_all(1, &key, 1);
+		write_all(STDOUT_FILENO, &key, 1);
 		cmd.cmdline[cmd.cmdlen++] = key;
 		cmd.cmdline[cmd.cmdlen] = '\0';
 		if (nflag && state == CMD_FIN)
 			goto endprompt;
 	}
-endprompt:
-	tcsetattr(1, TCSADRAIN, &otio);
+ endprompt:
+	tcsetattr(STDOUT_FILENO, TCSADRAIN, &otio);
 	cline();
 	cmd.count = getcount(cmd.cmdline);
 }
 
 #ifdef HAVE_WIDECHAR
-/*
- * Remove backspace formatting, for searches
- * in case MB_CUR_MAX > 1.
- */
-static char *
-colb_for_mb(char *s)
+/* Remove backspace formatting, for searches in case MB_CUR_MAX > 1. */
+static char *colb_for_mb(char *s)
 {
 	char *p = s;
 	wchar_t *wp, *wq;
@@ -780,8 +751,7 @@ colb_for_mb(char *s)
 
 	if ((wl = xmbstowcs(wbuf, p, sizeof wbuf)) == (size_t)-1)
 		return s;
-	for (wp = wbuf, wq = wbuf, i = 0; *wp != L'\0' && i < wl;
-	     wp++, wq++) {
+	for (wp = wbuf, wq = wbuf, i = 0; *wp != L'\0' && i < wl; wp++, wq++) {
 		if (*wp == L'\b') {
 			if (wq != wbuf)
 				wq -= 2;
@@ -798,11 +768,8 @@ colb_for_mb(char *s)
 }
 #endif
 
-/*
- * Remove backspace formatting, for searches.
- */
-static char *
-colb(char *s)
+/* Remove backspace formatting, for searches. */
+static char *colb(char *s)
 {
 	char *p = s, *q;
 
@@ -826,12 +793,8 @@ colb(char *s)
 }
 
 #ifdef HAVE_WIDECHAR
-/*
- * Convert nonprintable characters to spaces
- * in case MB_CUR_MAX > 1.
- */
-static void
-makeprint_for_mb(char *s, size_t l)
+/* Convert nonprintable characters to spaces in case MB_CUR_MAX > 1.  */
+static void makeprint_for_mb(char *s, size_t l)
 {
 	char *t = s;
 	wchar_t *wp = wbuf;
@@ -850,11 +813,8 @@ makeprint_for_mb(char *s, size_t l)
 }
 #endif
 
-/*
- * Convert nonprintable characters to spaces.
- */
-static void
-makeprint(char *s, size_t l)
+/* Convert nonprintable characters to spaces. */
+static void makeprint(char *s, size_t l)
 {
 #ifdef HAVE_WIDECHAR
 	if (MB_CUR_MAX > 1) {
@@ -871,11 +831,8 @@ makeprint(char *s, size_t l)
 	}
 }
 
-/*
- * Strip backslash characters from the given string.
- */
-static void
-striprs(char *s)
+/* Strip backslash characters from the given string. */
+static void striprs(char *s)
 {
 	char *p = s;
 
@@ -887,11 +844,8 @@ striprs(char *s)
 	} while (*s++ != '\0');
 }
 
-/*
- * Extract the search pattern off the command line.
- */
-static char *
-makepat(void)
+/* Extract the search pattern off the command line. */
+static char *makepat(void)
 {
 	char *p;
 
@@ -910,105 +864,56 @@ makepat(void)
 	return p;
 }
 
-/*
- * Process errors that occurred in temporary file operations.
- */
-static void
-tmperr(FILE *f, char *ftype)
+/* Process errors that occurred in temporary file operations. */
+static void __attribute__((__noreturn__)) tmperr(FILE *f, const char *ftype)
 {
 	if (ferror(f))
-		fprintf(stderr, _("%s: Read error from %s file\n"),
-			progname, ftype);
+		warn(_("Read error from %s file"), ftype);
 	else if (feof(f))
-		/*
-		 * Most likely '\0' in input.
-		 */
-		fprintf(stderr, _("%s: Unexpected EOF in %s file\n"),
-			progname, ftype);
+		/* Most likely '\0' in input. */
+		warnx(_("Unexpected EOF in %s file"), ftype);
 	else
-		fprintf(stderr, _("%s: Unknown error in %s file\n"),
-			progname, ftype);
+		warn(_("Unknown error in %s file"), ftype);
 	quit(++exitstatus);
 }
 
-/*
- * perror()-like, but showing the program's name.
- */
-static void
-pgerror(int eno, char *string)
-{
-	fprintf(stderr, "%s: %s: %s\n", progname, string, strerror(eno));
-}
-
-/*
- * Read the file and respond to user input.
- * Beware: long and ugly.
- */
-static void
-pgfile(FILE *f, char *name)
+/* Read the file and respond to user input.  Beware: long and ugly. */
+static void pgfile(FILE *f, const char *name)
 {
 	off_t pos, oldpos, fpos;
+	/* These are the line counters:
+	 *   line	the line desired to display
+	 *   fline	the current line of the input file
+	 *   bline	the current line of the file buffer
+	 *   oldline	the line before a search was started
+	 *   eofline	the last line of the file if it is already reached
+	 *   dline	the line on the display */
 	off_t line = 0, fline = 0, bline = 0, oldline = 0, eofline = 0;
 	int dline = 0;
-	/*
-	 * These are the line counters:
-	 * line		the line desired to display
-	 * fline	the current line of the input file
-	 * bline	the current line of the file buffer
-	 * oldline	the line before a search was started
-	 * eofline	the last line of the file if it is already reached
-	 * dline	the line on the display
-	 */
 	int search = 0;
 	unsigned searchcount = 0;
-	/*
-	 * Advance to EOF immediately.
-	 */
+	/* Advance to EOF immediately. */
 	int seekeof = 0;
-	/*
-	 * EOF has been reached by `line'.
-	 */
+	/* EOF has been reached by `line'. */
 	int eof = 0;
-	/*
-	 * f and fbuf refer to the same file.
-	 */
+	/* f and fbuf refer to the same file. */
 	int nobuf = 0;
 	int sig;
 	int rerror;
 	size_t sz;
 	char b[READBUF + 1];
 	char *p;
-	/*
-	 * fbuf		an exact copy of the input file as it gets read
-	 * find		index table for input, one entry per line
-	 * save		for the s command, to save to a file
-	 */
+	/*   fbuf	an exact copy of the input file as it gets read
+	 *   find	index table for input, one entry per line
+	 *   save	for the s command, to save to a file */
 	FILE *fbuf, *find, *save;
 
-	/* silence compiler - it may warn about longjmp() */
-	CLOBBGRD(line);
-	CLOBBGRD(fline);
-	CLOBBGRD(bline);
-	CLOBBGRD(oldline);
-	CLOBBGRD(eofline);
-	CLOBBGRD(dline);
-	CLOBBGRD(ttycols);
-	CLOBBGRD(search);
-	CLOBBGRD(searchcount);
-	CLOBBGRD(seekeof);
-	CLOBBGRD(eof);
-	CLOBBGRD(fpos);
-	CLOBBGRD(nobuf);
-	CLOBBGRD(fbuf);
-
 	if (ontty == 0) {
-		/*
-		 * Just copy stdin to stdout.
-		 */
+		/* Just copy stdin to stdout. */
 		while ((sz = fread(b, sizeof *b, READBUF, f)) != 0)
-			write_all(1, b, sz);
+			write_all(STDOUT_FILENO, b, sz);
 		if (ferror(f)) {
-			pgerror(errno, name);
+			warn("%s", name);
 			exitstatus++;
 		}
 		return;
@@ -1021,7 +926,7 @@ pgfile(FILE *f, char *name)
 	}
 	find = tmpfile();
 	if (fbuf == NULL || find == NULL) {
-		fprintf(stderr, _("%s: Cannot create tempfile\n"), progname);
+		warn(_("Cannot create tempfile"));
 		quit(++exitstatus);
 	}
 	if (searchfor) {
@@ -1038,10 +943,8 @@ pgfile(FILE *f, char *name)
 		remembered = 1;
 	}
 
-	for (line = startline; ; ) {
-		/*
-		 * Get a line from input file or buffer.
-		 */
+	for (line = startline;;) {
+		/* Get a line from input file or buffer. */
 		if (line < bline) {
 			fseeko(find, line * sizeof pos, SEEK_SET);
 			if (fread(&pos, sizeof pos, 1, find) == 0)
@@ -1057,9 +960,7 @@ pgfile(FILE *f, char *name)
 					fseeko(fbuf, (off_t)0, SEEK_END);
 				pos = ftello(fbuf);
 				if ((sig = setjmp(jmpenv)) != 0) {
-					/*
-					 * We got a signal.
-					 */
+					/* We got a signal. */
 					canjump = 0;
 					my_sigrelse(sig);
 					fseeko(fbuf, pos, SEEK_SET);
@@ -1073,12 +974,12 @@ pgfile(FILE *f, char *name)
 					p = fgets(b, READBUF, f);
 					if (nobuf)
 						if ((fpos = ftello(f)) == -1)
-							pgerror(errno, name);
+							warn("%s", name);
 					canjump = 0;
 				}
 				if (p == NULL || *b == '\0') {
 					if (ferror(f))
-						pgerror(errno, name);
+						warn("%s", name);
 					eofline = fline;
 					eof = 1;
 					break;
@@ -1090,12 +991,12 @@ pgfile(FILE *f, char *name)
 						oldpos = pos;
 						p = b;
 						while (*(p = endline(ttycols,
-									p))
-								!= '\0') {
+								     p))
+						       != '\0') {
 							pos = oldpos + (p - b);
 							fwrite_all(&pos,
-								sizeof pos,
-								1, find);
+								   sizeof pos,
+								   1, find);
 							fline++;
 							bline++;
 						}
@@ -1104,9 +1005,7 @@ pgfile(FILE *f, char *name)
 				}
 			} while (line > bline++);
 		} else {
-			/*
-			 * eofline != 0
-			 */
+			/* eofline != 0 */
 			eof = 1;
 		}
 		if (search == FORWARD && remembered == 1) {
@@ -1138,15 +1037,15 @@ pgfile(FILE *f, char *name)
 				skip(1);
 			}
 			continue;
-		} else if (eof)	{	/*
-					 * We are not searching.
-					 */
+		} else if (eof) {
+			/* We are not searching. */
 			line = bline;
 		} else if (*b != '\0') {
 			if (cflag && clear_screen) {
 				switch (dline) {
 				case 0:
-					tputs(clear_screen, 1, outcap);
+					tputs(clear_screen, STDOUT_FILENO,
+					      outcap);
 					dline = 0;
 				}
 			}
@@ -1155,9 +1054,7 @@ pgfile(FILE *f, char *name)
 				eof = 1;
 			dline++;
 			if ((sig = setjmp(jmpenv)) != 0) {
-				/*
-				 * We got a signal.
-				 */
+				/* We got a signal. */
 				canjump = 0;
 				my_sigrelse(sig);
 				dline = pagelen;
@@ -1166,14 +1063,12 @@ pgfile(FILE *f, char *name)
 				sz = p - b;
 				makeprint(b, sz);
 				canjump = 1;
-				write_all(1, b, sz);
+				write_all(STDOUT_FILENO, b, sz);
 				canjump = 0;
 			}
 		}
 		if (dline >= pagelen || eof) {
-			/*
-			 * Time for prompting!
-			 */
+			/* Time for prompting! */
 			if (eof && seekeof) {
 				eof = seekeof = 0;
 				if (line >= pagelen)
@@ -1183,7 +1078,7 @@ pgfile(FILE *f, char *name)
 				dline = -1;
 				continue;
 			}
-newcmd:
+ newcmd:
 			if (eof) {
 				if (fline == 0 || eflag)
 					break;
@@ -1192,9 +1087,7 @@ newcmd:
 			prompt((line - 1) / pagelen + 1);
 			switch (cmd.key) {
 			case '/':
-				/*
-				 * Search forward.
-				 */
+				/* Search forward. */
 				search = FORWARD;
 				oldline = line;
 				searchcount = cmd.count;
@@ -1203,11 +1096,12 @@ newcmd:
 					if (remembered == 1)
 						regfree(&re);
 					rerror = regcomp(&re, p,
-						REG_NOSUB | REG_NEWLINE);
+							 REG_NOSUB |
+							 REG_NEWLINE);
 					if (rerror != 0) {
 						mesg(_("RE error: "));
 						sz = regerror(rerror, &re,
-								b, READBUF);
+							      b, READBUF);
 						mesg(b);
 						goto newcmd;
 					}
@@ -1219,9 +1113,7 @@ newcmd:
 				continue;
 			case '?':
 			case '^':
-				/*
-				 * Search backward.
-				 */
+				/* Search backward. */
 				search = BACKWARD;
 				oldline = line;
 				searchcount = cmd.count;
@@ -1230,11 +1122,12 @@ newcmd:
 					if (remembered == 1)
 						regfree(&re);
 					rerror = regcomp(&re, p,
-						REG_NOSUB | REG_NEWLINE);
+							 REG_NOSUB |
+							 REG_NEWLINE);
 					if (rerror != 0) {
 						mesg(_("RE error: "));
 						regerror(rerror, &re,
-								b, READBUF);
+							 b, READBUF);
 						mesg(b);
 						goto newcmd;
 					}
@@ -1248,8 +1141,9 @@ newcmd:
 					goto notfound_bw;
 				while (line) {
 					fseeko(find, --line * sizeof pos,
-							SEEK_SET);
-					if(fread(&pos, sizeof pos, 1,find)==0)
+					       SEEK_SET);
+					if (fread(&pos, sizeof pos, 1, find) ==
+					    0)
 						tmperr(find, "index");
 					fseeko(find, (off_t)0, SEEK_END);
 					fseeko(fbuf, pos, SEEK_SET);
@@ -1261,12 +1155,12 @@ newcmd:
 					if (searchcount == 0)
 						goto found_bw;
 				}
-notfound_bw:
+ notfound_bw:
 				line = oldline;
 				search = searchcount = 0;
 				mesg(_("Pattern not found"));
 				goto newcmd;
-found_bw:
+ found_bw:
 				eof = search = dline = 0;
 				skip(-1);
 				switch (searchdisplay) {
@@ -1286,29 +1180,26 @@ found_bw:
 					line = 0;
 				continue;
 			case 's':
-				/*
-				 * Save to file.
-				 */
+				/* Save to file. */
 				p = cmd.cmdline;
-				while (*++p == ' ');
+				while (*++p == ' ') ;
 				if (*p == '\0')
 					goto newcmd;
 				save = fopen(p, "wb");
 				if (save == NULL) {
 					cmd.count = errno;
-					mesg(_("Cannot open "));
+					mesg(_("cannot open "));
 					mesg(p);
 					mesg(": ");
 					mesg(strerror(cmd.count));
 					goto newcmd;
 				}
-				/*
-				 * Advance to EOF.
-				 */
+				/* Advance to EOF. */
 				fseeko(find, (off_t)0, SEEK_END);
 				for (;;) {
 					if (!nobuf)
-						fseeko(fbuf,(off_t)0,SEEK_END);
+						fseeko(fbuf, (off_t)0,
+						       SEEK_END);
 					pos = ftello(fbuf);
 					if (fgets(b, READBUF, f) == NULL) {
 						eofline = fline;
@@ -1321,12 +1212,12 @@ found_bw:
 						oldpos = pos;
 						p = b;
 						while (*(p = endline(ttycols,
-									p))
-								!= '\0') {
+								     p))
+						       != '\0') {
 							pos = oldpos + (p - b);
 							fwrite_all(&pos,
-								sizeof pos,
-								1, find);
+								   sizeof pos,
+								   1, find);
 							fline++;
 							bline++;
 						}
@@ -1336,59 +1227,55 @@ found_bw:
 				}
 				fseeko(fbuf, (off_t)0, SEEK_SET);
 				while ((sz = fread(b, sizeof *b, READBUF,
-							fbuf)) != 0) {
-					/*
-					 * No error check for compat.
-					 */
+						   fbuf)) != 0) {
+					/* No error check for compat. */
 					fwrite_all(b, sizeof *b, sz, save);
 				}
-				fclose(save);
+				if (close_stream(save) != 0) {
+					cmd.count = errno;
+					mesg(_("write failed"));
+					mesg(": ");
+					mesg(p);
+					mesg(strerror(cmd.count));
+					goto newcmd;
+				}
 				fseeko(fbuf, (off_t)0, SEEK_END);
 				mesg(_("saved"));
 				goto newcmd;
 			case 'l':
-				/*
-				 * Next line.
-				 */
+				/* Next line. */
 				if (*cmd.cmdline != 'l')
 					eof = 0;
 				if (cmd.count == 0)
-					cmd.count = 1; /* compat */
+					cmd.count = 1;	/* compat */
 				if (isdigit(cuc(*cmd.cmdline))) {
 					line = cmd.count - 2;
 					dline = 0;
 				} else {
 					if (cmd.count != 1) {
-						line += cmd.count - 1
-							- pagelen;
+						line += cmd.count - 1 - pagelen;
 						dline = -1;
 						skip(cmd.count);
 					}
-					/*
-					 * Nothing to do if count==1.
-					 */
+					/* Nothing to do if (count == 1) */
 				}
 				break;
 			case 'd':
-				/*
-				 * Half screen forward.
-				 */
+				/* Half screen forward. */
 			case '\004':	/* ^D */
 				if (*cmd.cmdline != cmd.key)
 					eof = 0;
 				if (cmd.count == 0)
-					cmd.count = 1; /* compat */
+					cmd.count = 1;	/* compat */
 				line += (cmd.count * pagelen / 2)
-					- pagelen - 1;
+				    - pagelen - 1;
 				dline = -1;
 				skip(cmd.count);
 				break;
 			case 'f':
-				/*
-				 * Skip forward.
-				 */
+				/* Skip forward. */
 				if (cmd.count <= 0)
-					cmd.count = 1; /* compat */
+					cmd.count = 1;	/* compat */
 				line += cmd.count * pagelen - 2;
 				if (eof)
 					line += 2;
@@ -1402,16 +1289,14 @@ found_bw:
 				skip(cmd.count);
 				break;
 			case '\0':
-				/*
-				 * Just a number, or '-', or <newline>.
-				 */
+				/* Just a number, or '-', or <newline>. */
 				if (cmd.count == 0)
-					cmd.count = 1; /* compat */
+					cmd.count = 1;	/* compat */
 				if (isdigit(cuc(*cmd.cmdline)))
 					line = (cmd.count - 1) * pagelen - 2;
 				else
 					line += (cmd.count - 1)
-						* (pagelen - 1) - 2;
+					    * (pagelen - 1) - 2;
 				if (*cmd.cmdline != '\0')
 					eof = 0;
 				if (cmd.count != 1) {
@@ -1423,9 +1308,7 @@ found_bw:
 				}
 				break;
 			case '$':
-				/*
-				 * Advance to EOF.
-				 */
+				/* Advance to EOF. */
 				if (!eof)
 					skip(1);
 				eof = 0;
@@ -1434,10 +1317,8 @@ found_bw:
 				dline = -1;
 				break;
 			case '.':
-			case '\014': /* ^L */
-				/*
-				 * Repaint screen.
-				 */
+			case '\014':	/* ^L */
+				/* Repaint screen. */
 				eof = 0;
 				if (line >= pagelen)
 					line -= pagelen;
@@ -1446,25 +1327,25 @@ found_bw:
 				dline = 0;
 				break;
 			case '!':
-				/*
-				 * Shell escape.
-				 */
+				/* Shell escape. */
 				if (rflag) {
-					mesg(progname);
+					mesg(program_invocation_short_name);
 					mesg(_(": !command not allowed in "
 					       "rflag mode.\n"));
 				} else {
 					pid_t cpid;
 
-					write_all(1, cmd.cmdline,
-					      strlen(cmd.cmdline));
-					write_all(1, "\n", 1);
+					write_all(STDOUT_FILENO, cmd.cmdline,
+						  strlen(cmd.cmdline));
+					write_all(STDOUT_FILENO, "\n", 1);
 					my_sigset(SIGINT, SIG_IGN);
 					my_sigset(SIGQUIT, SIG_IGN);
 					switch (cpid = fork()) {
 					case 0:
-						p = getenv("SHELL");
-						if (p == NULL) p = "/bin/sh";
+					{
+						const char *sh = getenv("SHELL");
+						if (!sh)
+							sh = "/bin/sh";
 						if (!nobuf)
 							fclose(fbuf);
 						fclose(find);
@@ -1477,17 +1358,18 @@ found_bw:
 						my_sigset(SIGINT, oldint);
 						my_sigset(SIGQUIT, oldquit);
 						my_sigset(SIGTERM, oldterm);
-						execl(p, p, "-c",
-							cmd.cmdline + 1, NULL);
-						pgerror(errno, p);
+						execl(sh, sh, "-c",
+						      cmd.cmdline + 1, NULL);
+						warn(_("failed to execute %s"), sh);
 						_exit(0177);
-						/*NOTREACHED*/
+						/* NOTREACHED */
+					}
 					case -1:
 						mesg(_("fork() failed, "
 						       "try again later\n"));
 						break;
 					default:
-						while (wait(NULL) != cpid);
+						while (wait(NULL) != cpid) ;
 					}
 					my_sigset(SIGINT, sighandler);
 					my_sigset(SIGQUIT, sighandler);
@@ -1495,19 +1377,17 @@ found_bw:
 				}
 				goto newcmd;
 			case 'h':
-			{
-				/*
-				 * Help!
-				 */
-				const char *help = _(helpscreen);
-				write_all(1, copyright + 4, strlen(copyright + 4));
-				write_all(1, help, strlen(help));
-				goto newcmd;
-			}
+				{
+					/* Help! */
+					const char *help = _(helpscreen);
+					write_all(STDOUT_FILENO, copyright,
+						  strlen(copyright));
+					write_all(STDOUT_FILENO, help,
+						  strlen(help));
+					goto newcmd;
+				}
 			case 'n':
-				/*
-				 * Next file.
-				 */
+				/* Next file. */
 				if (cmd.count == 0)
 					cmd.count = 1;
 				nextfile = cmd.count;
@@ -1518,9 +1398,7 @@ found_bw:
 				eof = 1;
 				break;
 			case 'p':
-				/*
-				 * Previous file.
-				 */
+				/* Previous file. */
 				if (cmd.count == 0)
 					cmd.count = 1;
 				nextfile = 0 - cmd.count;
@@ -1532,16 +1410,12 @@ found_bw:
 				break;
 			case 'q':
 			case 'Q':
-				/*
-				 * Exit pg.
-				 */
+				/* Exit pg. */
 				quit(exitstatus);
-				/*NOTREACHED*/
+				/* NOTREACHED */
 			case 'w':
 			case 'z':
-				/*
-				 * Set window size.
-				 */
+				/* Set window size. */
 				if (cmd.count < 0)
 					cmd.count = 0;
 				if (*cmd.cmdline != cmd.key)
@@ -1566,28 +1440,102 @@ found_bw:
 		fclose(fbuf);
 }
 
-int
-main(int argc, char **argv)
+static int parse_arguments(int arg, int argc, char **argv)
+{
+	FILE *input;
+
+	files.first = arg;
+	files.last = arg + argc - 1;
+	for (; argv[arg]; arg += nextfile) {
+		nextfile = 1;
+		files.current = arg;
+		if (argc > 2) {
+			static int firsttime;
+			firsttime++;
+			if (firsttime > 1) {
+				mesg(_("(Next file: "));
+				mesg(argv[arg]);
+				mesg(")");
+ newfile:
+				if (ontty) {
+					prompt(-1);
+					switch (cmd.key) {
+					case 'n':
+						/* Next file. */
+						if (cmd.count == 0)
+							cmd.count = 1;
+						nextfile = cmd.count;
+						if (checkf()) {
+							nextfile = 1;
+							mesg(":");
+							goto newfile;
+						}
+						continue;
+					case 'p':
+						/* Previous file. */
+						if (cmd.count == 0)
+							cmd.count = 1;
+						nextfile = 0 - cmd.count;
+						if (checkf()) {
+							nextfile = 1;
+							mesg(":");
+							goto newfile;
+						}
+						continue;
+					case 'q':
+					case 'Q':
+						quit(exitstatus);
+					}
+				} else
+					mesg("\n");
+			}
+		}
+		if (strcmp(argv[arg], "-") == 0)
+			input = stdin;
+		else {
+			input = fopen(argv[arg], "r");
+			if (input == NULL) {
+				warn("%s", argv[arg]);
+				exitstatus++;
+				continue;
+			}
+		}
+		if (ontty == 0 && argc > 2) {
+			/* Use the prefix as specified by SUSv2. */
+			write_all(STDOUT_FILENO, "::::::::::::::\n", 15);
+			write_all(STDOUT_FILENO, argv[arg], strlen(argv[arg]));
+			write_all(STDOUT_FILENO, "\n::::::::::::::\n", 16);
+		}
+		pgfile(input, argv[arg]);
+		if (input != stdin)
+			fclose(input);
+	}
+	return exitstatus;
+}
+
+int main(int argc, char **argv)
 {
 	int arg, i;
 	char *p;
-	FILE *input;
 
-	progname = basename(argv[0]);
+	xasprintf(&copyright,
+		  _("%s %s Copyright (c) 2000-2001 Gunnar Ritter. All rights reserved.\n"),
+		  program_invocation_short_name, PACKAGE_VERSION);
 
-	setlocale(LC_MESSAGES, "");
+	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
-	if (tcgetattr(1, &otio) == 0) {
+	if (tcgetattr(STDOUT_FILENO, &otio) == 0) {
 		ontty = 1;
 		oldint = my_sigset(SIGINT, sighandler);
 		oldquit = my_sigset(SIGQUIT, sighandler);
 		oldterm = my_sigset(SIGTERM, sighandler);
 		setlocale(LC_CTYPE, "");
 		setlocale(LC_COLLATE, "");
-		tty = ttyname(1);
-		setupterm(NULL, 1, &tinfostat);
+		tty = ttyname(STDOUT_FILENO);
+		setupterm(NULL, STDOUT_FILENO, &tinfostat);
 		getwinsize();
 		helpscreen = _(helpscreen);
 	}
@@ -1597,15 +1545,34 @@ main(int argc, char **argv)
 		if (*argv[arg] != '-' || argv[arg][1] == '\0')
 			break;
 		argc--;
+
+		if (!strcmp(argv[arg], "--help")) {
+		    usage(stdout);
+		}
+
+		if (!strcmp(argv[arg], "--version")) {
+		    printf(UTIL_LINUX_VERSION);
+		    return EXIT_SUCCESS;
+		}
+
 		for (i = 1; argv[arg][i]; i++) {
 			switch (argv[arg][i]) {
 			case '-':
 				if (i != 1 || argv[arg][i + 1])
 					invopt(&argv[arg][i]);
 				goto endargs;
-			case '1': case '2': case '3': case '4': case '5':
-			case '6': case '7': case '8': case '9': case '0':
-				pagelen = atoi(argv[arg] + i);
+			case '1':
+			case '2':
+			case '3':
+			case '4':
+			case '5':
+			case '6':
+			case '7':
+			case '8':
+			case '9':
+			case '0':
+				pagelen = strtol_or_err(argv[arg] + 1,
+						_("failed to parse number of lines per page"));
 				havepagelen = 1;
 				goto nextarg;
 			case 'c':
@@ -1635,14 +1602,19 @@ main(int argc, char **argv)
 			case 's':
 				sflag = 1;
 				break;
+			case 'h':
+				usage(stdout);
+			case 'V':
+				printf(UTIL_LINUX_VERSION);
+				return EXIT_SUCCESS;
 			default:
 				invopt(&argv[arg][i]);
 			}
 		}
-nextarg:
+ nextarg:
 		;
 	}
-endargs:
+ endargs:
 	for (arg = 1; argv[arg]; arg++) {
 		if (*argv[arg] == '-') {
 			if (argv[arg][1] == '-') {
@@ -1662,16 +1634,26 @@ endargs:
 		case '\0':
 			needarg("+");
 			/*NOTREACHED*/
-		case '1': case '2': case '3': case '4': case '5':
-		case '6': case '7': case '8': case '9': case '0':
-			startline = atoi(argv[arg] + 1);
+		case '1':
+		case '2':
+		case '3':
+		case '4':
+		case '5':
+		case '6':
+		case '7':
+		case '8':
+		case '9':
+		case '0':
+			startline = strtol_or_err(argv[arg] + 1,
+					_("failed to parse number of lines per page"));
 			break;
 		case '/':
 			searchfor = argv[arg] + 2;
 			if (*searchfor == '\0')
 				needarg("+/");
 			p = searchfor + strlen(searchfor) - 1;
-			if (*p == '/') *p = '\0';
+			if (*p == '/')
+				*p = '\0';
 			if (*searchfor == '\0')
 				needarg("+/");
 			break;
@@ -1679,82 +1661,12 @@ endargs:
 			invopt(argv[arg]);
 		}
 	}
-	if (argc == 1) {
+	if (argc == 1)
 		pgfile(stdin, "stdin");
-	} else {
-		files.first = arg;
-		files.last = arg + argc - 1;
-		for ( ; argv[arg]; arg += nextfile) {
-			nextfile = 1;
-			files.current = arg;
-			if (argc > 2) {
-				static int firsttime;
-				firsttime++;
-				if (firsttime > 1) {
-					mesg(_("(Next file: "));
-					mesg(argv[arg]);
-					mesg(")");
-newfile:
-					if (ontty) {
-					prompt(-1);
-					switch(cmd.key) {
-					case 'n':
-						/*
-					 	* Next file.
-					 	*/
-						if (cmd.count == 0)
-							cmd.count = 1;
-						nextfile = cmd.count;
-						if (checkf()) {
-							nextfile = 1;
-							mesg(":");
-							goto newfile;
-						}
-						continue;
-					case 'p':
-						/*
-					 	* Previous file.
-					 	*/
-						if (cmd.count == 0)
-							cmd.count = 1;
-						nextfile = 0 - cmd.count;
-						if (checkf()) {
-							nextfile = 1;
-							mesg(":");
-							goto newfile;
-						}
-						continue;
-					case 'q':
-					case 'Q':
-						quit(exitstatus);
-				}
-				} else mesg("\n");
-				}
-			}
-			if (strcmp(argv[arg], "-") == 0)
-				input = stdin;
-			else {
-				input = fopen(argv[arg], "r");
-				if (input == NULL) {
-					pgerror(errno, argv[arg]);
-					exitstatus++;
-					continue;
-				}
-			}
-			if (ontty == 0 && argc > 2) {
-				/*
-				 * Use the prefix as specified by SUSv2.
-				 */
-				write_all(1, "::::::::::::::\n", 15);
-				write_all(1, argv[arg], strlen(argv[arg]));
-				write_all(1, "\n::::::::::::::\n", 16);
-			}
-			pgfile(input, argv[arg]);
-			if (input != stdin)
-				fclose(input);
-		}
-	}
+	else
+		exitstatus = parse_arguments(arg, argc, argv);
+
 	quit(exitstatus);
-	/*NOTREACHED*/
+	/* NOTREACHED */
 	return 0;
 }

@@ -58,7 +58,6 @@
 #ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
-#include <sys/wait.h>
 #include <sys/stat.h>
 #ifdef HAVE_SYS_FILE_H
 #include <sys/file.h>
@@ -87,27 +86,17 @@
 #if defined(__linux__) && defined(HAVE_SYS_SYSCALL_H)
 #include <sys/syscall.h>
 #endif
-#ifdef HAVE_SYS_RESOURCE_H
-#include <sys/resource.h>
-#endif
 
+#include "all-io.h"
 #include "uuidP.h"
 #include "uuidd.h"
-
-#ifdef HAVE_SRANDOM
-#define srand(x)	srandom(x)
-#define rand()		random()
-#endif
+#include "randutils.h"
+#include "c.h"
 
 #ifdef HAVE_TLS
 #define THREAD_LOCAL static __thread
 #else
 #define THREAD_LOCAL static
-#endif
-
-#if defined(__linux__) && defined(__NR_gettid) && defined(HAVE_JRAND48)
-#define DO_JRAND_MIX
-THREAD_LOCAL unsigned short jrand_seed[3];
 #endif
 
 #ifdef _WIN32
@@ -133,86 +122,6 @@ static int getuid (void)
 	return 1;
 }
 #endif
-
-static int get_random_fd(void)
-{
-	struct timeval	tv;
-	static int	fd = -2;
-	int		i;
-
-	if (fd == -2) {
-		gettimeofday(&tv, 0);
-#ifndef _WIN32
-		fd = open("/dev/urandom", O_RDONLY);
-		if (fd == -1)
-			fd = open("/dev/random", O_RDONLY | O_NONBLOCK);
-		if (fd >= 0) {
-			i = fcntl(fd, F_GETFD);
-			if (i >= 0)
-				fcntl(fd, F_SETFD, i | FD_CLOEXEC);
-		}
-#endif
-		srand((getpid() << 16) ^ getuid() ^ tv.tv_sec ^ tv.tv_usec);
-#ifdef DO_JRAND_MIX
-		jrand_seed[0] = getpid() ^ (tv.tv_sec & 0xFFFF);
-		jrand_seed[1] = getppid() ^ (tv.tv_usec & 0xFFFF);
-		jrand_seed[2] = (tv.tv_sec ^ tv.tv_usec) >> 16;
-#endif
-	}
-	/* Crank the random number generator a few times */
-	gettimeofday(&tv, 0);
-	for (i = (tv.tv_sec ^ tv.tv_usec) & 0x1F; i > 0; i--)
-		rand();
-	return fd;
-}
-
-
-/*
- * Generate a series of random bytes.  Use /dev/urandom if possible,
- * and if not, use srandom/random.
- */
-static void get_random_bytes(void *buf, int nbytes)
-{
-	int i, n = nbytes, fd = get_random_fd();
-	int lose_counter = 0;
-	unsigned char *cp = (unsigned char *) buf;
-
-	if (fd >= 0) {
-		while (n > 0) {
-			i = read(fd, cp, n);
-			if (i <= 0) {
-				if (lose_counter++ > 16)
-					break;
-				continue;
-			}
-			n -= i;
-			cp += i;
-			lose_counter = 0;
-		}
-	}
-
-	/*
-	 * We do this all the time, but this is the only source of
-	 * randomness if /dev/random/urandom is out to lunch.
-	 */
-	for (cp = buf, i = 0; i < nbytes; i++)
-		*cp++ ^= (rand() >> 7) & 0xFF;
-
-#ifdef DO_JRAND_MIX
-	{
-		unsigned short tmp_seed[3];
-
-		memcpy(tmp_seed, jrand_seed, sizeof(tmp_seed));
-		jrand_seed[2] = jrand_seed[2] ^ syscall(__NR_gettid);
-		for (cp = buf, i = 0; i < nbytes; i++)
-			*cp++ ^= (jrand48(tmp_seed) >> 7) & 0xFF;
-		memcpy(jrand_seed, tmp_seed,
-		       sizeof(jrand_seed)-sizeof(unsigned short));
-	}
-#endif
-
-	return;
-}
 
 /*
  * Get the ethernet hardware address, if we can find it...
@@ -242,9 +151,6 @@ static int get_node_id(unsigned char *node_id)
  * just sizeof(struct ifreq)
  */
 #ifdef HAVE_SA_LEN
-#ifndef max
-#define max(a,b) ((a) > (b) ? (a) : (b))
-#endif
 #define ifreq_size(i) max(sizeof(struct ifreq),\
      sizeof((i).ifr_name)+(i).ifr_addr.sa_len)
 #else
@@ -329,11 +235,10 @@ static int get_clock(uint32_t *clock_high, uint32_t *clock_low,
 
 	if (state_fd == -2) {
 		save_umask = umask(0);
-		state_fd = open("/var/lib/libuuid/clock.txt",
-				O_RDWR|O_CREAT, 0660);
+		state_fd = open(LIBUUID_CLOCK_FILE, O_RDWR|O_CREAT|O_CLOEXEC, 0660);
 		(void) umask(save_umask);
 		if (state_fd != -1) {
-			state_f = fdopen(state_fd, "r+");
+			state_f = fdopen(state_fd, "r+" UL_CLOEXECSTR);
 			if (!state_f) {
 				close(state_fd);
 				state_fd = -1;
@@ -370,7 +275,7 @@ static int get_clock(uint32_t *clock_high, uint32_t *clock_low,
 	}
 
 	if ((last.tv_sec == 0) && (last.tv_usec == 0)) {
-		get_random_bytes(&clock_seq, sizeof(clock_seq));
+		random_get_bytes(&clock_seq, sizeof(clock_seq));
 		clock_seq &= 0x3FFF;
 		gettimeofday(&last, 0);
 		last.tv_sec--;
@@ -427,58 +332,6 @@ try_again:
 }
 
 #if defined(HAVE_UUIDD) && defined(HAVE_SYS_UN_H)
-/* used in get_uuid_via_daemon() only */
-static ssize_t read_all(int fd, char *buf, size_t count)
-{
-	ssize_t ret;
-	ssize_t c = 0;
-	int tries = 0;
-
-	memset(buf, 0, count);
-	while (count > 0) {
-		ret = read(fd, buf, count);
-		if (ret <= 0) {
-			if ((errno == EAGAIN || errno == EINTR || ret == 0) &&
-			    (tries++ < 5))
-				continue;
-			return c ? c : -1;
-		}
-		if (ret > 0)
-			tries = 0;
-		count -= ret;
-		buf += ret;
-		c += ret;
-	}
-	return c;
-}
-
-/*
- * Close all file descriptors
- */
-static void close_all_fds(void)
-{
-	int i, max;
-
-#if defined(HAVE_SYSCONF) && defined(_SC_OPEN_MAX)
-	max = sysconf(_SC_OPEN_MAX);
-#elif defined(HAVE_GETDTABLESIZE)
-	max = getdtablesize();
-#elif defined(HAVE_GETRLIMIT) && defined(RLIMIT_NOFILE)
-	struct rlimit rl;
-
-	getrlimit(RLIMIT_NOFILE, &rl);
-	max = rl.rlim_cur;
-#else
-	max = OPEN_MAX;
-#endif
-
-	for (i=0; i < max; i++) {
-		close(i);
-		if (i <= 2)
-			open("/dev/null", O_RDWR);
-	}
-}
-
 /*
  * Try using the uuidd daemon to generate the UUID
  *
@@ -492,11 +345,6 @@ static int get_uuid_via_daemon(int op, uuid_t out, int *num)
 	ssize_t ret;
 	int32_t reply_len = 0, expected = 16;
 	struct sockaddr_un srv_addr;
-	struct stat st;
-	pid_t pid;
-	static const char *uuidd_path = UUIDD_PATH;
-	static int access_ret = -2;
-	static int start_attempts = 0;
 
 	if ((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
 		return -1;
@@ -505,27 +353,9 @@ static int get_uuid_via_daemon(int op, uuid_t out, int *num)
 	strcpy(srv_addr.sun_path, UUIDD_SOCKET_PATH);
 
 	if (connect(s, (const struct sockaddr *) &srv_addr,
-		    sizeof(struct sockaddr_un)) < 0) {
-		if (access_ret == -2)
-			access_ret = access(uuidd_path, X_OK);
-		if (access_ret == 0)
-			access_ret = stat(uuidd_path, &st);
-		if (access_ret == 0 && (st.st_mode & (S_ISUID | S_ISGID)) == 0)
-			access_ret = access(UUIDD_DIR, W_OK);
-		if (access_ret == 0 && start_attempts++ < 5) {
-			if ((pid = fork()) == 0) {
-				close_all_fds();
-				execl(uuidd_path, "uuidd", "-qT", "300",
-				      (char *) NULL);
-				exit(1);
-			}
-			(void) waitpid(pid, 0, 0);
-			if (connect(s, (const struct sockaddr *) &srv_addr,
-				    sizeof(struct sockaddr_un)) < 0)
-				goto fail;
-		} else
-			goto fail;
-	}
+		    sizeof(struct sockaddr_un)) < 0)
+		goto fail;
+
 	op_buf[0] = op;
 	op_len = 1;
 	if (op == UUIDD_OP_BULK_TIME_UUID) {
@@ -577,7 +407,7 @@ int __uuid_generate_time(uuid_t out, int *num)
 
 	if (!has_init) {
 		if (get_node_id(node_id) <= 0) {
-			get_random_bytes(node_id, 6);
+			random_get_bytes(node_id, 6);
 			/*
 			 * Set multicast bit, to prevent conflicts
 			 * with IEEE 802 addresses obtained from
@@ -675,7 +505,7 @@ void __uuid_generate_random(uuid_t out, int *num)
 		n = *num;
 
 	for (i = 0; i < n; i++) {
-		get_random_bytes(buf, sizeof(buf));
+		random_get_bytes(buf, sizeof(buf));
 		uuid_unpack(buf, &uu);
 
 		uu.clock_seq = (uu.clock_seq & 0x3FFF) | 0x8000;
@@ -694,6 +524,17 @@ void uuid_generate_random(uuid_t out)
 	__uuid_generate_random(out, &num);
 }
 
+/*
+ * Check whether good random source (/dev/random or /dev/urandom)
+ * is available.
+ */
+static int have_random_source(void)
+{
+	struct stat s;
+
+	return (!stat("/dev/random", &s) || !stat("/dev/urandom", &s));
+}
+
 
 /*
  * This is the generic front-end to uuid_generate_random and
@@ -703,7 +544,7 @@ void uuid_generate_random(uuid_t out)
  */
 void uuid_generate(uuid_t out)
 {
-	if (get_random_fd() >= 0)
+	if (have_random_source())
 		uuid_generate_random(out);
 	else
 		uuid_generate_time(out);

@@ -49,18 +49,70 @@ void *xcalloc(const size_t nelems, const size_t size)
         return ret;
 }
 
-static inline char *xstrdup(const char *str)
+static inline char __attribute__((warn_unused_result)) *xstrdup(const char *str)
 {
-	char *ret;
+        char *ret;
 
-	if (!str)
-		return NULL;
+        if (!str)
+                return NULL;
 
-	ret = strdup(str);
+        ret = strdup(str);
 
-	if (!ret)
-		err(XALLOC_EXIT_CODE, "cannot duplicate string");
+        if (!ret)
+                err(XALLOC_EXIT_CODE, "cannot duplicate string");
+        return ret;
+}
+
+static inline char * __attribute__((warn_unused_result)) xstrndup(const char *str, size_t size)
+{
+        char *ret;
+
+        if (!str)
+                return NULL;
+
+        ret = strndup(str, size);
+
+        if (!ret)
+                err(XALLOC_EXIT_CODE, "cannot duplicate string");
+        return ret;
+}
+
+
+static inline int __attribute__ ((__format__(printf, 2, 3)))
+    xasprintf(char **strp, const char *fmt, ...)
+{
+	int ret;
+	va_list args;
+	va_start(args, fmt);
+	ret = vasprintf(&(*strp), fmt, args);
+	va_end(args);
+	if (ret < 0)
+		err(XALLOC_EXIT_CODE, "cannot allocate string");
 	return ret;
+}
+
+static inline int xvasprintf(char **strp, const char *fmt, va_list ap)
+{
+	int ret = vasprintf(&(*strp), fmt, ap);
+	if (ret < 0)
+		err(XALLOC_EXIT_CODE, "cannot allocate string");
+	return ret;
+}
+
+
+static inline char * __attribute__((warn_unused_result)) xgethostname(void)
+{
+	char *name;
+	size_t sz = get_hostname_max() + 1;
+
+	name = xmalloc(sizeof(char) * sz);
+
+	if (gethostname(name, sz) != 0) {
+		free(name);
+		return NULL;
+	}
+	name[sz - 1] = '\0';
+	return name;
 }
 
 #endif

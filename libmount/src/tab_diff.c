@@ -25,7 +25,7 @@ struct libmnt_tabdiff {
 	int nchanges;			/* number of changes */
 
 	struct list_head changes;	/* list with modified entries */
-	struct list_head unused;	/* list with unuused entries */
+	struct list_head unused;	/* list with unused entries */
 };
 
 /**
@@ -42,7 +42,7 @@ struct libmnt_tabdiff *mnt_new_tabdiff(void)
 	if (!df)
 		return NULL;
 
-	DBG(DIFF, mnt_debug_h(df, "alloc"));
+	DBG(DIFF, ul_debugobj(df, "alloc"));
 
 	INIT_LIST_HEAD(&df->changes);
 	INIT_LIST_HEAD(&df->unused);
@@ -54,6 +54,8 @@ static void free_tabdiff_entry(struct tabdiff_entry *de)
 	if (!de)
 		return;
 	list_del(&de->changes);
+	mnt_unref_fs(de->new_fs);
+	mnt_unref_fs(de->old_fs);
 	free(de);
 }
 
@@ -68,7 +70,7 @@ void mnt_free_tabdiff(struct libmnt_tabdiff *df)
 	if (!df)
 		return;
 
-	DBG(DIFF, mnt_debug_h(df, "free"));
+	DBG(DIFF, ul_debugobj(df, "free"));
 
 	while (!list_empty(&df->changes)) {
 		struct tabdiff_entry *de = list_entry(df->changes.next,
@@ -89,7 +91,7 @@ void mnt_free_tabdiff(struct libmnt_tabdiff *df)
  *
  * The options @old_fs, @new_fs and @oper are optional.
  *
- * Returns: 0 on success, negative number in case of error or 1 at end of list.
+ * Returns: 0 on success, negative number in case of error or 1 at the end of list.
  */
 int mnt_tabdiff_next_change(struct libmnt_tabdiff *df, struct libmnt_iter *itr,
 		struct libmnt_fs **old_fs, struct libmnt_fs **new_fs, int *oper)
@@ -124,9 +126,9 @@ static int tabdiff_reset(struct libmnt_tabdiff *df)
 {
 	assert(df);
 
-	DBG(DIFF, mnt_debug_h(df, "reseting"));
+	DBG(DIFF, ul_debugobj(df, "resetting"));
 
-	/* zeroize all entries and move them to the list of unuused
+	/* zeroize all entries and move them to the list of unused
 	 */
 	while (!list_empty(&df->changes)) {
 		struct tabdiff_entry *de = list_entry(df->changes.next,
@@ -134,6 +136,9 @@ static int tabdiff_reset(struct libmnt_tabdiff *df)
 
 		list_del(&de->changes);
 		list_add_tail(&de->changes, &df->unused);
+
+		mnt_unref_fs(de->new_fs);
+		mnt_unref_fs(de->old_fs);
 
 		de->new_fs = de->old_fs = NULL;
 		de->oper = 0;
@@ -150,7 +155,7 @@ static int tabdiff_add_entry(struct libmnt_tabdiff *df, struct libmnt_fs *old,
 
 	assert(df);
 
-	DBG(DIFF, mnt_debug_h(df, "add change on %s",
+	DBG(DIFF, ul_debugobj(df, "add change on %s",
 				mnt_fs_get_target(new ? new : old)));
 
 	if (!list_empty(&df->unused)) {
@@ -163,6 +168,12 @@ static int tabdiff_add_entry(struct libmnt_tabdiff *df, struct libmnt_fs *old,
 	}
 
 	INIT_LIST_HEAD(&de->changes);
+
+	mnt_ref_fs(new);
+	mnt_ref_fs(old);
+
+	mnt_unref_fs(de->new_fs);
+	mnt_unref_fs(de->old_fs);
 
 	de->old_fs = old;
 	de->new_fs = new;
@@ -203,81 +214,85 @@ static struct tabdiff_entry *tabdiff_get_mount(struct libmnt_tabdiff *df,
 /**
  * mnt_diff_tables:
  * @df: diff handler
- * @old: old table
- * @new: new table
+ * @old_tab: old table
+ * @new_tab: new table
  *
- * Compares @old and @new, the result is stored in @df and accessible by
+ * Compares @old_tab and @new_tab, the result is stored in @df and accessible by
  * mnt_tabdiff_next_change().
  *
  * Returns: number of changes, negative number in case of error.
  */
-int mnt_diff_tables(struct libmnt_tabdiff *df, struct libmnt_table *old,
-		    struct libmnt_table *new)
+int mnt_diff_tables(struct libmnt_tabdiff *df, struct libmnt_table *old_tab,
+		    struct libmnt_table *new_tab)
 {
 	struct libmnt_fs *fs;
 	struct libmnt_iter itr;
 	int no, nn;
 
-	if (!df || !old || !new)
+	if (!df || !old_tab || !new_tab)
 		return -EINVAL;
 
 	tabdiff_reset(df);
 
-	no = mnt_table_get_nents(old);
-	nn = mnt_table_get_nents(new);
+	no = mnt_table_get_nents(old_tab);
+	nn = mnt_table_get_nents(new_tab);
 
 	if (!no && !nn)			/* both tables are empty */
 		return 0;
 
-	DBG(DIFF, mnt_debug_h(df, "analyze new=%p (%d entries), "
+	DBG(DIFF, ul_debugobj(df, "analyze new=%p (%d entries), "
 				          "old=%p (%d entries)",
-				new, nn, old, no));
+				new_tab, nn, old_tab, no));
 
 	mnt_reset_iter(&itr, MNT_ITER_FORWARD);
 
 	/* all mounted or umounted */
 	if (!no && nn) {
-		while(mnt_table_next_fs(new, &itr, &fs) == 0)
+		while(mnt_table_next_fs(new_tab, &itr, &fs) == 0)
 			tabdiff_add_entry(df, NULL, fs, MNT_TABDIFF_MOUNT);
 		goto done;
 
 	} else if (no && !nn) {
-		while(mnt_table_next_fs(old, &itr, &fs) == 0)
+		while(mnt_table_next_fs(old_tab, &itr, &fs) == 0)
 			tabdiff_add_entry(df, fs, NULL, MNT_TABDIFF_UMOUNT);
 		goto done;
 	}
 
 	/* search newly mounted or modified */
-	while(mnt_table_next_fs(new, &itr, &fs) == 0) {
+	while(mnt_table_next_fs(new_tab, &itr, &fs) == 0) {
 		struct libmnt_fs *o_fs;
 		const char *src = mnt_fs_get_source(fs),
 			   *tgt = mnt_fs_get_target(fs);
 
-		o_fs = mnt_table_find_pair(old, src, tgt, MNT_ITER_FORWARD);
+		o_fs = mnt_table_find_pair(old_tab, src, tgt, MNT_ITER_FORWARD);
 		if (!o_fs)
 			/* 'fs' is not in the old table -- so newly mounted */
 			tabdiff_add_entry(df, NULL, fs, MNT_TABDIFF_MOUNT);
 		else {
 			/* is modified? */
-			const char *o1 = mnt_fs_get_options(o_fs),
-				   *o2 = mnt_fs_get_options(fs);
+			const char *v1 = mnt_fs_get_vfs_options(o_fs),
+				   *v2 = mnt_fs_get_vfs_options(fs),
+				   *f1 = mnt_fs_get_fs_options(o_fs),
+				   *f2 = mnt_fs_get_fs_options(fs);
 
-			if (o1 && o2 && strcmp(o1, o2))
+			if ((v1 && v2 && strcmp(v1, v2)) || (f1 && f2 && strcmp(f1, f2)))
 				tabdiff_add_entry(df, o_fs, fs, MNT_TABDIFF_REMOUNT);
 		}
 	}
 
 	/* search umounted or moved */
 	mnt_reset_iter(&itr, MNT_ITER_FORWARD);
-	while(mnt_table_next_fs(old, &itr, &fs) == 0) {
+	while(mnt_table_next_fs(old_tab, &itr, &fs) == 0) {
 		const char *src = mnt_fs_get_source(fs),
 			   *tgt = mnt_fs_get_target(fs);
 
-		if (!mnt_table_find_pair(new, src, tgt, MNT_ITER_FORWARD)) {
+		if (!mnt_table_find_pair(new_tab, src, tgt, MNT_ITER_FORWARD)) {
 			struct tabdiff_entry *de;
 
 			de = tabdiff_get_mount(df, src,	mnt_fs_get_id(fs));
 			if (de) {
+				mnt_ref_fs(fs);
+				mnt_unref_fs(de->old_fs);
 				de->oper = MNT_TABDIFF_MOVE;
 				de->old_fs = fs;
 			} else
@@ -285,7 +300,7 @@ int mnt_diff_tables(struct libmnt_tabdiff *df, struct libmnt_table *old,
 		}
 	}
 done:
-	DBG(DIFF, mnt_debug_h(df, "%d changes detected", df->nchanges));
+	DBG(DIFF, ul_debugobj(df, "%d changes detected", df->nchanges));
 	return df->nchanges;
 }
 
@@ -340,9 +355,10 @@ int test_diff(struct libmnt_test *ts, int argc, char *argv[])
 
 	rc = 0;
 done:
-	mnt_free_table(tb_old);
-	mnt_free_table(tb_new);
+	mnt_unref_table(tb_old);
+	mnt_unref_table(tb_new);
 	mnt_free_tabdiff(diff);
+	mnt_free_iter(itr);
 	return rc;
 }
 

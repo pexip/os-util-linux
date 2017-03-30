@@ -24,9 +24,7 @@ extern int optind;
 #include "uuid.h"
 #include "nls.h"
 #include "c.h"
-
-#define DO_TYPE_TIME	1
-#define DO_TYPE_RANDOM	2
+#include "closestream.h"
 
 static void __attribute__ ((__noreturn__)) usage(FILE * out)
 {
@@ -52,7 +50,7 @@ main (int argc, char *argv[])
 	uuid_t uu;
 
 	static const struct option longopts[] = {
-		{"random", required_argument, NULL, 'r'},
+		{"random", no_argument, NULL, 'r'},
 		{"time", no_argument, NULL, 't'},
 		{"version", no_argument, NULL, 'V'},
 		{"help", no_argument, NULL, 'h'},
@@ -62,19 +60,18 @@ main (int argc, char *argv[])
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	while ((c = getopt_long(argc, argv, "rtVh", longopts, NULL)) != -1)
 		switch (c) {
 		case 't':
-			do_type = DO_TYPE_TIME;
+			do_type = UUID_TYPE_DCE_TIME;
 			break;
 		case 'r':
-			do_type = DO_TYPE_RANDOM;
+			do_type = UUID_TYPE_DCE_RANDOM;
 			break;
 		case 'V':
-			printf(_("%s from %s\n"),
-				program_invocation_short_name,
-				PACKAGE_STRING);
+			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
 			usage(stdout);
@@ -83,10 +80,10 @@ main (int argc, char *argv[])
 		}
 
 	switch (do_type) {
-	case DO_TYPE_TIME:
+	case UUID_TYPE_DCE_TIME:
 		uuid_generate_time(uu);
 		break;
-	case DO_TYPE_RANDOM:
+	case UUID_TYPE_DCE_RANDOM:
 		uuid_generate_random(uu);
 		break;
 	default:

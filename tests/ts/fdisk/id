@@ -14,11 +14,13 @@
 # GNU General Public License for more details.
 #
 
-TS_TOPDIR="$(dirname $0)/../.."
-TS_DESC="doslabel tests"
+TS_TOPDIR="${0%/*}/../.."
+TS_DESC="MBR - id"
 
 . $TS_TOPDIR/functions.sh
 ts_init "$*"
+
+ts_check_test_command "$TS_CMD_FDISK"
 
 FDISK_CMD_ID1="x\ni\n0x1\nr\nw\n"
 FDISK_CMD_ID2="x\ni\n0x2\nr\nw\n"
