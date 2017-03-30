@@ -124,9 +124,10 @@ override_dh_installinit:
 	# install /etc/init.d/hwclock.sh
 	# - update-rc.d manually handled in maintainers scripts as there
 	#   is special per-arch considerations.
-	dh_installinit --name=hwclock.sh --noscripts
+	dh_installinit --name=hwclock.sh --noscripts --no-start
+	dh_installinit -putil-linux --name=hwclock-save --noscripts --no-start
 	# install /etc/default/hwclock
-	dh_installinit --name=hwclock
+	dh_installinit --name=hwclock --no-start
 	# install uuidd sysvinit script
 	make misc-utils/uuidd.rc
 	ln -s ../misc-utils/uuidd.rc debian/uuid-runtime.uuidd.init

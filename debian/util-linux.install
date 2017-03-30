@@ -1,5 +1,4 @@
 #!/usr/bin/dh-exec --with=install
-debian/hwclock.rules => /lib/udev/rules.d/85-hwclock.rules
 debian/hwclock-set => /lib/udev/hwclock-set
 # perl gets to do rename, not us.
 debian/tmp/usr/bin/rename => /usr/bin/rename.ul
