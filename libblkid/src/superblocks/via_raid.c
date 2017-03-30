@@ -42,7 +42,7 @@ static uint8_t via_checksum(struct via_metadata *v)
 	while (i--)
 		cs += ((uint8_t*) v)[i];
 
-	return cs == v->checksum;
+	return cs;
 }
 
 static int probe_viaraid(blkid_probe pr,
@@ -52,9 +52,9 @@ static int probe_viaraid(blkid_probe pr,
 	struct via_metadata *v;
 
 	if (pr->size < 0x10000)
-		return -1;
+		return 1;
 	if (!S_ISREG(pr->mode) && !blkid_probe_is_wholedisk(pr))
-		return -1;
+		return 1;
 
 	off = ((pr->size / 0x200)-1) * 0x200;
 
@@ -63,19 +63,21 @@ static int probe_viaraid(blkid_probe pr,
 				off,
 				sizeof(struct via_metadata));
 	if (!v)
-		return -1;
+		return errno ? -errno : 1;
+
 	if (le16_to_cpu(v->signature) != VIA_SIGNATURE)
-		return -1;
+		return 1;
 	if (v->version_number > 2)
-		return -1;
-	if (!via_checksum(v))
-		return -1;
+		return 1;
+	if (!blkid_probe_verify_csum(pr, via_checksum(v), v->checksum))
+		return 1;
+
 	if (blkid_probe_sprintf_version(pr, "%u", v->version_number) != 0)
-		return -1;
+		return 1;
 	if (blkid_probe_set_magic(pr, off,
 				sizeof(v->signature),
 				(unsigned char *) &v->signature))
-		return -1;
+		return 1;
 	return 0;
 }
 

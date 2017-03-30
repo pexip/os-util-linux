@@ -6,8 +6,10 @@
 #define UTIL_LINUX_C_H
 
 #include <limits.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,7 +20,7 @@
 #endif
 
 /*
- * Compiler specific stuff
+ * Compiler-specific stuff
  */
 #ifndef __GNUC_PREREQ
 # if defined __GNUC__ && defined __GNUC_MINOR__
@@ -50,7 +52,7 @@
  */
 #ifndef __ul_alloc_size
 # if __GNUC_PREREQ (4, 3)
-#  define __ul_alloc_size(s) __attribute__((alloc_size(s)))
+#  define __ul_alloc_size(s) __attribute__((alloc_size(s), warn_unused_result))
 # else
 #  define __ul_alloc_size(s)
 # endif
@@ -58,15 +60,16 @@
 
 #ifndef __ul_calloc_size
 # if __GNUC_PREREQ (4, 3)
-#  define __ul_calloc_size(n, s) __attribute__((alloc_size(n, s)))
+#  define __ul_calloc_size(n, s) __attribute__((alloc_size(n, s), warn_unused_result))
 # else
 #  define __ul_calloc_size(n, s)
 # endif
 #endif
 
-/* Force a compilation error if condition is true, but also produce a
+/*
+ * Force a compilation error if condition is true, but also produce a
  * result (of value 0 and type size_t), so the expression can be used
- * e.g. in a structure initializer (or where-ever else comma expressions
+ * e.g. in a structure initializer (or wherever else comma expressions
  * aren't permitted).
  */
 #define UL_BUILD_BUG_ON_ZERO(e) (sizeof(struct { int:-!!(e); }))
@@ -102,6 +105,16 @@
 	__typeof__(y) _max2 = (y);		\
 	(void) (&_max1 == &_max2);		\
 	_max1 > _max2 ? _max1 : _max2; })
+#endif
+
+#ifndef offsetof
+#define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
+#endif
+
+#ifndef container_of
+#define container_of(ptr, type, member) ({                       \
+	const __typeof__( ((type *)0)->member ) *__mptr = (ptr); \
+	(type *)( (char *)__mptr - offsetof(type,member) );})
 #endif
 
 #ifndef HAVE_PROGRAM_INVOCATION_SHORT_NAME
@@ -153,7 +166,7 @@ errmsg(char doexit, int excode, char adderr, const char *fmt, ...)
 			fprintf(stderr, ": ");
 	}
 	if (adderr)
-		fprintf(stderr, "%s", strerror(errno));
+		fprintf(stderr, "%m");
 	fprintf(stderr, "\n");
 	if (doexit)
 		exit(excode);
@@ -199,9 +212,17 @@ static inline int dirfd(DIR *d)
  * Fallback defines for old versions of glibc
  */
 #include <fcntl.h>
+
+#ifdef O_CLOEXEC
+#define UL_CLOEXECSTR	"e"
+#else
+#define UL_CLOEXECSTR	""
+#endif
+
 #ifndef O_CLOEXEC
 #define O_CLOEXEC 0
 #endif
+
 
 #ifndef AI_ADDRCONFIG
 #define AI_ADDRCONFIG 0x0020
@@ -212,6 +233,59 @@ static inline int dirfd(DIR *d)
 #endif
 
 /*
+ * MAXHOSTNAMELEN replacement
+ */
+static inline size_t get_hostname_max(void)
+{
+	long len = sysconf(_SC_HOST_NAME_MAX);
+
+	if (0 < len)
+		return len;
+
+#ifdef MAXHOSTNAMELEN
+	return MAXHOSTNAMELEN;
+#elif HOST_NAME_MAX
+	return HOST_NAME_MAX;
+#endif
+	return 64;
+}
+
+/*
+ * The usleep function was marked obsolete in POSIX.1-2001 and was removed
+ * in POSIX.1-2008.  It was replaced with nanosleep() that provides more
+ * advantages (like no interaction with signals and other timer functions).
+ */
+#include <time.h>
+
+static inline int xusleep(useconds_t usec)
+{
+#ifdef HAVE_NANOSLEEP
+	struct timespec waittime = {
+		.tv_sec   =  usec / 1000000L,
+		.tv_nsec  = (usec % 1000000L) * 1000
+	};
+	return nanosleep(&waittime, NULL);
+#elif defined(HAVE_USLEEP)
+	return usleep(usec);
+#else
+# error	"System with usleep() or nanosleep() required!"
+#endif
+}
+
+/*
+ * Constant strings for usage() functions. For more info see
+ * Documentation/howto-usage-function.txt and disk-utils/delpart.c
+ */
+#define USAGE_HEADER     _("\nUsage:\n")
+#define USAGE_OPTIONS    _("\nOptions:\n")
+#define USAGE_SEPARATOR    "\n"
+#define USAGE_HELP       _(" -h, --help     display this help and exit\n")
+#define USAGE_VERSION    _(" -V, --version  output version information and exit\n")
+#define USAGE_MAN_TAIL(_man)   _("\nFor more details see %s.\n"), _man
+
+#define UTIL_LINUX_VERSION _("%s from %s\n"), program_invocation_short_name, PACKAGE_STRING
+
+/*
  * scanf modifiers for "strings allocation"
  */
 #ifdef HAVE_SCANF_MS_MODIFIER
@@ -219,5 +293,24 @@ static inline int dirfd(DIR *d)
 #elif defined(HAVE_SCANF_AS_MODIFIER)
 #define UL_SCNsA	"%as"
 #endif
+
+/*
+ * seek stuff
+ */
+#ifndef SEEK_DATA
+# define SEEK_DATA	3
+#endif
+#ifndef SEEK_HOLE
+# define SEEK_HOLE	4
+#endif
+
+
+/*
+ * Macros to convert #define'itions to strings, for example
+ * #define XYXXY 42
+ * printf ("%s=%s\n", stringify(XYXXY), stringify_value(XYXXY));
+ */
+#define stringify_value(s) stringify(s)
+#define stringify(s) #s
 
 #endif /* UTIL_LINUX_C_H */

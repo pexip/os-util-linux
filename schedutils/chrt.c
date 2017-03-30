@@ -15,9 +15,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  *
  * Copyright (C) 2004 Robert Love
  */
@@ -31,7 +31,7 @@
 
 #include "c.h"
 #include "nls.h"
-
+#include "closestream.h"
 #include "strutils.h"
 #include "procutils.h"
 
@@ -62,9 +62,9 @@ static void __attribute__((__noreturn__)) show_usage(int rc)
 	fprintf(out, _(
 	"\nchrt - manipulate real-time attributes of a process\n"
 	"\nSet policy:\n"
-	"  chrt [options] <policy> <priority> {<pid> | <command> [<arg> ...]}\n"
+	"  chrt [options] [<policy>] <priority> [-p <pid> | <command> [<arg>...]]\n"
 	"\nGet policy:\n"
-	"  chrt [options] {<pid> | <command> [<arg> ...]}\n"));
+	"  chrt [options] -p <pid>\n"));
 
 	fprintf(out, _(
 	"\nScheduling policies:\n"
@@ -218,6 +218,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	while((i = getopt_long(argc, argv, "+abfiphmoRrvV", longopts, NULL)) != -1)
 	{
@@ -253,7 +254,7 @@ int main(int argc, char **argv)
 			break;
 		case 'p':
 			errno = 0;
-			pid = strtol_or_err(argv[argc - 1], _("failed to parse pid"));
+			pid = strtos32_or_err(argv[argc - 1], _("invalid PID argument"));
 			break;
 		case 'r':
 			policy = SCHED_RR;
@@ -262,11 +263,12 @@ int main(int argc, char **argv)
 			verbose = 1;
 			break;
 		case 'V':
-			printf("%s from %s\n", program_invocation_short_name,
-					       PACKAGE_STRING);
+			printf(_("%s from %s\n"), program_invocation_short_name,
+			       PACKAGE_STRING);
 			return EXIT_SUCCESS;
 		case 'h':
 			ret = EXIT_SUCCESS;
+			/* fallthrough */
 		default:
 			show_usage(ret);
 		}
@@ -294,13 +296,13 @@ int main(int argc, char **argv)
 	}
 
 	errno = 0;
-	priority = strtol_or_err(argv[optind], _("failed to parse priority"));
+	priority = strtos32_or_err(argv[optind], _("invalid priority argument"));
 
 #ifdef SCHED_RESET_ON_FORK
 	/* sanity check */
 	if ((policy_flag & SCHED_RESET_ON_FORK) &&
 	    !(policy == SCHED_FIFO || policy == SCHED_RR))
-		errx(EXIT_FAILURE, _("SCHED_RESET_ON_FORK flag is suppoted for "
+		errx(EXIT_FAILURE, _("SCHED_RESET_ON_FORK flag is supported for "
 				     "SCHED_FIFO and SCHED_RR policies only"));
 #endif
 
@@ -329,7 +331,6 @@ int main(int argc, char **argv)
 	if (!pid) {
 		argv += optind + 1;
 		execvp(argv[0], argv);
-		perror("execvp");
 		err(EXIT_FAILURE, _("failed to execute %s"), argv[0]);
 	}
 

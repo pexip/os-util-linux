@@ -37,7 +37,7 @@
  * This program is not related to David Wall, whose Stanford Ph.D. thesis
  * is entitled "Mechanisms for Broadcast and Selective Broadcast".
  *
- * 1999-02-22 Arkadiusz Mi∂kiewicz <misiek@pld.ORG.PL>
+ * 1999-02-22 Arkadiusz Mi≈õkiewicz <misiek@pld.ORG.PL>
  * - added Native Language Support
  *
  */
@@ -66,53 +66,45 @@
 #include "pathnames.h"
 #include "carefulputc.h"
 #include "c.h"
+#include "fileutils.h"
+#include "closestream.h"
 
-#define	IGNOREUSER	"sleeper"
-#define WRITE_TIME_OUT	300		/* in seconds */
-
-#ifndef MAXHOSTNAMELEN
-# ifdef HOST_NAME_MAX
-#  define MAXHOSTNAMELEN HOST_NAME_MAX
-# else
-#  define MAXHOSTNAMELEN 64
-# endif
-#endif
+#define	TERM_WIDTH	79
+#define	WRITE_TIME_OUT	300		/* in seconds */
 
 /* Function prototypes */
-char *makemsg(char *fname, size_t *mbufsize, int print_banner);
-static void usage(FILE *out);
+static char *makemsg(char *fname, char **mvec, int mvecsz,
+		    size_t *mbufsize, int print_banner);
 
 static void __attribute__((__noreturn__)) usage(FILE *out)
 {
-	fputs(_("\nUsage:\n"), out);
+	fputs(USAGE_HEADER, out);
 	fprintf(out,
-		_(" %s [options] [<file>]\n"),program_invocation_short_name);
-
-	fputs(_("\nOptions:\n"), out);
-	fputs(_(" -n, --nobanner          do not print banner, works only for root\n"
-		" -t, --timeout <timeout> write timeout in seconds\n"
-		" -V, --version           output version information and exit\n"
-		" -h, --help              display this help and exit\n\n"), out);
+	      _(" %s [options] [<file> | <message>]\n"), program_invocation_short_name);
+	fputs(USAGE_OPTIONS, out);
+	fputs(_(" -n, --nobanner          do not print banner, works only for root\n"), out);
+	fputs(_(" -t, --timeout <timeout> write timeout in seconds\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+	fputs(USAGE_HELP, out);
+	fputs(USAGE_VERSION, out);
+	fprintf(out, USAGE_MAN_TAIL("wall(1)"));
 
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
 
-int
-main(int argc, char **argv) {
-	extern int optind;
+int main(int argc, char **argv)
+{
 	int ch;
 	struct iovec iov;
 	struct utmp *utmpptr;
 	char *p;
 	char line[sizeof(utmpptr->ut_line) + 1];
 	int print_banner = TRUE;
-	char *mbuf;
+	char *mbuf, *fname = NULL;
 	size_t mbufsize;
-	long timeout = WRITE_TIME_OUT;
-
-	setlocale(LC_ALL, "");
-	bindtextdomain(PACKAGE, LOCALEDIR);
-	textdomain(PACKAGE);
+	unsigned timeout = WRITE_TIME_OUT;
+	char **mvec = NULL;
+	int mvecsz = 0;
 
 	static const struct option longopts[] = {
 		{ "nobanner",	no_argument,		0, 'n' },
@@ -121,6 +113,11 @@ main(int argc, char **argv) {
 		{ "help",	no_argument,		0, 'h' },
 		{ NULL,	0, 0, 0 }
 	};
+
+	setlocale(LC_ALL, "");
+	bindtextdomain(PACKAGE, LOCALEDIR);
+	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	while ((ch = getopt_long(argc, argv, "nt:Vh", longopts, NULL)) != -1) {
 		switch (ch) {
@@ -131,13 +128,12 @@ main(int argc, char **argv) {
 				warnx(_("--nobanner is available only for root"));
 			break;
 		case 't':
-			timeout = strtoll_or_err(optarg, _("invalid timeout argument"));
+			timeout = strtou32_or_err(optarg, _("invalid timeout argument"));
 			if (timeout < 1)
 				errx(EXIT_FAILURE, _("invalid timeout argument: %s"), optarg);
 			break;
 		case 'V':
-			printf(_("%s from %s\n"), program_invocation_short_name,
-						  PACKAGE_STRING);
+			printf(UTIL_LINUX_VERSION);
 			exit(EXIT_SUCCESS);
 		case 'h':
 			usage(stdout);
@@ -147,23 +143,25 @@ main(int argc, char **argv) {
 	}
 	argc -= optind;
 	argv += optind;
-	if (argc > 1)
-		usage(stderr);
 
-	mbuf = makemsg(*argv, &mbufsize, print_banner);
+	if (argc == 1 && access(argv[0], F_OK) == 0)
+		fname = argv[0];
+	else if (argc >= 1) {
+		mvec = argv;
+		mvecsz = argc;
+	}
+
+	mbuf = makemsg(fname, mvec, mvecsz, &mbufsize, print_banner);
 
 	iov.iov_base = mbuf;
 	iov.iov_len = mbufsize;
 	while((utmpptr = getutent())) {
-		if (!utmpptr->ut_name[0] ||
-		    !strncmp(utmpptr->ut_name, IGNOREUSER,
-			     sizeof(utmpptr->ut_name)))
+		if (!utmpptr->ut_user[0])
 			continue;
 #ifdef USER_PROCESS
 		if (utmpptr->ut_type != USER_PROCESS)
 			continue;
 #endif
-
 		/* Joey Hess reports that use-sessreg in /etc/X11/wdm/
 		   produces ut_line entries like :0, and a write
 		   to /dev/:0 fails. */
@@ -179,37 +177,32 @@ main(int argc, char **argv) {
 	exit(EXIT_SUCCESS);
 }
 
-char *
-makemsg(char *fname, size_t *mbufsize, int print_banner)
+static char *makemsg(char *fname, char **mvec, int mvecsz,
+		     size_t *mbufsize, int print_banner)
 {
 	register int ch, cnt;
-	struct tm *lt;
-	struct passwd *pw;
 	struct stat sbuf;
-	time_t now;
 	FILE *fp;
-	int fd;
-	char *p, *whom, *where, *hostname, *lbuf, *tmpname, *tmpenv, *mbuf;
+	char *p, *lbuf, *tmpname, *mbuf;
 	long line_max;
 
-	hostname = xmalloc(sysconf(_SC_HOST_NAME_MAX) + 1);
 	line_max = sysconf(_SC_LINE_MAX);
+	if (line_max <= 0)
+		line_max = 512;
+
 	lbuf = xmalloc(line_max);
 
-	tmpname = xmalloc(PATH_MAX);
-	tmpenv = getenv("TMPDIR");
-	if ((tmpenv))
-		snprintf(tmpname, PATH_MAX, "%s/%s.XXXXXX", tmpenv,
-			program_invocation_short_name);
-	else
-		snprintf(tmpname, PATH_MAX, "%s/%s.XXXXXX", _PATH_TMP,
-			program_invocation_short_name);
-	if (!(fd = mkstemp(tmpname)) || !(fp = fdopen(fd, "r+")))
-		err(EXIT_FAILURE, _("can't open temporary file %s"), tmpname);
+	if ((fp = xfmkstemp(&tmpname, NULL)) == NULL)
+		err(EXIT_FAILURE, _("can't open temporary file"));
 	unlink(tmpname);
 	free(tmpname);
 
 	if (print_banner == TRUE) {
+		char *hostname = xgethostname();
+		char *whom, *where, *date;
+		struct passwd *pw;
+		time_t now;
+
 		if (!(whom = getlogin()) || !*whom)
 			whom = (pw = getpwuid(getuid())) ? pw->pw_name : "???";
 		if (!whom) {
@@ -220,10 +213,12 @@ makemsg(char *fname, size_t *mbufsize, int print_banner)
 		if (!where) {
 			where = "somewhere";
 			warn(_("cannot get tty name"));
-		}
-		gethostname(hostname, sizeof(hostname));
+		} else if (strncmp(where, "/dev/", 5) == 0)
+			where += 5;
+
 		time(&now);
-		lt = localtime(&now);
+		date = xstrdup(ctime(&now));
+		date[strlen(date) - 1] = '\0';
 
 		/*
 		 * all this stuff is to blank out a square for the message;
@@ -234,54 +229,76 @@ makemsg(char *fname, size_t *mbufsize, int print_banner)
 		 */
 		/* snprintf is not always available, but the sprintf's here
 		   will not overflow as long as %d takes at most 100 chars */
-		fprintf(fp, "\r%79s\r\n", " ");
-		sprintf(lbuf, _("Broadcast Message from %s@%s"),
-			      whom, hostname);
-		fprintf(fp, "%-79.79s\007\007\r\n", lbuf);
-		sprintf(lbuf, "        (%s) at %d:%02d ...",
-			      where, lt->tm_hour, lt->tm_min);
-		fprintf(fp, "%-79.79s\r\n", lbuf);
+		fprintf(fp, "\r%*s\r\n", TERM_WIDTH, " ");
+		sprintf(lbuf, _("Broadcast message from %s@%s (%s) (%s):"),
+			      whom, hostname, where, date);
+		fprintf(fp, "%-*.*s\007\007\r\n", TERM_WIDTH, TERM_WIDTH, lbuf);
+		free(hostname);
+		free(date);
 	}
-	fprintf(fp, "%79s\r\n", " ");
+	fprintf(fp, "%*s\r\n", TERM_WIDTH, " ");
 
-	free(hostname);
-
-	if (fname) {
+	 if (mvec) {
 		/*
-		 * When we are not root, but suid or sgid, refuse to read files
-		 * (e.g. device files) that the user may not have access to.
-		 * After all, our invoker can easily do "wall < file"
-		 * instead of "wall file".
+		 * Read message from argv[]
 		 */
-		uid_t uid = getuid();
-		if (uid && (uid != geteuid() || getgid() != getegid()))
-			errx(EXIT_FAILURE, _("will not read %s - use stdin."),
-			     fname);
+		int i;
 
-		if (!freopen(fname, "r", stdin))
-			err(EXIT_FAILURE, _("cannot open file %s"), fname);
-	}
+		for (i = 0; i < mvecsz; i++) {
+			fputs(mvec[i], fp);
+			if (i < mvecsz - 1)
+				fputc(' ', fp);
+		}
+		fputc('\r', fp);
+		fputc('\n', fp);
 
-	while (fgets(lbuf, line_max, stdin)) {
-		for (cnt = 0, p = lbuf; (ch = *p) != '\0'; ++p, ++cnt) {
-			if (cnt == 79 || ch == '\n') {
-				for (; cnt < 79; ++cnt)
-					putc(' ', fp);
-				putc('\r', fp);
-				putc('\n', fp);
-				cnt = 0;
+	} else {
+		/*
+		 * read message from <file>
+		 */
+		if (fname) {
+			/*
+			 * When we are not root, but suid or sgid, refuse to read files
+			 * (e.g. device files) that the user may not have access to.
+			 * After all, our invoker can easily do "wall < file"
+			 * instead of "wall file".
+			 */
+			uid_t uid = getuid();
+			if (uid && (uid != geteuid() || getgid() != getegid()))
+				errx(EXIT_FAILURE, _("will not read %s - use stdin."),
+				     fname);
+
+			if (!freopen(fname, "r", stdin))
+				err(EXIT_FAILURE, _("cannot open %s"), fname);
+
+		}
+
+		/*
+		 * Read message from stdin.
+		 */
+		while (fgets(lbuf, line_max, stdin)) {
+			for (cnt = 0, p = lbuf; (ch = *p) != '\0'; ++p, ++cnt) {
+				if (cnt == TERM_WIDTH || ch == '\n') {
+					for (; cnt < TERM_WIDTH; ++cnt)
+						putc(' ', fp);
+					putc('\r', fp);
+					putc('\n', fp);
+					cnt = 0;
+				}
+				if (ch == '\t')
+					cnt += (7 - (cnt % 8));
+				if (ch != '\n')
+					fputc_careful(ch, fp, '^');
 			}
-			if (ch != '\n')
-				carefulputc(ch, fp);
 		}
 	}
-	fprintf(fp, "%79s\r\n", " ");
+	fprintf(fp, "%*s\r\n", TERM_WIDTH, " ");
 
 	free(lbuf);
 	rewind(fp);
 
-	if (fstat(fd, &sbuf))
-		err(EXIT_FAILURE, _("fstat failed"));
+	if (fstat(fileno(fp), &sbuf))
+		err(EXIT_FAILURE, _("stat failed"));
 
 	*mbufsize = (size_t) sbuf.st_size;
 	mbuf = xmalloc(*mbufsize);
@@ -289,7 +306,7 @@ makemsg(char *fname, size_t *mbufsize, int print_banner)
 	if (fread(mbuf, 1, *mbufsize, fp) != *mbufsize)
 		err(EXIT_FAILURE, _("fread failed"));
 
-	close(fd);
-	fclose(fp);
+	if (close_stream(fp) != 0)
+		errx(EXIT_FAILURE, _("write error"));
 	return mbuf;
 }

@@ -20,29 +20,22 @@
 # I/O size (32KiB)
 #
 
-TS_TOPDIR="$(dirname $0)/../.."
+TS_TOPDIR="${0%/*}/../.."
 TS_DESC="align 512/512 +topology"
 
 . $TS_TOPDIR/functions.sh
 ts_init "$*"
+
+ts_check_test_command "$TS_CMD_FDISK"
+
 ts_skip_nonroot
 
-modprobe --dry-run --quiet scsi_debug
-[ "$?" == 0 ] || ts_skip "missing scsi_debug module"
-
-rmmod scsi_debug &> /dev/null
-modprobe scsi_debug dev_size_mb=50 sector_size=512
-[ "$?" == 0 ] || ts_die "Cannot init device"
-
-sleep 3
-
-DEVNAME=$(grep scsi_debug /sys/block/*/device/model | awk -F '/' '{print $4}')
-[ "x${DEVNAME}" == "x" ] && ts_die "Cannot find device"
-
-DEVICE="/dev/${DEVNAME}"
+# set global variable TS_DEVICE
+ts_scsi_debug_init dev_size_mb=50 sector_size=512
+DEVNAME=$(basename $TS_DEVICE)
 
 ts_log "Create partitions"
-$TS_CMD_FDISK ${DEVICE} >> $TS_OUTPUT 2>&1 <<EOF
+$TS_CMD_FDISK ${TS_DEVICE} >> $TS_OUTPUT 2>&1 <<EOF
 n
 p
 1
@@ -76,15 +69,12 @@ w
 q
 EOF
 
+udevadm settle
 ts_log "Alignment offsets:"
 cat /sys/block/${DEVNAME}/${DEVNAME}{1,2,3,4,5,6,7}/alignment_offset >> $TS_OUTPUT 2>&1
 
-sleep 3
 rmmod scsi_debug
 
-# remove device name used and disk ID
-sed -i -e "s/\/dev\/${DEVNAME}/\/dev\/.../g" $TS_OUTPUT
-sed -i -e 's/Disk identifier:.*//g' $TS_OUTPUT
-sed -i -e 's/Building a new.*//g' $TS_OUTPUT
+ts_fdisk_clean $TS_DEVICE
 
 ts_finalize

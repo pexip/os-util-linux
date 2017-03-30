@@ -19,11 +19,11 @@ chfn \- change your finger information
 .IR full-name ]
 .RB [ \-o
 .IR office ]
-,RB [ \-p
+.RB [ \-p
 .IR office-phone ]
 .RB [ \-h
 .IR home-phone ]
-.BR \-u ]
+.RB [ \-u ]
 .RB [ \-v ]
 .RI [ username ]
 .SH DESCRIPTION
@@ -40,8 +40,9 @@ command will display four pieces of information that can be changed by
 your real name, your work room and phone, and your home phone.
 
 .B chfn
-is used to change local entries only. Use ypchfn, lchfn or any other
-implementation for non-local entries.
+supports non-local entries (kerberos, LDAP, etc.\&) if linked with libuser,
+otherwise use ypchsh, lchsh or any other implementation for non-local
+entries.
 .SS COMMAND LINE
 Any of the four pieces of information can be specified on the command
 line.  If no information is given on the command line,
@@ -68,10 +69,12 @@ Specify your office phone number.
 Specify your home phone number.
 .TP
 .B "\-u, \-\-help"
-Print a usage message and exit.
+Display help text and exit.
 .TP
-.B "-v, \-\-version"
-Print version information and exit.
+.B "\-v, \-\-version"
+Display version information and exit.
+.SH "EXIT STATUS"
+Returns 0 if operation was successful, 1 if operation failed or command syntax was not valid.
 .SH "SEE ALSO"
 .BR finger (1),
 .BR passwd (5)

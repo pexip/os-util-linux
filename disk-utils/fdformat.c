@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "c.h"
+#include "closestream.h"
 #include "nls.h"
 #include "xalloc.h"
 
@@ -34,7 +35,7 @@ static void format_disk(int ctrl)
 		if (ioctl(ctrl, FDFMTTRK, (long) &descr) < 0)
 			err(EXIT_FAILURE, "ioctl: FDFMTTRK");
 
-		printf("%3d\b\b\b", track);
+		printf("%3ud\b\b\b", track);
 		fflush(stdout);
 		if (param.head == 2) {
 			descr.head = 1;
@@ -58,11 +59,11 @@ static void verify_disk(char *name)
 	printf(_("Verifying ... "));
 	fflush(stdout);
 	if ((fd = open(name, O_RDONLY)) < 0)
-		err(EXIT_FAILURE, _("cannot open file %s"), name);
+		err(EXIT_FAILURE, _("cannot open %s"), name);
 	for (cyl = 0; cyl < param.track; cyl++) {
 		int read_bytes;
 
-		printf("%3d\b\b\b", cyl);
+		printf("%u3d\b\b\b", cyl);
 		fflush(stdout);
 		read_bytes = read(fd, data, cyl_size);
 		if (read_bytes != cyl_size) {
@@ -119,6 +120,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	while ((ch = getopt_long(argc, argv, "nVh", longopts, NULL)) != -1)
 		switch (ch) {
@@ -126,8 +128,7 @@ int main(int argc, char **argv)
 			verify = 0;
 			break;
 		case 'V':
-			printf(_("%s from %s\n"), program_invocation_short_name,
-			       PACKAGE_STRING);
+			printf(UTIL_LINUX_VERSION);
 			exit(EXIT_SUCCESS);
 		case 'h':
 			usage(stdout);
@@ -141,7 +142,7 @@ int main(int argc, char **argv)
 	if (argc < 1)
 		usage(stderr);
 	if (stat(argv[0], &st) < 0)
-		err(EXIT_FAILURE, _("cannot stat file %s"), argv[0]);
+		err(EXIT_FAILURE, _("stat failed %s"), argv[0]);
 	if (!S_ISBLK(st.st_mode))
 		/* do not test major - perhaps this was an USB floppy */
 		errx(EXIT_FAILURE, _("%s: not a block device"), argv[0]);
@@ -150,7 +151,7 @@ int main(int argc, char **argv)
 
 	ctrl = open(argv[0], O_WRONLY);
 	if (ctrl < 0)
-		err(EXIT_FAILURE, _("cannot open file %s"), argv[0]);
+		err(EXIT_FAILURE, _("cannot open %s"), argv[0]);
 	if (ioctl(ctrl, FDGETPRM, (long)&param) < 0)
 		err(EXIT_FAILURE, _("Could not determine current format type"));
 
@@ -158,7 +159,8 @@ int main(int argc, char **argv)
 	       (param.head == 2) ? _("Double") : _("Single"),
 	       param.track, param.sect, param.size >> 1);
 	format_disk(ctrl);
-	close(ctrl);
+	if (close_fd(ctrl) != 0)
+		err(EXIT_FAILURE, _("write failed"));
 
 	if (verify)
 		verify_disk(argv[0]);

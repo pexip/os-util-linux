@@ -35,6 +35,7 @@
 #include <sys/utsname.h>
 #include "nls.h"
 #include "c.h"
+#include "closestream.h"
 
 #define set_pers(pers) ((long)syscall(SYS_personality, pers))
 
@@ -52,108 +53,90 @@ enum {
 	} while(0)
 
 
-#if !HAVE_DECL_UNAME26
+#ifndef UNAME26
 # define UNAME26                 0x0020000
 #endif
-#if !HAVE_DECL_ADDR_NO_RANDOMIZE
+#ifndef ADDR_NO_RANDOMIZE
 # define ADDR_NO_RANDOMIZE       0x0040000
 #endif
-#if !HAVE_DECL_FDPIC_FUNCPTRS
+#ifndef FDPIC_FUNCPTRS
 # define FDPIC_FUNCPTRS          0x0080000
 #endif
-#if !HAVE_DECL_MMAP_PAGE_ZERO
+#ifndef MMAP_PAGE_ZERO
 # define MMAP_PAGE_ZERO          0x0100000
 #endif
-#if !HAVE_DECL_ADDR_COMPAT_LAYOUT
+#ifndef ADDR_COMPAT_LAYOUT
 # define ADDR_COMPAT_LAYOUT      0x0200000
 #endif
-#if !HAVE_DECL_READ_IMPLIES_EXEC
+#ifndef READ_IMPLIES_EXEC
 # define READ_IMPLIES_EXEC       0x0400000
 #endif
-#if !HAVE_DECL_ADDR_LIMIT_32BIT
+#ifndef ADDR_LIMIT_32BIT
 # define ADDR_LIMIT_32BIT        0x0800000
 #endif
-#if !HAVE_DECL_SHORT_INODE
+#ifndef SHORT_INODE
 # define SHORT_INODE             0x1000000
 #endif
-#if !HAVE_DECL_WHOLE_SECONDS
+#ifndef WHOLE_SECONDS
 # define WHOLE_SECONDS           0x2000000
 #endif
-#if !HAVE_DECL_STICKY_TIMEOUTS
+#ifndef STICKY_TIMEOUTS
 # define STICKY_TIMEOUTS         0x4000000
 #endif
-#if !HAVE_DECL_ADDR_LIMIT_3GB
+#ifndef ADDR_LIMIT_3GB
 # define ADDR_LIMIT_3GB          0x8000000
 #endif
-
-/* Options --3gb and --4gb are for compatibitity with an old Debian setarch
-   implementation. */
-static const struct option longopts[] =
-{
-    { "help",               0, 0, 'h' },
-    { "verbose",            0, 0, 'v' },
-    { "addr-no-randomize",  0, 0, 'R' },
-    { "fdpic-funcptrs",     0, 0, 'F' },
-    { "mmap-page-zero",     0, 0, 'Z' },
-    { "addr-compat-layout", 0, 0, 'L' },
-    { "read-implies-exec",  0, 0, 'X' },
-    { "32bit",              0, 0, 'B' },
-    { "short-inode",        0, 0, 'I' },
-    { "whole-seconds",      0, 0, 'S' },
-    { "sticky-timeouts",    0, 0, 'T' },
-    { "3gb",                0, 0, '3' },
-    { "4gb",                0, 0, OPT_4GB },
-    { "uname-2.6",          0, 0, OPT_UNAME26 },
-    { NULL,                 0, 0, 0 }
-};
 
 static void __attribute__((__noreturn__))
 show_help(void)
 {
-  const char *p = program_invocation_short_name;
+  fputs(USAGE_HEADER, stdout);
+  printf(_(" %s%s [options] [program [program arguments]]\n"),
+	 program_invocation_short_name,
+	 !strcmp(program_invocation_short_name, "setarch") ? " <arch>" : "");
 
-  if (!*p)
-    p = "setarch";
+  fputs(USAGE_OPTIONS, stdout);
+  fputs(_(" -v, --verbose            says what options are being switched on\n"), stdout);
+  fputs(_(" -R, --addr-no-randomize  disables randomization of the virtual address space\n"), stdout);
+  fputs(_(" -F, --fdpic-funcptrs     makes function pointers point to descriptors\n"), stdout);
+  fputs(_(" -Z, --mmap-page-zero     turns on MMAP_PAGE_ZERO\n"), stdout);
+  fputs(_(" -L, --addr-compat-layout changes the way virtual memory is allocated\n"), stdout);
+  fputs(_(" -X, --read-implies-exec  turns on READ_IMPLIES_EXEC\n"), stdout);
+  fputs(_(" -B, --32bit              turns on ADDR_LIMIT_32BIT\n"), stdout);
+  fputs(_(" -I, --short-inode        turns on SHORT_INODE\n"), stdout);
+  fputs(_(" -S, --whole-seconds      turns on WHOLE_SECONDS\n"), stdout);
+  fputs(_(" -T, --sticky-timeouts    turns on STICKY_TIMEOUTS\n"), stdout);
+  fputs(_(" -3, --3gb                limits the used address space to a maximum of 3 GB\n"), stdout);
+  fputs(_("     --4gb                ignored (for backward compatibility only)\n"), stdout);
+  fputs(_("     --uname-2.6          turns on UNAME26\n"), stdout);
+  fputs(_("     --list               list settable architectures, and exit\n"), stdout);
 
-  printf(_("Usage: %s%s [options] [program [program arguments]]\n\nOptions:\n"),
-         p, !strcmp(p, "setarch") ? " <arch>" : "");
+  fputs(USAGE_SEPARATOR, stdout);
+  fputs(USAGE_HELP, stdout);
+  fputs(USAGE_VERSION, stdout);
+  printf(USAGE_MAN_TAIL("setarch(8)"));
 
-   printf(_(
-   " -h, --help               displays this help text\n"
-   " -v, --verbose            says what options are being switched on\n"
-   " -R, --addr-no-randomize  disables randomization of the virtual address space\n"
-   " -F, --fdpic-funcptrs     makes function pointers point to descriptors\n"
-   " -Z, --mmap-page-zero     turns on MMAP_PAGE_ZERO\n"
-   " -L, --addr-compat-layout changes the way virtual memory is allocated\n"
-   " -X, --read-implies-exec  turns on READ_IMPLIES_EXEC\n"
-   " -B, --32bit              turns on ADDR_LIMIT_32BIT\n"
-   " -I, --short-inode        turns on SHORT_INODE\n"
-   " -S, --whole-seconds      turns on WHOLE_SECONDS\n"
-   " -T, --sticky-timeouts    turns on STICKY_TIMEOUTS\n"
-   " -3, --3gb                limits the used address space to a maximum of 3 GB\n"
-   "     --4gb                ignored (for backward compatibility only)\n"));
-
-   printf(_(
-   "     --uname-2.6          turns on UNAME26\n"));
-
-  printf(_("\nFor more information see setarch(8).\n"));
   exit(EXIT_SUCCESS);
 }
 
 static void __attribute__((__noreturn__))
 show_usage(const char *s)
 {
-  const char *p = program_invocation_short_name;
-
-  if (!*p)
-    p = "setarch";
-
-  fprintf(stderr, _("%s: %s\nTry `%s --help' for more information.\n"), p, s, p);
-  exit(EXIT_FAILURE);
+  if (s)
+    errx(EXIT_FAILURE, _("%s\nTry `%s --help' for more information."), s, program_invocation_short_name);
+  else
+    errx(EXIT_FAILURE, _("Try `%s --help' for more information."), program_invocation_short_name);
 }
 
+static void __attribute__((__noreturn__))
+show_version(void)
+{
+  printf(UTIL_LINUX_VERSION);
+  exit(EXIT_SUCCESS);
+}
 
-int set_arch(const char *pers, unsigned long options)
+static int
+set_arch(const char *pers, unsigned long options, int list)
 {
   struct utsname un;
   int i;
@@ -163,14 +146,21 @@ int set_arch(const char *pers, unsigned long options)
     int perval;
     const char *target_arch, *result_arch;
   } transitions[] = {
+    {UNAME26, "uname26", NULL},
     {PER_LINUX32, "linux32", NULL},
     {PER_LINUX, "linux64", NULL},
 #if defined(__powerpc__) || defined(__powerpc64__)
+#ifdef __BIG_ENDIAN__
     {PER_LINUX32, "ppc32", "ppc"},
     {PER_LINUX32, "ppc", "ppc"},
     {PER_LINUX, "ppc64", "ppc64"},
     {PER_LINUX, "ppc64pseries", "ppc64"},
     {PER_LINUX, "ppc64iseries", "ppc64"},
+#else
+    {PER_LINUX32, "ppc32le", "ppcle"},
+    {PER_LINUX32, "ppcle", "ppcle"},
+    {PER_LINUX, "ppc64le", "ppc64le"},
+#endif
 #endif
 #if defined(__x86_64__) || defined(__i386__) || defined(__ia64__)
     {PER_LINUX32, "i386", "i386"},
@@ -212,8 +202,30 @@ int set_arch(const char *pers, unsigned long options)
     {PER_LINUX, "alphaev6", "alpha"},
     {PER_LINUX, "alphaev67", "alpha"},
 #endif
+    {-1, NULL, NULL}, /* place holder, eventually filled up at runtime */
     {-1, NULL, NULL}
   };
+
+  /* Add the trivial transition {PER_LINUX, machine, machine} if no such
+     target_arch is hardcoded yet. */
+  uname(&un);
+  for (i = 0; transitions[i].perval >= 0; i++)
+	if(!strcmp(un.machine, transitions[i].target_arch))
+		break;
+  if (transitions[i].perval < 0) {
+	unsigned long wrdsz = CHAR_BIT * sizeof(void*);
+	if (wrdsz == 32 || wrdsz == 64) {
+		transitions[i].perval = wrdsz == 32 ? PER_LINUX32 : PER_LINUX;
+		transitions[i].target_arch = un.machine;
+		transitions[i].result_arch = un.machine;
+	}
+  }
+
+  if (list) {
+    for(i = 0; transitions[i].target_arch != NULL; i++)
+      printf("%s\n", transitions[i].target_arch);
+    return 0;
+  }
 
   for(i = 0; transitions[i].perval >= 0; i++)
       if(!strcmp(pers, transitions[i].target_arch))
@@ -248,41 +260,69 @@ int main(int argc, char *argv[])
   int verbose = 0;
   int c;
 
+  /* Options --3gb and --4gb are for compatibitity with an old Debian setarch
+     implementation. */
+  static const struct option longopts[] =
+  {
+      { "help",               0, 0, 'h' },
+      { "version",            0, 0, 'V' },
+      { "verbose",            0, 0, 'v' },
+      { "addr-no-randomize",  0, 0, 'R' },
+      { "fdpic-funcptrs",     0, 0, 'F' },
+      { "mmap-page-zero",     0, 0, 'Z' },
+      { "addr-compat-layout", 0, 0, 'L' },
+      { "read-implies-exec",  0, 0, 'X' },
+      { "32bit",              0, 0, 'B' },
+      { "short-inode",        0, 0, 'I' },
+      { "whole-seconds",      0, 0, 'S' },
+      { "sticky-timeouts",    0, 0, 'T' },
+      { "3gb",                0, 0, '3' },
+      { "4gb",                0, 0, OPT_4GB },
+      { "uname-2.6",          0, 0, OPT_UNAME26 },
+      { NULL,                 0, 0, 0 }
+  };
+
   setlocale(LC_ALL, "");
   bindtextdomain(PACKAGE, LOCALEDIR);
   textdomain(PACKAGE);
+  atexit(close_stdout);
 
   if (argc < 1)
     show_usage(_("Not enough arguments"));
 
   p = program_invocation_short_name;
   if (!strcmp(p, "setarch")) {
-    argv++;
     argc--;
     if (argc < 1)
       show_usage(_("Not enough arguments"));
-    p = argv[0];
-    argv[0] = argv[-1];      /* for getopt_long() to get the program name */
+    p = argv[1];
+    argv[1] = argv[0];		/* for getopt_long() to get the program name */
+    argv++;
     if (!strcmp(p, "-h") || !strcmp(p, "--help"))
       show_help();
-  #if defined(__sparc64__) || defined(__sparc__)
-  } else if (!strcmp(p,"sparc64")) {
-      options |= ADDR_LIMIT_32BIT;
-  #endif
+    else if (!strcmp(p, "-V") || !strcmp(p, "--version"))
+      show_version();
+    else if (!strcmp(p, "--list")) {
+      set_arch(argv[0], 0L, 1);
+      return EXIT_SUCCESS;
+    }
   }
   #if defined(__sparc64__) || defined(__sparc__)
    if (!strcmp(p, "sparc32bash")) {
-       if (set_arch(p, 0L))
+       if (set_arch(p, 0L, 0))
            err(EXIT_FAILURE, _("Failed to set personality to %s"), p);
        execl("/bin/bash", NULL);
-       err(EXIT_FAILURE, "/bin/bash");
+       err(EXIT_FAILURE, _("failed to execute %s"), "/bin/bash");
    }
   #endif
 
-  while ((c = getopt_long(argc, argv, "+hv3BFILRSTXZ", longopts, NULL)) != -1) {
+  while ((c = getopt_long(argc, argv, "+hVv3BFILRSTXZ", longopts, NULL)) != -1) {
     switch (c) {
     case 'h':
       show_help();
+      break;
+    case 'V':
+      show_version();
       break;
     case 'v':
       verbose = 1;
@@ -322,18 +362,23 @@ int main(int argc, char *argv[])
     case OPT_UNAME26:
 	turn_on(UNAME26, options);
 	break;
+    default:
+        show_usage(NULL);
     }
   }
 
   argc -= optind;
   argv += optind;
 
-  if (set_arch(p, options))
+  if (set_arch(p, options, 0))
     err(EXIT_FAILURE, _("Failed to set personality to %s"), p);
+
+  /* flush all output streams before exec */
+  fflush(NULL);
 
   if (!argc) {
     execl("/bin/sh", "-sh", NULL);
-    err(EXIT_FAILURE, "/bin/sh");
+    err(EXIT_FAILURE, _("failed to execute %s"), "/bin/sh");
   }
 
   execvp(argv[0], argv);

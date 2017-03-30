@@ -1,6 +1,74 @@
-util-linux 2.20.1: Oct 19 2011
-* see docs/v2.20.1-ReleaseNotes or complete changelog at
-  ftp://ftp.infradead.org/pub/util-linux/v2.20/v2.20.1-ChangeLog
+util-linux 2.25.2: Oct 24 2014
+* see Documentation/releases/v2.25.2-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.25/v2.25.2-ChangeLog
+
+util-linux 2.25.1: Sep 3 2014
+* see Documentation/releases/v2.25.1-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.25/v2.25.1-ChangeLog
+
+util-linux 2.25.1-rc1: Aug 27 2014
+* see Documentation/releases/v2.25.1-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.25/v2.25.1-rc1-ChangeLog
+
+util-linux 2.25: Jul 22 2014
+* see Documentation/releases/v2.25-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.25/v2.25-ChangeLog
+
+util-linux 2.25-rc2: Jul 2 2014
+* see Documentation/releases/v2.25-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.25/v2.25-rc2-ChangeLog
+
+util-linux 2.25-rc1: Jun 18 2014
+* see Documentation/releases/v2.25-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.25/v2.25-rc1-ChangeLog
+
+util-linux 2.24: Oct 21 2013
+* see Documentation/releases/v2.24-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.24/v2.24-ChangeLog
+
+util-linux 2.24-rc2: Oct 11 2013
+* see Documentation/releases/v2.24-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.24/v2.24-rc2-ChangeLog
+
+util-linux 2.24-rc1: Sep 27 2013
+* see Documentation/releases/v2.24-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.24/v2.24-rc1-ChangeLog
+
+util-linux 2.23: Apr 25 2013
+* see Documentation/releases/v2.23-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.23/v2.23-ChangeLog
+
+util-linux 2.23-rc2: Apr 10 2013
+* see Documentation/releases/v2.23-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.23/v2.23-rc2-ChangeLog
+
+util-linux 2.23-rc1: Mar 22 2013
+* see Documentation/releases/v2.23-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.23/v2.23-rc1-ChangeLog
+
+util-linux 2.22: Sep 04 2012
+* see Documentation/releases/v2.22-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.22/v2.22-ChangeLog
+
+util-linux 2.22-rc2: Aug 15 2012
+* see Documentation/releases/v2.22-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.22/v2.22-rc2-ChangeLog
+
+util-linux 2.22-rc1: Jul 27 2012
+* see Documentation/releases/v2.22-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.22/v2.22-rc1-ChangeLog
+
+util-linux 2.21: Feb 24 2012
+* see Documentation/releases/v2.21-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.21/v2.21-ChangeLog
+
+util-linux 2.21-rc2: Feb 06 2012
+* see Documentation/releases/v2.21-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.21/v2.21-rc2-ChangeLog
+
+util-linux 2.21-rc1: Jan 18 2012
+* see Documentation/releases/v2.21-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.21/v2.21-rc1-ChangeLog
 
 util-linux 2.20: Aug 29 2011
 * see docs/v2.20-ReleaseNotes or complete changelog at
@@ -11,117 +79,117 @@ util-linux 2.20-rc2: Aug 17 2011
   ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.20/v2.20-rc2-ChangeLog
 
 util-linux 2.20-rc1: Jul 29 2011
-* see docs/v2.20-ReleaseNotes or complete changelog at
+* see Documentation/releases/v2.20-ReleaseNotes or complete changelog at
   ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.20/v2.20-rc1-ChangeLog
 
 util-linux 2.19: Feb 10 2011
-* see docs/v2.19-ReleaseNotes or complete changelog at
+* see Documentation/releases/v2.19-ReleaseNotes or complete changelog at
   ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.19/v2.19-ChangeLog
 
 util-linux 2.19-rc3: Jan 25 2011
-* see docs/v2.19-ReleaseNotes or complete changelog at
+* see Documentation/releases/v2.19-ReleaseNotes or complete changelog at
   ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.19/v2.19-rc3-ChangeLog
 
 util-linux 2.19-rc2: Jan 25 2011
-* see docs/v2.19-ReleaseNotes or complete changelog at
+* see Documentation/releases/v2.19-ReleaseNotes or complete changelog at
   ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.19/v2.19-rc2-ChangeLog
 
 util-linux 2.19-rc1: Jan 05 2011
-* see docs/v2.19-ReleaseNotes or complete changelog at
+* see Documentation/releases/v2.19-ReleaseNotes or complete changelog at
   ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.19/v2.19-rc1-ChangeLog
 
 util-linux-ng 2.18: Jun 30 2010
-* see docs/v2.18-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.18/v2.18-ChangeLog
+* see Documentation/releases/v2.18-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.18/v2.18-ChangeLog
 
 util-linux-ng 2.18-rc2: Jun 18 2010
-* see docs/v2.18-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.18/v2.18-rc2-ChangeLog
+* see Documentation/releases/v2.18-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.18/v2.18-rc2-ChangeLog
 
 util-linux-ng 2.18-rc1: Jun 7 2010
-* see docs/v2.18-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.18/v2.18-rc1-ChangeLog
+* see Documentation/releases/v2.18-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.18/v2.18-rc1-ChangeLog
 
 util-linux-ng 2.17: Jan 8 2010
-* see docs/v2.17-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.17/v2.17-ChangeLog
+* see Documentation/releases/v2.17-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.17/v2.17-ChangeLog
 
 util-linux-ng 2.17-rc3: Dec 10 2009
-* see docs/v2.17-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.17/v2.17-rc3-ChangeLog
+* see Documentation/releases/v2.17-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.17/v2.17-rc3-ChangeLog
 
 util-linux-ng 2.17-rc2: Dec 9 2009
-* see docs/v2.17-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.17/v2.17-rc2-ChangeLog
+* see Documentation/releases/v2.17-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.17/v2.17-rc2-ChangeLog
 
 util-linux-ng 2.17-rc1: Nov 20 2009
-* see docs/v2.17-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.17/v2.17-rc1-ChangeLog
+* see Documentation/releases/v2.17-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.17/v2.17-rc1-ChangeLog
 
 util-linux-ng 2.16: Jul  2009
-* see docs/v2.16-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.16/v2.16-ChangeLog
+* see Documentation/releases/v2.16-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.16/v2.16-ChangeLog
 
 util-linux-ng 2.16-rc2: Jul 2 2009
-* see docs/v2.16-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.16/v2.16-rc2-ChangeLog
+* see Documentation/releases/v2.16-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.16/v2.16-rc2-ChangeLog
 
 util-linux-ng 2.16-rc1: Jun 28 2009
-* see docs/v2.16-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.16/v2.16-rc1-ChangeLog
+* see Documentation/releases/v2.16-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.16/v2.16-rc1-ChangeLog
 
 util-linux-ng 2.15: May 5 2009
-* see docs/v2.15-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.15/v2.15-ChangeLog
+* see Documentation/releases/v2.15-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.15/v2.15-ChangeLog
 
 util-linux-ng 2.15-rc2: Apr 17 2009
-* see docs/v2.15-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.15/v2.15-rc2-ChangeLog
+* see Documentation/releases/v2.15-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.15/v2.15-rc2-ChangeLog
 
 util-linux-ng 2.15-rc1: Mar 18 2009
-* see docs/v2.15-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.15/v2.15-rc1-ChangeLog
+* see Documentation/releases/v2.15-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.15/v2.15-rc1-ChangeLog
 
 util-linux-ng 2.14: Jun 9 2008
-* see docs/v2.14-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.14/v2.14-ChangeLog
+* see Documentation/releases/v2.14-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.14/v2.14-ChangeLog
 
 util-linux-ng 2.14-rc3
-* see docs/v2.14-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.14/v2.14-rc3-ChangeLog
+* see Documentation/releases/v2.14-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.14/v2.14-rc3-ChangeLog
 
 util-linux-ng 2.14-rc2
-* see docs/v2.14-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.14/v2.14-rc2-ChangeLog
+* see Documentation/releases/v2.14-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.14/v2.14-rc2-ChangeLog
 
 util-linux-ng 2.14-rc1
-* see docs/v2.14-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.14/v2.14-rc1-ChangeLog
+* see Documentation/releases/v2.14-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.14/v2.14-rc1-ChangeLog
 
 util-linux-ng 2.13
 
-* see docs/v2.13-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.13/v2.13-ChangeLog
+* see Documentation/releases/v2.13-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.13/v2.13-ChangeLog
 
 util-linux-ng 2.13-rc3
 
-* see docs/v2.13-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.13/v2.13-rc3-ChangeLog
+* see Documentation/releases/v2.13-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.13/v2.13-rc3-ChangeLog
 
 util-linux-ng 2.13-rc2
 
-* see docs/v2.13-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.13/v2.13-rc2-ChangeLog
+* see Documentation/releases/v2.13-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.13/v2.13-rc2-ChangeLog
 
 util-linux-ng 2.13-rc1
 
-* see docs/v2.13-ReleaseNotes or complete changelog at
-  ftp://ftp.kernel.org/pub/linux/utils/util-linux-ng/v2.13/v2.13-rc1-ChangeLog
+* see Documentation/releases/v2.13-ReleaseNotes or complete changelog at
+  ftp://ftp.kernel.org/pub/linux/utils/util-linux/v2.13/v2.13-rc1-ChangeLog
 
 util-linux 2.13-pre7
 
 * mount: default to cifs instead of smbfs for sources
-         starting with // Lars Mueller()
+         starting with // (Lars Mueller)
 * flock: documentation updates (H. Peter Anvin)
 * new translation: id
 * updated translations: de, it, sl, uk
@@ -199,7 +267,7 @@ util-linux 2.12n,o
 * lomount: revert patch from 2.12j
 * lptune.8: -T option is obsolete
 * mkswap, mkswap.8, swapon: support labels
-  (use HAVE_BLKID=no as long as the blkid library doesnt support this)
+  (use HAVE_BLKID=no as long as the blkid library doesn't support this)
 * umount: allow user unmounting repeatedly mounted nfs mounts
 
 util-linux 2.12m
@@ -303,7 +371,7 @@ util-linux 2.12a
 * chfn, chsh, login, vipw: SElinux support
 * fdisk: fix for kernels 2.4.15-2.4.17
 * fdisk: fix when all partitions are in use
-* hwclock: add a timeout when waiting for a clock update (Göran Weinholt)
+* hwclock: add a timeout when waiting for a clock update (GÃ¶ran Weinholt)
 * ipcs: compilation fix
 * ipcs: shminfo.shmall gives pages
 * login: use getutline() instead of getutid()
@@ -327,16 +395,16 @@ util-linux 2.12
 
 util-linux 2.12pre
 
-* Catalan messages (Antoni Bella Perez)
+* Catalan messages (Antoni Bella PÃ©rez)
 * Danish messages (Claus Hindsgaul)
 * Dutch messages (Taco Witte)
 * Finnish messages (Lauri Nurmi)
 * French messages (Michel Robitaille)
 * German messages (Michael Piefel)
-* Slovenian messages (Primoz Peterlin)
+* Slovenian messages (PrimoÅ¾ Peterlin)
 * Spanish messages (Santiago Vila Doncel)
 * Swedish messages (Christian Rose)
-* Turkish messages (Nilgün Belma Bugüner)
+* Turkish messages (NilgÃ¼n Belma BugÃ¼ner)
 * cfdisk: localize the Y/N answer, improve printing localized messages
 * cfdisk: make various variables long long - some disks are close to 2 TB
 * cfdisk: use BLKGETSIZE64
@@ -363,16 +431,16 @@ util-linux 2.12pre
 
 util-linux 2.11z
 
-* Catalan messages (Antoni Bella Perez)
+* Catalan messages (Antoni Bella PÃ©rez)
 * Danish messages (Claus Hindsgaul)
 * Dutch messages (Taco Witte)
 * Finnish messages (Lauri Nurmi)
 * French messages (Michel Robitaille) - HURRAY!
 * German messages (Michael Piefel)
-* Slovenian messages (Primoz Peterlin)
+* Slovenian messages (PrimoÅ¾ Peterlin)
 * Spanish messages (Santiago Vila Doncel)
 * Swedish messages (Christian Rose)
-* Turkish messages (Nilgün Belma Bugüner)
+* Turkish messages (NilgÃ¼n Belma BugÃ¼ner)
 * getopt: replaced getopt-1.1.2 by getopt-1.1.3 (Frodo Looijaard)
 * mkcramfs: change default blocksize for ia64 and alpha
 * more.help: removed (it is built-in now, and translated)
@@ -394,10 +462,10 @@ util-linux 2.11y
 * ipcs: compilation fix
 * more: kill external help file (Joachim Henke)
 * mount: fix LABEL= handling for user umount
-* mount: don't abort on read error on photocds (Gyorgy Kovesdi)
+* mount: don't abort on read error on photocds (GyÃ¶rgy KÃ¶vesdi)
 * mount.8: add dmask and fmask vfat mount options
 * pg: compilation fix (Joachim Henke)
-* script: localized time strings (Goeran Uddeborg)
+* script: localized time strings (GÃ¶ran Uddeborg)
 * setterm: accept devfs name (Joachim Henke)
 * simpleinit: security: refuse initctl_fd if setting FD_CLOEXEC fails
 * umount: allow user umount after mount by label or uuid
@@ -409,7 +477,7 @@ util-linux 2.11x
 * Finnish messages (Lauri Nurmi)
 * German messages (Michael Piefel)
 * Swedish messages (Christian Rose)
-* Turkish messages (Nilgün Belma Bugüner)
+* Turkish messages (NilgÃ¼n Belma BugÃ¼ner)
 * cfdisk: correct error printout
 * fdisk: allow addition of a new partition when logicals all used
   but primary free
@@ -432,18 +500,18 @@ util-linux 2.11w
 * fdisk: allow to use the last partial cylinder, change display format
 * fdisk: do not ask partition number in case there is only one choice
 * fdisk: new sunlabel fix
-* login: fix possible local root exploit (Wojciech Purczynski)
+* login: fix possible local root exploit (Wojciech PurczyÅ„ski)
 * more: bigendian fix
 
 util-linux 2.11v
 
-* Catalan messages (Antoni Bella Perez)
+* Catalan messages (Antoni Bella PÃ©rez)
 * Finnish messages (Lauri Nurmi)
 * Very few Russian messages (panivan@yandex.ru)
-* Slovenian messages (Primoz Peterlin)
+* Slovenian messages (PrimoÅ¾ Peterlin)
 * Spanish messages (Santiago Vila Doncel)
 * Swedish messages (Christian Rose)
-* Turkish messages (Nilgün Belma Bugüner)
+* Turkish messages (NilgÃ¼n Belma BugÃ¼ner)
 * fdisk: add -C, -H, -S command line options
 * fdisk: allow changing type 0
 * mkswap: enable use of > 2GB swapspace
@@ -459,7 +527,7 @@ util-linux 2.11u
 * German messages (Michael Piefel)
 * Spanish messages (Santiago Vila Doncel)
 * Swedish messages (Christian Rose)
-* Turkish messages (Nilgün Belma Bugüner)
+* Turkish messages (NilgÃ¼n Belma BugÃ¼ner)
 * configure: for fsck.cramfs, mkfs.cramfs: add test for libz
 * text-utils/Makefile: pg fix (Toomas Rosin)
 * po/Makefile: typo fix (Silvan Minghetti)
@@ -494,7 +562,7 @@ util-linux 2.11s
 * German messages (Michael Piefel)
 * Spanish messages (Santiago Vila Doncel)
 * Swedish messages (Christian Rose)
-* Turkish messages (Nilgün Belma Bugüner)
+* Turkish messages (NilgÃ¼n Belma BugÃ¼ner)
 * MCONFIG: allow "make DISABLE_NLS=yes <target>" (Peter Breitenlohner)
 * configure: don't run ./conftest - better for cross-compilation (Magnus Damm)
 * fdisk: fixes for disks with OSF/1 label
@@ -520,11 +588,11 @@ util-linux 2.11r
 * German messages (Michael Piefel)
 * Spanish messages (Santiago Vila Doncel)
 * Swedish messages (Christian Rose)
-* Turkish messages (Nilgün Belma Bugüner)
+* Turkish messages (NilgÃ¼n Belma BugÃ¼ner)
 * MCONFIG: move $(CFLAGS) to the end to allow overrides (Kevin P. Fleming)
 * cal: tiny fix (Mitsuru Chinen)
 * fdisk: avoid <linux/hdreg.h>
-* fdisk: x86_64 patch (Mads Martin Jørgensen)
+* fdisk: x86_64 patch (Mads Martin JÃ¸rgensen)
 * hwclock.8: zoneinfo is now in /usr/share
 * mkswap: report in KiB instead of bytes.
 
@@ -542,7 +610,7 @@ util-linux 2.11p
 * German messages (Karl Eichwalder)
 * Spanish messages (Santiago Vila Doncel)
 * Swedish messages (Christian Rose)
-* Turkish messages (Nilgün Belma Bugüner)
+* Turkish messages (NilgÃ¼n Belma BugÃ¼ner)
 * ipcrm: make POSIX compatible (Andre Corwin Mazzone)
 * ipcrm.8: idem
 * kill: fixed Makefile
@@ -584,7 +652,7 @@ util-linux 2.11n
 * Danish messages (Claus Hindsgaul)
 * German messages (Karl Eichwalder)
 * Swedish messages (Christian Rose)
-* Turkish messages now in UTF-8 (Nilgün Belma Bugüner)
+* Turkish messages now in UTF-8 (NilgÃ¼n Belma BugÃ¼ner)
 * blockdev: add --report option
 * cal: fix for wide multibyte-char (Motonobu Ichimura)
 * cfdisk: recognize ext3 and reiserfs (Flavio Stanchina)
@@ -603,7 +671,7 @@ util-linux 2.11m
 * Danish messages (Claus Hindsgaul)
 * German messages (Karl Eichwalder)
 * Swedish messages (Christian Rose)
-* Turkish messages (Nilgün Belma Bugüner)
+* Turkish messages (NilgÃ¼n Belma BugÃ¼ner)
 * fdisk: added netbsd type (Steven J. Hill)
 * more: fix for unsigned char (Rusty Russell)
 * mount: added sysv magic (Tim Launchbury)
@@ -666,7 +734,7 @@ util-linux 2.11i
 
 util-linux 2.11h
 
-* Turkish messages (Nilgün Belma Bugüner)
+* Turkish messages (NilgÃ¼n Belma BugÃ¼ner)
 * Danish messages (Claus Hindsgaul)
 * banner: minor fix (awayzzz@digibel.org)
 * mkfs.minix: minix v2 fix
@@ -691,7 +759,7 @@ util-linux 2.11g
 
 util-linux 2.11f
 
-* Czech messages (Jiøí Pavlovský)
+* Czech messages (JiÅ™Ã­ PavlovskÃ½)
 * fdisk: fix for "reorder" expert command
   (use of sfdisk afterwards is still recommended)
 * mount: minor fixes
@@ -707,8 +775,8 @@ util-linux 2.11e
 * fdisk: SuperH fix (ISHIKAWA Mutsumi)
 * hwclock: accept alpha options in both upper and lower case
   (so as to make the man page correct)
-* hwclock: add option --noadjtime (Henrique M Holschuh)
-* login: child must have controlling tty (Michal Moskal)
+* hwclock: add option --noadjtime (Henrique M. Holschuh)
+* login: child must have controlling tty (MichaÅ‚ Moskal)
 * more: don't seek unseekable input (David Whedon)
 * mount: upon request by Richard Gooch: if the mount point is specified
   as symlink, put symlink, not actual mount point in mtab.
@@ -728,7 +796,7 @@ util-linux 2.11d
 
 util-linux 2.11c
 
-* Czech messages (Jiøí Pavlovský)
+* Czech messages (JiÅ™Ã­ PavlovskÃ½)
 * German messages (Elrond)
 * Makefile/MCONFIG improvements (Peter Breitenlohner)
 * fdisk: added a few partition types
@@ -749,7 +817,7 @@ util-linux 2.11c
   corruption by pam_authenticate via pam_ldap (Andreas Damm)
 * login: removed the REDHAT_IGNORED_MAILSIZE hack
 * login: unconditionally do vhangup
-* login: zero PAM_USER when no username was given (Arkadiusz Miskiewicz)
+* login: zero PAM_USER when no username was given (Arkadiusz MiÅ›kiewicz)
 * look: dictionary now under /usr/share (Erik Troan)
 * mount: add sanitize_env() (Solar Designer)
 * mount: another heuristic for vfat (Michal Svec)
@@ -878,7 +946,7 @@ util-linux 2.10n:
 * script: added -f (flush) option (Ivan Schreter)
 * script: added -q (quiet) option (Per Andreas Buer)
 * getopt: updated to version 1.1.0 (Frodo Looijaard)
-* Czech messages (Jiri Pavlovsky)
+* Czech messages (JiÅ™Ã­ PavlovskÃ½)
 
 util-linux 2.10m:
 
@@ -936,7 +1004,7 @@ util-linux 2.10g:
 * Update of raw (Stephen Tweedie):
   Control file was /dev/raw, now /dev/rawctl
   Access files were /dev/raw*, now /dev/raw/raw*
-* Czech messages (Jiri Pavlovsky)
+* Czech messages (JiÅ™Ã­ PavlovskÃ½)
 * German messages (Daniel Egger)
 * losetup locks memory (Frank v Waveren)
 
@@ -996,7 +1064,7 @@ util-linux 2.10:
 util-linux 2.9z:
 
 * Japanese messages (Daisuke Yamashita)
-* Czech messages (Jiri Pavlovsky)
+* Czech messages (JiÅ™Ã­ PavlovskÃ½)
 * Added some udf stuff to mount.8
 * Added ioctl for fdisk on bsdlabels
 
@@ -1032,7 +1100,7 @@ util-linux 2.9v:
 
 util-linux 2.9u:
 
-* Czech more.help and messages (Jiøí Pavlovský)
+* Czech more.help and messages (JiÅ™Ã­ PavlovskÃ½)
 * Japanese messages (Daisuke Yamashita)
 * fdisk fix (Klaus G. Wagner)
 * mount fix (Hirokazu Takahashi)
@@ -1046,7 +1114,7 @@ util-linux 2.9t:
 * national language support for hwclock
 * Japanese messages (both by Daisuke Yamashita)
 * German messages and some misc i18n fixes (Elrond)
-* Czech messages (Jiøí Pavlovský)
+* Czech messages (JiÅ™Ã­ PavlovskÃ½)
 * wall fixed for /dev/pts/xx ttys
 * make last and wall use getutent() (Sascha Schumann)
   [Maybe this is bad: last reading all of wtmp may be too slow.
@@ -1153,7 +1221,7 @@ util-linux 2.9b:
 
 * split README into INSTALL and HISTORY
 * added a sentence to swapon.8
-* behaviour of write on non-ASCII fixed
+* behavior of write on non-ASCII fixed
 * hwclock adapted to survive a failing mktime()
 
 util-linux 2.9a:
@@ -1280,7 +1348,7 @@ Outstanding bugs:
 - login/getty has a denial of service problem.
 - Several places needs a bit more polish.
 - There are a _lot_ of nonfatal warnings when compiling mount.  This will
-  not necesarily be fixed.
+  not necessarily be fixed.
 
 
 util-linux 2.6
@@ -1292,7 +1360,7 @@ HIGHLIGHTS for version 2.6:
 
 1) Removed programs:
    - md5sum, dsplit: available in GNU textutils.
-   - syslogd: Sysklogd is now prefered.  It is available at 
+   - syslogd: Sysklogd is now preferred.  It is available at
 	tsx-11.mit.edu:/pub/sources/sbin
 	sunsite.unc.edu:/pub/Linux/system/Daemons
 

@@ -42,9 +42,9 @@
 
 #include "nls.h"
 #include "xalloc.h"
-#include "usleep.h"
 #include "strutils.h"
 #include "c.h"
+#include "closestream.h"
 
 #define DEFAULT_LINES  10
 
@@ -58,7 +58,7 @@ tailf(const char *filename, int lines)
 	int  i;
 
 	if (!(str = fopen(filename, "r")))
-		err(EXIT_FAILURE, _("cannot open \"%s\" for read"), filename);
+		err(EXIT_FAILURE, _("cannot open %s"), filename);
 
 	buf = xmalloc((lines ? lines : 1) * BUFSIZ);
 	p = buf;
@@ -95,10 +95,10 @@ roll_file(const char *filename, off_t *size)
 
 	fd = open(filename, O_RDONLY);
 	if (fd < 0)
-		err(EXIT_FAILURE, _("cannot open \"%s\" for read"), filename);
+		err(EXIT_FAILURE, _("cannot open %s"), filename);
 
 	if (fstat(fd, &st) == -1)
-		err(EXIT_FAILURE, _("cannot stat \"%s\""), filename);
+		err(EXIT_FAILURE, _("stat failed %s"), filename);
 
 	if (st.st_size == *size) {
 		close(fd);
@@ -133,7 +133,7 @@ watch_file(const char *filename, off_t *size)
 {
 	do {
 		roll_file(filename, size);
-		usleep(250000);
+		xusleep(250000);
 	} while(1);
 }
 
@@ -209,7 +209,7 @@ static void __attribute__ ((__noreturn__)) usage(FILE *out)
 }
 
 /* parses -N option */
-long old_style_option(int *argc, char **argv)
+static long old_style_option(int *argc, char **argv)
 {
 	int i = 1, nargs = *argc;
 	long lines = -1;
@@ -237,16 +237,17 @@ int main(int argc, char **argv)
 	struct stat st;
 	off_t size = 0;
 
-	setlocale(LC_ALL, "");
-	bindtextdomain(PACKAGE, LOCALEDIR);
-	textdomain(PACKAGE);
-
 	static const struct option longopts[] = {
 		{ "lines",   required_argument, 0, 'n' },
 		{ "version", no_argument,	0, 'V' },
 		{ "help",    no_argument,	0, 'h' },
 		{ NULL,      0, 0, 0 }
 	};
+
+	setlocale(LC_ALL, "");
+	bindtextdomain(PACKAGE, LOCALEDIR);
+	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	lines = old_style_option(&argc, argv);
 	if (lines < 0)
@@ -275,7 +276,7 @@ int main(int argc, char **argv)
 	filename = argv[optind];
 
 	if (stat(filename, &st) != 0)
-		err(EXIT_FAILURE, _("cannot stat \"%s\""), filename);
+		err(EXIT_FAILURE, _("stat failed %s"), filename);
 
 	size = st.st_size;;
 	tailf(filename, lines);

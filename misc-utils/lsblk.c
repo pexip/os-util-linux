@@ -1,7 +1,7 @@
 /*
  * lsblk(8) - list block devices
  *
- * Copyright (C) 2010,2011 Red Hat, Inc. All rights reserved.
+ * Copyright (C) 2010,2011,2012 Red Hat, Inc. All rights reserved.
  * Written by Milan Broz <mbroz@redhat.com>
  *            Karel Zak <kzak@redhat.com>
  *
@@ -15,9 +15,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <stdio.h>
@@ -40,19 +40,27 @@
 #include <ctype.h>
 
 #include <blkid.h>
+#include <libmount.h>
+#include <libsmartcols.h>
+
+#ifdef HAVE_LIBUDEV
+#include <libudev.h>
+#endif
 
 #include <assert.h>
 
+#include "c.h"
 #include "pathnames.h"
 #include "blkdev.h"
 #include "canonicalize.h"
-#include "ismounted.h"
 #include "nls.h"
-#include "tt.h"
 #include "xalloc.h"
 #include "strutils.h"
-#include "c.h"
+#include "at.h"
 #include "sysfs.h"
+#include "closestream.h"
+#include "mangle.h"
+#include "optutils.h"
 
 /* column IDs */
 enum {
@@ -63,9 +71,15 @@ enum {
 	COL_TARGET,
 	COL_LABEL,
 	COL_UUID,
+	COL_PARTTYPE,
+	COL_PARTLABEL,
+	COL_PARTUUID,
+	COL_PARTFLAGS,
+	COL_RA,
 	COL_RO,
 	COL_RM,
 	COL_MODEL,
+	COL_SERIAL,
 	COL_SIZE,
 	COL_STATE,
 	COL_OWNER,
@@ -84,68 +98,139 @@ enum {
 	COL_DGRAN,
 	COL_DMAX,
 	COL_DZERO,
+	COL_WSAME,
+	COL_WWN,
+	COL_RAND,
+	COL_PKNAME,
+	COL_HCTL,
+	COL_TRANSPORT,
+	COL_REV,
+	COL_VENDOR,
+};
 
-	__NCOLUMNS
+/* basic table settings */
+enum {
+	LSBLK_ASCII =		(1 << 0),
+	LSBLK_RAW =		(1 << 1),
+	LSBLK_NOHEADINGS =	(1 << 2),
+	LSBLK_EXPORT =		(1 << 3),
+	LSBLK_TREE =		(1 << 4),
+};
+
+enum {
+	SORT_STRING	= 0,	/* default is to use scols_cell_get_data() */
+	SORT_U64	= 1	/* use private pointer from scols_cell_get_userdata() */
 };
 
 /* column names */
 struct colinfo {
 	const char	*name;		/* header */
 	double		whint;		/* width hint (N < 1 is in percent of termwidth) */
-	int		flags;		/* TT_FL_* */
+	int		flags;		/* SCOLS_FL_* */
 	const char      *help;
+
+	int	sort_type;		/* SORT_* */
 };
 
 /* columns descriptions */
-static struct colinfo infos[__NCOLUMNS] = {
-	[COL_NAME]   = { "NAME",    0.25, TT_FL_TREE, N_("device name") },
+static struct colinfo infos[] = {
+	[COL_NAME]   = { "NAME",    0.25, SCOLS_FL_TREE | SCOLS_FL_NOEXTREMES, N_("device name") },
 	[COL_KNAME]  = { "KNAME",   0.3, 0, N_("internal kernel device name") },
-	[COL_MAJMIN] = { "MAJ:MIN", 6, 0, N_("major:minor device number") },
-	[COL_FSTYPE] = { "FSTYPE",  0.1, TT_FL_TRUNC, N_("filesystem type") },
-	[COL_TARGET] = { "MOUNTPOINT", 0.10, TT_FL_TRUNC, N_("where the device is mounted") },
+	[COL_PKNAME] = { "PKNAME",   0.3, 0, N_("internal parent kernel device name") },
+	[COL_MAJMIN] = { "MAJ:MIN", 6, 0, N_("major:minor device number"), SORT_U64 },
+	[COL_FSTYPE] = { "FSTYPE",  0.1, SCOLS_FL_TRUNC, N_("filesystem type") },
+	[COL_TARGET] = { "MOUNTPOINT", 0.10, SCOLS_FL_TRUNC, N_("where the device is mounted") },
 	[COL_LABEL]  = { "LABEL",   0.1, 0, N_("filesystem LABEL") },
 	[COL_UUID]   = { "UUID",    36,  0, N_("filesystem UUID") },
-	[COL_RO]     = { "RO",      1, TT_FL_RIGHT, N_("read-only device") },
-	[COL_RM]     = { "RM",      1, TT_FL_RIGHT, N_("removable device") },
-	[COL_ROTA]   = { "ROTA",    1, TT_FL_RIGHT, N_("rotational device") },
-	[COL_MODEL]  = { "MODEL",   0.1, TT_FL_TRUNC, N_("device identifier") },
-	[COL_SIZE]   = { "SIZE",    6, TT_FL_RIGHT, N_("size of the device") },
-	[COL_STATE]  = { "STATE",   7, TT_FL_TRUNC, N_("state of the device") },
-	[COL_OWNER]  = { "OWNER",   0.1, TT_FL_TRUNC, N_("user name"), },
-	[COL_GROUP]  = { "GROUP",   0.1, TT_FL_TRUNC, N_("group name") },
+
+	[COL_PARTTYPE]  = { "PARTTYPE",  36,  0, N_("partition type UUID") },
+	[COL_PARTLABEL] = { "PARTLABEL", 0.1, 0, N_("partition LABEL") },
+	[COL_PARTUUID]  = { "PARTUUID",  36,  0, N_("partition UUID") },
+	[COL_PARTFLAGS] = { "PARTFLAGS",  36,  0, N_("partition flags") },
+
+	[COL_RA]     = { "RA",      3, SCOLS_FL_RIGHT, N_("read-ahead of the device"), SORT_U64 },
+	[COL_RO]     = { "RO",      1, SCOLS_FL_RIGHT, N_("read-only device") },
+	[COL_RM]     = { "RM",      1, SCOLS_FL_RIGHT, N_("removable device") },
+	[COL_ROTA]   = { "ROTA",    1, SCOLS_FL_RIGHT, N_("rotational device") },
+	[COL_RAND]   = { "RAND",    1, SCOLS_FL_RIGHT, N_("adds randomness") },
+	[COL_MODEL]  = { "MODEL",   0.1, SCOLS_FL_TRUNC, N_("device identifier") },
+	[COL_SERIAL] = { "SERIAL",  0.1, SCOLS_FL_TRUNC, N_("disk serial number") },
+	[COL_SIZE]   = { "SIZE",    5, SCOLS_FL_RIGHT, N_("size of the device"), SORT_U64 },
+	[COL_STATE]  = { "STATE",   7, SCOLS_FL_TRUNC, N_("state of the device") },
+	[COL_OWNER]  = { "OWNER",   0.1, SCOLS_FL_TRUNC, N_("user name"), },
+	[COL_GROUP]  = { "GROUP",   0.1, SCOLS_FL_TRUNC, N_("group name") },
 	[COL_MODE]   = { "MODE",    10,   0, N_("device node permissions") },
-	[COL_ALIOFF] = { "ALIGNMENT", 6, TT_FL_RIGHT, N_("alignment offset") },
-	[COL_MINIO]  = { "MIN-IO",  6, TT_FL_RIGHT, N_("minimum I/O size") },
-	[COL_OPTIO]  = { "OPT-IO",  6, TT_FL_RIGHT, N_("optimal I/O size") },
-	[COL_PHYSEC] = { "PHY-SEC", 7, TT_FL_RIGHT, N_("physical sector size") },
-	[COL_LOGSEC] = { "LOG-SEC", 7, TT_FL_RIGHT, N_("logical sector size") },
+	[COL_ALIOFF] = { "ALIGNMENT", 6, SCOLS_FL_RIGHT, N_("alignment offset"), SORT_U64 },
+	[COL_MINIO]  = { "MIN-IO",  6, SCOLS_FL_RIGHT, N_("minimum I/O size"), SORT_U64 },
+	[COL_OPTIO]  = { "OPT-IO",  6, SCOLS_FL_RIGHT, N_("optimal I/O size"), SORT_U64 },
+	[COL_PHYSEC] = { "PHY-SEC", 7, SCOLS_FL_RIGHT, N_("physical sector size"), SORT_U64 },
+	[COL_LOGSEC] = { "LOG-SEC", 7, SCOLS_FL_RIGHT, N_("logical sector size"), SORT_U64 },
 	[COL_SCHED]  = { "SCHED",   0.1, 0, N_("I/O scheduler name") },
-	[COL_RQ_SIZE]= { "RQ-SIZE", 5, TT_FL_RIGHT, N_("request queue size") },
+	[COL_RQ_SIZE]= { "RQ-SIZE", 5, SCOLS_FL_RIGHT, N_("request queue size"), SORT_U64 },
 	[COL_TYPE]   = { "TYPE",    4, 0, N_("device type") },
-	[COL_DALIGN] = { "DISC-ALN", 6, TT_FL_RIGHT, N_("discard alignment offset") },
-	[COL_DGRAN]  = { "DISC-GRAN", 6, TT_FL_RIGHT, N_("discard granularity") },
-	[COL_DMAX]   = { "DISC-MAX", 6, TT_FL_RIGHT, N_("discard max bytes") },
-	[COL_DZERO]  = { "DISC-ZERO", 1, TT_FL_RIGHT, N_("discard zeroes data") },
+	[COL_DALIGN] = { "DISC-ALN", 6, SCOLS_FL_RIGHT, N_("discard alignment offset"), SORT_U64 },
+	[COL_DGRAN]  = { "DISC-GRAN", 6, SCOLS_FL_RIGHT, N_("discard granularity"), SORT_U64 },
+	[COL_DMAX]   = { "DISC-MAX", 6, SCOLS_FL_RIGHT, N_("discard max bytes"), SORT_U64 },
+	[COL_DZERO]  = { "DISC-ZERO", 1, SCOLS_FL_RIGHT, N_("discard zeroes data") },
+	[COL_WSAME]  = { "WSAME",   6, SCOLS_FL_RIGHT, N_("write same max bytes"), SORT_U64 },
+	[COL_WWN]    = { "WWN",     18, 0, N_("unique storage identifier") },
+	[COL_HCTL]   = { "HCTL", 10, 0, N_("Host:Channel:Target:Lun for SCSI") },
+	[COL_TRANSPORT] = { "TRAN", 6, 0, N_("device transport type") },
+	[COL_REV]    = { "REV",   4, SCOLS_FL_RIGHT, N_("device revision") },
+	[COL_VENDOR] = { "VENDOR", 0.1, SCOLS_FL_TRUNC, N_("device vendor") },
 };
 
 struct lsblk {
-	struct tt *tt;			/* output table */
-	unsigned int all_devices:1;	/* print all devices */
+	struct libscols_table *table;	/* output table */
+	struct libscols_column *sort_col;/* sort output by this colum */
+	int sort_id;
+
+	unsigned int all_devices:1;	/* print all devices, including empty */
 	unsigned int bytes:1;		/* print SIZE in bytes */
+	unsigned int inverse:1;		/* print inverse dependencies */
 	unsigned int nodeps:1;		/* don't print slaves/holders */
+	unsigned int scsi:1;		/* print only device with HCTL (SCSI) */
+	unsigned int paths:1;		/* print devnames with "/dev" prefix */
 };
 
 struct lsblk *lsblk;	/* global handler */
-int columns[__NCOLUMNS];/* enabled columns */
-int ncolumns;		/* number of enabled columns */
 
-int excludes[256];
-size_t nexcludes;
+/* columns[] array specifies all currently wanted output column. The columns
+ * are defined by infos[] array and you can specify (on command line) each
+ * column twice. That's enough, dynamically allocated array of the columns is
+ * unnecessary overkill and over-engineering in this case */
+static int columns[ARRAY_SIZE(infos) * 2];
+static int ncolumns;
+
+static inline size_t err_columns_index(size_t arysz, size_t idx)
+{
+	if (idx >= arysz)
+		errx(EXIT_FAILURE, _("too many columns specified, "
+				     "the limit is %zu columns"),
+				arysz - 1);
+	return idx;
+}
+
+#define add_column(ary, n, id)	\
+		((ary)[ err_columns_index(ARRAY_SIZE(ary), (n)) ] = (id))
+
+static int excludes[256];
+static size_t nexcludes;
+
+static int includes[256];
+static size_t nincludes;
+
+static struct libmnt_table *mtab, *swaps;
+static struct libmnt_cache *mntcache;
+
+#ifdef HAVE_LIBUDEV
+struct udev *udev;
+#endif
 
 struct blkdev_cxt {
 	struct blkdev_cxt *parent;
 
-	struct tt_line *tt_line;
+	struct libscols_line *scols_line;
 	struct stat	st;
 
 	char *name;		/* kernel name in /sys/block */
@@ -159,11 +244,18 @@ struct blkdev_cxt {
 
 	int probed;		/* already probed */
 	char *fstype;		/* detected fs, NULL or "?" if cannot detect */
-	char *uuid;		/* UUID of device / filesystem */
-	char *label;		/* FS label */
+	char *uuid;		/* filesystem UUID (or stack uuid) */
+	char *label;		/* filesystem label */
+	char *parttype;		/* partiton type UUID */
+	char *partuuid;		/* partition UUID */
+	char *partlabel;	/* partiton label */
+	char *partflags;	/* partition flags */
+	char *wwn;		/* storage WWN */
+	char *serial;		/* disk serial number */
 
+	int npartitions;	/* # of partitions this device has */
 	int nholders;		/* # of devices mapped directly to this device
-				 * /sys/block/.../holders + number of partition */
+				 * /sys/block/.../holders */
 	int nslaves;		/* # of devices this device maps to */
 	int maj, min;		/* devno */
 	int discard;		/* supports discard */
@@ -177,8 +269,26 @@ static int is_maj_excluded(int maj)
 
 	assert(ARRAY_SIZE(excludes) > nexcludes);
 
+	if (!nexcludes)
+		return 0;	/* filter not enabled, device not exluded */
+
 	for (i = 0; i < nexcludes; i++)
 		if (excludes[i] == maj)
+			return 1;
+	return 0;
+}
+
+static int is_maj_included(int maj)
+{
+	size_t i;
+
+	assert(ARRAY_SIZE(includes) > nincludes);
+
+	if (!nincludes)
+		return 1;	/* filter not enabled, device is included */
+
+	for (i = 0; i < nincludes; i++)
+		if (includes[i] == maj)
 			return 1;
 	return 0;
 }
@@ -186,9 +296,8 @@ static int is_maj_excluded(int maj)
 /* array with IDs of enabled columns */
 static int get_column_id(int num)
 {
-	assert(ARRAY_SIZE(columns) == __NCOLUMNS);
 	assert(num < ncolumns);
-	assert(columns[num] < __NCOLUMNS);
+	assert(columns[num] < (int) ARRAY_SIZE(infos));
 	return columns[num];
 }
 
@@ -199,15 +308,25 @@ static struct colinfo *get_column_info(int num)
 
 static int column_name_to_id(const char *name, size_t namesz)
 {
-	int i;
+	size_t i;
 
-	for (i = 0; i < __NCOLUMNS; i++) {
+	for (i = 0; i < ARRAY_SIZE(infos); i++) {
 		const char *cn = infos[i].name;
 
 		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
+	return -1;
+}
+
+static int column_id_to_number(int id)
+{
+	size_t i;
+
+	for (i = 0; i < (size_t) ncolumns; i++)
+		if (columns[i] == id)
+			return i;
 	return -1;
 }
 
@@ -221,6 +340,11 @@ static void reset_blkdev_cxt(struct blkdev_cxt *cxt)
 	free(cxt->fstype);
 	free(cxt->uuid);
 	free(cxt->label);
+	free(cxt->parttype);
+	free(cxt->partuuid);
+	free(cxt->partlabel);
+	free(cxt->wwn);
+	free(cxt->serial);
 
 	sysfs_deinit(&cxt->sysfs);
 
@@ -263,52 +387,160 @@ static char *get_device_path(struct blkdev_cxt *cxt)
 	return xstrdup(path);
 }
 
+static int is_active_swap(const char *filename)
+{
+	if (!swaps) {
+		swaps = mnt_new_table();
+		if (!swaps)
+			return 0;
+		if (!mntcache)
+			mntcache = mnt_new_cache();
+
+		mnt_table_set_cache(swaps, mntcache);
+		mnt_table_parse_swaps(swaps, NULL);
+	}
+
+	return mnt_table_find_srcpath(swaps, filename, MNT_ITER_BACKWARD) != 0;
+}
+
 static char *get_device_mountpoint(struct blkdev_cxt *cxt)
 {
-	int fl = 0;
-	char mnt[PATH_MAX];
+	struct libmnt_fs *fs;
+	const char *fsroot;
 
 	assert(cxt);
 	assert(cxt->filename);
 
-	*mnt = '\0';
+	if (!mtab) {
+		mtab = mnt_new_table();
+		if (!mtab)
+			return NULL;
+		if (!mntcache)
+			mntcache = mnt_new_cache();
 
-	/*
-	 * TODO: use libmount and parse /proc/mountinfo only once
-	 */
-	if (check_mount_point(cxt->filename, &fl, mnt, sizeof(mnt)) == 0 &&
-	    (fl & MF_MOUNTED)) {
-		if (fl & MF_SWAP)
-			strcpy(mnt, "[SWAP]");
+		mnt_table_set_cache(mtab, mntcache);
+		mnt_table_parse_mtab(mtab, NULL);
 	}
-	return strlen(mnt) ? xstrdup(mnt) : NULL;
+
+	/* Note that maj:min in /proc/self/mouninfo does not have to match with
+	 * devno as returned by stat(), so we have to try devname too
+	 */
+	fs = mnt_table_find_devno(mtab, makedev(cxt->maj, cxt->min), MNT_ITER_BACKWARD);
+	if (!fs)
+		fs = mnt_table_find_srcpath(mtab, cxt->filename, MNT_ITER_BACKWARD);
+	if (!fs)
+		return is_active_swap(cxt->filename) ? xstrdup("[SWAP]") : NULL;
+
+	/* found */
+	fsroot = mnt_fs_get_root(fs);
+	if (fsroot && strcmp(fsroot, "/") != 0) {
+		/* hmm.. we found bind mount or btrfs subvolume, let's try to
+		 * get real FS root mountpoint */
+		struct libmnt_fs *rfs;
+		struct libmnt_iter *itr = mnt_new_iter(MNT_ITER_BACKWARD);
+
+		mnt_table_set_iter(mtab, itr, fs);
+		while (mnt_table_next_fs(mtab, itr, &rfs) == 0) {
+			fsroot = mnt_fs_get_root(rfs);
+			if ((!fsroot || strcmp(fsroot, "/") == 0)
+			    && mnt_fs_match_source(rfs, cxt->filename, mntcache)) {
+				fs = rfs;
+				break;
+			}
+		}
+		mnt_free_iter(itr);
+	}
+
+	return xstrdup(mnt_fs_get_target(fs));
 }
 
-/* TODO: read info from udev db (if possible) for non-root users
- */
+#ifndef HAVE_LIBUDEV
+static int get_udev_properties(struct blkdev_cxt *cxt
+				__attribute__((__unused__)))
+{
+	return -1;
+}
+#else
+static int get_udev_properties(struct blkdev_cxt *cxt)
+{
+	struct udev_device *dev;
+
+	if (cxt->probed)
+		return 0;		/* already done */
+
+	if (!udev)
+		udev = udev_new();
+	if (!udev)
+		return -1;
+
+	dev = udev_device_new_from_subsystem_sysname(udev, "block", cxt->name);
+	if (dev) {
+		const char *data;
+
+		if ((data = udev_device_get_property_value(dev, "ID_FS_LABEL_ENC"))) {
+			cxt->label = xstrdup(data);
+			unhexmangle_string(cxt->label);
+		}
+		if ((data = udev_device_get_property_value(dev, "ID_FS_UUID_ENC"))) {
+			cxt->uuid = xstrdup(data);
+			unhexmangle_string(cxt->uuid);
+		}
+		if ((data = udev_device_get_property_value(dev, "ID_PART_ENTRY_NAME"))) {
+			cxt->partlabel = xstrdup(data);
+			unhexmangle_string(cxt->partlabel);
+		}
+		if ((data = udev_device_get_property_value(dev, "ID_FS_TYPE")))
+			cxt->fstype = xstrdup(data);
+		if ((data = udev_device_get_property_value(dev, "ID_PART_ENTRY_TYPE")))
+			cxt->parttype = xstrdup(data);
+		if ((data = udev_device_get_property_value(dev, "ID_PART_ENTRY_UUID")))
+			cxt->partuuid = xstrdup(data);
+		if ((data = udev_device_get_property_value(dev, "ID_PART_ENTRY_FLAGS")))
+			cxt->partflags = xstrdup(data);
+		if ((data = udev_device_get_property_value(dev, "ID_WWN")))
+			cxt->wwn = xstrdup(data);
+		if ((data = udev_device_get_property_value(dev, "ID_SERIAL_SHORT")))
+			cxt->serial = xstrdup(data);
+		udev_device_unref(dev);
+		cxt->probed = 1;
+	}
+
+	return cxt->probed == 1 ? 0 : -1;
+
+}
+#endif /* HAVE_LIBUDEV */
+
 static void probe_device(struct blkdev_cxt *cxt)
 {
-	char *path = NULL;
 	blkid_probe pr = NULL;
 
 	if (cxt->probed)
 		return;
-	cxt->probed = 1;
 
 	if (!cxt->size)
 		return;
+
+	/* try udev DB */
+	if (get_udev_properties(cxt) == 0)
+		return;				/* success */
+
+	cxt->probed = 1;
+
+	/* try libblkid (fallback) */
+	if (getuid() != 0)
+		return;				/* no permissions to read from the device */
 
 	pr = blkid_new_probe_from_filename(cxt->filename);
 	if (!pr)
 		return;
 
-	/* TODO: we have to enable partitions probing to avoid conflicts
-	 *       between raids and PT -- see blkid(8) code for more details
-	 */
 	blkid_probe_enable_superblocks(pr, 1);
 	blkid_probe_set_superblocks_flags(pr, BLKID_SUBLKS_LABEL |
 					      BLKID_SUBLKS_UUID |
 					      BLKID_SUBLKS_TYPE);
+	blkid_probe_enable_partitions(pr, 1);
+	blkid_probe_set_partitions_flags(pr, BLKID_PARTS_ENTRY_DETAILS);
+
 	if (!blkid_do_safeprobe(pr)) {
 		const char *data = NULL;
 
@@ -318,9 +550,16 @@ static void probe_device(struct blkdev_cxt *cxt)
 			cxt->uuid = xstrdup(data);
 		if (!blkid_probe_lookup_value(pr, "LABEL", &data, NULL))
 			cxt->label = xstrdup(data);
+		if (!blkid_probe_lookup_value(pr, "PART_ENTRY_TYPE", &data, NULL))
+			cxt->parttype = xstrdup(data);
+		if (!blkid_probe_lookup_value(pr, "PART_ENTRY_UUID", &data, NULL))
+			cxt->partuuid = xstrdup(data);
+		if (!blkid_probe_lookup_value(pr, "PART_ENTRY_NAME", &data, NULL))
+			cxt->partlabel = xstrdup(data);
+		if (!blkid_probe_lookup_value(pr, "PART_ENTRY_FLAGS", &data, NULL))
+			cxt->partflags = xstrdup(data);
 	}
 
-	free(path);
 	blkid_free_probe(pr);
 	return;
 }
@@ -329,13 +568,14 @@ static int is_readonly_device(struct blkdev_cxt *cxt)
 {
 	int fd, ro = 0;
 
-	if (sysfs_scanf(&cxt->sysfs, "ro", "%d", &ro) == 0)
+	if (sysfs_scanf(&cxt->sysfs, "ro", "%d", &ro) == 1)
 		return ro;
 
 	/* fallback if "ro" attribute does not exist */
 	fd = open(cxt->filename, O_RDONLY);
 	if (fd != -1) {
-		ioctl(fd, BLKROGET, &ro);
+		if (ioctl(fd, BLKROGET, &ro) != 0)
+			ro = 0;
 		close(fd);
 	}
 	return ro;
@@ -397,25 +637,14 @@ static char *get_type(struct blkdev_cxt *cxt)
 		res = md_level ? md_level : xstrdup("md");
 
 	} else {
-		const char *type = cxt->partition ? "part" : "disk";
+		const char *type = NULL;
 		int x = 0;
 
-		sysfs_read_int(&cxt->sysfs, "device/type", &x);
+		if (!sysfs_read_int(&cxt->sysfs, "device/type", &x))
+			type = blkdev_scsi_type_to_name(x);
 
-		switch (x) {
-			case 0x0c: /* TYPE_RAID */
-				type = "raid"; break;
-			case 0x01: /* TYPE_TAPE */
-				type = "raid"; break;
-			case 0x04: /* TYPE_WORM */
-			case 0x05: /* TYPE_ROM */
-				type = "rom"; break;
-			case 0x07: /* TYPE_MOD */
-				type = "mo-disk"; break;
-			case 0x0e: /* TYPE_RBC */
-				type = "rbc"; break;
-		}
-
+		if (!type)
+			type = cxt->partition ? "part" : "disk";
 		res = xstrdup(type);
 	}
 
@@ -424,225 +653,423 @@ static char *get_type(struct blkdev_cxt *cxt)
 	return res;
 }
 
-static void set_tt_data(struct blkdev_cxt *cxt, int col, int id, struct tt_line *ln)
+/* Thanks to lsscsi code for idea of detection logic used here */
+static char *get_transport(struct blkdev_cxt *cxt)
 {
-	char buf[1024];
-	char *p = NULL;
+	struct sysfs_cxt *sysfs = &cxt->sysfs;
+	char *attr = NULL;
+	const char *trans = NULL;
+
+	/* SCSI - Serial Peripheral Interface */
+	if (sysfs_scsi_host_is(sysfs, "spi"))
+		trans = "spi";
+
+	/* FC/FCoE - Fibre Channel / Fibre Channel over Ethernet */
+	else if (sysfs_scsi_host_is(sysfs, "fc")) {
+		attr = sysfs_scsi_host_strdup_attribute(sysfs, "fc", "symbolic_name");
+		if (!attr)
+			return NULL;
+		trans = strstr(attr, " over ") ? "fcoe" : "fc";
+		free(attr);
+	}
+
+	/* SAS - Serial Attached SCSI */
+	else if (sysfs_scsi_host_is(sysfs, "sas") ||
+		 sysfs_scsi_has_attribute(sysfs, "sas_device"))
+		trans = "sas";
+
+
+	/* SBP - Serial Bus Protocol (FireWire) */
+	else if (sysfs_scsi_has_attribute(sysfs, "ieee1394_id"))
+		trans = "sbp";
+
+	/* iSCSI */
+	else if (sysfs_scsi_host_is(sysfs, "iscsi"))
+		trans ="iscsi";
+
+	/* USB - Universal Serial Bus */
+	else if (sysfs_scsi_path_contains(sysfs, "usb"))
+		trans = "usb";
+
+	/* ATA, SATA */
+	else if (sysfs_scsi_host_is(sysfs, "scsi")) {
+		attr = sysfs_scsi_host_strdup_attribute(sysfs, "scsi", "proc_name");
+		if (!attr)
+			return NULL;
+		if (!strncmp(attr, "ahci", 4) || !strncmp(attr, "sata", 4))
+			trans = "sata";
+		else if (strstr(attr, "ata"))
+			trans = "ata";
+		free(attr);
+	}
+
+	return trans ? xstrdup(trans) : NULL;
+}
+
+#define is_parsable(_l)	(scols_table_is_raw((_l)->table) || \
+			 scols_table_is_export((_l)->table))
+
+static char *mk_name(const char *name)
+{
+	char *p;
+	if (!name)
+		return NULL;
+	if (lsblk->paths)
+		xasprintf(&p, "/dev/%s", name);
+	else
+		p = xstrdup(name);
+	return p;
+}
+
+static char *mk_dm_name(const char *name)
+{
+	char *p;
+	if (!name)
+		return NULL;
+	if (lsblk->paths)
+		xasprintf(&p, "/dev/mapper/%s", name);
+	else
+		p = xstrdup(name);
+	return p;
+}
+
+/* stores data to scols cell userdata (invisible and independent on output)
+ * to make the original values accessible for sort functions
+ */
+static void set_sortdata_u64(struct libscols_line *ln, int col, uint64_t x)
+{
+	struct libscols_cell *ce = scols_line_get_cell(ln, col);
+	uint64_t *data;
+
+	if (!ce)
+		return;
+	data = xmalloc(sizeof(uint64_t));
+	*data = x;
+	scols_cell_set_userdata(ce, data);
+}
+
+static void set_sortdata_u64_from_string(struct libscols_line *ln, int col, const char *str)
+{
+	uint64_t x;
+
+	if (!str || sscanf(str, "%"SCNu64, &x) != 1)
+		return;
+
+	set_sortdata_u64(ln, col, x);
+}
+
+static void unref_sortdata(struct libscols_table *tb)
+{
+	struct libscols_iter *itr;
+	struct libscols_line *ln;
+
+	if (!tb || !lsblk->sort_col)
+		return;
+	itr = scols_new_iter(SCOLS_ITER_FORWARD);
+	if (!itr)
+		return;
+	while (scols_table_next_line(tb, itr, &ln) == 0) {
+		struct libscols_cell *ce = scols_line_get_column_cell(ln,
+								lsblk->sort_col);
+		void *data = scols_cell_get_userdata(ce);
+		free(data);
+	}
+
+	scols_free_iter(itr);
+}
+
+static void set_scols_data(struct blkdev_cxt *cxt, int col, int id, struct libscols_line *ln)
+{
+	int sort = 0, st_rc = 0;
+	char *str = NULL;
 
 	if (!cxt->st.st_rdev && (id == COL_OWNER || id == COL_GROUP ||
 				 id == COL_MODE))
-		stat(cxt->filename, &cxt->st);
+		st_rc = stat(cxt->filename, &cxt->st);
+
+	if (lsblk->sort_id == id)
+		sort = 1;
 
 	switch(id) {
 	case COL_NAME:
-		if (cxt->dm_name) {
-			snprintf(buf, sizeof(buf), "%s (%s)",
-					cxt->dm_name, cxt->name);
-			tt_line_set_data(ln, col, xstrdup(buf));
-			break;
-		}
+		str = cxt->dm_name ? mk_dm_name(cxt->dm_name) :	mk_name(cxt->name);
+		break;
 	case COL_KNAME:
-		tt_line_set_data(ln, col, xstrdup(cxt->name));
+		str = mk_name(cxt->name);
+		break;
+	case COL_PKNAME:
+		if (cxt->parent)
+			str = mk_name(cxt->parent->name);
 		break;
 	case COL_OWNER:
 	{
-		struct passwd *pw = getpwuid(cxt->st.st_uid);
+		struct passwd *pw = st_rc ? NULL : getpwuid(cxt->st.st_uid);
 		if (pw)
-			tt_line_set_data(ln, col, xstrdup(pw->pw_name));
+			str = xstrdup(pw->pw_name);
 		break;
 	}
 	case COL_GROUP:
 	{
-		struct group *gr = getgrgid(cxt->st.st_gid);
+		struct group *gr = st_rc ? NULL : getgrgid(cxt->st.st_gid);
 		if (gr)
-			tt_line_set_data(ln, col, xstrdup(gr->gr_name));
+			str = xstrdup(gr->gr_name);
 		break;
 	}
 	case COL_MODE:
 	{
 		char md[11];
-		strmode(cxt->st.st_mode, md);
-		tt_line_set_data(ln, col, xstrdup(md));
+
+		if (!st_rc) {
+			strmode(cxt->st.st_mode, md);
+			str = xstrdup(md);
+		}
 		break;
 	}
 	case COL_MAJMIN:
-		if ((lsblk->tt->flags & TT_FL_RAW) ||
-		    (lsblk->tt->flags & TT_FL_EXPORT))
-			snprintf(buf, sizeof(buf), "%u:%u", cxt->maj, cxt->min);
+		if (is_parsable(lsblk))
+			xasprintf(&str, "%u:%u", cxt->maj, cxt->min);
 		else
-			snprintf(buf, sizeof(buf), "%3u:%-3u", cxt->maj, cxt->min);
-		tt_line_set_data(ln, col, xstrdup(buf));
+			xasprintf(&str, "%3u:%-3u", cxt->maj, cxt->min);
+		if (sort)
+			set_sortdata_u64(ln, col, makedev(cxt->maj, cxt->min));
 		break;
 	case COL_FSTYPE:
 		probe_device(cxt);
 		if (cxt->fstype)
-			tt_line_set_data(ln, col, xstrdup(cxt->fstype));
+			str = xstrdup(cxt->fstype);
 		break;
 	case COL_TARGET:
-		if (!cxt->nholders) {
-			p = get_device_mountpoint(cxt);
-			if (p)
-				tt_line_set_data(ln, col, p);
-		}
+		if (!(cxt->nholders + cxt->npartitions))
+			str = get_device_mountpoint(cxt);
 		break;
 	case COL_LABEL:
 		probe_device(cxt);
 		if (cxt->label)
-			tt_line_set_data(ln, col, xstrdup(cxt->label));
+			str = xstrdup(cxt->label);
 		break;
 	case COL_UUID:
 		probe_device(cxt);
 		if (cxt->uuid)
-			tt_line_set_data(ln, col, xstrdup(cxt->uuid));
+			str = xstrdup(cxt->uuid);
+		break;
+	case COL_PARTTYPE:
+		probe_device(cxt);
+		if (cxt->parttype)
+			str = xstrdup(cxt->parttype);
+		break;
+	case COL_PARTLABEL:
+		probe_device(cxt);
+		if (cxt->partlabel)
+			str = xstrdup(cxt->partlabel);
+		break;
+	case COL_PARTUUID:
+		probe_device(cxt);
+		if (cxt->partuuid)
+			str = xstrdup(cxt->partuuid);
+		break;
+	case COL_PARTFLAGS:
+		probe_device(cxt);
+		if (cxt->partflags)
+			str = xstrdup(cxt->partflags);
+		break;
+	case COL_WWN:
+		get_udev_properties(cxt);
+		if (cxt->wwn)
+			str = xstrdup(cxt->wwn);
+		break;
+	case COL_RA:
+		str = sysfs_strdup(&cxt->sysfs, "queue/read_ahead_kb");
+		if (sort)
+			set_sortdata_u64_from_string(ln, col, str);
 		break;
 	case COL_RO:
-		tt_line_set_data(ln, col, is_readonly_device(cxt) ?
-					xstrdup("1") : xstrdup("0"));
+		str = xstrdup(is_readonly_device(cxt) ? "1" : "0");
 		break;
 	case COL_RM:
-		p = sysfs_strdup(&cxt->sysfs, "removable");
-		if (!p && cxt->parent)
-			p = sysfs_strdup(&cxt->parent->sysfs, "removable");
-		if (p)
-			tt_line_set_data(ln, col, p);
+		str = sysfs_strdup(&cxt->sysfs, "removable");
+		if (!str && cxt->sysfs.parent)
+			str = sysfs_strdup(cxt->sysfs.parent, "removable");
 		break;
 	case COL_ROTA:
-		p = sysfs_strdup(&cxt->sysfs, "queue/rotational");
-		if (p)
-			tt_line_set_data(ln, col, p);
+		str = sysfs_strdup(&cxt->sysfs, "queue/rotational");
+		break;
+	case COL_RAND:
+		str = sysfs_strdup(&cxt->sysfs, "queue/add_random");
 		break;
 	case COL_MODEL:
+		if (!cxt->partition && cxt->nslaves == 0)
+			str = sysfs_strdup(&cxt->sysfs, "device/model");
+		break;
+	case COL_SERIAL:
 		if (!cxt->partition && cxt->nslaves == 0) {
-			p = sysfs_strdup(&cxt->sysfs, "device/model");
-			if (p)
-				tt_line_set_data(ln, col, p);
+			get_udev_properties(cxt);
+			if (cxt->serial)
+				str = xstrdup(cxt->serial);
 		}
+		break;
+	case COL_REV:
+		if (!cxt->partition && cxt->nslaves == 0)
+			str = sysfs_strdup(&cxt->sysfs, "device/rev");
+		break;
+	case COL_VENDOR:
+		if (!cxt->partition && cxt->nslaves == 0)
+			str = sysfs_strdup(&cxt->sysfs, "device/vendor");
 		break;
 	case COL_SIZE:
-		if (cxt->size) {
-			if (lsblk->bytes) {
-				if (asprintf(&p, "%jd", cxt->size) < 0)
-					p = NULL;
-			} else
-				p = size_to_human_string(SIZE_SUFFIX_1LETTER, cxt->size);
-			if (p)
-				tt_line_set_data(ln, col, p);
-		}
+		if (!cxt->size)
+			break;
+		if (lsblk->bytes)
+			xasprintf(&str, "%jd", cxt->size);
+		else
+			str = size_to_human_string(SIZE_SUFFIX_1LETTER, cxt->size);
+		if (sort)
+			set_sortdata_u64(ln, col, cxt->size);
 		break;
 	case COL_STATE:
-		if (!cxt->partition && !cxt->dm_name) {
-			p = sysfs_strdup(&cxt->sysfs, "device/state");
-		} else if (cxt->dm_name) {
+		if (!cxt->partition && !cxt->dm_name)
+			str = sysfs_strdup(&cxt->sysfs, "device/state");
+		else if (cxt->dm_name) {
 			int x = 0;
 			if (sysfs_read_int(&cxt->sysfs, "dm/suspended", &x) == 0)
-				p = x ? xstrdup("suspended") : xstrdup("running");
+				str = xstrdup(x ? "suspended" : "running");
 		}
-		if (p)
-			tt_line_set_data(ln, col, p);
 		break;
 	case COL_ALIOFF:
-		p = sysfs_strdup(&cxt->sysfs, "alignment_offset");
-		if (p)
-			tt_line_set_data(ln, col, p);
+		str = sysfs_strdup(&cxt->sysfs, "alignment_offset");
+		if (sort)
+			set_sortdata_u64_from_string(ln, col, str);
 		break;
 	case COL_MINIO:
-		p = sysfs_strdup(&cxt->sysfs, "queue/minimum_io_size");
-		if (p)
-			tt_line_set_data(ln, col, p);
+		str = sysfs_strdup(&cxt->sysfs, "queue/minimum_io_size");
+		if (sort)
+			set_sortdata_u64_from_string(ln, col, str);
 		break;
 	case COL_OPTIO:
-		p = sysfs_strdup(&cxt->sysfs, "queue/optimal_io_size");
-		if (p)
-			tt_line_set_data(ln, col, p);
+		str = sysfs_strdup(&cxt->sysfs, "queue/optimal_io_size");
+		if (sort)
+			set_sortdata_u64_from_string(ln, col, str);
 		break;
 	case COL_PHYSEC:
-		p = sysfs_strdup(&cxt->sysfs, "queue/physical_block_size");
-		if (p)
-			tt_line_set_data(ln, col, p);
+		str = sysfs_strdup(&cxt->sysfs, "queue/physical_block_size");
+		if (sort)
+			set_sortdata_u64_from_string(ln, col, str);
 		break;
 	case COL_LOGSEC:
-		p = sysfs_strdup(&cxt->sysfs, "queue/logical_block_size");
-		if (p)
-			tt_line_set_data(ln, col, p);
+		str = sysfs_strdup(&cxt->sysfs, "queue/logical_block_size");
+		if (sort)
+			set_sortdata_u64_from_string(ln, col, str);
 		break;
 	case COL_SCHED:
-		p = get_scheduler(cxt);
-		if (p)
-			tt_line_set_data(ln, col, p);
+		str = get_scheduler(cxt);
 		break;
 	case COL_RQ_SIZE:
-		p = sysfs_strdup(&cxt->sysfs, "queue/nr_requests");
-		if (p)
-			tt_line_set_data(ln, col, p);
+		str = sysfs_strdup(&cxt->sysfs, "queue/nr_requests");
+		if (sort)
+			set_sortdata_u64_from_string(ln, col, str);
 		break;
 	case COL_TYPE:
-		p = get_type(cxt);
-		if (p)
-			tt_line_set_data(ln, col, p);
+		str = get_type(cxt);
+		break;
+	case COL_HCTL:
+	{
+		int h, c, t, l;
+		if (sysfs_scsi_get_hctl(&cxt->sysfs, &h, &c, &t, &l) == 0)
+			xasprintf(&str, "%d:%d:%d:%d", h, c, t, l);
+		break;
+	}
+	case COL_TRANSPORT:
+		str = get_transport(cxt);
 		break;
 	case COL_DALIGN:
-		p = sysfs_strdup(&cxt->sysfs, "discard_alignment");
-		if (cxt->discard && p)
-			tt_line_set_data(ln, col, p);
-		else
-			tt_line_set_data(ln, col, "0");
+		if (cxt->discard)
+			str = sysfs_strdup(&cxt->sysfs, "discard_alignment");
+		if (!str)
+			str = xstrdup("0");
+		if (sort)
+			set_sortdata_u64_from_string(ln, col, str);
 		break;
 	case COL_DGRAN:
-		if (lsblk->bytes)
-			p = sysfs_strdup(&cxt->sysfs, "queue/discard_granularity");
-		else {
+		if (lsblk->bytes) {
+			str = sysfs_strdup(&cxt->sysfs, "queue/discard_granularity");
+			if (sort)
+				set_sortdata_u64_from_string(ln, col, str);
+		} else {
 			uint64_t x;
-
 			if (sysfs_read_u64(&cxt->sysfs,
-					   "queue/discard_granularity", &x) == 0)
-				p = size_to_human_string(SIZE_SUFFIX_1LETTER, x);
+					   "queue/discard_granularity", &x) == 0) {
+				str = size_to_human_string(SIZE_SUFFIX_1LETTER, x);
+				if (sort)
+					set_sortdata_u64(ln, col, x);
+			}
 		}
-		if (p)
-			tt_line_set_data(ln, col, p);
 		break;
 	case COL_DMAX:
-		if (lsblk->bytes)
-			p = sysfs_strdup(&cxt->sysfs, "queue/discard_max_bytes");
-		else {
+		if (lsblk->bytes) {
+			str = sysfs_strdup(&cxt->sysfs, "queue/discard_max_bytes");
+			if (sort)
+				set_sortdata_u64_from_string(ln, col, str);
+		} else {
+			uint64_t x;
+			if (sysfs_read_u64(&cxt->sysfs,
+					   "queue/discard_max_bytes", &x) == 0) {
+				str = size_to_human_string(SIZE_SUFFIX_1LETTER, x);
+				if (sort)
+					set_sortdata_u64(ln, col, x);
+			}
+		}
+		break;
+	case COL_DZERO:
+		if (cxt->discard)
+			str = sysfs_strdup(&cxt->sysfs, "queue/discard_zeroes_data");
+		if (!str)
+			str = xstrdup("0");
+		break;
+	case COL_WSAME:
+		if (lsblk->bytes) {
+			str = sysfs_strdup(&cxt->sysfs, "queue/write_same_max_bytes");
+			if (sort)
+				set_sortdata_u64_from_string(ln, col, str);
+		} else {
 			uint64_t x;
 
 			if (sysfs_read_u64(&cxt->sysfs,
-					   "queue/discard_max_bytes", &x) == 0)
-				p = size_to_human_string(SIZE_SUFFIX_1LETTER, x);
+					   "queue/write_same_max_bytes", &x) == 0) {
+				str = size_to_human_string(SIZE_SUFFIX_1LETTER, x);
+				if (sort)
+					set_sortdata_u64(ln, col, x);
+			}
 		}
-		if (p)
-			tt_line_set_data(ln, col, p);
-		break;
-	case COL_DZERO:
-		p = sysfs_strdup(&cxt->sysfs, "queue/discard_zeroes_data");
-		if (cxt->discard && p)
-			tt_line_set_data(ln, col, p);
-		else
-			tt_line_set_data(ln, col, "0");
+		if (!str)
+			str = xstrdup("0");
 		break;
 	};
+
+	if (str)
+		scols_line_refer_data(ln, col, str);
 }
 
-static void print_device(struct blkdev_cxt *cxt, struct tt_line *tt_parent)
+static void fill_table_line(struct blkdev_cxt *cxt, struct libscols_line *scols_parent)
 {
 	int i;
 
-	cxt->tt_line = tt_add_line(lsblk->tt, tt_parent);
+	cxt->scols_line = scols_table_new_line(lsblk->table, scols_parent);
+	if (!cxt->scols_line)
+		return;
 
 	for (i = 0; i < ncolumns; i++)
-		set_tt_data(cxt, i, get_column_id(i), cxt->tt_line);
+		set_scols_data(cxt, i, get_column_id(i), cxt->scols_line);
 }
 
 static int set_cxt(struct blkdev_cxt *cxt,
 		    struct blkdev_cxt *parent,
-		    const char *name,
-		    int partition)
+		    struct blkdev_cxt *wholedisk,
+		    const char *name)
 {
 	dev_t devno;
 
 	cxt->parent = parent;
 	cxt->name = xstrdup(name);
-	cxt->partition = partition;
+	cxt->partition = wholedisk != NULL;
 
 	cxt->filename = get_device_path(cxt);
 	if (!cxt->filename) {
@@ -650,25 +1077,37 @@ static int set_cxt(struct blkdev_cxt *cxt,
 		return -1;
 	}
 
-	devno = sysfs_devname_to_devno(name,
-			partition && parent ? parent->name : NULL);
+	devno = sysfs_devname_to_devno(name, wholedisk ? wholedisk->name : NULL);
+
 	if (!devno) {
 		warnx(_("%s: unknown device name"), name);
 		return -1;
 	}
 
-	if (sysfs_init(&cxt->sysfs, devno, parent ? &parent->sysfs : NULL)) {
-		warnx(_("%s: failed to initialize sysfs handler"), name);
-		return -1;
+	if (lsblk->inverse) {
+		if (sysfs_init(&cxt->sysfs, devno, wholedisk ? &wholedisk->sysfs : NULL)) {
+			warnx(_("%s: failed to initialize sysfs handler"), name);
+			return -1;
+		}
+		if (parent)
+			parent->sysfs.parent = &cxt->sysfs;
+	} else {
+		if (sysfs_init(&cxt->sysfs, devno, parent ? &parent->sysfs : NULL)) {
+			warnx(_("%s: failed to initialize sysfs handler"), name);
+			return -1;
+		}
 	}
 
 	cxt->maj = major(devno);
 	cxt->min = minor(devno);
+	cxt->size = 0;
 
-	sysfs_read_u64(&cxt->sysfs, "size", &cxt->size);	/* in sectors */
-	cxt->size <<= 9;					/* in bytes */
+	if (sysfs_read_u64(&cxt->sysfs, "size", &cxt->size) == 0)	/* in sectors */
+		cxt->size <<= 9;					/* in bytes */
 
-	sysfs_read_int(&cxt->sysfs, "queue/discard_granularity", &cxt->discard);
+	if (sysfs_read_int(&cxt->sysfs,
+			   "queue/discard_granularity", &cxt->discard) != 0)
+		cxt->discard = 0;
 
 	/* Ignore devices of zero size */
 	if (!lsblk->all_devices && cxt->size == 0)
@@ -681,70 +1120,175 @@ static int set_cxt(struct blkdev_cxt *cxt,
 			return -1;
 		}
 	}
-	cxt->nholders = sysfs_count_dirents(&cxt->sysfs, "holders") +
-			sysfs_count_partitions(&cxt->sysfs, name);
 
+	cxt->npartitions = sysfs_count_partitions(&cxt->sysfs, name);
+	cxt->nholders = sysfs_count_dirents(&cxt->sysfs, "holders");
 	cxt->nslaves = sysfs_count_dirents(&cxt->sysfs, "slaves");
+
+	/* ignore non-SCSI devices */
+	if (lsblk->scsi && sysfs_scsi_get_hctl(&cxt->sysfs, NULL, NULL, NULL, NULL))
+		return -1;
 
 	return 0;
 }
 
+static int process_blkdev(struct blkdev_cxt *cxt, struct blkdev_cxt *parent,
+			  int do_partitions, const char *part_name);
+
 /*
- * List devices (holders) mapped to device
+ * List device partitions if any.
  */
-static int list_holders(struct blkdev_cxt *cxt)
+static int list_partitions(struct blkdev_cxt *wholedisk_cxt, struct blkdev_cxt *parent_cxt,
+			   const char *part_name)
 {
 	DIR *dir;
 	struct dirent *d;
-	struct blkdev_cxt holder = {};
+	struct blkdev_cxt part_cxt = {};
+	int r = -1;
+
+	assert(wholedisk_cxt);
+
+	/*
+	 * Do not process further if there are no partitions for
+	 * this device or the device itself is a partition.
+	 */
+	if (!wholedisk_cxt->npartitions || wholedisk_cxt->partition)
+		return -1;
+
+	dir = sysfs_opendir(&wholedisk_cxt->sysfs, NULL);
+	if (!dir)
+		err(EXIT_FAILURE, _("failed to open device directory in sysfs"));
+
+	while ((d = xreaddir(dir))) {
+		/* Process particular partition only? */
+		if (part_name && strcmp(part_name, d->d_name))
+			continue;
+
+		if (!(sysfs_is_partition_dirent(dir, d, wholedisk_cxt->name)))
+			continue;
+
+		if (lsblk->inverse) {
+			/*
+			 * <parent_cxt>
+			 * `-<part_cxt>
+			 *   `-<wholedisk_cxt>
+			 *    `-...
+			 */
+			if (set_cxt(&part_cxt, parent_cxt, wholedisk_cxt, d->d_name))
+				goto next;
+
+			if (!parent_cxt && part_cxt.nholders)
+				goto next;
+
+			wholedisk_cxt->parent = &part_cxt;
+			fill_table_line(&part_cxt, parent_cxt ? parent_cxt->scols_line : NULL);
+			if (!lsblk->nodeps)
+				process_blkdev(wholedisk_cxt, &part_cxt, 0, NULL);
+		} else {
+			/*
+			 * <parent_cxt>
+			 * `-<wholedisk_cxt>
+			 *   `-<part_cxt>
+			 *    `-...
+			 */
+			int ps = set_cxt(&part_cxt, wholedisk_cxt, wholedisk_cxt, d->d_name);
+
+			/* Print whole disk only once */
+			if (r)
+				fill_table_line(wholedisk_cxt, parent_cxt ? parent_cxt->scols_line : NULL);
+			if (ps == 0 && !lsblk->nodeps)
+				process_blkdev(&part_cxt, wholedisk_cxt, 0, NULL);
+		}
+	next:
+		reset_blkdev_cxt(&part_cxt);
+		r = 0;
+	}
+
+	closedir(dir);
+	return r;
+}
+
+static int get_wholedisk_from_partition_dirent(DIR *dir, const char *dirname,
+				struct dirent *d, struct blkdev_cxt *cxt)
+{
+	char path[PATH_MAX];
+	char *p;
+	int len;
+
+	if ((len = readlink_at(dirfd(dir), dirname,
+			       d->d_name, path, sizeof(path) - 1)) < 0)
+		return 0;
+
+	path[len] = '\0';
+
+	/* The path ends with ".../<device>/<partition>" */
+	p = strrchr(path, '/');
+	if (!p)
+		return 0;
+	*p = '\0';
+
+	p = strrchr(path, '/');
+	if (!p)
+		return 0;
+	p++;
+
+	return set_cxt(cxt, NULL, NULL, p);
+}
+
+/*
+ * List device dependencies: partitions, holders (inverse = 0) or slaves (inverse = 1).
+ */
+static int list_deps(struct blkdev_cxt *cxt)
+{
+	DIR *dir;
+	struct dirent *d;
+	struct blkdev_cxt dep = {};
+	char dirname[PATH_MAX];
+	const char *depname;
 
 	assert(cxt);
 
 	if (lsblk->nodeps)
 		return 0;
 
-	if (!cxt->nholders)
+	if (!(lsblk->inverse ? cxt->nslaves : cxt->nholders))
 		return 0;
 
-	/* Partitions */
-	dir = sysfs_opendir(&cxt->sysfs, NULL);
-	if (!dir)
-		err(EXIT_FAILURE, _("failed to open device directory in sysfs"));
-
-	while ((d = xreaddir(dir))) {
-		if (!sysfs_is_partition_dirent(dir, d, cxt->name))
-			continue;
-
-		if (set_cxt(&holder, cxt, d->d_name, 1)) {
-			reset_blkdev_cxt(&holder);
-			continue;
-		}
-		print_device(&holder, cxt->tt_line);
-		list_holders(&holder);
-		reset_blkdev_cxt(&holder);
-	}
-	closedir(dir);
-
-	/* Holders */
-	dir = sysfs_opendir(&cxt->sysfs, "holders");
+	depname = lsblk->inverse ? "slaves" : "holders";
+	dir = sysfs_opendir(&cxt->sysfs, depname);
 	if (!dir)
 		return 0;
 
+	snprintf(dirname, sizeof(dirname), "%s/%s", cxt->sysfs.dir_path, depname);
+
 	while ((d = xreaddir(dir))) {
-		if (set_cxt(&holder, cxt, d->d_name, 0)) {
-			reset_blkdev_cxt(&holder);
-			continue;
+		/* Is the dependency a partition? */
+		if (sysfs_is_partition_dirent(dir, d, NULL)) {
+		    if (!get_wholedisk_from_partition_dirent(dir, dirname, d, &dep))
+			    process_blkdev(&dep, cxt, 1, d->d_name);
 		}
-		print_device(&holder, cxt->tt_line);
-		list_holders(&holder);
-		reset_blkdev_cxt(&holder);
+		/* The dependency is a whole device. */
+		else if (!set_cxt(&dep, cxt, NULL, d->d_name))
+			process_blkdev(&dep, cxt, 1, NULL);
+
+		reset_blkdev_cxt(&dep);
 	}
 	closedir(dir);
 
 	return 0;
 }
 
-/* Iterate top-level devices in sysfs */
+static int process_blkdev(struct blkdev_cxt *cxt, struct blkdev_cxt *parent,
+			  int do_partitions, const char *part_name)
+{
+	if (do_partitions && cxt->npartitions)
+		return list_partitions(cxt, parent, part_name);
+
+	fill_table_line(cxt, parent ? parent->scols_line : NULL);
+	return list_deps(cxt);
+}
+
+/* Iterate devices in sysfs */
 static int iterate_block_devices(void)
 {
 	DIR *dir;
@@ -755,18 +1299,17 @@ static int iterate_block_devices(void)
 		return EXIT_FAILURE;
 
 	while ((d = xreaddir(dir))) {
-		if (set_cxt(&cxt, NULL, d->d_name, 0))
+		if (set_cxt(&cxt, NULL, NULL, d->d_name))
 			goto next;
 
-		/* Skip devices in the middle of dependence tree */
-		if (cxt.nslaves > 0)
+		if (is_maj_excluded(cxt.maj) || !is_maj_included(cxt.maj))
 			goto next;
 
-		if (!lsblk->all_devices && is_maj_excluded(cxt.maj))
+		/* Skip devices in the middle of dependency tree. */
+		if ((lsblk->inverse ? cxt.nholders : cxt.nslaves) > 0)
 			goto next;
 
-		print_device(&cxt, NULL);
-		list_holders(&cxt);
+		process_blkdev(&cxt, NULL, 1, NULL);
 	next:
 		reset_blkdev_cxt(&cxt);
 	}
@@ -776,73 +1319,93 @@ static int iterate_block_devices(void)
 	return EXIT_SUCCESS;
 }
 
+static char *devno_to_sysfs_name(dev_t devno, char *devname, char *buf, size_t buf_size)
+{
+	char path[PATH_MAX];
+	ssize_t len;
+
+	if (!sysfs_devno_path(devno, path, sizeof(path))) {
+		warn(_("%s: failed to compose sysfs path"), devname);
+		return NULL;
+	}
+
+	len = readlink(path, buf, buf_size - 1);
+	if (len < 0) {
+		warn(_("%s: failed to read link"), path);
+		return NULL;
+	}
+	buf[len] = '\0';
+
+	return xstrdup(strrchr(buf, '/') + 1);
+}
+
 static int process_one_device(char *devname)
 {
 	struct blkdev_cxt parent = {}, cxt = {};
 	struct stat st;
-	char buf[PATH_MAX + 1], *diskname = NULL;
+	char buf[PATH_MAX + 1], *name, *diskname = NULL;
 	dev_t disk = 0;
+	int real_part = 0;
 	int status = EXIT_FAILURE;
 
 	if (stat(devname, &st) || !S_ISBLK(st.st_mode)) {
 		warnx(_("%s: not a block device"), devname);
 		return EXIT_FAILURE;
 	}
-	if (blkid_devno_to_wholedisk(st.st_rdev, buf, sizeof(buf), &disk)) {
-		warn(_("%s: failed to get whole-disk device number"), devname);
+
+	if (!(name = devno_to_sysfs_name(st.st_rdev, devname, buf, PATH_MAX))) {
+		warn(_("%s: failed to get sysfs name"), devname);
 		return EXIT_FAILURE;
 	}
-	if (st.st_rdev == disk) {
-		/*
-		 * unpartitioned device
-		 */
-		if (set_cxt(&cxt, NULL, buf, 0))
-			goto leave;
+
+	if (!strncmp(name, "dm-", 3)) {
+		/* dm mapping is never a real partition! */
+		real_part = 0;
 	} else {
-		/*
-		 * Parititioned, read sysfs name of the device
-		 */
-		ssize_t len;
-		char path[PATH_MAX], *name;
-
-		if (!sysfs_devno_path(st.st_rdev, path, sizeof(path))) {
-			warn(_("failed to compose sysfs path for %s"), devname);
-			goto leave;
+		if (blkid_devno_to_wholedisk(st.st_rdev, buf, sizeof(buf), &disk)) {
+			warn(_("%s: failed to get whole-disk device number"), devname);
+			return EXIT_FAILURE;
 		}
-
-		diskname = xstrdup(buf);
-		len = readlink(path, buf, PATH_MAX);
-		if (len < 0) {
-			warn(_("%s: failed to read link"), path);
-			goto leave;
-		}
-		buf[len] = '\0';
-
-		/* sysfs device name */
-		name = strrchr(buf, '/') + 1;
-
-		if (set_cxt(&parent, NULL, diskname, 0))
-			goto leave;
-		if (set_cxt(&cxt, &parent, name, 1))
-			goto leave;
+		diskname = buf;
+		real_part = st.st_rdev != disk;
 	}
 
-	print_device(&cxt, NULL);
-	list_holders(&cxt);
+	if (!real_part) {
+		/*
+		 * Device is not a partition.
+		 */
+		if (set_cxt(&cxt, NULL, NULL, name))
+			goto leave;
+		process_blkdev(&cxt, NULL, !lsblk->inverse, NULL);
+	} else {
+		/*
+		 * Partition, read sysfs name of the device.
+		 */
+		if (set_cxt(&parent, NULL, NULL, diskname))
+			goto leave;
+		if (set_cxt(&cxt, &parent, &parent, name))
+			goto leave;
+
+		if (lsblk->inverse)
+			process_blkdev(&parent, &cxt, 1, cxt.name);
+		else
+			process_blkdev(&cxt, &parent, 1, NULL);
+	}
+
 	status = EXIT_SUCCESS;
 leave:
-	free(diskname);
+	free(name);
 	reset_blkdev_cxt(&cxt);
 
-	if (st.st_rdev != disk)
+	if (real_part)
 		reset_blkdev_cxt(&parent);
 
 	return status;
 }
 
-static void parse_excludes(const char *str)
+static void parse_excludes(const char *str0)
 {
-	nexcludes = 0;
+	const char *str = str0;
 
 	while (str && *str) {
 		char *end = NULL;
@@ -851,8 +1414,10 @@ static void parse_excludes(const char *str)
 		errno = 0;
 		n = strtoul(str, &end, 10);
 
-		if (end == str || (errno != 0 && (n == ULONG_MAX || n == 0)))
-			err(EXIT_FAILURE, _("failed to parse list '%s'"), str);
+		if (end == str || (end && *end && *end != ','))
+			errx(EXIT_FAILURE, _("failed to parse list '%s'"), str0);
+		if (errno != 0 && (n == ULONG_MAX || n == 0))
+			err(EXIT_FAILURE, _("failed to parse list '%s'"), str0);
 		excludes[nexcludes++] = n;
 
 		if (nexcludes == ARRAY_SIZE(excludes))
@@ -860,57 +1425,110 @@ static void parse_excludes(const char *str)
 			errx(EXIT_FAILURE, _("the list of excluded devices is "
 					"too large (limit is %d devices)"),
 					(int)ARRAY_SIZE(excludes));
+
 		str = end && *end ? end + 1 : NULL;
 	}
 }
 
+static void parse_includes(const char *str0)
+{
+	const char *str = str0;
+
+	while (str && *str) {
+		char *end = NULL;
+		unsigned long n;
+
+		errno = 0;
+		n = strtoul(str, &end, 10);
+
+		if (end == str || (end && *end && *end != ','))
+			errx(EXIT_FAILURE, _("failed to parse list '%s'"), str0);
+		if (errno != 0 && (n == ULONG_MAX || n == 0))
+			err(EXIT_FAILURE, _("failed to parse list '%s'"), str0);
+		includes[nincludes++] = n;
+
+		if (nincludes == ARRAY_SIZE(includes))
+			/* TRANSLATORS: The standard value for %d is 256. */
+			errx(EXIT_FAILURE, _("the list of included devices is "
+					"too large (limit is %d devices)"),
+					(int)ARRAY_SIZE(includes));
+		str = end && *end ? end + 1 : NULL;
+	}
+}
+
+/*
+ * see set_sortdata_u64() and columns initialization in main()
+ */
+static int cmp_u64_cells(struct libscols_cell *a,
+			 struct libscols_cell *b,
+			 __attribute__((__unused__)) void *data)
+{
+	uint64_t *adata = (uint64_t *) scols_cell_get_userdata(a),
+		 *bdata = (uint64_t *) scols_cell_get_userdata(b);
+
+	if (adata == NULL && bdata == NULL)
+		return 0;
+	if (adata == NULL)
+		return -1;
+	if (bdata == NULL)
+		return 1;
+	return *adata == *bdata ? 0 : *adata >= *bdata ? 1 : -1;
+}
+
 static void __attribute__((__noreturn__)) help(FILE *out)
 {
-	int i;
+	size_t i;
 
-	fprintf(out, _(
-		"\nUsage:\n"
-		" %s [options] [<device> ...]\n"), program_invocation_short_name);
+	fputs(USAGE_HEADER, out);
+	fprintf(out, _(" %s [options] [<device> ...]\n"), program_invocation_short_name);
+	fputs(USAGE_OPTIONS, out);
+	fputs(_(" -a, --all            print all devices\n"), out);
+	fputs(_(" -b, --bytes          print SIZE in bytes rather than in human readable format\n"), out);
+	fputs(_(" -d, --nodeps         don't print slaves or holders\n"), out);
+	fputs(_(" -D, --discard        print discard capabilities\n"), out);
+	fputs(_(" -e, --exclude <list> exclude devices by major number (default: RAM disks)\n"), out);
+	fputs(_(" -f, --fs             output info about filesystems\n"), out);
+	fputs(_(" -i, --ascii          use ascii characters only\n"), out);
+	fputs(_(" -I, --include <list> show only devices with specified major numbers\n"), out);
+	fputs(_(" -l, --list           use list format output\n"), out);
+	fputs(_(" -m, --perms          output info about permissions\n"), out);
+	fputs(_(" -n, --noheadings     don't print headings\n"), out);
+	fputs(_(" -o, --output <list>  output columns\n"), out);
+	fputs(_(" -O, --output-all     output all columns\n"), out);
+	fputs(_(" -p, --paths          print complete device path\n"), out);
+	fputs(_(" -P, --pairs          use key=\"value\" output format\n"), out);
+	fputs(_(" -r, --raw            use raw output format\n"), out);
+	fputs(_(" -s, --inverse        inverse dependencies\n"), out);
+	fputs(_(" -S, --scsi           output info about SCSI devices\n"), out);
+	fputs(_(" -t, --topology       output info about topology\n"), out);
+	fputs(_(" -x, --sort <column>  sort output by <column>\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+	fputs(USAGE_HELP, out);
+	fputs(USAGE_VERSION, out);
 
-	fprintf(out, _(
-		"\nOptions:\n"
-		" -a, --all            print all devices\n"
-		" -b, --bytes          print SIZE in bytes rather than in human readable format\n"
-		" -d, --nodeps         don't print slaves or holders\n"
-		" -D, --discard        print discard capabilities\n"
-		" -e, --exclude <list> exclude devices by major number (default: RAM disks)\n"
-		" -f, --fs             output info about filesystems\n"
-		" -h, --help           usage information (this)\n"
-		" -i, --ascii          use ascii characters only\n"
-		" -m, --perms          output info about permissions\n"
-		" -l, --list           use list format ouput\n"
-		" -n, --noheadings     don't print headings\n"
-		" -o, --output <list>  output columns\n"
-		" -P, --pairs          use key=\"value\" output format\n"
-		" -r, --raw            use raw output format\n"
-		" -t, --topology       output info about topology\n"));
+	fprintf(out, _("\nAvailable columns (for --output):\n"));
 
-	fprintf(out, _("\nAvailable columns:\n"));
+	for (i = 0; i < ARRAY_SIZE(infos); i++)
+		fprintf(out, " %11s  %s\n", infos[i].name, _(infos[i].help));
 
-	for (i = 0; i < __NCOLUMNS; i++)
-		fprintf(out, " %10s  %s\n", infos[i].name, _(infos[i].help));
-
-	fprintf(out, _("\nFor more information see lsblk(8).\n"));
+	fprintf(out, USAGE_MAN_TAIL("lsblk(8)"));
 
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
 
-static void __attribute__((__noreturn__))
-errx_mutually_exclusive(const char *opts)
+static void check_sysdevblock(void)
 {
-	errx(EXIT_FAILURE, "%s %s", opts, _("options are mutually exclusive"));
+	if (access(_PATH_SYS_DEVBLOCK, R_OK) != 0)
+		err(EXIT_FAILURE, _("failed to access sysfs directory: %s"),
+		    _PATH_SYS_DEVBLOCK);
 }
 
 int main(int argc, char *argv[])
 {
-	struct lsblk _ls;
-	int tt_flags = TT_FL_TREE;
+	struct lsblk _ls = { .sort_id = -1 };
+	int scols_flags = LSBLK_TREE;
 	int i, c, status = EXIT_FAILURE;
+	char *outarg = NULL;
 
 	static const struct option longopts[] = {
 		{ "all",	0, 0, 'a' },
@@ -919,26 +1537,49 @@ int main(int argc, char *argv[])
 		{ "discard",    0, 0, 'D' },
 		{ "help",	0, 0, 'h' },
 		{ "output",     1, 0, 'o' },
+		{ "output-all", 0, 0, 'O' },
 		{ "perms",      0, 0, 'm' },
 		{ "noheadings",	0, 0, 'n' },
 		{ "list",       0, 0, 'l' },
 		{ "ascii",	0, 0, 'i' },
 		{ "raw",        0, 0, 'r' },
+		{ "inverse",	0, 0, 's' },
 		{ "fs",         0, 0, 'f' },
 		{ "exclude",    1, 0, 'e' },
+		{ "include",    1, 0, 'I' },
 		{ "topology",   0, 0, 't' },
+		{ "paths",      0, 0, 'p' },
 		{ "pairs",      0, 0, 'P' },
+		{ "scsi",       0, 0, 'S' },
+		{ "sort",	1, 0, 'x' },
+		{ "version",    0, 0, 'V' },
 		{ NULL, 0, 0, 0 },
 	};
+
+	static const ul_excl_t excl[] = {       /* rows and cols in in ASCII order */
+		{ 'D','O' },
+		{ 'I','e' },
+		{ 'O','S' },
+		{ 'O','f' },
+		{ 'O','m' },
+		{ 'O','t' },
+		{ 'P','l','r' },
+		{ 0 }
+	};
+	int excl_st[ARRAY_SIZE(excl)] = UL_EXCL_STATUS_INIT;
 
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	lsblk = &_ls;
-	memset(lsblk, 0, sizeof(*lsblk));
 
-	while((c = getopt_long(argc, argv, "abdDe:fhlnmo:Pirt", longopts, NULL)) != -1) {
+	while((c = getopt_long(argc, argv,
+			       "abdDe:fhlnmo:OpPiI:rstVSx:", longopts, NULL)) != -1) {
+
+		err_exclusive_options(c, longopts, excl, excl_st);
+
 		switch(c) {
 		case 'a':
 			lsblk->all_devices = 1;
@@ -950,11 +1591,11 @@ int main(int argc, char *argv[])
 			lsblk->nodeps = 1;
 			break;
 		case 'D':
-			columns[ncolumns++] = COL_NAME;
-			columns[ncolumns++] = COL_DALIGN;
-			columns[ncolumns++] = COL_DGRAN;
-			columns[ncolumns++] = COL_DMAX;
-			columns[ncolumns++] = COL_DZERO;
+			add_column(columns, ncolumns++, COL_NAME);
+			add_column(columns, ncolumns++, COL_DALIGN);
+			add_column(columns, ncolumns++, COL_DGRAN);
+			add_column(columns, ncolumns++, COL_DMAX);
+			add_column(columns, ncolumns++, COL_DZERO);
 			break;
 		case 'e':
 			parse_excludes(optarg);
@@ -963,91 +1604,143 @@ int main(int argc, char *argv[])
 			help(stdout);
 			break;
 		case 'l':
-			if ((tt_flags & TT_FL_RAW)|| (tt_flags & TT_FL_EXPORT))
-				errx_mutually_exclusive("--{raw,list,export}");
-
-			tt_flags &= ~TT_FL_TREE; /* disable the default */
+			scols_flags &= ~LSBLK_TREE; /* disable the default */
 			break;
 		case 'n':
-			tt_flags |= TT_FL_NOHEADINGS;
+			scols_flags |= LSBLK_NOHEADINGS;
 			break;
 		case 'o':
-			ncolumns = string_to_idarray(optarg,
-						columns, ARRAY_SIZE(columns),
-						column_name_to_id);
-			if (ncolumns < 0)
-				return EXIT_FAILURE;
+			outarg = optarg;
+			break;
+		case 'O':
+			for (ncolumns = 0 ; ncolumns < (int) ARRAY_SIZE(infos); ncolumns++)
+				columns[ncolumns] = ncolumns;
+			break;
+		case 'p':
+			lsblk->paths = 1;
 			break;
 		case 'P':
-			tt_flags |= TT_FL_EXPORT;
-			tt_flags &= ~TT_FL_TREE;	/* disable the default */
+			scols_flags |= LSBLK_EXPORT;
+			scols_flags &= ~LSBLK_TREE;	/* disable the default */
 			break;
 		case 'i':
-			tt_flags |= TT_FL_ASCII;
+			scols_flags |= LSBLK_ASCII;
+			break;
+		case 'I':
+			parse_includes(optarg);
 			break;
 		case 'r':
-			tt_flags &= ~TT_FL_TREE;	/* disable the default */
-			tt_flags |= TT_FL_RAW;		/* enable raw */
+			scols_flags &= ~LSBLK_TREE;	/* disable the default */
+			scols_flags |= LSBLK_RAW;		/* enable raw */
+			break;
+		case 's':
+			lsblk->inverse = 1;
 			break;
 		case 'f':
-			columns[ncolumns++] = COL_NAME;
-			columns[ncolumns++] = COL_FSTYPE;
-			columns[ncolumns++] = COL_LABEL;
-			columns[ncolumns++] = COL_TARGET;
+			add_column(columns, ncolumns++, COL_NAME);
+			add_column(columns, ncolumns++, COL_FSTYPE);
+			add_column(columns, ncolumns++, COL_LABEL);
+			add_column(columns, ncolumns++, COL_UUID);
+			add_column(columns, ncolumns++, COL_TARGET);
 			break;
 		case 'm':
-			columns[ncolumns++] = COL_NAME;
-			columns[ncolumns++] = COL_SIZE;
-			columns[ncolumns++] = COL_OWNER;
-			columns[ncolumns++] = COL_GROUP;
-			columns[ncolumns++] = COL_MODE;
+			add_column(columns, ncolumns++, COL_NAME);
+			add_column(columns, ncolumns++, COL_SIZE);
+			add_column(columns, ncolumns++, COL_OWNER);
+			add_column(columns, ncolumns++, COL_GROUP);
+			add_column(columns, ncolumns++, COL_MODE);
 			break;
 		case 't':
-			columns[ncolumns++] = COL_NAME;
-			columns[ncolumns++] = COL_ALIOFF;
-			columns[ncolumns++] = COL_MINIO;
-			columns[ncolumns++] = COL_OPTIO;
-			columns[ncolumns++] = COL_PHYSEC;
-			columns[ncolumns++] = COL_LOGSEC;
-			columns[ncolumns++] = COL_ROTA;
-			columns[ncolumns++] = COL_SCHED;
-			columns[ncolumns++] = COL_RQ_SIZE;
+			add_column(columns, ncolumns++, COL_NAME);
+			add_column(columns, ncolumns++, COL_ALIOFF);
+			add_column(columns, ncolumns++, COL_MINIO);
+			add_column(columns, ncolumns++, COL_OPTIO);
+			add_column(columns, ncolumns++, COL_PHYSEC);
+			add_column(columns, ncolumns++, COL_LOGSEC);
+			add_column(columns, ncolumns++, COL_ROTA);
+			add_column(columns, ncolumns++, COL_SCHED);
+			add_column(columns, ncolumns++, COL_RQ_SIZE);
+			add_column(columns, ncolumns++, COL_RA);
+			add_column(columns, ncolumns++, COL_WSAME);
 			break;
+		case 'S':
+			lsblk->nodeps = 1;
+			lsblk->scsi = 1;
+			add_column(columns, ncolumns++, COL_NAME);
+			add_column(columns, ncolumns++, COL_HCTL);
+			add_column(columns, ncolumns++, COL_TYPE);
+			add_column(columns, ncolumns++, COL_VENDOR);
+			add_column(columns, ncolumns++, COL_MODEL);
+			add_column(columns, ncolumns++, COL_REV);
+			add_column(columns, ncolumns++, COL_TRANSPORT);
+			break;
+		case 'V':
+			printf(UTIL_LINUX_VERSION);
+			return EXIT_SUCCESS;
+		case 'x':
+			scols_flags &= ~LSBLK_TREE; /* disable the default */
+			lsblk->sort_id = column_name_to_id(optarg, strlen(optarg));
+			if (lsblk->sort_id >= 0)
+				break;
+			/* fallthrough */
 		default:
 			help(stderr);
 		}
 	}
 
+	check_sysdevblock();
+
 	if (!ncolumns) {
-		columns[ncolumns++] = COL_NAME;
-		columns[ncolumns++] = COL_MAJMIN;
-		columns[ncolumns++] = COL_RM;
-		columns[ncolumns++] = COL_SIZE;
-		columns[ncolumns++] = COL_RO;
-		columns[ncolumns++] = COL_TYPE;
-		columns[ncolumns++] = COL_TARGET;
+		add_column(columns, ncolumns++, COL_NAME);
+		add_column(columns, ncolumns++, COL_MAJMIN);
+		add_column(columns, ncolumns++, COL_RM);
+		add_column(columns, ncolumns++, COL_SIZE);
+		add_column(columns, ncolumns++, COL_RO);
+		add_column(columns, ncolumns++, COL_TYPE);
+		add_column(columns, ncolumns++, COL_TARGET);
 	}
 
-	if (nexcludes && lsblk->all_devices)
-		errx_mutually_exclusive("--{all,exclude}");
-	else if (!nexcludes)
+	if (outarg && string_add_to_idarray(outarg, columns, ARRAY_SIZE(columns),
+					 &ncolumns, column_name_to_id) < 0)
+		return EXIT_FAILURE;
+
+	if (nexcludes == 0 && nincludes == 0)
 		excludes[nexcludes++] = 1;	/* default: ignore RAM disks */
+
+	if (lsblk->sort_id >= 0 && column_id_to_number(lsblk->sort_id) < 0)
+		errx(EXIT_FAILURE, _("the sort column has to be among the output columns"));
+
+	mnt_init_debug(0);
+	scols_init_debug(0);
+
 	/*
 	 * initialize output columns
 	 */
-	if (!(lsblk->tt = tt_new_table(tt_flags)))
+	if (!(lsblk->table = scols_new_table()))
 		errx(EXIT_FAILURE, _("failed to initialize output table"));
+	scols_table_enable_raw(lsblk->table, !!(scols_flags & LSBLK_RAW));
+	scols_table_enable_export(lsblk->table, !!(scols_flags & LSBLK_EXPORT));
+	scols_table_enable_ascii(lsblk->table, !!(scols_flags & LSBLK_ASCII));
+	scols_table_enable_noheadings(lsblk->table, !!(scols_flags & LSBLK_NOHEADINGS));
 
 	for (i = 0; i < ncolumns; i++) {
 		struct colinfo *ci = get_column_info(i);
-		int fl = ci->flags;
+		struct libscols_column *cl;
+		int id = get_column_id(i), fl = ci->flags;
 
-		if (!(tt_flags & TT_FL_TREE) && get_column_id(i) == COL_NAME)
-			fl &= ~TT_FL_TREE;
+		if (!(scols_flags & LSBLK_TREE) && id == COL_NAME)
+			fl &= ~SCOLS_FL_TREE;
 
-		if (!tt_define_column(lsblk->tt, ci->name, ci->whint, fl)) {
+		cl = scols_table_new_column(lsblk->table, ci->name, ci->whint, fl);
+		if (!cl) {
 			warn(_("failed to initialize output column"));
 			goto leave;
+		}
+		if (!lsblk->sort_col && lsblk->sort_id == id) {
+			lsblk->sort_col = cl;
+			scols_column_set_cmpfunc(cl,
+				ci->sort_type == SORT_STRING ?
+				scols_cmpstr_cells : cmp_u64_cells, NULL);
 		}
 	}
 
@@ -1056,9 +1749,22 @@ int main(int argc, char *argv[])
 	else while (optind < argc)
 		status = process_one_device(argv[optind++]);
 
-	tt_print_table(lsblk->tt);
+	if (lsblk->sort_col)
+		scols_sort_table(lsblk->table, lsblk->sort_col);
+
+	scols_print_table(lsblk->table);
 
 leave:
-	tt_free_table(lsblk->tt);
+	if (lsblk->sort_col)
+		unref_sortdata(lsblk->table);
+
+	scols_unref_table(lsblk->table);
+
+	mnt_unref_table(mtab);
+	mnt_unref_table(swaps);
+	mnt_unref_cache(mntcache);
+#ifdef HAVE_LIBUDEV
+	udev_unref(udev);
+#endif
 	return status;
 }

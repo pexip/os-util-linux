@@ -1,3 +1,489 @@
+util-linux (2.25.2-6pexip1) pexip; urgency=low
+
+  * New upstream release
+
+ -- John-Mark Bell <jmb@pexip.com>  Thu, 30 Mar 2017 22:51:04 +0100
+
+util-linux (2.25.2-6) unstable; urgency=medium
+
+  * Add patch to fix `unshare -r` regression.
+    - Cherry-picked upstream commit 0bf159413bdb9e32486
+      "unshare: Fix --map-root-user to work on new kernels"
+    Thanks to Kirill Smelkov (Closes: #780841)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Mon, 30 Mar 2015 00:28:09 +0200
+
+util-linux (2.25.2-5) unstable; urgency=medium
+
+  * Revert "Trigger update of initramfs on upgrades" (Closes: #773354)
+  * Revert "Add Breaks: live-tools (<<4.0~alpha17-1)"
+    - No longer needed since dropping the update-initramfs call.
+  * Fix typo in symlink_to_dir and bump prior-version
+    - in other words, fix 2.25.2-4.1 upload. (Closes: #775350)
+  * Add Breaks: grml-debootstrap (<< 0.68)
+    - previous versions does not work properly with new util-linux which
+      always identifies atleast one label for every partition (PARTUUID)
+      so lets prevent partial upgrades. (Closes: #772846)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Tue, 03 Feb 2015 20:55:38 +0100
+
+util-linux (2.25.2-4.2) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Add Breaks: live-tools (<<4.0~alpha17-1) (Closes: #773354)
+
+ -- Gaudenz Steinlin <gaudenz@debian.org>  Sun, 01 Feb 2015 13:16:26 +0100
+
+util-linux (2.25.2-4.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Fix unhandled symlink_to_dir conversion for
+    /usr/share/doc/libblkid-dev (Closes: #775350)
+
+ -- Jonathan Wiltshire <jmw@debian.org>  Sat, 17 Jan 2015 16:17:40 +0000
+
+util-linux (2.25.2-4) unstable; urgency=medium
+
+  [ David Prévot ]
+  * Update POT and PO files and clean up .gmo files
+  * Update German translation, thanks to Mario Blättermann
+  * Update Spanish translation, thanks to Antonio Ceballos Roa
+  * Update French translation (Closes: #770506)
+  * Update Ukrainian translation, thanks to Yuri Chornoivan
+  * Update Brazilian Portuguese translation, thanks to Rafael Ferreira
+  * Update Chinese (simplified) translation, thanks to Wylmer Wang
+  * Update Danish translation, thanks to Joe Hansen
+  * Update Finnish translation, thanks to Lauri Nurmi
+  * Update Japanese translation, thanks to Takeshi Hamasaki
+  * Update Russian translation, thanks to Pavel Maryanov
+  * Trivial unfuzzy
+
+  [ Andreas Henriksson ]
+  * Add debian/patches/libblkid-care-about-unsafe-chars-in-cache.patch
+    - from upstream git master commit 89e90ae7
+      "libblkid: care about unsafe chars in cache"
+    - This fixes CVE-2014-9114: blkid command injection
+      see https://security-tracker.debian.org/tracker/CVE-2014-9114
+    Thanks to Salvatore Bonaccorso (Closes: #771274)
+  * libuuid1: add passwd dependency for user migration (Closes: #771092)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Fri, 12 Dec 2014 18:23:24 +0100
+
+util-linux (2.25.2-3) unstable; urgency=medium
+
+  * Ship fstrim timer/service units as examples only (Closes: #767194)
+    - this works around #757891 and #767429 / #760168
+
+ -- Andreas Henriksson <andreas@fatal.se>  Thu, 06 Nov 2014 13:54:04 +0100
+
+util-linux (2.25.2-2) unstable; urgency=medium
+
+  * Only ship fstrim service and timer on linux
+
+ -- Andreas Henriksson <andreas@fatal.se>  Fri, 24 Oct 2014 18:57:29 +0200
+
+util-linux (2.25.2-1) unstable; urgency=medium
+
+  * Imported Upstream version 2.25.2
+    (Closes: #586179, #765306, #594005, #766077, #764331)
+  * Rebase patch queue on top of v2.25.2
+    - This drops the following patches now included upstream:
+      Report-correct-disk-size-on-GNU-kFreeBSD.-Thanks-Tuc.patch
+      remaining-kFreeBSD-hackery-for-building.patch
+      2.20.1-1.2.patch
+      kFreeBSD-add-hacks-in-ipcrm-to-avoid-FTBFS.patch
+      libmount-only-invoke-loopcxt-on-linux.patch
+      libmount-only-include-context-on-linux.patch
+      build-sys-build-libmount-everywhere.patch
+      build-sys-use-lutil-for-BSD-only.patch
+      libmount-fix-mnt_is_readonly-ifdef.patch
+      flock-zero-timeout-is-valid.patch
+      build-sys-check-for-libtoolize-rather-than-libtool.patch
+      script-may-be-hangs.patch
+  * Ship fstrim service and timer
+
+ -- Andreas Henriksson <andreas@fatal.se>  Fri, 24 Oct 2014 15:46:45 +0200
+
+util-linux (2.25.1-5) unstable; urgency=medium
+
+  * Add debian/patches/build-sys-check-for-libtoolize-rather-than-libtool.patch
+    - Cherry-picked from upstream commit e71b0aadaa20b21e9
+      "build-sys: check for libtoolize rather than libtool"
+    Thanks to Helmut Grohne for fixing this upstream (and more).
+    (Closes: #764387)
+  * Add debian/patches/script-may-be-hangs.patch
+    - Cherry-picked from upstream commit 032228c9af6fbda5177c
+      "script: may be hangs" (Closes: #764547)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Wed, 15 Oct 2014 09:19:30 +0200
+
+util-linux (2.25.1-4) unstable; urgency=medium
+
+  [ Sebastian Ramacher ]
+  * Use usermod instead of chsh in postinst user migration (Closes: #764244)
+
+  [ Andreas Henriksson ]
+  * Use a single usermod call in postinst user migration
+  * Silence the attempt to stop uuidd before migration (Closes: #764159)
+
+  [ Helmut Grohne ]
+  * Pass -std=gnu99 to CC when cross-building. (Closes: #764392)
+
+  [ Andreas Henriksson ]
+  * Add debian/patches/libmount-fix-mnt_is_readonly-ifdef.patch
+    - Cherry-picked from upstream commit 473c5fb86c43eed
+      "libmount: fix mnt_is_readonly() #ifdef"
+    - Fixes Hurd build failure.
+    Thanks to Pino Toscano for fixing this upstream! (Closes: #764418)
+  * hwclock-set: use both systz and hctosys.
+    Thanks to Ben Hutchings for debugging this. (Closes: #764552)
+  * Add debian/patches/flock-zero-timeout-is-valid.patch
+    - Cherry-picked from upstream commit c4604c38b503c8c46e
+      "flock: zero timeout is valid" (Closes: #764660)
+  * Trigger update of initramfs on upgrades
+
+ -- Andreas Henriksson <andreas@fatal.se>  Sat, 11 Oct 2014 17:45:20 +0200
+
+util-linux (2.25.1-3) unstable; urgency=medium
+
+  [ Ben Hutchings ]
+  * hwclock-set: Don't use 'touch' to create stamp file, as it may not be
+    included in an initramfs (Really closes: #763823)
+
+  [ Andreas Henriksson ]
+  * Put uuid-runtime in Section utils.
+    Thanks to Ben Finney for the suggestion (Closes: #764039)
+  * Cherry-pick upstream commit 8026fa9bc752
+    "build-sys: use -lutil for BSD only"
+    debian/patches/build-sys-use-lutil-for-BSD-only.patch
+  * Upload to unstable.
+
+ -- Andreas Henriksson <andreas@fatal.se>  Sun, 05 Oct 2014 19:06:42 +0200
+
+util-linux (2.25.1-2) experimental; urgency=medium
+
+  [ Andreas Henriksson ]
+  * Make libmount-dev depend on libblkid-dev (LP: #1096581)
+  * Drop uuid-dev dependency in libmount-dev package
+  * Drop explicit disabling of pivot_root on non-linux
+  * Attempt to stop uuidd before usermod in postinst (LP: #1374648)
+  * Change build-dep to new unified libsystemd-dev (Closes: #763808)
+
+  [ Ben Hutchings ]
+  * hwclock-set: Use stamp file in /run/udev to ensure we set the clock
+    only once if installed in the initramfs (Closes: #763823)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Fri, 03 Oct 2014 10:40:53 +0200
+
+util-linux (2.25.1-1) experimental; urgency=medium
+
+  * Rename libuuid user to uuidd in libuuidd1 postinst as well
+  * Imported Upstream version 2.25.1
+  * Drop duplicated BSD-3-clause license text from debian/copyright
+
+ -- Andreas Henriksson <andreas@fatal.se>  Mon, 08 Sep 2014 01:50:26 +0200
+
+util-linux (2.25.1~rc1-1) experimental; urgency=medium
+
+  * Restart uuidd /after/ upgrade.
+    Thanks to Michael Biebl for the suggestion.
+  * Cherry-pick fdisk/bsd test fix from upstream.
+    Thanks to Aurélien Jarno for solving and submitting this upstream
+  * Imported Upstream version 2.25.1~rc1
+  * Rebase debian patch set on top of 2.25.1~rc1
+    - Drop patches for things fixed in new upstream release:
+      debian/patches/cfdisk-reenable-cursor-when-quitting.patch
+      debian/patches/fdisk-fix-l-device.patch
+      debian/patches/tests-allow-non-inotify-tailf-to-keep-up.patch
+      debian/patches/tests-fix-fdisk-bsd-for-the-two-possible-sectors-off.patch
+    - Refresh remaining patches.
+  * Mark libmount context symbols linux-any
+  * Add patches to make libmount build on kfreebsd
+  * Mark libmount1 as to be built everywhere
+  * Install fsck on every architecture
+  * Add NEWS entry about reinstating fsck on kFreeBSD.
+    Disclaimer: I, Andreas Henriksson, will *not* maintain the patches.
+
+ -- Andreas Henriksson <andreas@fatal.se>  Sat, 30 Aug 2014 18:32:25 -0700
+
+util-linux (2.25-8) experimental; urgency=medium
+
+  * Only install linux32/64 manpages on linux-any
+  * Fix uuid-runtime.postinst to skip rmdir when not needed (Closes: #757432)
+  * fdisk-udeb: use dh-exec to skip sfdisk install on sparc
+
+ -- Andreas Henriksson <andreas@fatal.se>  Fri, 08 Aug 2014 09:38:18 +0200
+
+util-linux (2.25-7) experimental; urgency=medium
+
+  * Mangle installed files on sparc (sfdisk)
+  * Fix sparc install mangling
+  * Use --disable-mountpoint instead of rm
+  * Use dh-exec (>= 0.13)
+  * Install mips,ppc,s390 setarch symlinks and manpages
+
+ -- Andreas Henriksson <andreas@fatal.se>  Fri, 08 Aug 2014 00:01:38 +0200
+
+util-linux (2.25-6) experimental; urgency=medium
+
+  The "Jonno was here" release.
+
+  [ Jon Severinsson ]
+  * Drop changelog file from the ancient mount source package.
+
+  [ Andreas Henriksson ]
+  * util-linux: Drop all (obsolete) Replaces/Conflicts
+
+  [ Jon Severinsson ]
+  * Add Replaces/Breaks bash-completion (<< 1:2.1-3).
+  * Multiple cleanups in debian/control.
+  * Minor cleanup of debian/rules.
+  * Use filter, not findstring, for arch matching
+  * Simplify linux-only install file handling
+  * Use debian/*-udeb.install files for udeb packages.
+  * Fix util-linux lintian override.
+
+  [ Andreas Henriksson ]
+  * Minor uuid-runtime.postinst cleanup
+  * Add d/p/cfdisk-reenable-cursor-when-quitting.patch (Closes: #755991)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Sun, 03 Aug 2014 23:58:41 +0200
+
+util-linux (2.25-5) experimental; urgency=medium
+
+  The "big maintainer-script cleanup" release
+
+  * Drop debian/uuid-runtime.prerm (and related lintian override)
+    - dh_installinit will automatically start and stop services as needed.
+  * Drop debian/libuuid1.postinst (user/group addition)
+  * uuid-runtime: improved user/group handling (Closes: #734544)
+    - pre-depend on new libuuid1 to make sure no old user handling is present
+    - add code to rename existing libuuid user/group to uuidd
+      and set nologin shell and new home directory.
+    - switch to adduser instead of opencoding it since uuid-runtime
+      is Priority: optional (as opposed to libuuid1 which is required)
+      and adduser --system should just do the right thing.
+    - change user/group addition to add uuidd instead of libuuid.
+    - stop making uuidd setuid, not needed and we don't want anyone to
+      be able to kill the daemon (via uuidd -k) for example.
+  * Drop d/p/Use-libuuid-user-group-in-sysvinit-script-systemd-un.patch
+  * util-linux: drop obsolete hwclock handling from maint-scripts
+  * util-linux: drop obsolete update-mime calls
+  * util-linux: drop obsolete 2.17 upgrade warning
+  * util-linux: drop obsolete /etc/default/rcS -> /etc/adjtime migration
+  * Reindent/cleanup all maintainer scripts
+  * Drop outdated debian/README.Debian.hwclock (Closes: #263116)
+  * Drop unused debian/rejected-upstream
+  * Drop outdated debian/uuid-dev.README.Debian
+  * Drop diffutils build-dependency
+  * Drop debian/*.dirs
+  * Attempt to avoid dumb term problem in "more: regexp" test
+
+ -- Andreas Henriksson <andreas@fatal.se>  Thu, 31 Jul 2014 00:55:15 +0200
+
+util-linux (2.25-4) experimental; urgency=medium
+
+  * Minor improvements to verbose-tests.patch
+  * Drop renice bash completion for now (Closes: #756132)
+  * Include dpkg-dev's pkg-info.mk to get package version
+  * Stop creating unused /etc/fstab.d directory (Closes: #666163)
+  * Use proper getty [hurd-any] for Conflicts/Replaces
+  * Add patches cherry-picked from upstream git master
+    - debian/patches/tests-allow-non-inotify-tailf-to-keep-up.patch
+      fixes failing testcase on hurd/kfreebsd.
+    - debian/patches/fdisk-fix-l-device.patch (Closes: #756177)
+      fixes regression in fdisk listing partition.
+
+ -- Andreas Henriksson <andreas@fatal.se>  Wed, 30 Jul 2014 17:24:49 +0200
+
+util-linux (2.25-3) experimental; urgency=medium
+
+  * Don't ship dmesg bash-completions for now (Closes: #755982)
+  * Add verbose-tests.patch to get more info from tests
+  * Make testsuite non-fatal for now (Closes: #755987)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Sat, 26 Jul 2014 01:58:53 +0200
+
+util-linux (2.25-2) experimental; urgency=medium
+
+  [ Andreas Henriksson ]
+  * Add runuser pam configuration from Fedora
+  * Install bash-completion for selected utilities
+  * Prevent dh_installman from messing up rename.ul manpage (Closes: #755926)
+  * Drop misplaced Multi-Arch property on libblkid1-udeb
+
+  [ Aurelien Jarno ]
+  * Set system time directly from hw clock in udev rule (Closes: #751238)
+
+  [ Mike ]
+  * Don't require nfs-common on NFS-rooted system (Closes: #605439)
+
+  [ Benda Xu ]
+  * Fine-tune hwclock.sh init script LSB dependencies (Closes: #736400)
+
+  [ Andreas Henriksson ]
+  * Keep mandatory Required-Stop LSB header in hwclock.sh init script
+  * Revert "Disable tests for now"
+  * Fix binary-arch only builds (Closes: #755972)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Fri, 25 Jul 2014 02:09:39 +0200
+
+util-linux (2.25-1) experimental; urgency=medium
+
+  * Imported Upstream version 2.25
+  * Rebase patch queue on top of new upstream release
+    + Drop debian/patches for unused and removed mount-deprecated
+      - tries-to-umount-proc-when-told-to-umount-some-dir-pr.patch
+      - mount-segfault-when-creating-mtab-and-cannot-determi.patch
+    + Update cfdisk.8 patch to modify new manpage file.
+    + Remaining changes are all trivial refreshes.
+  * Update debian/README.source instructions
+  * Fix PPC fdisk/ddisk rename in debian/rules
+  * Stop installing cytune which is no longer available
+  * Use new consolidated systemd configure option
+  * Add util-linux.NEWS entry
+  * Explicitly configure without python for now
+  * Only install i386 and x86_64 binaries on selected architectures
+  * Add new libsmartcols packages
+  * Update libblkid and libmount symbols/shlibs
+  * Drop unused and uninstallable libmount1-udeb (Closes: #723168)
+  * Update debian/copyright for upstream v2.25
+  * util-linux: Install new terminal-colors.d(5) manpage
+  * Explicitly disable unused utilities
+  * Use correct configure options on non-linux
+  * Add debian/patches/kFreeBSD-add-hacks-in-ipcrm-to-avoid-FTBFS.patch
+    - fixes build failure in ipcrm on kFreeBSD
+  * Skip installing a whole bunch of utils on non-linux
+  * Add WARNING about missing fsck on non-linux to util-linux.NEWS
+
+ -- Andreas Henriksson <andreas@fatal.se>  Wed, 23 Jul 2014 23:37:43 +0200
+
+util-linux (2.24.2-1) experimental; urgency=low
+
+  [ LaMont Jones ]
+  * new branch, with separated patches.
+
+  [ Andreas Henriksson ]
+  * New upstream release (Closes: #678446).
+  * Rebase patches/v2.20.1 branch (commit ad744ecf) on upstream v2.24.2 tag
+    - drop patches for issues that has been fixed upstream:
+      [8f1c9b31] "Fix cve-2013-0157: mount discloses information about ..."
+      [f08936ba] "sfdisk: fix calculation due to type mismatch (ix86)"
+      [3f051232] "Fix typo in misc-utils/blkid.c"
+      [b9b0ed84] "drop my_dev_t.h, based on 88d52b16ce4df..."
+      (Squashed into man-page-tweaks-cleanup-my_dev_t.h-ancient-stuff.patch)
+      [9ecca8da] "sparc-utils 'sparc64' binary sets ADDR_LIMIT_32BIT. ..."
+      [b153d64e] "Fix typo in unshare manpage."
+      [01cfac31] "agetty: don't use log_err() for non-fatal errors"
+    - drop translation updates conflicting with upstream translation updates:
+      [83bc98c2] "Translation updates, various bugs."
+    - drop patch for feature deprecated upstream:
+      [23c9f34b] "hash passphrases - debian compatibility"
+      (losetup encryption support dropped, use cryptsetup.)
+  * debian/source/format: switch to 3.0 (quilt)
+  * gbp-pq export patches in quilt format from rebased branch
+  * debian/watch: fix it - use http and xz extension
+  * debian/control: use source:Upstream-Version instead of reinventing it
+  * Switch to dh7 rules and use dh-autoreconf
+  * bsdutils: don't try to install removed files
+  * Bump debhelper compat to 9
+  * Update libblkid1 and libmount1 with added symbols
+  * Documentation files has been moved/renamed
+    - also ship all release notes (Closes: #656228)
+  * util-linux-locales: use wildcard to catch all locales
+  * Upstream no longer ships ddate
+  * Drop obsolete --enable-rdev configure switch
+  * Run wrap-and-sort
+  * Add systemd [linux-any] build dependency
+    - gets rid of an ugly configure warning
+  * Bump Standards-Version to 3.9.5
+  * Incorporate NMU changelogs for 2.20.1-5.[678]
+    - Their actual changes are all obsoleted by upstream changes.
+  * Install upstream fstab example in mount docs dir
+  * Install debian fstab example in mount again under new name
+  * Add debian/util-linux.NEWS documenting major changes
+  * Install manpages in util-linux package
+  * Use dh_installinit to install hwclock init.d and default files
+  * Install getopt-parse bash and tcsh examples in util-linux docs dir
+  * Let dh_installmime install util-linux mime config
+  * Let dh_installdirs create /etc/fstab.d/
+  * Split up old debian/rules hacks further
+  * lintian said mount needed ${misc:Depends} dependency
+  * Add mount/losetup encryption NEWS and recommend cryptsetup
+  * debian/watch: use https url
+  * debian/copyright: update and make machine readable (DEP-5)
+    (Closes: #651676)
+  * Add debian/gbp.conf
+  * Add myself to uploaders, with Adam Conrads blessing.
+  * Point Vcs-* fields to new collab-maint repository (Closes: #696005)
+  * debian/gbp.conf: gbp-pq --no-patch-numbers
+  * Drop Homepage field (Closes: #657757)
+  * Bump shlibs to latest API according to symbols (Closes: #588183)
+  * Fix hwclock.sh to add a final newline in /etc/adjtime (Closes: #699554)
+  * Stop installing extra license files
+  * debian/copyright: Add missing License paragraphs
+  * debian/gbp.conf: Enable pristine-tar
+  * Imported Upstream version 2.24.2
+  * Add debian/README.source
+  * Improve package descriptions (Closes: #631860)
+
+  [ Justin B Rye ]
+  * Improve bsdutils package description (Closes: #532715)
+
+  [ Bjarni Ingi Gislason ]
+  * Use simple (ascii) punctuation marks in debian/changelog
+    - replaces fancy utf-8 characters in 2.20.1-1.1 and 2.17.2-3.1
+    (Closes: #745681)
+
+  [ Andreas Henriksson ]
+  * Use ${misc:Pre-Depends} instead of hardcoding multiarch-support
+  * Fix dh_makeshlibs to add udebs in generated shlibs
+  * Multi-arch -dev packages (Closes: #731308)
+  * Add missing Multi-Arch line to libmount1 package (Closes: #696004)
+  * Put util-linux-locales in section localization
+
+  [ Martin Pitt ]
+  * Fix check for systemd in hwclock-set udev script (Closes: #703597)
+
+  [ Andreas Henriksson ]
+  * Fix mismerge in remaining-kFreeBSD-hackery-for-building.patch
+  * Remove /usr/doc/libblkid-dev symlink in postinst/prerm (Closes: #622742)
+  * Add patch to use "libuuid" user/group instead of "uuidd"
+  * Install uuidd sysvinit script and systemd units (Closes: #719759)
+  * Explicitly configure with socket activation enabled
+  * Ship new utilities
+    chcpu, blkdiscard, wdctl, resizepart, lslocks, nsenter, prlimit, utmpdump
+  * Build-depend on libpam0g-dev and ship runuser utility
+  * Ship mkfs.cramfs and fsck.cramfs manpages
+  * Drop obsolete configure switch enable-libmount-mount
+  * Override localstatedir to /run instead of /var
+  * Ship runuser manpage
+
+  [ Paulo Flabiano Smorigo ]
+  * Add ppc64el to archs where fdisk is renamed ddisk (Closes: #748365)
+
+  [ Andreas Henriksson ]
+  * Attempt to reinstate cross-building support
+  * Disable tests for now
+    - Requires network access and prints scary warnings
+  * Fix Multiarch-support-in-util-linux-build.patch
+    - Make sure @libexecdir@ gets expanded in pkg-config files
+
+ -- Andreas Henriksson <andreas@fatal.se>  Wed, 23 Jul 2014 08:42:00 +0200
+
+util-linux (2.20.1-5.8) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  
+  [Martin Pitt]
+  * misc-utils/wipefs.c: In --all mode, wipe several times until no further
+    signatures are found. This is required for file systems like VFAT which
+    can be detected in multiple different ways. This is fixed properly in 2.21
+    (see LP #1012081), but does not backport well, so use this local hack for
+    now. (LP: #1046665, Closes: #695473)
+
+ -- intrigeri <intrigeri@debian.org>  Mon, 02 Jun 2014 10:49:39 +0200
+
 util-linux (2.20.1-5.7pexip1) pexip; urgency=low
 
   * Prepare Pexip packaging
@@ -210,7 +696,7 @@ util-linux (2.20.1-1.1) unstable; urgency=high
     (Closes: #650534).
   * Add autoconf, automake, autopoint, and libtool to Build-Depends
     accordingly.
-  * Set severity to “high” for the RC bug fix.
+  * Set severity to "high" for the RC bug fix.
 
  -- Cyril Brulebois <kibi@debian.org>  Thu, 05 Jan 2012 18:24:37 +0100
 
@@ -450,7 +936,7 @@ util-linux (2.17.2-3.1) unstable; urgency=high
   * Apply trivial patch by Adam D. Barratt (thanks!): Only attempt to link
     locale-specific files in to the cfdisk-udeb hierarchy if cfdisk-udeb
     is actually being built.  Closes: #581725
-  * Set urgency to “high” since some packages are waiting for util-linux.
+  * Set urgency to "high" since some packages are waiting for util-linux.
 
  -- Cyril Brulebois <kibi@debian.org>  Sun, 20 Jun 2010 16:03:46 +0200
 

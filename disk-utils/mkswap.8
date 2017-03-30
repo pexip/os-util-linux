@@ -32,14 +32,14 @@ parameter is superfluous but retained for backwards compatibility.
 (It specifies the desired size of the swap area in 1024-byte blocks.
 .B mkswap
 will use the entire partition or file if it is omitted.
-Specifying it is unwise -- a typo may destroy your disk.)
+Specifying it is unwise \(en a typo may destroy your disk.)
 
 After creating the swap area, you need the
 .B swapon
 command to start using it.  Usually swap areas are listed in
 .I /etc/fstab
 so that they can be taken into use at boot time by a
-.B swapon -a
+.B swapon \-a
 command in some boot script.
 
 .SH WARNING
@@ -54,7 +54,7 @@ like many others mkfs-like utils,
 However,
 .B mkswap
 refuses to erase the first block on a device with a disk
-label (SUN, BSD, ...) and on a whole disk (e.g. /dev/sda).
+label (SUN, BSD, \&...\&).
 
 .SH OPTIONS
 .TP
@@ -70,8 +70,7 @@ or partition it resides on.
 
 Also, without this option,
 .B mkswap
-will refuse to erase the first block on a device with a partition table and on
-a whole disk (e.g. /dev/sda).
+will refuse to erase the first block on a device with a partition table.
 .TP
 .BR \-L , " \-\-label " \fIlabel\fR
 Specify a \fIlabel\fR for the device, to allow
@@ -104,34 +103,29 @@ Display version information and exit.
 .SH NOTES
 The maximum useful size of a swap area depends on the architecture and
 the kernel version.
-It is roughly 2GiB on i386, PPC, m68k and ARM, 1GiB on sparc, 512MiB on mips,
-128GiB on alpha, and 3TiB on sparc64.  For kernels after 2.3.3 (May 1999) there is no
-such limitation.
 
-Note that before version 2.1.117 the kernel allocated one byte for each page,
-while it now allocates two bytes, so that taking into use a swap area of 2 GiB
-might require 2 MiB of kernel memory.
+The maximum number of the pages that is possible to address by swap area header
+is 4294967295 (UINT_MAX).  The remaining space on the swap device is ignored.
 
-Presently, Linux allows 32 swap areas (this was 8 before Linux 2.4.10 (Sep 2001)).
+Presently, Linux allows 32 swap areas.
 The areas in use can be seen in the file
 .I /proc/swaps
-(since 2.1.25 (Sep 1997)).
 
 .B mkswap
 refuses areas smaller than 10 pages.
 
 If you don't know the page size that your machine uses, you may be
-able to look it up with "cat /proc/cpuinfo" (or you may not --
+able to look it up with "cat /proc/cpuinfo" (or you may not \(en
 the contents of this file depend on architecture and kernel version).
 
 To set up a swap file, it is necessary to create that file before
 initializing it with
 .BR mkswap ,
-e.g. using a command like
+e.g.\& using a command like
 
 .nf
 .RS
-# dd if=/dev/zero of=swapfile bs=1024 count=65536
+# fallocate \-\-length 8GiB swapfile
 .RE
 .fi
 
@@ -139,6 +133,9 @@ Note that a swap file must not contain any holes (so, using
 .BR cp (1)
 to create the file is not acceptable).
 
+.SH ENVIRONMENT
+.IP LIBBLKID_DEBUG=0xffff
+enables debug output.
 
 .SH "SEE ALSO"
 .BR fdisk (8),

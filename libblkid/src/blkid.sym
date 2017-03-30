@@ -49,8 +49,6 @@ global:
 	blkid_evaluate_tag;
 	blkid_free_probe;
 	blkid_new_probe;
-	blkid_probe_all;
-	blkid_probe_all_new;
 	blkid_probe_filter_types;
 	blkid_probe_filter_usage;
 	blkid_probe_get_value;
@@ -140,3 +138,27 @@ global:
 	blkid_superblocks_get_name;
 } BLKID_2.18;
 
+/*
+ * symbols since util-linux 2.21
+ */
+BLKID_2.21 {
+global:
+	blkid_do_wipe;
+} BLKID_2.20;
+
+/*
+ * symbols since util-linux 2.23
+ */
+BLKID_2.23 {
+global:
+	blkid_probe_step_back;
+	blkid_parttable_get_id;
+	blkid_init_debug;
+} BLKID_2.21;
+
+/*
+ * symbols since util-linux 2.25
+ */
+BLKID_2.25 {
+	blkid_partlist_get_partition_by_partno;
+} BLKID_2.23;

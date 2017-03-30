@@ -3,12 +3,13 @@
 .SH NAME
 mkfs \- build a Linux filesystem
 .SH SYNOPSIS
-.SH SYNOPSIS
 .B mkfs
 .RI [ options ]
 .RB [ \-t
-.IR "type fs-options" ] " device " [ size ]
+.IR type "] [" fs-options ] " device " [ size ]
 .SH DESCRIPTION
+.B This mkfs frontend is deprecated in favour of filesystem specific mkfs.<type> utils.
+.PP
 .B mkfs
 is used to build a Linux filesystem on a device, usually
 a hard disk partition.  The
@@ -54,8 +55,6 @@ If not specified, the default filesystem type
 .TP
 .I fs-options
 Filesystem-specific options to be passed to the real filesystem builder.
-Although not guaranteed, the following options are supported
-by most filesystem builders.
 .TP
 .BR \-V , " \-\-verbose"
 Produce verbose output, including all filesystem-specific commands
@@ -70,27 +69,25 @@ version information only when it is the only parameter, otherwise it
 will work as \fB\-\-verbose\fR.)
 .TP
 .BR \-h , " \-\-help"
-Display help and exit.
+Display help text and exit.
 .SH BUGS
 All generic options must precede and not be combined with
 filesystem-specific options.
-Some filesystem-specific programs do not support the
-.B -V
-(verbose) option, nor return meaningful exit codes.
-Also, some filesystem-specific programs do not automatically
+Some filesystem-specific programs do not automatically
 detect the device size and require the
 .I size
 parameter to be specified.
 .SH AUTHORS
 David Engel (david@ods.com)
 .br
-Fred N. van Kempen (waltje@uwalt.nl.mugnet.org)
+Fred N.\& van Kempen (waltje@uwalt.nl.mugnet.org)
 .br
 Ron Sommeling (sommel@sci.kun.nl)
 .br
 The manual page was shamelessly adapted from Remy Card's version
 for the ext2 filesystem.
 .SH SEE ALSO
+.na
 .BR fs (5),
 .BR badblocks (8),
 .BR fsck (8),
@@ -103,8 +100,8 @@ for the ext2 filesystem.
 .BR mkfs.minix (8),
 .BR mkfs.msdos (8),
 .BR mkfs.vfat (8),
-.BR mkfs.xfs (8),
-.BR mkfs.xiafs (8)
+.BR mkfs.xfs (8)
+.ad
 .SH AVAILABILITY
 The mkfs command is part of the util-linux package and is available from
 ftp://ftp.kernel.org/pub/linux/utils/util-linux/.

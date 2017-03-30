@@ -34,7 +34,7 @@
  * SUCH DAMAGE.
  */
 
- /* 1999-02-22 Arkadiusz Mi∂kiewicz <misiek@pld.ORG.PL>
+ /* 1999-02-22 Arkadiusz Mi≈õkiewicz <misiek@pld.ORG.PL>
   * - added Native Language Support
   */
 
@@ -60,6 +60,7 @@
 #include "nls.h"
 #include "xalloc.h"
 #include "pathnames.h"
+#include "closestream.h"
 
 #define	EQUAL		0
 #define	GREATER		1
@@ -99,6 +100,7 @@ main(int argc, char *argv[])
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	setlocale(LC_ALL, "");
 
@@ -121,9 +123,7 @@ main(int argc, char *argv[])
 			termchar = *optarg;
 			break;
 		case 'V':
-			printf(_("%s from %s\n"),
-				program_invocation_short_name,
-				PACKAGE_STRING);
+			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
 			usage(stdout);
@@ -241,7 +241,7 @@ look(char *front, char *back)
  *	more trouble than it's worth.
  */
 #define	SKIP_PAST_NEWLINE(p, back) \
-	while (p < back && *p++ != '\n');
+	while (p < back && *p++ != '\n')
 
 char *
 binary_search(char *front, char *back)
@@ -368,9 +368,9 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	      _(" %s [options] string [file]\n"), program_invocation_short_name);
 
 	fputs(_("\nOptions:\n"), out);
-	fputs(_(" -a, --alternative      use alternate dictionary\n"
-		" -d, --alphanum         compare only alpha numeric characters\n"
-		" -f, --ignore-case      ignore when comparing\n"
+	fputs(_(" -a, --alternative      use alternative dictionary\n"
+		" -d, --alphanum         compare only alphanumeric characters\n"
+		" -f, --ignore-case      ignore case differences when comparing\n"
 		" -t, --terminate <char> define string termination character\n"
 		" -V, --version          output version information and exit\n"
 		" -h, --help             display this help and exit\n\n"), out);

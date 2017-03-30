@@ -2,8 +2,8 @@
    Copyright (C) 2009-2010 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation, either version 3 of the License, or
+   it under the terms of the GNU Lesser General Public License as published by
+   the Free Software Foundation, either version 2.1 of the License, or
    (at your option) any later version.
 
    This program is distributed in the hope that it will be useful,
@@ -23,16 +23,192 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <limits.h>
+#include <ctype.h>
 
 #include "c.h"
 #include "mbsalign.h"
 #include "widechar.h"
 
-
 #ifdef HAVE_WIDECHAR
 /* Replace non printable chars.
    Note \t and \n etc. are non printable.
    Return 1 if replacement made, 0 otherwise.  */
+
+/*
+ * Counts number of cells in multibyte string. For all control and
+ * non-printable chars is the result width enlarged to store \x?? hex
+ * sequence. See mbs_safe_encode().
+ *
+ * Returns: number of cells, @sz returns number of bytes.
+ */
+size_t mbs_safe_nwidth(const char *buf, size_t bufsz, size_t *sz)
+{
+	mbstate_t st;
+	const char *p = buf, *last = buf;
+	size_t width = 0, bytes = 0;
+
+	memset(&st, 0, sizeof(st));
+
+	if (p && *p && bufsz)
+		last = p + (bufsz - 1);
+
+	while (p && *p && p <= last) {
+		if (iscntrl((unsigned char) *p)) {
+			width += 4, bytes += 4;		/* *p encoded to \x?? */
+			p++;
+		}
+#ifdef HAVE_WIDECHAR
+		else {
+			wchar_t wc;
+			size_t len = mbrtowc(&wc, p, MB_CUR_MAX, &st);
+
+			if (len == 0)
+				break;
+
+			if (len == (size_t) -1 || len == (size_t) -2) {
+				len = 1;
+				if (isprint((unsigned char) *p))
+					width += 1, bytes += 1;
+				else
+					width += 4, bytes += 4;
+
+			} else if (!iswprint(wc)) {
+				width += len * 4;	/* hex encode whole sequence */
+				bytes += len * 4;
+			} else {
+				width += wcwidth(wc);	/* number of cells */
+				bytes += len;		/* number of bytes */
+			}
+			p += len;
+		}
+#else
+		else if (!isprint((unsigned char) *p)) {
+			width += 4, bytes += 4;		/* *p encoded to \x?? */
+			p++;
+		} else {
+			width++, bytes++;
+			p++;
+		}
+#endif
+	}
+
+	if (sz)
+		*sz = bytes;
+	return width;
+}
+
+size_t mbs_safe_width(const char *s)
+{
+	if (!s || !*s)
+		return 0;
+	return mbs_safe_nwidth(s, strlen(s), NULL);
+}
+
+/*
+ * Copy @s to @buf and replace control and non-printable chars with
+ * \x?? hex sequence. The @width returns number of cells.
+ *
+ * The @buf has to be big enough to store mbs_safe_encode_size(strlen(s)))
+ * bytes.
+ */
+char *mbs_safe_encode_to_buffer(const char *s, size_t *width, char *buf)
+{
+	mbstate_t st;
+	const char *p = s;
+	char *r;
+	size_t sz = s ? strlen(s) : 0;
+
+	if (!sz || !buf)
+		return NULL;
+
+	memset(&st, 0, sizeof(st));
+
+	r = buf;
+	*width = 0;
+
+	while (p && *p) {
+		if (iscntrl((unsigned char) *p)) {
+			sprintf(r, "\\x%02x", (unsigned char) *p);
+			r += 4;
+			*width += 4;
+			p++;
+		}
+#ifdef HAVE_WIDECHAR
+		else {
+			wchar_t wc;
+			size_t len = mbrtowc(&wc, p, MB_CUR_MAX, &st);
+
+			if (len == 0)
+				break;		/* end of string */
+
+			if (len == (size_t) -1 || len == (size_t) -2) {
+				len = 1;
+				/*
+				 * Not valid multibyte sequence -- maybe it's
+				 * printable char according to the current locales.
+				 */
+				if (!isprint((unsigned char) *p)) {
+					sprintf(r, "\\x%02x", (unsigned char) *p);
+					r += 4;
+					*width += 4;
+				} else {
+					width++;
+					*r++ = *p;
+				}
+			} else if (!iswprint(wc)) {
+				size_t i;
+				for (i = 0; i < len; i++) {
+					sprintf(r, "\\x%02x", (unsigned char) *p);
+					r += 4;
+					*width += 4;
+				}
+			} else {
+				memcpy(r, p, len);
+				r += len;
+				*width += wcwidth(wc);
+			}
+			p += len;
+		}
+#else
+		else if (!isprint((unsigned char) *p)) {
+			sprintf(r, "\\x%02x", (unsigned char) *p);
+			p++;
+			r += 4;
+			*width += 4;
+		} else {
+			*r++ = *p++;
+			*width++;
+		}
+#endif
+	}
+
+	*r = '\0';
+
+	return buf;
+}
+
+size_t mbs_safe_encode_size(size_t bytes)
+{
+	return (bytes * 4) + 1;
+}
+
+/*
+ * Returns allocated string where all control and non-printable chars are
+ * replaced with \x?? hex sequence.
+ */
+char *mbs_safe_encode(const char *s, size_t *width)
+{
+	size_t sz = s ? strlen(s) : 0;
+	char *buf;
+
+	if (!sz)
+		return NULL;
+	buf = malloc(mbs_safe_encode_size(sz));
+	if (!buf)
+		return NULL;
+
+	return mbs_safe_encode_to_buffer(s, width, buf);
+}
 
 static bool
 wc_ensure_printable (wchar_t *wchars)
@@ -173,7 +349,7 @@ mbsalign (const char *src, char *dest, size_t dest_size,
   const char *str_to_print = src;
   size_t n_cols = src_size - 1;
   size_t n_used_bytes = n_cols; /* Not including NUL */
-  size_t n_spaces = 0;
+  size_t n_spaces = 0, space_left;
   bool conversion = false;
   bool wc_enabled = false;
 
@@ -254,8 +430,8 @@ mbsalign_unibyte:
   if (dest_size != 0)
     {
       char *dest_end = dest + dest_size - 1;
-      size_t start_spaces = n_spaces / 2 + n_spaces % 2;
-      size_t end_spaces = n_spaces / 2;
+      size_t start_spaces;
+      size_t end_spaces;
 
       switch (align)
         {
@@ -271,10 +447,12 @@ mbsalign_unibyte:
           start_spaces = n_spaces;
           end_spaces = 0;
           break;
+	default:
+	  abort();
         }
 
       dest = mbs_align_pad (dest, dest_end, start_spaces);
-      size_t space_left = dest_end - dest;
+      space_left = dest_end - dest;
       dest = mempcpy (dest, str_to_print, min (n_used_bytes, space_left));
       mbs_align_pad (dest, dest_end, end_spaces);
     }

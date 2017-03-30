@@ -15,12 +15,18 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
-TS_TOPDIR="$(dirname $0)/../.."
+TS_TOPDIR="${0%/*}/../.."
 TS_DESC="by devname"
 
 . $TS_TOPDIR/functions.sh
 ts_init "$*"
+
+ts_check_test_command "$TS_CMD_MKSWAP"
+ts_check_test_command "$TS_CMD_SWAPON"
+ts_check_test_command "$TS_CMD_SWAPOFF"
+
 ts_skip_nonroot
+ts_check_losetup
 
 set -o pipefail
 
@@ -32,12 +38,11 @@ $TS_CMD_MKSWAP $DEVICE > /dev/null 2>> $TS_OUTPUT \
 
 ts_device_has "TYPE" "swap" $DEVICE || ts_die "Cannot find swap on $DEVICE" $DEVICE
 
-LD_LIBRARY_PATH="$U_L_LIBRARY_PATH" \
-		$TS_CMD_SWAPON $DEVICE 2>&1 >> $TS_OUTPUT
+$TS_CMD_SWAPON $DEVICE 2>&1 >> $TS_OUTPUT
 
 grep -q $DEVICE /proc/swaps || ts_die "Cannot find $DEVICE in /proc/swaps" $DEVICE
 
-ts_swapoff $DEVICE
+$TS_CMD_SWAPOFF $DEVICE
 ts_device_deinit $DEVICE
 
 ts_log "Success"

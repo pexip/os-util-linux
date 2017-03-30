@@ -69,23 +69,26 @@ static int probe_solaris_pt(blkid_probe pr,
 	uint16_t nparts;
 
 	l = (struct solaris_vtoc *) blkid_probe_get_sector(pr, SOLARIS_SECTOR);
-	if (!l)
+	if (!l) {
+		if (errno)
+			return -errno;
 		goto nothing;
+	}
 
 	if (le32_to_cpu(l->v_version) != 1) {
-		DBG(DEBUG_LOWPROBE, printf(
-			"WARNING: unsupported solaris x86 version %d, ignore\n",
+		DBG(LOWPROBE, ul_debug(
+			"WARNING: unsupported solaris x86 version %d, ignore",
 			le32_to_cpu(l->v_version)));
 		goto nothing;
 	}
 
 	if (blkid_partitions_need_typeonly(pr))
 		/* caller does not ask for details about partitions */
-		return 0;
+		return BLKID_PROBE_OK;
 
 	ls = blkid_probe_get_partlist(pr);
 	if (!ls)
-		goto err;
+		goto nothing;
 
 	parent = blkid_partlist_get_parent(ls);
 
@@ -112,9 +115,9 @@ static int probe_solaris_pt(blkid_probe pr,
 			start += blkid_partition_get_start(parent);
 
 		if (parent && !blkid_is_nested_dimension(parent, start, size)) {
-			DBG(DEBUG_LOWPROBE, printf(
+			DBG(LOWPROBE, ul_debug(
 				"WARNING: solaris partition (%d) overflow "
-				"detected, ignore\n", i));
+				"detected, ignore", i));
 			continue;
 		}
 
@@ -126,12 +129,12 @@ static int probe_solaris_pt(blkid_probe pr,
 		blkid_partition_set_flags(par, le16_to_cpu(p->s_flag));
 	}
 
-	return 0;
+	return BLKID_PROBE_OK;
 
 nothing:
-	return 1;
+	return BLKID_PROBE_NONE;
 err:
-	return -1;
+	return -ENOMEM;
 }
 
 const struct blkid_idinfo solaris_x86_pt_idinfo =

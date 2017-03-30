@@ -33,7 +33,15 @@ extern int optind;
 
 #include "uuid.h"
 #include "uuidd.h"
-#include "writeall.h"
+#include "all-io.h"
+#include "c.h"
+#include "closestream.h"
+#include "strutils.h"
+#include "optutils.h"
+
+#ifdef HAVE_LIBSYSTEMD
+# include <systemd/sd-daemon.h>
+#endif
 
 #include "nls.h"
 
@@ -49,6 +57,15 @@ extern int optind;
 /* length of binary representation of UUID */
 #define UUID_LEN	(sizeof(uuid_t))
 
+/* server loop control structure */
+struct uuidd_cxt_t {
+	uint32_t	timeout;
+	unsigned int	debug: 1,
+			quiet: 1,
+			no_fork: 1,
+			no_sock: 1;
+};
+
 static void __attribute__ ((__noreturn__)) usage(FILE * out)
 {
 	fputs(_("\nUsage:\n"), out);
@@ -56,17 +73,20 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	      _(" %s [options]\n"), program_invocation_short_name);
 
 	fputs(_("\nOptions:\n"), out);
-	fputs(_(" -p, --pid <path>    path to pid file\n"
-		" -s, --socket <path> path to socket\n"
-		" -T, --timeout <sec> specify inactivity timeout\n"
-		" -k, --kill          kill running daemon\n"
-		" -r, --random        test random-based generation\n"
-		" -t, --time          test time-based generation\n"
-		" -n, --uuids <num>   request number of uuids\n"
-		" -d, --debug         run in debugging mode\n"
-		" -q, --quiet         turn on quiet mode\n"
-		" -V, --version       output version information and exit\n"
-		" -h, --help          display this help and exit\n\n"), out);
+	fputs(_(" -p, --pid <path>        path to pid file\n"
+		" -s, --socket <path>     path to socket\n"
+		" -T, --timeout <sec>     specify inactivity timeout\n"
+		" -k, --kill              kill running daemon\n"
+		" -r, --random            test random-based generation\n"
+		" -t, --time              test time-based generation\n"
+		" -n, --uuids <num>       request number of uuids\n"
+		" -P, --no-pid            do not create pid file\n"
+		" -F, --no-fork           do not daemonize using double-fork\n"
+		" -S, --socket-activation do not create listening socket\n"
+		" -d, --debug             run in debugging mode\n"
+		" -q, --quiet             turn on quiet mode\n"
+		" -V, --version           output version information and exit\n"
+		" -h, --help              display this help and exit\n\n"), out);
 
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
@@ -83,35 +103,12 @@ static void create_daemon(void)
 		err(EXIT_FAILURE, "setreuid");
 }
 
-static ssize_t read_all(int fd, char *buf, size_t count)
-{
-	ssize_t ret;
-	ssize_t c = 0;
-	int tries = 0;
-
-	memset(buf, 0, count);
-	while (count > 0) {
-		ret = read(fd, buf, count);
-		if (ret <= 0) {
-			if ((errno == EAGAIN || errno == EINTR || ret == 0) &&
-			    (tries++ < 5))
-				continue;
-			return c ? c : -1;
-		}
-		if (ret > 0)
-			tries = 0;
-		count -= ret;
-		buf += ret;
-		c += ret;
-	}
-	return c;
-}
-
 static const char *cleanup_pidfile, *cleanup_socket;
 
 static void terminate_intr(int signo CODE_ATTR((unused)))
 {
-	unlink(cleanup_pidfile);
+	if (cleanup_pidfile)
+		unlink(cleanup_pidfile);
 	if (cleanup_socket)
 		unlink(cleanup_socket);
 	exit(EXIT_SUCCESS);
@@ -206,31 +203,27 @@ static int call_daemon(const char *socket_path, int op, char *buf,
 	return ret;
 }
 
-static void server_loop(const char *socket_path, const char *pidfile_path,
-			int debug, int timeout, int quiet)
+/*
+ * Exclusively create and open a pid file with path @pidfile_path
+ *
+ * Set cleanup_pidfile global variable for the cleanup
+ * handler. @pidfile_path must not be NULL.
+ *
+ * Return file descriptor of the created pid_file.
+ */
+static int create_pidfile(const char *pidfile_path, int quiet)
 {
-	struct sockaddr_un	my_addr, from_addr;
-	struct flock		fl;
-	socklen_t		fromlen;
-	int32_t			reply_len = 0;
-	uuid_t			uu;
-	mode_t			save_umask;
-	char			reply_buf[1024], *cp;
-	char			op, str[UUID_STR_LEN];
-	int			i, s, ns, len, num;
-	int			fd_pidfile, ret;
+	int		fd_pidfile;
+	struct flock	fl;
 
 	fd_pidfile = open(pidfile_path, O_CREAT | O_RDWR, 0664);
 	if (fd_pidfile < 0) {
 		if (!quiet)
-			fprintf(stderr, _("Failed to open/create %s: %s\n"),
-				pidfile_path, strerror(errno));
+			warn(_("cannot open %s"), pidfile_path);
 		exit(EXIT_FAILURE);
 	}
 	cleanup_pidfile = pidfile_path;
-	cleanup_socket = 0;
-	signal(SIGALRM, terminate_intr);
-	alarm(30);
+
 	fl.l_type = F_WRLCK;
 	fl.l_whence = SEEK_SET;
 	fl.l_start = 0;
@@ -240,23 +233,31 @@ static void server_loop(const char *socket_path, const char *pidfile_path,
 		if ((errno == EAGAIN) || (errno == EINTR))
 			continue;
 		if (!quiet)
-			fprintf(stderr, _("Failed to lock %s: %s\n"),
-				pidfile_path, strerror(errno));
+			warn(_("cannot lock %s"), pidfile_path);
 		exit(EXIT_FAILURE);
 	}
-	ret = call_daemon(socket_path, 0, reply_buf, sizeof(reply_buf), 0, 0);
-	if (ret > 0) {
-		if (!quiet)
-			printf(_("uuidd daemon already running at pid %s\n"),
-			       reply_buf);
-		exit(EXIT_FAILURE);
-	}
-	alarm(0);
+
+	return fd_pidfile;
+}
+
+/*
+ * Create AF_UNIX, SOCK_STREAM socket and bind to @socket_path
+ *
+ * If @will_fork is true, then make sure the descriptor
+ * of the socket is >2, so that it wont be later closed
+ * during create_daemon().
+ *
+ * Return file descriptor corresponding to created socket.
+ */
+static int create_socket(const char *socket_path, int will_fork, int quiet)
+{
+	struct sockaddr_un	my_addr;
+	mode_t			save_umask;
+	int 			s;
 
 	if ((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
 		if (!quiet)
-			fprintf(stderr, _("Couldn't create unix stream "
-					  "socket: %s"), strerror(errno));
+			warn(_("couldn't create unix stream socket"));
 		exit(EXIT_FAILURE);
 	}
 
@@ -264,7 +265,7 @@ static void server_loop(const char *socket_path, const char *pidfile_path,
 	 * Make sure the socket isn't using fd numbers 0-2 to avoid it
 	 * getting closed by create_daemon()
 	 */
-	while (!debug && s <= 2) {
+	while (will_fork && s <= 2) {
 		s = dup(s);
 		if (s < 0)
 			err(EXIT_FAILURE, "dup");
@@ -281,42 +282,92 @@ static void server_loop(const char *socket_path, const char *pidfile_path,
 	if (bind(s, (const struct sockaddr *) &my_addr,
 		 sizeof(struct sockaddr_un)) < 0) {
 		if (!quiet)
-			fprintf(stderr,
-				_("Couldn't bind unix socket %s: %s\n"),
-				socket_path, strerror(errno));
+			warn(_("couldn't bind unix socket %s"), socket_path);
 		exit(EXIT_FAILURE);
 	}
 	umask(save_umask);
+	cleanup_socket = socket_path;
 
-	if (listen(s, SOMAXCONN) < 0) {
-		if (!quiet)
-			fprintf(stderr, _("Couldn't listen on unix "
-					  "socket %s: %s\n"), socket_path,
-				strerror(errno));
-		exit(EXIT_FAILURE);
+	return s;
+}
+
+static void server_loop(const char *socket_path, const char *pidfile_path,
+			const struct uuidd_cxt_t *uuidd_cxt)
+{
+	struct sockaddr_un	from_addr;
+	socklen_t		fromlen;
+	int32_t			reply_len = 0;
+	uuid_t			uu;
+	char			reply_buf[1024], *cp;
+	char			op, str[UUID_STR_LEN];
+	int			i, ns, len, num;
+	int			s = 0;
+	int			fd_pidfile = -1;
+	int			ret;
+
+#ifdef HAVE_LIBSYSTEMD
+	if (!uuidd_cxt->no_sock)	/* no_sock implies no_fork and no_pid */
+#endif
+	{
+
+		signal(SIGALRM, terminate_intr);
+		alarm(30);
+		if (pidfile_path)
+			fd_pidfile = create_pidfile(pidfile_path, uuidd_cxt->quiet);
+
+		ret = call_daemon(socket_path, UUIDD_OP_GETPID, reply_buf,
+				  sizeof(reply_buf), 0, NULL);
+		if (ret > 0) {
+			if (!uuidd_cxt->quiet)
+				warnx(_("uuidd daemon is already running at pid %s"),
+				       reply_buf);
+			exit(EXIT_FAILURE);
+		}
+		alarm(0);
+
+		s = create_socket(socket_path,
+				  (!uuidd_cxt->debug || !uuidd_cxt->no_fork),
+				  uuidd_cxt->quiet);
+		if (listen(s, SOMAXCONN) < 0) {
+			if (!uuidd_cxt->quiet)
+				warn(_("couldn't listen on unix socket %s"), socket_path);
+			exit(EXIT_FAILURE);
+		}
+
+		if (!uuidd_cxt->debug && !uuidd_cxt->no_fork)
+			create_daemon();
+
+		if (pidfile_path) {
+			sprintf(reply_buf, "%8d\n", getpid());
+			if (ftruncate(fd_pidfile, 0))
+				err(EXIT_FAILURE, _("could not truncate file: %s"), pidfile_path);
+			write_all(fd_pidfile, reply_buf, strlen(reply_buf));
+			if (fd_pidfile > 1)
+				if (close_fd(fd_pidfile) != 0) /* Unlock the pid file */
+					err(EXIT_FAILURE, _("write failed: %s"), pidfile_path);
+		}
+
 	}
 
-	cleanup_socket = socket_path;
-	if (!debug)
-		create_daemon();
 	signal(SIGHUP, terminate_intr);
 	signal(SIGINT, terminate_intr);
 	signal(SIGTERM, terminate_intr);
 	signal(SIGALRM, terminate_intr);
 	signal(SIGPIPE, SIG_IGN);
 
-	sprintf(reply_buf, "%8d\n", getpid());
-	if (ftruncate(fd_pidfile, 0)) {
-		/* Silence warn_unused_result */
+#ifdef HAVE_LIBSYSTEMD
+	if (uuidd_cxt->no_sock) {
+		if (sd_listen_fds(0) != 1)
+			errx(EXIT_FAILURE, _("no or too many file descriptors received"));
+
+		s = SD_LISTEN_FDS_START + 0;
 	}
-	write_all(fd_pidfile, reply_buf, strlen(reply_buf));
-	if (fd_pidfile > 1)
-		close(fd_pidfile); /* Unlock the pid file */
+#endif
 
 	while (1) {
 		fromlen = sizeof(from_addr);
-		if (timeout > 0)
-			alarm(timeout);
+		if (uuidd_cxt->timeout != 0)
+			alarm(uuidd_cxt->timeout);
 		ns = accept(s, (struct sockaddr *) &from_addr, &fromlen);
 		alarm(0);
 		if (ns < 0) {
@@ -328,21 +379,21 @@ static void server_loop(const char *socket_path, const char *pidfile_path,
 		len = read(ns, &op, 1);
 		if (len != 1) {
 			if (len < 0)
-				perror("read");
+				warn(_("read failed"));
 			else
-				printf(_("Error reading from client, "
-					 "len = %d\n"), len);
+				warnx(_("error reading from client, len = %d"),
+						len);
 			goto shutdown_socket;
 		}
 		if ((op == UUIDD_OP_BULK_TIME_UUID) ||
 		    (op == UUIDD_OP_BULK_RANDOM_UUID)) {
 			if (read_all(ns, (char *) &num, sizeof(num)) != 4)
 				goto shutdown_socket;
-			if (debug)
-				printf(_("operation %d, incoming num = %d\n"),
+			if (uuidd_cxt->debug)
+				fprintf(stderr, _("operation %d, incoming num = %d\n"),
 				       op, num);
-		} else if (debug)
-			printf(_("operation %d\n"), op);
+		} else if (uuidd_cxt->debug)
+			fprintf(stderr, _("operation %d\n"), op);
 
 		switch (op) {
 		case UUIDD_OP_GETPID:
@@ -356,9 +407,9 @@ static void server_loop(const char *socket_path, const char *pidfile_path,
 		case UUIDD_OP_TIME_UUID:
 			num = 1;
 			__uuid_generate_time(uu, &num);
-			if (debug) {
+			if (uuidd_cxt->debug) {
 				uuid_unparse(uu, str);
-				printf(_("Generated time UUID: %s\n"), str);
+				fprintf(stderr, _("Generated time UUID: %s\n"), str);
 			}
 			memcpy(reply_buf, uu, sizeof(uu));
 			reply_len = sizeof(uu);
@@ -366,21 +417,21 @@ static void server_loop(const char *socket_path, const char *pidfile_path,
 		case UUIDD_OP_RANDOM_UUID:
 			num = 1;
 			__uuid_generate_random(uu, &num);
-			if (debug) {
+			if (uuidd_cxt->debug) {
 				uuid_unparse(uu, str);
-				printf(_("Generated random UUID: %s\n"), str);
+				fprintf(stderr, _("Generated random UUID: %s\n"), str);
 			}
 			memcpy(reply_buf, uu, sizeof(uu));
 			reply_len = sizeof(uu);
 			break;
 		case UUIDD_OP_BULK_TIME_UUID:
 			__uuid_generate_time(uu, &num);
-			if (debug) {
+			if (uuidd_cxt->debug) {
 				uuid_unparse(uu, str);
-				printf(P_("Generated time UUID %s "
-					  "and %d following\n",
-					  "Generated time UUID %s "
-					  "and %d following\n", num - 1),
+				fprintf(stderr, P_("Generated time UUID %s "
+						   "and %d following\n",
+						   "Generated time UUID %s "
+						   "and %d following\n", num - 1),
 				       str, num - 1);
 			}
 			memcpy(reply_buf, uu, sizeof(uu));
@@ -397,22 +448,22 @@ static void server_loop(const char *socket_path, const char *pidfile_path,
 				num = (sizeof(reply_buf) - sizeof(num)) / UUID_LEN;
 			__uuid_generate_random((unsigned char *) reply_buf +
 					      sizeof(num), &num);
-			if (debug) {
-				printf(P_("Generated %d UUID:\n",
-					  "Generated %d UUIDs:\n", num), num);
+			if (uuidd_cxt->debug) {
+				fprintf(stderr, P_("Generated %d UUID:\n",
+						   "Generated %d UUIDs:\n", num), num);
 				for (i = 0, cp = reply_buf + sizeof(num);
 				     i < num;
 				     i++, cp += UUID_LEN) {
 					uuid_unparse((unsigned char *)cp, str);
-					printf("\t%s\n", str);
+					fprintf(stderr, "\t%s\n", str);
 				}
 			}
 			reply_len = (num * UUID_LEN) + sizeof(num);
 			memcpy(reply_buf, &num, sizeof(num));
 			break;
 		default:
-			if (debug)
-				printf(_("Invalid operation %d\n"), op);
+			if (uuidd_cxt->debug)
+				fprintf(stderr, _("Invalid operation %d\n"), op);
 			goto shutdown_socket;
 		}
 		write_all(ns, (char *) &reply_len, sizeof(reply_len));
@@ -430,16 +481,18 @@ static void __attribute__ ((__noreturn__)) unexpected_size(int size)
 int main(int argc, char **argv)
 {
 	const char	*socket_path = UUIDD_SOCKET_PATH;
-	const char	*pidfile_path = UUIDD_PIDFILE_PATH;
-	const char	*err_context;
+	const char	*pidfile_path = NULL;
+	const char	*pidfile_path_param = NULL;
+	const char	*err_context = NULL;
 	char		buf[1024], *cp;
-	char		str[UUID_STR_LEN], *tmp;
+	char		str[UUID_STR_LEN];
 	uuid_t		uu;
-	uid_t		uid;
-	gid_t		gid;
 	int		i, c, ret;
-	int		debug = 0, do_type = 0, do_kill = 0, num = 0;
-	int		timeout = 0, quiet = 0, drop_privs = 0;
+	int		do_type = 0, do_kill = 0, num = 0;
+	int		no_pid = 0;
+	int		s_flag = 0;
+
+	struct uuidd_cxt_t uuidd_cxt = { .timeout = 0 };
 
 	static const struct option longopts[] = {
 		{"pid", required_argument, NULL, 'p'},
@@ -449,66 +502,81 @@ int main(int argc, char **argv)
 		{"random", no_argument, NULL, 'r'},
 		{"time", no_argument, NULL, 't'},
 		{"uuids", required_argument, NULL, 'n'},
+		{"no-pid", no_argument, NULL, 'P'},
+		{"no-fork", no_argument, NULL, 'F'},
+		{"socket-activation", no_argument, NULL, 'S'},
 		{"debug", no_argument, NULL, 'd'},
 		{"quiet", no_argument, NULL, 'q'},
 		{"version", no_argument, NULL, 'V'},
 		{"help", no_argument, NULL, 'h'},
 		{NULL, 0, NULL, 0}
 	};
+	static const ul_excl_t excl[] = {
+		{ 'P', 'p' },
+		{ 'd', 'q' },
+		{ 'r', 't' },
+		{ 0 }
+	};
+	int excl_st[ARRAY_SIZE(excl)] = UL_EXCL_STATUS_INIT;
 
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
+	atexit(close_stdout);
 
 	while ((c =
-		getopt_long(argc, argv, "p:s:T:krtn:dqVh", longopts,
+		getopt_long(argc, argv, "p:s:T:krtn:PFSdqVh", longopts,
 			    NULL)) != -1) {
+		err_exclusive_options(c, longopts, excl, excl_st);
 		switch (c) {
 		case 'd':
-			debug++;
-			drop_privs = 1;
+			uuidd_cxt.debug = 1;
 			break;
 		case 'k':
 			do_kill++;
-			drop_privs = 1;
 			break;
 		case 'n':
-			num = strtol(optarg, &tmp, 0);
-			if ((num < 1) || *tmp) {
-				fprintf(stderr, _("Bad number: %s\n"), optarg);
-				return EXIT_FAILURE;
-			}
+			num = strtou32_or_err(optarg,
+						_("failed to parse --uuids"));
 			break;
 		case 'p':
-			pidfile_path = optarg;
-			drop_privs = 1;
+			pidfile_path_param = optarg;
+			break;
+		case 'P':
+			no_pid = 1;
+			break;
+		case 'F':
+			uuidd_cxt.no_fork = 1;
+			break;
+		case 'S':
+#ifdef HAVE_LIBSYSTEMD
+			uuidd_cxt.no_sock = 1;
+			uuidd_cxt.no_fork = 1;
+			no_pid = 1;
+#else
+			errx(EXIT_FAILURE, _("uuidd has been built without "
+					     "support for socket activation"));
+#endif
 			break;
 		case 'q':
-			quiet++;
+			uuidd_cxt.quiet = 1;
 			break;
 		case 'r':
 			do_type = UUIDD_OP_RANDOM_UUID;
-			drop_privs = 1;
 			break;
 		case 's':
 			socket_path = optarg;
-			drop_privs = 1;
+			s_flag = 1;
 			break;
 		case 't':
 			do_type = UUIDD_OP_TIME_UUID;
-			drop_privs = 1;
 			break;
 		case 'T':
-			timeout = strtol(optarg, &tmp, 0);
-			if ((timeout < 0) || *tmp) {
-				fprintf(stderr, _("Bad number: %s\n"), optarg);
-				return EXIT_FAILURE;
-			}
+			uuidd_cxt.timeout = strtou32_or_err(optarg,
+						_("failed to parse --timeout"));
 			break;
 		case 'V':
-			printf(_("%s from %s\n"),
-			       program_invocation_short_name,
-			       PACKAGE_STRING);
+			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
 			usage(stdout);
@@ -516,33 +584,24 @@ int main(int argc, char **argv)
 			usage(stderr);
 		}
 	}
-	uid = getuid();
-	if (uid && drop_privs) {
-		gid = getgid();
-#ifdef HAVE_SETRESGID
-		if (setresgid(gid, gid, gid) < 0)
-			err(EXIT_FAILURE, "setresgid");
-#else
-		if (setregid(gid, gid) < 0)
-			err(EXIT_FAILURE, "setregid");
-#endif
 
-#ifdef HAVE_SETRESUID
-		if (setresuid(uid, uid, uid) < 0)
-			err(EXIT_FAILURE, "setresuid");
-#else
-		if (setreuid(uid, uid) < 0)
-			err(EXIT_FAILURE, "setreuid");
-#endif
-	}
+	if (!no_pid && !pidfile_path_param)
+		pidfile_path = UUIDD_PIDFILE_PATH;
+	else if (pidfile_path_param)
+		pidfile_path = pidfile_path_param;
+
+	/* custom socket path and socket-activation make no sense */
+	if (s_flag && uuidd_cxt.no_sock && !uuidd_cxt.quiet)
+		warnx(_("Both --socket-activation and --socket specified. "
+			"Ignoring --socket."));
+
 	if (num && do_type) {
 		ret = call_daemon(socket_path, do_type + 2, buf,
 				  sizeof(buf), &num, &err_context);
-		if (ret < 0) {
-			printf(_("Error calling uuidd daemon (%s): %s\n"),
-			       err_context, strerror(errno));
-			return EXIT_FAILURE;
-		}
+		if (ret < 0)
+			err(EXIT_FAILURE, _("error calling uuidd daemon (%s)"),
+					err_context ? : _("unexpected error"));
+
 		if (do_type == UUIDD_OP_TIME_UUID) {
 			if (ret != sizeof(uu) + sizeof(num))
 				unexpected_size(ret);
@@ -567,11 +626,9 @@ int main(int argc, char **argv)
 	if (do_type) {
 		ret = call_daemon(socket_path, do_type, (char *) &uu,
 				  sizeof(uu), 0, &err_context);
-		if (ret < 0) {
-			printf(_("Error calling uuidd daemon (%s): %s\n"),
-			       err_context, strerror(errno));
-			return EXIT_FAILURE;
-		}
+		if (ret < 0)
+			err(EXIT_FAILURE, _("error calling uuidd daemon (%s)"),
+					err_context ? : _("unexpected error"));
 		if (ret != sizeof(uu))
 		        unexpected_size(ret);
 
@@ -582,24 +639,22 @@ int main(int argc, char **argv)
 	}
 
 	if (do_kill) {
-		ret = call_daemon(socket_path, 0, buf, sizeof(buf), 0, 0);
+		ret = call_daemon(socket_path, UUIDD_OP_GETPID, buf, sizeof(buf), 0, NULL);
 		if ((ret > 0) && ((do_kill = atoi((char *) buf)) > 0)) {
 			ret = kill(do_kill, SIGTERM);
 			if (ret < 0) {
-				if (!quiet)
-					fprintf(stderr,
-						_("Couldn't kill uuidd running "
-						  "at pid %d: %s\n"), do_kill,
-						strerror(errno));
+				if (!uuidd_cxt.quiet)
+					warn(_("couldn't kill uuidd running "
+						  "at pid %d"), do_kill);
 				return EXIT_FAILURE;
 			}
-			if (!quiet)
-				printf(_("Killed uuidd running at pid %d\n"),
+			if (!uuidd_cxt.quiet)
+				printf(_("Killed uuidd running at pid %d.\n"),
 				       do_kill);
 		}
 		return EXIT_SUCCESS;
 	}
 
-	server_loop(socket_path, pidfile_path, debug, timeout, quiet);
+	server_loop(socket_path, pidfile_path, &uuidd_cxt);
 	return EXIT_SUCCESS;
 }

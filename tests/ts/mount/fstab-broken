@@ -15,11 +15,16 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
-TS_TOPDIR="$(dirname $0)/../.."
+TS_TOPDIR="${0%/*}/../.."
 TS_DESC="broken fstab"
 
 . $TS_TOPDIR/functions.sh
 ts_init "$*"
+
+ts_check_test_command "$TS_CMD_MOUNT"
+ts_check_test_command "$TS_CMD_UMOUNT"
+ts_check_test_command "$TS_CMD_FINDMNT"
+
 ts_skip_nonroot
 
 set -o pipefail
@@ -31,7 +36,6 @@ mkdir -p $MNT
 ts_fstab_open
 echo "tmpd $MNT tmpfs" >> /etc/fstab
 ts_fstab_close
-
 
 ts_init_subtest "mount"
 $TS_CMD_MOUNT $MNT &> /dev/null

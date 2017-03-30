@@ -150,10 +150,10 @@ static int topology_probe(blkid_probe pr, struct blkid_chain *chn)
 		return -1;
 
 	if (!S_ISBLK(pr->mode))
-		return -1;	/* nothing, works with block devices only */
+		return -EINVAL;	/* nothing, works with block devices only */
 
 	if (chn->binary) {
-		DBG(DEBUG_LOWPROBE, printf("initialize topology binary data\n"));
+		DBG(LOWPROBE, ul_debug("initialize topology binary data"));
 
 		if (chn->data)
 			/* reset binary data */
@@ -163,14 +163,13 @@ static int topology_probe(blkid_probe pr, struct blkid_chain *chn)
 			chn->data = calloc(1,
 					sizeof(struct blkid_struct_topology));
 			if (!chn->data)
-				return -1;
+				return -ENOMEM;
 		}
 	}
 
 	blkid_probe_chain_reset_vals(pr, chn);
 
-	DBG(DEBUG_LOWPROBE,
-		printf("--> starting probing loop [TOPOLOGY idx=%d]\n",
+	DBG(LOWPROBE, ul_debug("--> starting probing loop [TOPOLOGY idx=%d]",
 		chn->idx));
 
 	i = chn->idx < 0 ? 0 : chn->idx + 1U;
@@ -181,8 +180,7 @@ static int topology_probe(blkid_probe pr, struct blkid_chain *chn)
 		chn->idx = i;
 
 		if (id->probefunc) {
-			DBG(DEBUG_LOWPROBE, printf(
-				"%s: call probefunc()\n", id->name));
+			DBG(LOWPROBE, ul_debug("%s: call probefunc()", id->name));
 			if (id->probefunc(pr, NULL) != 0)
 				continue;
 		}
@@ -193,16 +191,14 @@ static int topology_probe(blkid_probe pr, struct blkid_chain *chn)
 		/* generic for all probing drivers */
 		topology_set_logical_sector_size(pr);
 
-		DBG(DEBUG_LOWPROBE,
-			printf("<-- leaving probing loop (type=%s) [TOPOLOGY idx=%d]\n",
+		DBG(LOWPROBE, ul_debug("<-- leaving probing loop (type=%s) [TOPOLOGY idx=%d]",
 			id->name, chn->idx));
-		return 0;
+		return BLKID_PROBE_OK;
 	}
 
-	DBG(DEBUG_LOWPROBE,
-		printf("<-- leaving probing loop (failed) [TOPOLOGY idx=%d]\n",
+	DBG(LOWPROBE, ul_debug("<-- leaving probing loop (failed) [TOPOLOGY idx=%d]",
 		chn->idx));
-	return 1;
+	return BLKID_PROBE_NONE;
 }
 
 static void topology_free(blkid_probe pr __attribute__((__unused__)),
@@ -222,13 +218,12 @@ static int topology_set_value(blkid_probe pr, const char *name,
 		return 0;	/* ignore zeros */
 
 	if (chn->binary) {
-		unsigned long *v =
-			(unsigned long *) (chn->data + structoff);
-		*v = data;
+		memcpy(chn->data + structoff, &data, sizeof(data));
 		return 0;
 	}
-	return blkid_probe_sprintf_value(pr, name, "%llu", data);
+	return blkid_probe_sprintf_value(pr, name, "%lu", data);
 }
+
 
 /* the topology info is complete when we have at least "minimum_io_size" which
  * is provided by all blkid topology drivers */
@@ -318,7 +313,7 @@ int blkid_topology_set_physical_sector_size(blkid_probe pr, unsigned long val)
  */
 unsigned long blkid_topology_get_alignment_offset(blkid_topology tp)
 {
-	return tp ? tp->alignment_offset : 0;
+	return tp->alignment_offset;
 }
 
 /**
@@ -329,7 +324,7 @@ unsigned long blkid_topology_get_alignment_offset(blkid_topology tp)
  */
 unsigned long blkid_topology_get_minimum_io_size(blkid_topology tp)
 {
-	return tp ? tp->minimum_io_size : 0;
+	return tp->minimum_io_size;
 }
 
 /**
@@ -340,7 +335,7 @@ unsigned long blkid_topology_get_minimum_io_size(blkid_topology tp)
  */
 unsigned long blkid_topology_get_optimal_io_size(blkid_topology tp)
 {
-	return tp ? tp->optimal_io_size : 0;
+	return tp->optimal_io_size;
 }
 
 /**
@@ -351,7 +346,7 @@ unsigned long blkid_topology_get_optimal_io_size(blkid_topology tp)
  */
 unsigned long blkid_topology_get_logical_sector_size(blkid_topology tp)
 {
-	return tp ? tp->logical_sector_size : 0;
+	return tp->logical_sector_size;
 }
 
 /**
@@ -362,6 +357,6 @@ unsigned long blkid_topology_get_logical_sector_size(blkid_topology tp)
  */
 unsigned long blkid_topology_get_physical_sector_size(blkid_topology tp)
 {
-	return tp ? tp->physical_sector_size : 0;
+	return tp->physical_sector_size;
 }
 

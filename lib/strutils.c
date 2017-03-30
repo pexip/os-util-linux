@@ -9,10 +9,11 @@
 #include <ctype.h>
 #include <errno.h>
 #include <sys/stat.h>
-#include <locale.h>
 #include <string.h>
+#include <assert.h>
 
 #include "c.h"
+#include "nls.h"
 #include "strutils.h"
 #include "bitops.h"
 
@@ -20,7 +21,7 @@ static int do_scale_by_power (uintmax_t *x, int base, int power)
 {
 	while (power--) {
 		if (UINTMAX_MAX / base < *x)
-			return -2;
+			return -ERANGE;
 		*x *= base;
 	}
 	return 0;
@@ -32,30 +33,43 @@ static int do_scale_by_power (uintmax_t *x, int base, int power)
  * Supported suffixes:
  *
  * XiB or X for 2^N
- *     where X = {K,M,G,T,P,E,Y,Z}
+ *     where X = {K,M,G,T,P,E,Z,Y}
  *        or X = {k,m,g,t,p,e}  (undocumented for backward compatibility only)
  * for example:
  *		10KiB	= 10240
  *		10K	= 10240
  *
  * XB for 10^N
- *     where X = {K,M,G,T,P,E,Y,Z}
+ *     where X = {K,M,G,T,P,E,Z,Y}
  * for example:
  *		10KB	= 10000
+ *
+ * The optinal 'power' variable returns number associated with used suffix
+ * {K,M,G,T,P,E,Z,Y}  = {1,2,3,4,5,6,7,8}.
+ *
+ * The function also supports decimal point, for example:
+ *              0.5MB   = 500000
+ *              0.5MiB  = 512000
  *
  * Note that the function does not accept numbers with '-' (negative sign)
  * prefix.
  */
-int strtosize(const char *str, uintmax_t *res)
+int parse_size(const char *str, uintmax_t *res, int *power)
 {
 	char *p;
-	uintmax_t x;
-	int base = 1024, rc = 0;
+	uintmax_t x, frac = 0;
+	int base = 1024, rc = 0, pwr = 0, frac_zeros = 0;
+
+	static const char *suf  = "KMGTPEYZ";
+	static const char *suf2 = "kmgtpeyz";
+	const char *sp;
 
 	*res = 0;
 
-	if (!str || !*str)
+	if (!str || !*str) {
+		rc = -EINVAL;
 		goto err;
+	}
 
 	/* Only positive numbers are acceptable
 	 *
@@ -66,71 +80,114 @@ int strtosize(const char *str, uintmax_t *res)
 	p = (char *) str;
 	while (isspace((unsigned char) *p))
 		p++;
-	if (*p == '-')
+	if (*p == '-') {
+		rc = -EINVAL;
 		goto err;
+	}
 	p = NULL;
 
 	errno = 0;
 	x = strtoumax(str, &p, 0);
 
 	if (p == str ||
-	    (errno != 0 && (x == UINTMAX_MAX || x == 0)))
+	    (errno != 0 && (x == UINTMAX_MAX || x == 0))) {
+		rc = errno ? -errno : -1;
 		goto err;
-
+	}
 	if (!p || !*p)
 		goto done;			/* without suffix */
 
 	/*
 	 * Check size suffixes
 	 */
+check_suffix:
 	if (*(p + 1) == 'i' && *(p + 2) == 'B' && !*(p + 3))
 		base = 1024;			/* XiB, 2^N */
 	else if (*(p + 1) == 'B' && !*(p + 2))
 		base = 1000;			/* XB, 10^N */
-	else if (*(p + 1))
-		goto err;			/* unexpected suffix */
+	else if (*(p + 1)) {
+		struct lconv const *l = localeconv();
+		char *dp = l ? l->decimal_point : NULL;
+		size_t dpsz = dp ? strlen(dp) : 0;
 
-	switch(*p) {
-	case 'K':
-	case 'k':
-		rc = do_scale_by_power(&x, base, 1);
-		break;
-	case 'M':
-	case 'm':
-		rc = do_scale_by_power(&x, base, 2);
-		break;
-	case 'G':
-	case 'g':
-		rc = do_scale_by_power(&x, base, 3);
-		break;
-	case 'T':
-	case 't':
-		rc = do_scale_by_power(&x, base, 4);
-		break;
-	case 'P':
-	case 'p':
-		rc = do_scale_by_power(&x, base, 5);
-		break;
-	case 'E':
-	case 'e':
-		rc = do_scale_by_power(&x, base, 6);
-		break;
-	case 'Z':
-		rc = do_scale_by_power(&x, base, 7);
-		break;
-	case 'Y':
-		rc = do_scale_by_power(&x, base, 8);
-		break;
-	default:
-		goto err;
+		if (frac == 0 && *p && dp && strncmp(dp, p, dpsz) == 0) {
+			char *fstr = p + dpsz;
+
+			for (p = fstr; *p && *p == '0'; p++)
+				frac_zeros++;
+			errno = 0, p = NULL;
+			frac = strtoumax(fstr, &p, 0);
+			if (p == fstr ||
+			    (errno != 0 && (frac == UINTMAX_MAX || frac == 0))) {
+				rc = errno ? -errno : -1;
+				goto err;
+			}
+			if (frac && (!p  || !*p)) {
+				rc = -EINVAL;
+				goto err;		/* without suffix, but with frac */
+			}
+			goto check_suffix;
+		}
+		rc = -EINVAL;
+		goto err;			/* unexpected suffix */
 	}
 
+	sp = strchr(suf, *p);
+	if (sp)
+		pwr = (sp - suf) + 1;
+	else {
+		sp = strchr(suf2, *p);
+		if (sp)
+			pwr = (sp - suf2) + 1;
+		else {
+			rc = -EINVAL;
+			goto err;
+		}
+	}
+
+	rc = do_scale_by_power(&x, base, pwr);
+	if (power)
+		*power = pwr;
+	if (frac && pwr) {
+		int zeros_in_pwr = frac_zeros % 3;
+		int frac_pwr = pwr - (frac_zeros / 3) - 1;
+		uintmax_t y = frac * (zeros_in_pwr == 0 ? 100 :
+				      zeros_in_pwr == 1 ?  10 : 1);
+
+		if (frac_pwr < 0) {
+			rc = -EINVAL;
+			goto err;
+		}
+		do_scale_by_power(&y, base, frac_pwr);
+		x += y;
+	}
 done:
 	*res = x;
-	return rc;
 err:
-	return -1;
+	return rc;
 }
+
+int strtosize(const char *str, uintmax_t *res)
+{
+	return parse_size(str, res, NULL);
+}
+
+int isdigit_string(const char *str)
+{
+	const char *p;
+
+	for (p = str; p && *p && isdigit((unsigned char) *p); p++);
+
+	return p && p > str && !*p;
+}
+
+
+#ifndef HAVE_MEMPCPY
+void *mempcpy(void *restrict dest, const void *restrict src, size_t n)
+{
+    return ((char *)memcpy(dest, src, n)) + n;
+}
+#endif
 
 #ifndef HAVE_STRNLEN
 size_t strnlen(const char *s, size_t maxlen)
@@ -167,57 +224,130 @@ char *strndup(const char *s, size_t n)
 }
 #endif
 
-/*
- * same as strtol(3) but exit on failure instead of returning crap
- */
+int16_t strtos16_or_err(const char *str, const char *errmesg)
+{
+	int32_t num = strtos32_or_err(str, errmesg);
+
+	if (num < INT16_MIN || num > INT16_MAX)
+		errx(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
+
+	return num;
+}
+
+uint16_t strtou16_or_err(const char *str, const char *errmesg)
+{
+	uint32_t num = strtou32_or_err(str, errmesg);
+
+	if (num > UINT16_MAX)
+		errx(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
+
+	return num;
+}
+
+int32_t strtos32_or_err(const char *str, const char *errmesg)
+{
+	int64_t num = strtos64_or_err(str, errmesg);
+
+	if (num < INT32_MIN || num > INT32_MAX)
+		errx(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
+
+	return num;
+}
+
+uint32_t strtou32_or_err(const char *str, const char *errmesg)
+{
+	uint64_t num = strtou64_or_err(str, errmesg);
+
+	if (num > UINT32_MAX)
+		errx(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
+
+	return num;
+}
+
+int64_t strtos64_or_err(const char *str, const char *errmesg)
+{
+	int64_t num;
+	char *end = NULL;
+
+	if (str == NULL || *str == '\0')
+		goto err;
+	errno = 0;
+	num = strtoimax(str, &end, 10);
+
+	if (errno || str == end || (end && *end))
+		goto err;
+
+	return num;
+err:
+	if (errno)
+		err(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
+
+	errx(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
+}
+
+uint64_t strtou64_or_err(const char *str, const char *errmesg)
+{
+	uintmax_t num;
+	char *end = NULL;
+
+	if (str == NULL || *str == '\0')
+		goto err;
+	errno = 0;
+	num = strtoumax(str, &end, 10);
+
+	if (errno || str == end || (end && *end))
+		goto err;
+
+	return num;
+err:
+	if (errno)
+		err(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
+
+	errx(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
+}
+
+
+double strtod_or_err(const char *str, const char *errmesg)
+{
+	double num;
+	char *end = NULL;
+
+	if (str == NULL || *str == '\0')
+		goto err;
+	errno = 0;
+	num = strtod(str, &end);
+
+	if (errno || str == end || (end && *end))
+		goto err;
+
+	return num;
+err:
+	if (errno)
+		err(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
+
+	errx(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
+}
+
 long strtol_or_err(const char *str, const char *errmesg)
 {
-       long num;
-       char *end = NULL;
+	long num;
+	char *end = NULL;
 
-       if (str == NULL || *str == '\0')
-               goto err;
-       errno = 0;
-       num = strtol(str, &end, 10);
+	if (str == NULL || *str == '\0')
+		goto err;
+	errno = 0;
+	num = strtol(str, &end, 10);
 
-       if (errno || str == end || (end && *end))
-               goto err;
+	if (errno || str == end || (end && *end))
+		goto err;
 
-       return num;
+	return num;
 err:
-       if (errno)
-               err(EXIT_FAILURE, "%s: '%s'", errmesg, str);
-       else
-               errx(EXIT_FAILURE, "%s: '%s'", errmesg, str);
-       return 0;
+	if (errno)
+		err(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
+	errx(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
 }
-/*
- * same as strtoll(3) but exit on failure instead of returning crap
- */
-long long strtoll_or_err(const char *str, const char *errmesg)
-{
-       long long num;
-       char *end = NULL;
 
-       if (str == NULL || *str == '\0')
-               goto err;
-       errno = 0;
-       num = strtoll(str, &end, 10);
-
-       if (errno || str == end || (end && *end))
-               goto err;
-
-       return num;
-err:
-       if (errno)
-               err(EXIT_FAILURE, "%s: '%s'", errmesg, str);
-       else
-               errx(EXIT_FAILURE, "%s: '%s'", errmesg, str);
-       return 0;
-}
-/*
- * same as strtoul(3) but exit on failure instead of returning crap
- */
 unsigned long strtoul_or_err(const char *str, const char *errmesg)
 {
 	unsigned long num;
@@ -234,15 +364,37 @@ unsigned long strtoul_or_err(const char *str, const char *errmesg)
 	return num;
 err:
 	if (errno)
-		err(EXIT_FAILURE, "%s: '%s'", errmesg, str);
-	else
-		errx(EXIT_FAILURE, "%s: '%s'", errmesg, str);
-	return 0;
+		err(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
+
+	errx(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
+}
+
+uintmax_t strtosize_or_err(const char *str, const char *errmesg)
+{
+	uintmax_t num;
+
+	if (strtosize(str, &num) == 0)
+		return num;
+
+	if (errno)
+		err(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
+
+	errx(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
+}
+
+
+void strtotimeval_or_err(const char *str, struct timeval *tv, const char *errmesg)
+{
+	double user_input;
+
+	user_input = strtod_or_err(str, errmesg);
+	tv->tv_sec = (time_t) user_input;
+	tv->tv_usec = (long)((user_input - tv->tv_sec) * 1000000);
 }
 
 /*
  * Converts stat->st_mode to ls(1)-like mode string. The size of "str" must
- * be 10 bytes.
+ * be 11 bytes.
  */
 void strmode(mode_t mode, char *str)
 {
@@ -369,6 +521,8 @@ int string_to_idarray(const char *list, int ary[], size_t arysz,
 		const char *end = NULL;
 		int id;
 
+		if (n >= arysz)
+			return -2;
 		if (!begin)
 			begin = p;		/* begin of the column name */
 		if (*p == ',')
@@ -384,8 +538,6 @@ int string_to_idarray(const char *list, int ary[], size_t arysz,
 		if (id == -1)
 			return -1;
 		ary[ n++ ] = id;
-		if (n >= arysz)
-			return -2;
 		begin = NULL;
 		if (end && !*end)
 			break;
@@ -394,13 +546,40 @@ int string_to_idarray(const char *list, int ary[], size_t arysz,
 }
 
 /*
+ * Parses the array like string_to_idarray but if format is "+aaa,bbb"
+ * it adds fields to array instead of replacing them.
+ */
+int string_add_to_idarray(const char *list, int ary[], size_t arysz,
+			int *ary_pos, int (name2id)(const char *, size_t))
+{
+	const char *list_add;
+	int r;
+
+	if (!list || !*list || !ary_pos ||
+	    *ary_pos < 0 || (size_t) *ary_pos > arysz)
+		return -1;
+
+	if (list[0] == '+')
+		list_add = &list[1];
+	else {
+		list_add = list;
+		*ary_pos = 0;
+	}
+
+	r = string_to_idarray(list_add, &ary[*ary_pos], arysz - *ary_pos, name2id);
+	if (r > 0)
+		*ary_pos += r;
+	return r;
+}
+
+/*
  * LIST ::= <item> [, <item>]
  *
  * The <item> is translated to 'id' by name2id() function and the 'id' is used
- * as a possition in the 'ary' bit array. It means that the 'id' has to be in
+ * as a position in the 'ary' bit array. It means that the 'id' has to be in
  * range <0..N> where N < sizeof(ary) * NBBY.
  *
- * Returns: 0 on sucess, <0 on error.
+ * Returns: 0 on success, <0 on error.
  */
 int string_to_bitarray(const char *list,
 		     char *ary,
@@ -437,6 +616,125 @@ int string_to_bitarray(const char *list,
 	return 0;
 }
 
+/*
+ * LIST ::= <item> [, <item>]
+ *
+ * The <item> is translated to 'id' by name2flag() function and the flags is
+ * set to the 'mask'
+*
+ * Returns: 0 on success, <0 on error.
+ */
+int string_to_bitmask(const char *list,
+		     unsigned long *mask,
+		     long (*name2flag)(const char *, size_t))
+{
+	const char *begin = NULL, *p;
+
+	if (!list || !name2flag || !mask)
+		return -EINVAL;
+
+	for (p = list; p && *p; p++) {
+		const char *end = NULL;
+		long flag;
+
+		if (!begin)
+			begin = p;		/* begin of the level name */
+		if (*p == ',')
+			end = p;		/* terminate the name */
+		if (*(p + 1) == '\0')
+			end = p + 1;		/* end of string */
+		if (!begin || !end)
+			continue;
+		if (end <= begin)
+			return -1;
+
+		flag = name2flag(begin, end - begin);
+		if (flag < 0)
+			return flag;	/* error */
+		*mask |= flag;
+		begin = NULL;
+		if (end && !*end)
+			break;
+	}
+	return 0;
+}
+
+/*
+ * Parse the lower and higher values in a string containing
+ * "lower:higher" or "lower-higher" format. Note that either
+ * the lower or the higher values may be missing, and the def
+ * value will be assigned to it by default.
+ *
+ * Returns: 0 on success, <0 on error.
+ */
+int parse_range(const char *str, int *lower, int *upper, int def)
+{
+	char *end = NULL;
+
+	if (!str)
+		return 0;
+
+	*upper = *lower = def;
+	errno = 0;
+
+	if (*str == ':') {				/* <:N> */
+		str++;
+		*upper = strtol(str, &end, 10);
+		if (errno || !end || *end || end == str)
+			return -1;
+	} else {
+		*upper = *lower = strtol(str, &end, 10);
+		if (errno || !end || end == str)
+			return -1;
+
+		if (*end == ':' && !*(end + 1))		/* <M:> */
+			*upper = 0;
+		else if (*end == '-' || *end == ':') {	/* <M:N> <M-N> */
+			str = end + 1;
+			end = NULL;
+			errno = 0;
+			*upper = strtol(str, &end, 10);
+
+			if (errno || !end || *end || end == str)
+				return -1;
+		}
+	}
+	return 0;
+}
+
+/*
+ * Compare two strings for equality, ignoring at most one trailing
+ * slash.
+ */
+int streq_except_trailing_slash(const char *s1, const char *s2)
+{
+	int equal;
+
+	if (!s1 && !s2)
+		return 1;
+	if (!s1 || !s2)
+		return 0;
+
+	equal = !strcmp(s1, s2);
+
+	if (!equal) {
+		size_t len1 = strlen(s1);
+		size_t len2 = strlen(s2);
+
+		if (len1 && *(s1 + len1 - 1) == '/')
+			len1--;
+		if (len2 && *(s2 + len2 - 1) == '/')
+			len2--;
+		if (len1 != len2)
+			return 0;
+
+		equal = !strncmp(s1, s2, len1);
+	}
+
+	return equal;
+}
+
+
 #ifdef TEST_PROGRAM
 
 int main(int argc, char *argv[])
@@ -460,6 +758,6 @@ int main(int argc, char *argv[])
 	free(hum);
 	free(hum2);
 
-	return EXIT_FAILURE;
+	return EXIT_SUCCESS;
 }
 #endif /* TEST_PROGRAM */

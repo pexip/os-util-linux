@@ -17,10 +17,9 @@
 .\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 .\" GNU General Public License for more details.
 .\"
-.\" You should have received a copy of the GNU General Public
-.\" License along with this manual; if not, write to the Free
-.\" Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111,
-.\" USA.
+.\" You should have received a copy of the GNU General Public License along
+.\" with this program; if not, write to the Free Software Foundation, Inc.,
+.\" 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 .\"
 .\" 2002-05-11 Robert Love <rml@tech9.net>
 .\" 	Initial version
@@ -84,7 +83,7 @@ are separated by commas and may include ranges.  For example:
 .BR 0,5,7,9-11 .
 .TP
 .BR \-h ,\  \-\-help
-Display usage information and exit.
+Display help text and exit.
 .TP
 .BR \-V ,\  \-\-version
 Display version information and exit.
@@ -103,10 +102,11 @@ Or set it:
 .B taskset \-p
 .I mask pid
 .SH PERMISSIONS
+A user can change the CPU affinity of a process belonging to the same user.
 A user must possess
 .B CAP_SYS_NICE
-to change the CPU affinity of a process.  Any user can retrieve the affinity
-mask.
+to change the CPU affinity of a process belonging to another user.
+A user can retrieve the affinity mask of any process.
 .SH AUTHOR
 Written by Robert M. Love.
 .SH COPYRIGHT
