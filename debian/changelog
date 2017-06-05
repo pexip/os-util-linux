@@ -1,3 +1,9 @@
+util-linux (2.25.2-6pexip2) pexip; urgency=low
+
+  * debian/util-linux.maintscript: Remove obsolete hwclock config on upgrade
+
+ -- John-Mark Bell <jmb@pexip.com>  Mon, 05 Jun 2017 16:58:29 +0100
+
 util-linux (2.25.2-6pexip1) pexip; urgency=low
 
   * New upstream release
