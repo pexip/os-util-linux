@@ -12,13 +12,12 @@
 #include <stdio.h>
 
 #include "superblocks.h"
-#include "crc64.h"
 
 #define SB_LABEL_SIZE      32
 #define SB_JOURNAL_BUCKETS 256U
 
 #define node(i, j)         ((i)->d + (j))
-#define end(i)             node(i, (i)->keys)
+#define end(i)             node(i, le16_to_cpu((i)->keys))
 
 static const char bcache_magic[] = {
 	0xc6, 0x85, 0x73, 0xf6, 0x4e, 0x1a, 0x45, 0xca,
@@ -87,17 +86,6 @@ struct bcache_super_block {
 /* magic string offset within super block */
 #define BCACHE_SB_MAGIC_OFF offsetof (struct bcache_super_block, magic)
 
-static uint64_t bcache_crc64(struct bcache_super_block *bcs)
-{
-	unsigned char *data = (unsigned char *) bcs;
-	size_t sz;
-
-	data += 8;		/* skip csum field */
-	sz = (unsigned char *) end(bcs) - data;
-
-	return crc64(0xFFFFFFFFFFFFFFFFULL, data, sz) ^ 0xFFFFFFFFFFFFFFFFULL;
-}
-
 static int probe_bcache (blkid_probe pr, const struct blkid_idmag *mag)
 {
 	struct bcache_super_block *bcs;
@@ -108,14 +96,12 @@ static int probe_bcache (blkid_probe pr, const struct blkid_idmag *mag)
 
 	if (le64_to_cpu(bcs->offset) != BCACHE_SB_OFF / 512)
 		return BLKID_PROBE_NONE;
-	if (!blkid_probe_verify_csum(pr, bcache_crc64(bcs), le64_to_cpu(bcs->csum)))
-		return BLKID_PROBE_NONE;
 
 	if (blkid_probe_set_uuid(pr, bcs->uuid) < 0)
 		return BLKID_PROBE_NONE;
 
 	return BLKID_PROBE_OK;
-};
+}
 
 const struct blkid_idinfo bcache_idinfo =
 {

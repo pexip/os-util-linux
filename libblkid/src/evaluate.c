@@ -128,7 +128,7 @@ int blkid_send_uevent(const char *devname, const char *action)
 			DBG(EVALUATE, ul_debug("write failed: %s", uevent));
 	}
 	DBG(EVALUATE, ul_debug("%s: send uevent %s",
-			uevent, rc == 0 ? "SUCCES" : "FAILED"));
+			uevent, rc == 0 ? "SUCCESS" : "FAILED"));
 	return rc;
 }
 
@@ -240,8 +240,7 @@ char *blkid_evaluate_tag(const char *token, const char *value, blkid_cache *cach
 			ret = strdup(token);
 			goto out;
 		}
-		blkid_parse_tag_string(token, &t, &v);
-		if (!t || !v)
+		if (blkid_parse_tag_string(token, &t, &v) != 0 || !t || !v)
 			goto out;
 		token = t;
 		value = v;

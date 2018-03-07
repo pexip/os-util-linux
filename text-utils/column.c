@@ -50,18 +50,16 @@
 #include <getopt.h>
 
 #include "nls.h"
-#include "widechar.h"
 #include "c.h"
+#include "widechar.h"
 #include "xalloc.h"
 #include "strutils.h"
 #include "closestream.h"
 #include "ttyutils.h"
 
 #ifdef HAVE_WIDECHAR
-#define wcs_width(s) wcswidth(s,wcslen(s))
 static wchar_t *mbs_to_wcs(const char *);
 #else
-#define wcs_width(s) strlen(s)
 #define mbs_to_wcs(s) xstrdup(s)
 static char *mtsafe_strtok(char *, const char *, char **);
 #define wcstok mtsafe_strtok
@@ -84,12 +82,43 @@ typedef struct _tbl {
 	int cols, *len;
 } TBL;
 
+
+#ifdef HAVE_WIDECHAR
+/* Don't use wcswidth(), we need to ignore non-printable chars. */
+static int width(const wchar_t *str)
+{
+	int x, width = 0;
+
+	for (; *str != '\0'; str++) {
+		x = wcwidth(*str);
+		if (x > 0)
+			width += x;
+	}
+	return width;
+}
+#else
+static int width(const char *str)
+{
+	int width = 0;
+
+	for (; *str != '\0'; str++) {
+		if (isprint(*str))
+			width++;
+	}
+	return width;
+}
+#endif
+
 static void __attribute__((__noreturn__)) usage(int rc)
 {
 	FILE *out = rc == EXIT_FAILURE ? stderr : stdout;
 
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options] [<file>...]\n"), program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Columnate lists.\n"), out);
+
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -c, --columns <width>    width of output in number of characters\n"), out);
 	fputs(_(" -t, --table              create a table\n"), out);
@@ -138,9 +167,7 @@ int main(int argc, char **argv)
 	textdomain(PACKAGE);
 	atexit(close_stdout);
 
-	termwidth = get_terminal_width();
-	if (termwidth <= 0)
-		termwidth = 80;
+	termwidth = get_terminal_width(80);
 	colsep = mbs_to_wcs("  ");
 
 	while ((ch = getopt_long(argc, argv, "hVc:s:txo:", longopts, NULL)) != -1)
@@ -149,9 +176,8 @@ int main(int argc, char **argv)
 			usage(EXIT_SUCCESS);
 			break;
 		case 'V':
-			printf(_("%s from %s\n"), program_invocation_short_name,
-				 PACKAGE_STRING);
-				 return EXIT_SUCCESS;
+			printf(UTIL_LINUX_VERSION);
+			return EXIT_SUCCESS;
 		case 'c':
 			termwidth = strtou32_or_err(optarg, _("invalid columns argument"));
 			break;
@@ -222,7 +248,7 @@ static void c_columnate(int maxlength, long termwidth, wchar_t **list, int entri
 	endcol = maxlength;
 	for (chcnt = col = 0, lp = list;; ++lp) {
 		fputws(*lp, stdout);
-		chcnt += wcs_width(*lp);
+		chcnt += width(*lp);
 		if (!--entries)
 			break;
 		if (++col == numcols) {
@@ -247,7 +273,7 @@ static void r_columnate(int maxlength, long termwidth, wchar_t **list, int entri
 
 	maxlength = (maxlength + TAB) & ~(TAB - 1);
 	numcols = termwidth / maxlength;
-	if (!numcols) 
+	if (!numcols)
 		numcols = 1;
 	numrows = entries / numcols;
 	if (entries % numcols)
@@ -257,7 +283,7 @@ static void r_columnate(int maxlength, long termwidth, wchar_t **list, int entri
 		endcol = maxlength;
 		for (base = row, chcnt = col = 0; col < numcols; ++col) {
 			fputws(list[base], stdout);
-			chcnt += wcs_width(list[base]);
+			chcnt += width(list[base]);
 			if ((base += numrows) >= entries)
 				break;
 			while ((cnt = ((chcnt + TAB) & ~(TAB - 1))) <= endcol) {
@@ -338,7 +364,7 @@ static void maketbl(wchar_t **list, int entries, wchar_t *separator, int greedy,
 		t->len = xcalloc(coloff, sizeof(int));
 		for (t->cols = coloff; --coloff >= 0;) {
 			t->list[coloff] = cols[coloff];
-			t->len[coloff] = wcs_width(cols[coloff]);
+			t->len[coloff] = width(cols[coloff]);
 			if (t->len[coloff] > lens[coloff])
 				lens[coloff] = t->len[coloff];
 		}
@@ -347,7 +373,11 @@ static void maketbl(wchar_t **list, int entries, wchar_t *separator, int greedy,
 	for (t = tbl, cnt = 0; cnt < entries; ++cnt, ++t) {
 		for (coloff = 0; coloff < t->cols - 1; ++coloff) {
 			fputws(t->list[coloff], stdout);
+#ifdef HAVE_WIDECHAR
 			wprintf(L"%*s", lens[coloff] - t->len[coloff], "");
+#else
+			printf("%*s", (int) lens[coloff] - t->len[coloff], "");
+#endif
 			fputws(colsep, stdout);
 		}
 		if (coloff < t->cols) {
@@ -399,7 +429,7 @@ static int input(FILE *fp, int *maxlength, wchar_t ***list, int *entries)
 		lineno++;
 		if (!feof(fp) && p)
 			*p = '\0';
-		len = wcs_width(buf);	/* len = p - buf; */
+		len = width(buf);	/* len = p - buf; */
 		if (*maxlength < len)
 			*maxlength = len;
 		if (local_entries == maxentry) {

@@ -65,7 +65,7 @@
  *
  * @SBMAGIC_OFFSET: offset of SBMAGIC
  *
- * @FSSIZE: size of filessystem [not-implemented yet]
+ * @FSSIZE: size of filesystem [not-implemented yet]
  *
  * @SYSTEM_ID: ISO9660 system identifier
  *
@@ -103,6 +103,7 @@ static const struct blkid_idinfo *idinfos[] =
 
 	&bcache_idinfo,
 	&drbd_idinfo,
+	&drbdmanage_idinfo,
 	&drbdproxy_datalog_idinfo,
 	&lvm2_idinfo,
 	&lvm1_idinfo,
@@ -184,8 +185,6 @@ const struct blkid_chaindrv superblocks_drv = {
  */
 int blkid_probe_enable_superblocks(blkid_probe pr, int enable)
 {
-	if (!pr)
-		return -1;
 	pr->chains[BLKID_CHAIN_SUBLKS].enabled = enable;
 	return 0;
 }
@@ -202,9 +201,6 @@ int blkid_probe_enable_superblocks(blkid_probe pr, int enable)
  */
 int blkid_probe_set_superblocks_flags(blkid_probe pr, int flags)
 {
-	if (!pr)
-		return -1;
-
 	pr->chains[BLKID_CHAIN_SUBLKS].flags = flags;
 	return 0;
 }
@@ -293,14 +289,11 @@ int blkid_probe_filter_superblocks_usage(blkid_probe pr, int flag, int usage)
  * blkid_known_fstype:
  * @fstype: filesystem name
  *
- * Returns: 1 for known filesytems, or 0 for unknown filesystem.
+ * Returns: 1 for known filesystems, or 0 for unknown filesystem.
  */
 int blkid_known_fstype(const char *fstype)
 {
 	size_t i;
-
-	if (!fstype)
-		return 0;
 
 	for (i = 0; i < ARRAY_SIZE(idinfos); i++) {
 		const struct blkid_idinfo *id = idinfos[i];
@@ -338,10 +331,10 @@ static int superblocks_probe(blkid_probe pr, struct blkid_chain *chn)
 	size_t i;
 	int rc = BLKID_PROBE_NONE;
 
-	if (!pr || chn->idx < -1)
+	if (chn->idx < -1)
 		return -EINVAL;
 
-	blkid_probe_chain_reset_vals(pr, chn);
+	blkid_probe_chain_reset_values(pr, chn);
 
 	if (pr->flags & BLKID_FL_NOSCAN_DEV)
 		return BLKID_PROBE_NONE;
@@ -360,7 +353,7 @@ static int superblocks_probe(blkid_probe pr, struct blkid_chain *chn)
 	for ( ; i < ARRAY_SIZE(idinfos); i++) {
 		const struct blkid_idinfo *id;
 		const struct blkid_idmag *mag = NULL;
-		blkid_loff_t off = 0;
+		uint64_t off = 0;
 
 		chn->idx = i;
 		id = idinfos[i];
@@ -371,7 +364,7 @@ static int superblocks_probe(blkid_probe pr, struct blkid_chain *chn)
 			continue;
 		}
 
-		if (id->minsz && id->minsz > pr->size) {
+		if (id->minsz && (unsigned)id->minsz > pr->size) {
 			rc = BLKID_PROBE_NONE;
 			continue;	/* the device is too small */
 		}
@@ -402,14 +395,14 @@ static int superblocks_probe(blkid_probe pr, struct blkid_chain *chn)
 			DBG(LOWPROBE, ul_debug("\tcall probefunc()"));
 			rc = id->probefunc(pr, mag);
 			if (rc != BLKID_PROBE_OK) {
-				blkid_probe_chain_reset_vals(pr, chn);
+				blkid_probe_chain_reset_values(pr, chn);
 				if (rc < 0)
 					break;
 				continue;
 			}
 		}
 
-		/* all cheks passed */
+		/* all checks passed */
 		if (chn->flags & BLKID_SUBLKS_TYPE)
 			rc = blkid_probe_set_value(pr, "TYPE",
 				(unsigned char *) id->name,
@@ -422,7 +415,7 @@ static int superblocks_probe(blkid_probe pr, struct blkid_chain *chn)
 			rc = blkid_probe_set_magic(pr, off, mag->len,
 					(unsigned char *) mag->magic);
 		if (rc) {
-			blkid_probe_chain_reset_vals(pr, chn);
+			blkid_probe_chain_reset_values(pr, chn);
 			DBG(LOWPROBE, ul_debug("failed to set result -- ignore"));
 			continue;
 		}
@@ -439,7 +432,7 @@ static int superblocks_probe(blkid_probe pr, struct blkid_chain *chn)
 
 /*
  * This is the same function as blkid_do_probe(), but returns only one result
- * (cannot be used in while()) and checks for ambivalen results (more
+ * (cannot be used in while()) and checks for ambivalent results (more
  * filesystems on the device) -- in such case returns -2.
  *
  * The function does not check for filesystems when a RAID or crypto signature
@@ -451,12 +444,13 @@ static int superblocks_probe(blkid_probe pr, struct blkid_chain *chn)
  */
 static int superblocks_safeprobe(blkid_probe pr, struct blkid_chain *chn)
 {
-	struct blkid_prval vals[BLKID_NVALS_SUBLKS];
-	int nvals = BLKID_NVALS_SUBLKS;
+	struct list_head vals;
 	int idx = -1;
 	int count = 0;
 	int intol = 0;
 	int rc;
+
+	INIT_LIST_HEAD(&vals);
 
 	if (pr->flags & BLKID_FL_NOSCAN_DEV)
 		return BLKID_PROBE_NONE;
@@ -478,39 +472,45 @@ static int superblocks_safeprobe(blkid_probe pr, struct blkid_chain *chn)
 
 		if (count == 1) {
 			/* save the first result */
-			nvals = blkid_probe_chain_copy_vals(pr, chn, vals, nvals);
+			blkid_probe_chain_save_values(pr, chn, &vals);
 			idx = chn->idx;
 		}
 	}
 
 	if (rc < 0)
-		return rc;		/* error */
+		goto done;		/* error */
 
 	if (count > 1 && intol) {
 		DBG(LOWPROBE, ul_debug("ERROR: superblocks chain: "
 			       "ambivalent result detected (%d filesystems)!",
 			       count));
-		return -2;		/* error, ambivalent result (more FS) */
+		rc = -2;		/* error, ambivalent result (more FS) */
+		goto done;
 	}
-	if (!count)
-		return BLKID_PROBE_NONE;
+	if (!count) {
+		rc = BLKID_PROBE_NONE;
+		goto done;
+	}
 
 	if (idx != -1) {
 		/* restore the first result */
-		blkid_probe_chain_reset_vals(pr, chn);
-		blkid_probe_append_vals(pr, vals, nvals);
+		blkid_probe_chain_reset_values(pr, chn);
+		blkid_probe_append_values_list(pr, &vals);
 		chn->idx = idx;
 	}
 
 	/*
 	 * The RAID device could be partitioned. The problem are RAID1 devices
-	 * where the partition table is visible from underlaying devices. We
+	 * where the partition table is visible from underlying devices. We
 	 * have to ignore such partition tables.
 	 */
 	if (chn->idx >= 0 && idinfos[chn->idx]->usage & BLKID_USAGE_RAID)
 		pr->prob_flags |= BLKID_PROBE_FL_IGNORE_PT;
 
-	return BLKID_PROBE_OK;
+	rc = BLKID_PROBE_OK;
+done:
+	blkid_probe_free_values_list(&vals);
+	return rc;
 }
 
 int blkid_probe_set_version(blkid_probe pr, const char *version)
@@ -566,56 +566,87 @@ int blkid_probe_set_id_label(blkid_probe pr, const char *name,
 {
 	struct blkid_chain *chn = blkid_probe_get_chain(pr);
 	struct blkid_prval *v;
+	int rc = 0;
 
 	if (!(chn->flags & BLKID_SUBLKS_LABEL))
 		return 0;
 
 	v = blkid_probe_assign_value(pr, name);
 	if (!v)
-		return -1;
+		return -ENOMEM;
 
-	if (len >= BLKID_PROBVAL_BUFSIZ)
-		len = BLKID_PROBVAL_BUFSIZ - 1;			/* make a space for \0 */
+	rc = blkid_probe_value_set_data(v, data, len);
+	if (!rc) {
+		/* remove white spaces */
+		v->len = blkid_rtrim_whitespace(v->data) + 1;
+		if (v->len > 1)
+			v->len = blkid_ltrim_whitespace(v->data) + 1;
+		if (v->len > 1)
+			return 0;
+	}
 
-	memcpy(v->data, data, len);
-	v->data[len] = '\0';
+	blkid_probe_free_value(v);
+	return rc;
 
-	/* remove white spaces */
-	v->len = blkid_rtrim_whitespace(v->data) + 1;
-	if (v->len > 1)
-		v->len = blkid_ltrim_whitespace(v->data) + 1;
+}
 
-	if (v->len <= 1)
-		blkid_probe_reset_last_value(pr);		/* ignore empty */
-	return 0;
+int blkid_probe_set_utf8_id_label(blkid_probe pr, const char *name,
+			     unsigned char *data, size_t len, int enc)
+{
+	struct blkid_chain *chn = blkid_probe_get_chain(pr);
+	struct blkid_prval *v;
+	int rc = 0;
+
+	if (!(chn->flags & BLKID_SUBLKS_LABEL))
+		return 0;
+
+	v = blkid_probe_assign_value(pr, name);
+	if (!v)
+		return -ENOMEM;
+
+	v->data = blkid_encode_alloc(len, &v->len);
+	if (!v->data)
+		rc = -ENOMEM;
+
+	if (!rc) {
+		blkid_encode_to_utf8(enc, v->data, v->len, data, len);
+		v->len = blkid_rtrim_whitespace(v->data) + 1;
+		if (v->len > 1)
+			v->len = blkid_ltrim_whitespace(v->data) + 1;
+		if (v->len > 1)
+			return 0;
+	}
+
+	blkid_probe_free_value(v);
+	return rc;
 }
 
 int blkid_probe_set_label(blkid_probe pr, unsigned char *label, size_t len)
 {
 	struct blkid_chain *chn = blkid_probe_get_chain(pr);
 	struct blkid_prval *v;
-	if (len > BLKID_PROBVAL_BUFSIZ)
-		len = BLKID_PROBVAL_BUFSIZ;
+	int rc = 0;
 
 	if ((chn->flags & BLKID_SUBLKS_LABELRAW) &&
-	    blkid_probe_set_value(pr, "LABEL_RAW", label, len) < 0)
-		return -1;
+	    (rc = blkid_probe_set_value(pr, "LABEL_RAW", label, len)) < 0)
+		return rc;
+
 	if (!(chn->flags & BLKID_SUBLKS_LABEL))
 		return 0;
+
 	v = blkid_probe_assign_value(pr, "LABEL");
 	if (!v)
-		return -1;
+		return -ENOMEM;
 
-	if (len == BLKID_PROBVAL_BUFSIZ)
-		len--;				/* make a space for \0 */
+	rc = blkid_probe_value_set_data(v, label, len);
+	if (!rc) {
+		v->len = blkid_rtrim_whitespace(v->data) + 1;
+		if (v->len > 1)
+			return 0;
+	}
 
-	memcpy(v->data, label, len);
-	v->data[len] = '\0';
-
-	v->len = blkid_rtrim_whitespace(v->data) + 1;
-	if (v->len == 1)
-		blkid_probe_reset_last_value(pr);
-	return 0;
+	blkid_probe_free_value(v);
+	return rc;
 }
 
 int blkid_probe_set_utf8label(blkid_probe pr, unsigned char *label,
@@ -623,39 +654,47 @@ int blkid_probe_set_utf8label(blkid_probe pr, unsigned char *label,
 {
 	struct blkid_chain *chn = blkid_probe_get_chain(pr);
 	struct blkid_prval *v;
+	int rc = 0;
 
 	if ((chn->flags & BLKID_SUBLKS_LABELRAW) &&
-	    blkid_probe_set_value(pr, "LABEL_RAW", label, len) < 0)
-		return -1;
+	    (rc = blkid_probe_set_value(pr, "LABEL_RAW", label, len)) < 0)
+		return rc;
+
 	if (!(chn->flags & BLKID_SUBLKS_LABEL))
 		return 0;
+
 	v = blkid_probe_assign_value(pr, "LABEL");
 	if (!v)
-		return -1;
+		return -ENOMEM;
 
-	blkid_encode_to_utf8(enc, v->data, sizeof(v->data), label, len);
-	v->len = blkid_rtrim_whitespace(v->data) + 1;
-	if (v->len == 1)
-		blkid_probe_reset_last_value(pr);
-	return 0;
+	v->data = blkid_encode_alloc(len, &v->len);
+	if (!v->data)
+		rc = -ENOMEM;
+	if (!rc) {
+		blkid_encode_to_utf8(enc, v->data, v->len, label, len);
+		v->len = blkid_rtrim_whitespace(v->data) + 1;
+		if (v->len > 1)
+			return 0;
+	}
+
+	blkid_probe_free_value(v);
+	return rc;
 }
 
 int blkid_probe_sprintf_uuid(blkid_probe pr, unsigned char *uuid,
 				size_t len, const char *fmt, ...)
 {
 	struct blkid_chain *chn = blkid_probe_get_chain(pr);
-	int rc = -1;
 	va_list ap;
-
-	if (len > BLKID_PROBVAL_BUFSIZ)
-		len = BLKID_PROBVAL_BUFSIZ;
+	int rc = 0;
 
 	if (blkid_uuid_is_empty(uuid, len))
 		return 0;
 
 	if ((chn->flags & BLKID_SUBLKS_UUIDRAW) &&
-	    blkid_probe_set_value(pr, "UUID_RAW", uuid, len) < 0)
-		return -1;
+	    (rc = blkid_probe_set_value(pr, "UUID_RAW", uuid, len)) < 0)
+		return rc;
+
 	if (!(chn->flags & BLKID_SUBLKS_UUID))
 		return 0;
 
@@ -663,50 +702,42 @@ int blkid_probe_sprintf_uuid(blkid_probe pr, unsigned char *uuid,
 	rc = blkid_probe_vsprintf_value(pr, "UUID", fmt, ap);
 	va_end(ap);
 
-	/* convert to lower case (..be paranoid) */
-	if (!rc) {
-		size_t i;
-		struct blkid_prval *v = __blkid_probe_get_value(pr,
-						blkid_probe_numof_values(pr));
-		if (v) {
-			for (i = 0; i < v->len; i++)
-				if (v->data[i] >= 'A' && v->data[i] <= 'F')
-					v->data[i] = (v->data[i] - 'A') + 'a';
-		}
-	}
 	return rc;
 }
 
-/* function to set UUIDs that are in suberblocks stored as strings */
+/* function to set UUIDs that are in superblocks stored as strings */
 int blkid_probe_strncpy_uuid(blkid_probe pr, unsigned char *str, size_t len)
 {
 	struct blkid_chain *chn = blkid_probe_get_chain(pr);
 	struct blkid_prval *v;
+	int rc = 0;
 
 	if (str == NULL || *str == '\0')
-		return -1;
+		return -EINVAL;
+
 	if (!len)
 		len = strlen((char *) str);
-	if (len > BLKID_PROBVAL_BUFSIZ)
-		len = BLKID_PROBVAL_BUFSIZ;
 
 	if ((chn->flags & BLKID_SUBLKS_UUIDRAW) &&
-	    blkid_probe_set_value(pr, "UUID_RAW", str, len) < 0)
-		return -1;
+	    (rc = blkid_probe_set_value(pr, "UUID_RAW", str, len)) < 0)
+		return rc;
+
 	if (!(chn->flags & BLKID_SUBLKS_UUID))
 		return 0;
 
 	v = blkid_probe_assign_value(pr, "UUID");
-	if (v) {
-		if (len == BLKID_PROBVAL_BUFSIZ)
-			len--;		/* make a space for \0 */
-
-		memcpy((char *) v->data, str, len);
-		v->data[len] = '\0';
-		v->len = len + 1;
-		return 0;
+	if (!v)
+		rc= -ENOMEM;
+	if (!rc)
+		rc = blkid_probe_value_set_data(v, str, len);
+	if (!rc) {
+		v->len = blkid_rtrim_whitespace(v->data) + 1;
+		if (v->len > 1)
+			return 0;
 	}
-	return -1;
+
+	blkid_probe_free_value(v);
+	return rc;
 }
 
 /* default _set_uuid function to set DCE UUIDs */
@@ -714,14 +745,16 @@ int blkid_probe_set_uuid_as(blkid_probe pr, unsigned char *uuid, const char *nam
 {
 	struct blkid_chain *chn = blkid_probe_get_chain(pr);
 	struct blkid_prval *v;
+	int rc = 0;
 
 	if (blkid_uuid_is_empty(uuid, 16))
 		return 0;
 
 	if (!name) {
 		if ((chn->flags & BLKID_SUBLKS_UUIDRAW) &&
-		    blkid_probe_set_value(pr, "UUID_RAW", uuid, 16) < 0)
-			return -1;
+		    (rc = blkid_probe_set_value(pr, "UUID_RAW", uuid, 16)) < 0)
+			return rc;
+
 		if (!(chn->flags & BLKID_SUBLKS_UUID))
 			return 0;
 
@@ -729,10 +762,21 @@ int blkid_probe_set_uuid_as(blkid_probe pr, unsigned char *uuid, const char *nam
 	} else
 		v = blkid_probe_assign_value(pr, name);
 
-	blkid_unparse_uuid(uuid, (char *) v->data, sizeof(v->data));
-	v->len = 37;
+	if (!v)
+		return -ENOMEM;
 
-	return 0;
+	v->len = 37;
+	v->data = calloc(1, v->len);
+	if (!v->data)
+		rc = -ENOMEM;
+
+	if (!rc) {
+		blkid_unparse_uuid(uuid, (char *) v->data, v->len);
+		return 0;
+	}
+
+	blkid_probe_free_value(v);
+	return rc;
 }
 
 int blkid_probe_set_uuid(blkid_probe pr, unsigned char *uuid)

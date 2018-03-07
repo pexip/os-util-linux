@@ -61,8 +61,7 @@ static inline unsigned char *get_mac_block(
 					uint16_t block_size,
 					uint32_t num)
 {
-	return blkid_probe_get_buffer(pr,
-			(blkid_loff_t) num * block_size, block_size);
+	return blkid_probe_get_buffer(pr, (uint64_t) num * block_size, block_size);
 }
 
 static inline int has_part_signature(struct mac_partition *p)
@@ -140,7 +139,7 @@ static int probe_mac_pt(blkid_probe pr,
 
 		if (be32_to_cpu(p->map_count) != nblks) {
 			DBG(LOWPROBE, ul_debug(
-				"mac: inconsisten map_count in partition map, "
+				"mac: inconsistent map_count in partition map, "
 				"entry[0]: %d, entry[%d]: %d",
 				nblks, i - 1,
 				be32_to_cpu(p->map_count)));

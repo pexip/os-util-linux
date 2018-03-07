@@ -46,10 +46,14 @@ static int verbose = 0;
 /* print the usage */
 static void __attribute__ ((__noreturn__)) usage(FILE * out)
 {
-	fprintf(out, USAGE_HEADER);
-	fprintf(out, " %s [options]\n", program_invocation_short_name);
-	fprintf(out, " %s shm|msg|sem <id>...\n", program_invocation_short_name);
-	fprintf(out, USAGE_OPTIONS);
+	fputs(USAGE_HEADER, out);
+	fprintf(out, _(" %1$s [options]\n"
+		       " %1$s shm|msg|sem <id>...\n"), program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Remove certain IPC resources.\n"), out);
+
+	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -m, --shmem-id <id>        remove shared memory segment by id\n"), out);
 	fputs(_(" -M, --shmem-key <key>      remove shared memory segment by key\n"), out);
 	fputs(_(" -q, --queue-id <id>        remove message queue by id\n"), out);
@@ -58,10 +62,12 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fputs(_(" -S, --semaphore-key <key>  remove semaphore by key\n"), out);
 	fputs(_(" -a, --all[=shm|msg|sem]    remove all (in the specified category)\n"), out);
 	fputs(_(" -v, --verbose              explain what is being done\n"), out);
-	fprintf(out, USAGE_SEPARATOR);
-	fprintf(out, USAGE_HELP);
-	fprintf(out, USAGE_VERSION);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(USAGE_HELP, out);
+	fputs(USAGE_VERSION, out);
 	fprintf(out, USAGE_MAN_TAIL("ipcrm(1)"));
+
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
 
@@ -108,7 +114,7 @@ static int remove_id(int type, int iskey, int id)
 			errmsg = iskey ? _("already removed key") : _("already removed id");
 			break;
 		default:
-			err(EXIT_FAILURE, iskey ? _("key failed") : _("id failed"));
+			err(EXIT_FAILURE, "%s", iskey ? _("key failed") : _("id failed"));
 		}
 		warnx("%s (%d)", errmsg, id);
 		return 1;
@@ -185,13 +191,13 @@ static unsigned long strtokey(const char *str, const char *errmesg)
 	return 0;
 }
 
-static int key_to_id(type_id type, char *optarg)
+static int key_to_id(type_id type, char *s)
 {
 	int id;
 	/* keys are in hex or decimal */
-	key_t key = strtokey(optarg, "failed to parse argument");
+	key_t key = strtokey(s, "failed to parse argument");
 	if (key == IPC_PRIVATE) {
-		warnx(_("illegal key (%s)"), optarg);
+		warnx(_("illegal key (%s)"), s);
 		return -1;
 	}
 	switch (type) {
@@ -224,7 +230,7 @@ static int key_to_id(type_id type, char *optarg)
 		default:
 			err(EXIT_FAILURE, _("key failed"));
 		}
-		warnx("%s (%s)", errmsg, optarg);
+		warnx("%s (%s)", errmsg, s);
 	}
 	return id;
 }
@@ -235,7 +241,6 @@ static int remove_all(type_id type)
 	int id, rm_me, maxid;
 
 	struct shmid_ds shmseg;
-	struct shm_info shm_info;
 
 	struct semid_ds semary;
 	struct seminfo seminfo;
@@ -245,8 +250,7 @@ static int remove_all(type_id type)
 	struct msginfo msginfo;
 
 	if (type == SHM || type == ALL) {
-		maxid =
-		    shmctl(0, SHM_INFO, (struct shmid_ds *)(void *)&shm_info);
+		maxid = shmctl(0, SHM_INFO, &shmseg);
 		if (maxid < 0)
 			errx(EXIT_FAILURE,
 			     _("kernel not configured for shared memory"));
@@ -403,9 +407,8 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (rm_all)
-		if (remove_all(what_all))
-			ret++;
+	if (rm_all && remove_all(what_all))
+		ret++;
 
 	/* print usage if we still have some arguments left over */
 	if (optind < argc) {

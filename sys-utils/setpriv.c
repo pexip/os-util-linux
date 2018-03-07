@@ -90,7 +90,12 @@ struct privctx {
 static void __attribute__((__noreturn__)) usage(FILE *out)
 {
 	fputs(USAGE_HEADER, out);
-	fprintf(out, _(" %s [options] <program> [args...]\n"), program_invocation_short_name);
+	fprintf(out, _(" %s [options] <program> [<argument>...]\n"),
+		program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Run a program with different privilege settings.\n"), out);
+
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -d, --dump               show current state (and do not exec anything)\n"), out);
 	fputs(_(" --nnp, --no-new-privs    disallow granting new privileges\n"), out);
@@ -108,6 +113,7 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(_(" --securebits <bits>      set securebits\n"), out);
 	fputs(_(" --selinux-label <label>  set SELinux label\n"), out);
 	fputs(_(" --apparmor-profile <pr>  set AppArmor profile\n"), out);
+
 	fputs(USAGE_SEPARATOR, out);
 	fputs(USAGE_HELP, out);
 	fputs(USAGE_VERSION, out);
@@ -169,10 +175,10 @@ static int print_caps(FILE *f, capng_type_t which)
 static void dump_one_secbit(int *first, int *bits, int bit, const char *name)
 {
 	if (*bits & bit) {
-		if (!*first)
-			printf(",");
-		else
+		if (*first)
 			*first = 0;
+		else
+			printf(",");
 		fputs(name, stdout);
 		*bits &= ~bit;
 	}
@@ -200,10 +206,10 @@ static void dump_securebits(void)
 	dump_one_secbit(&first, &bits, SECBIT_KEEP_CAPS_LOCKED,
 			"keep_caps_locked");
 	if (bits) {
-		if (!first)
-			printf(",");
-		else
+		if (first)
 			first = 0;
+		else
+			printf(",");
 		printf("0x%x", (unsigned)bits);
 	}
 
@@ -775,9 +781,8 @@ int main(int argc, char **argv)
 		errx(EXIT_FAILURE,
 		     _("--[re]gid requires --keep-groups, --clear-groups, or --groups"));
 
-	if (opts.nnp)
-		if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == -1)
-			err(EXIT_FAILURE, _("disallow granting new privileges failed"));
+	if (opts.nnp && prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == -1)
+		err(EXIT_FAILURE, _("disallow granting new privileges failed"));
 
 	if (opts.selinux_label)
 		do_selinux_label(opts.selinux_label);
@@ -814,9 +819,8 @@ int main(int argc, char **argv)
 			err(SETPRIV_EXIT_PRIVERR, _("setgroups failed"));
 	}
 
-	if (opts.have_securebits)
-		if (prctl(PR_SET_SECUREBITS, opts.securebits, 0, 0, 0) != 0)
-			err(SETPRIV_EXIT_PRIVERR, _("set process securebits failed"));
+	if (opts.have_securebits && prctl(PR_SET_SECUREBITS, opts.securebits, 0, 0, 0) != 0)
+		err(SETPRIV_EXIT_PRIVERR, _("set process securebits failed"));
 
 	if (opts.bounding_set) {
 		do_caps(CAPNG_BOUNDING_SET, opts.bounding_set);

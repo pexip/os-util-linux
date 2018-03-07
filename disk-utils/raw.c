@@ -20,7 +20,6 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
-#include <sys/sysmacros.h>
 #include <unistd.h>
 
 #include "c.h"
@@ -54,6 +53,10 @@ static void __attribute__ ((__noreturn__)) usage(int err)
 		  " %1$s -q %2$srawN\n"
 		  " %1$s -qa\n"), program_invocation_short_name,
 		_PATH_RAWDEVDIR);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Bind a raw character device to a block device.\n"), out);
+
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -q, --query    set query mode\n"), out);
 	fputs(_(" -a, --all      query all raw devices\n"), out);
@@ -220,7 +223,7 @@ static int query(int minor_raw, const char *raw_name, int quiet)
 	if (raw_name) {
 		struct stat statbuf;
 
-		if (!stat(raw_name, &statbuf))
+		if (stat(raw_name, &statbuf) != 0)
 			err(EXIT_RAW_ACCESS,
 			    _("Cannot locate raw device '%s'"), raw_name);
 		if (!S_ISCHR(statbuf.st_mode))

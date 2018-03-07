@@ -51,7 +51,9 @@
 	{0x81, N_("Minix / old Linux")},/* Minix 1.4b and later */
 	{0x82, N_("Linux swap / Solaris")},
 	{0x83, N_("Linux")},
-	{0x84, N_("OS/2 hidden C: drive")},
+	{0x84, N_("OS/2 hidden or Intel hibernation")},/* OS/2 hidden C: drive,
+					   hibernation type Microsoft APM
+					   or hibernation Intel Rapid Start */
 	{0x85, N_("Linux extended")},
 	{0x86, N_("NTFS volume set")},
 	{0x87, N_("NTFS volume set")},
@@ -71,6 +73,7 @@
 	{0xb7, N_("BSDI fs")},
 	{0xb8, N_("BSDI swap")},
 	{0xbb, N_("Boot Wizard hidden")},
+	{0xbc, N_("Acronis FAT32 LBA")},/* hidden (+0xb0) Acronis Secure Zone (backup software) */
 	{0xbe, N_("Solaris boot")},
 	{0xbf, N_("Solaris")},
 	{0xc1, N_("DRDOS/sec (FAT-12)")},
@@ -87,6 +90,7 @@
 	{0xe3, N_("DOS R/O")},		/* DOS R/O or SpeedStor */
 	{0xe4, N_("SpeedStor")},	/* SpeedStor 16-bit FAT extended
 					   partition < 1024 cyl. */
+	{0xea, N_("Rufus alignment")},	/* Rufus extra partition for alignment */
 	{0xeb, N_("BeOS fs")},
 	{0xee, N_("GPT")},		/* Intel EFI GUID Partition Table */
 	{0xef, N_("EFI (FAT-12/16/32)")},/* Intel EFI System Partition */

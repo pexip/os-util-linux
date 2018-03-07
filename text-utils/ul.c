@@ -81,7 +81,7 @@ static void fwd(void);
 static void reverse(void);
 static void initinfo(void);
 static void outc(wint_t c, int width);
-static void setmode(int newmode);
+static void xsetmode(int newmode);
 static void setcol(int newcol);
 static void needcol(int col);
 static void sig_handler(int signo);
@@ -134,8 +134,11 @@ usage(FILE *out)
 {
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options] [<file> ...]\n"), program_invocation_short_name);
-	fputs(USAGE_OPTIONS, out);
 
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Do underlining.\n"), out);
+
+	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -t, -T, --terminal TERMINAL  override the TERM environment variable\n"), out);
 	fputs(_(" -i, --indicated              underlining is indicated via a separate line\n"), out);
 	fputs(USAGE_SEPARATOR, out);
@@ -171,15 +174,6 @@ int main(int argc, char **argv)
 
 	termtype = getenv("TERM");
 
-	/*
-	 * FIXME: why terminal type is lpr when command begins with c and has
-	 * no terminal? If this behavior can be explained please insert
-	 * reference or remove the code. In case this truly is desired command
-	 * behavior this should be mentioned in manual page.
-	 */
-	if (termtype == NULL || (argv[0][0] == 'c' && !isatty(STDOUT_FILENO)))
-		termtype = "lpr";
-
 	while ((c = getopt_long(argc, argv, "it:T:Vh", longopts, NULL)) != -1)
 		switch (c) {
 
@@ -193,8 +187,7 @@ int main(int argc, char **argv)
 			iflag = 1;
 			break;
 		case 'V':
-			printf(_("%s from %s\n"), program_invocation_short_name,
-						  PACKAGE_STRING);
+			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
 			usage(stdout);
@@ -282,94 +275,84 @@ static void filter(FILE *f)
 	wint_t c;
 	int i, w;
 
-	while ((c = getwc(f)) != WEOF)
-	switch (c) {
-
-	case '\b':
-		setcol(col - 1);
-		continue;
-
-	case '\t':
-		setcol((col+8) & ~07);
-		continue;
-
-	case '\r':
-		setcol(0);
-		continue;
-
-	case SO:
-		mode |= ALTSET;
-		continue;
-
-	case SI:
-		mode &= ~ALTSET;
-		continue;
-
-	case IESC:
-		if(handle_escape(f)) {
-			c = getwc(f);
-			errx(EXIT_FAILURE,
-				_("unknown escape sequence in input: %o, %o"),
-				IESC, c);
-		}
-		continue;
-
-	case '_':
-		if (obuf[col].c_char || obuf[col].c_width < 0) {
-			while(col > 0 && obuf[col].c_width < 0)
-				col--;
-			w = obuf[col].c_width;
-			for (i = 0; i < w; i++)
-				obuf[col++].c_mode |= UNDERL | mode;
-			setcol(col);
+	while ((c = getwc(f)) != WEOF) {
+		switch (c) {
+		case '\b':
+			setcol(col - 1);
+			continue;
+		case '\t':
+			setcol((col + 8) & ~07);
+			continue;
+		case '\r':
+			setcol(0);
+			continue;
+		case SO:
+			mode |= ALTSET;
+			continue;
+		case SI:
+			mode &= ~ALTSET;
+			continue;
+		case IESC:
+			if (handle_escape(f)) {
+				c = getwc(f);
+				errx(EXIT_FAILURE,
+				     _("unknown escape sequence in input: %o, %o"), IESC, c);
+			}
+			continue;
+		case '_':
+			if (obuf[col].c_char || obuf[col].c_width < 0) {
+				while (col > 0 && obuf[col].c_width < 0)
+					col--;
+				w = obuf[col].c_width;
+				for (i = 0; i < w; i++)
+					obuf[col++].c_mode |= UNDERL | mode;
+				setcol(col);
+				continue;
+			}
+			obuf[col].c_char = '_';
+			obuf[col].c_width = 1;
+			/* fall through */
+		case ' ':
+			setcol(col + 1);
+			continue;
+		case '\n':
+			flushln();
+			continue;
+		case '\f':
+			flushln();
+			putwchar('\f');
+			continue;
+		default:
+			if (!iswprint(c))
+				/* non printable */
+				continue;
+			w = wcwidth(c);
+			needcol(col + w);
+			if (obuf[col].c_char == '\0') {
+				obuf[col].c_char = c;
+				for (i = 0; i < w; i++)
+					obuf[col + i].c_mode = mode;
+				obuf[col].c_width = w;
+				for (i = 1; i < w; i++)
+					obuf[col + i].c_width = -1;
+			} else if (obuf[col].c_char == '_') {
+				obuf[col].c_char = c;
+				for (i = 0; i < w; i++)
+					obuf[col + i].c_mode |= UNDERL | mode;
+				obuf[col].c_width = w;
+				for (i = 1; i < w; i++)
+					obuf[col + i].c_width = -1;
+			} else if ((wint_t) obuf[col].c_char == c) {
+				for (i = 0; i < w; i++)
+					obuf[col + i].c_mode |= BOLD | mode;
+			} else {
+				w = obuf[col].c_width;
+				for (i = 0; i < w; i++)
+					obuf[col + i].c_mode = mode;
+			}
+			setcol(col + w);
 			continue;
 		}
-		obuf[col].c_char = '_';
-		obuf[col].c_width = 1;
-		/* fall through */
-	case ' ':
-		setcol(col + 1);
-		continue;
-
-	case '\n':
-		flushln();
-		continue;
-
-	case '\f':
-		flushln();
-		putwchar('\f');
-		continue;
-
-	default:
-		if (!iswprint(c))
-			/* non printable */
-			continue;
-		w = wcwidth(c);
-		needcol(col + w);
-		if (obuf[col].c_char == '\0') {
-			obuf[col].c_char = c;
-			for (i = 0; i < w; i++)
-				obuf[col+i].c_mode = mode;
-			obuf[col].c_width = w;
-			for (i = 1; i < w; i++)
-				obuf[col+i].c_width = -1;
-		} else if (obuf[col].c_char == '_') {
-			obuf[col].c_char = c;
-			for (i = 0; i < w; i++)
-				obuf[col+i].c_mode |= UNDERL|mode;
-			obuf[col].c_width = w;
-			for (i = 1; i < w; i++)
-				obuf[col+i].c_width = -1;
-		} else if ((wint_t) obuf[col].c_char == c) {
-			for (i = 0; i < w; i++)
-				obuf[col+i].c_mode |= BOLD|mode;
-		} else {
-			w = obuf[col].c_width;
-			for (i = 0; i < w; i++)
-				obuf[col+i].c_mode = mode;
-		}
-		setcol(col + w);
-		continue;
 	}
 	if (maxcol)
 		flushln();
@@ -385,7 +368,7 @@ static void flushln(void)
 	for (i = 0; i < maxcol; i++) {
 		if (obuf[i].c_mode != lastmode) {
 			hadmodes++;
-			setmode(obuf[i].c_mode);
+			xsetmode(obuf[i].c_mode);
 			lastmode = obuf[i].c_mode;
 		}
 		if (obuf[i].c_char == '\0') {
@@ -399,7 +382,7 @@ static void flushln(void)
 			i += obuf[i].c_width - 1;
 	}
 	if (lastmode != NORMAL) {
-		setmode(0);
+		xsetmode(0);
 	}
 	if (must_overstrike && hadmodes)
 		overstrike();
@@ -419,11 +402,7 @@ static void flushln(void)
 static void overstrike(void)
 {
 	register int i;
-#ifdef __GNUC__
-	register wchar_t *lbuf = __builtin_alloca((maxcol + 1) * sizeof(wchar_t));
-#else
-	wchar_t lbuf[BUFSIZ];
-#endif
+	register wchar_t *lbuf = xmalloc((maxcol + 1) * sizeof(wchar_t));
 	register wchar_t *cp = lbuf;
 	int hadbold=0;
 
@@ -456,16 +435,13 @@ static void overstrike(void)
 		for (cp = lbuf; *cp; cp++)
 			putwchar(*cp == '_' ? ' ' : *cp);
 	}
+	free(lbuf);
 }
 
 static void iattr(void)
 {
 	register int i;
-#ifdef __GNUC__
-	register wchar_t *lbuf = __builtin_alloca((maxcol+1)*sizeof(wchar_t));
-#else
-	wchar_t lbuf[BUFSIZ];
-#endif
+	register wchar_t *lbuf = xmalloc((maxcol + 1) * sizeof(wchar_t));
 	register wchar_t *cp = lbuf;
 
 	for (i = 0; i < maxcol; i++)
@@ -482,6 +458,7 @@ static void iattr(void)
 		*cp = 0;
 	fputws(lbuf, stdout);
 	putwchar('\n');
+	free(lbuf);
 }
 
 static void initbuf(void)
@@ -553,7 +530,7 @@ static void initinfo(void)
 
 	/*
 	 * Note that we use REVERSE for the alternate character set,
-	 * not the as/ae capabilities.  This is because we are modelling
+	 * not the as/ae capabilities.  This is because we are modeling
 	 * the model 37 teletype (since that's what nroff outputs) and
 	 * the typical as/ae is more of a graphics set, not the greek
 	 * letters the 37 has.
@@ -577,11 +554,11 @@ static void outc(wint_t c, int width) {
 	}
 }
 
-static void setmode(int newmode)
+static void xsetmode(int newmode)
 {
 	if (!iflag) {
 		if (curmode != NORMAL && newmode != NORMAL)
-			setmode(NORMAL);
+			xsetmode(NORMAL);
 		switch (newmode) {
 		case NORMAL:
 			switch (curmode) {

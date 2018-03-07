@@ -81,6 +81,9 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options]\n"), program_invocation_short_name);
 
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Generate magic cookies for xauth.\n"), out);
+
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -f, --file <file>     use file as a cookie seed\n"), out);
 	fputs(_(" -m, --max-size <num>  limit how much is read from seed files\n"), out);
@@ -118,10 +121,8 @@ static void randomness_from_files(struct mcookie_control *ctl)
 					   "Got %zu bytes from %s\n", count),
 					count, fname);
 
-			if (fd != STDIN_FILENO)
-				if (close(fd))
-					err(EXIT_FAILURE,
-					    _("closing %s failed"), fname);
+			if (fd != STDIN_FILENO && close(fd))
+				err(EXIT_FAILURE, _("closing %s failed"), fname);
 		}
 	}
 }
@@ -148,15 +149,14 @@ int main(int argc, char **argv)
 	textdomain(PACKAGE);
 	atexit(close_stdout);
 
-	if (2 < argc)
-		ctl.files = xmalloc(sizeof(char *) * argc);
-
 	while ((c = getopt_long(argc, argv, "f:m:vVh", longopts, NULL)) != -1) {
 		switch (c) {
 		case 'v':
 			ctl.verbose = 1;
 			break;
 		case 'f':
+			if (!ctl.files)
+				ctl.files = xmalloc(sizeof(char *) * argc);
 			ctl.files[ctl.nfiles++] = optarg;
 			break;
 		case 'm':

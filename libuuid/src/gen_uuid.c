@@ -32,12 +32,6 @@
  * %End-Header%
  */
 
-/*
- * Force inclusion of SVID stuff since we need it if we're compiling in
- * gcc-wall wall mode
- */
-#define _SVID_SOURCE
-
 #ifdef _WIN32
 #define _WIN32_WINNT 0x0500
 #include <windows.h>
@@ -91,6 +85,7 @@
 #include "uuidP.h"
 #include "uuidd.h"
 #include "randutils.h"
+#include "strutils.h"
 #include "c.h"
 
 #ifdef HAVE_TLS
@@ -233,6 +228,9 @@ static int get_clock(uint32_t *clock_high, uint32_t *clock_low,
 	int				len;
 	int				ret = 0;
 
+	if (state_fd == -1)
+		ret = -1;
+
 	if (state_fd == -2) {
 		save_umask = umask(0);
 		state_fd = open(LIBUUID_CLOCK_FILE, O_RDWR|O_CREAT|O_CLOEXEC, 0660);
@@ -314,8 +312,8 @@ try_again:
 	if (state_fd >= 0) {
 		rewind(state_f);
 		len = fprintf(state_f,
-			      "clock: %04x tv: %016lu %08lu adj: %08d\n",
-			      clock_seq, last.tv_sec, last.tv_usec, adjustment);
+			      "clock: %04x tv: %016ld %08ld adj: %08d\n",
+			      clock_seq, (long)last.tv_sec, (long)last.tv_usec, adjustment);
 		fflush(state_f);
 		if (ftruncate(state_fd, len) < 0) {
 			fprintf(state_f, "                   \n");
@@ -332,6 +330,7 @@ try_again:
 }
 
 #if defined(HAVE_UUIDD) && defined(HAVE_SYS_UN_H)
+
 /*
  * Try using the uuidd daemon to generate the UUID
  *
@@ -346,11 +345,14 @@ static int get_uuid_via_daemon(int op, uuid_t out, int *num)
 	int32_t reply_len = 0, expected = 16;
 	struct sockaddr_un srv_addr;
 
+	if (sizeof(UUIDD_SOCKET_PATH) > sizeof(srv_addr.sun_path))
+		return -1;
+
 	if ((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
 		return -1;
 
 	srv_addr.sun_family = AF_UNIX;
-	strcpy(srv_addr.sun_path, UUIDD_SOCKET_PATH);
+	xstrncpy(srv_addr.sun_path, UUIDD_SOCKET_PATH, sizeof(srv_addr.sun_path));
 
 	if (connect(s, (const struct sockaddr *) &srv_addr,
 		    sizeof(struct sockaddr_un)) < 0)

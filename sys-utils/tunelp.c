@@ -7,6 +7,15 @@
  */
 
 /*
+ * This command is deprecated.  The utility is in maintenance mode,
+ * meaning we keep them in source tree for backward compatibility
+ * only.  Do not waste time making this command better, unless the
+ * fix is about security or other very critical issue.
+ *
+ * See Documentation/deprecated.txt for more information.
+ */
+
+/*
  * $Log: tunelp.c,v $
  * Revision 1.9  1998/06/08 19:37:11  janl
  * Thus compiles tunelp with 2.1.103 kernels
@@ -65,8 +74,10 @@
 #include "xalloc.h"
 #include "closestream.h"
 
-#define EXIT_BAD_VALUE	3
-#define EXIT_LP_IO_ERR	4
+#define STRTOXX_EXIT_CODE	3
+#define EXIT_LP_IO_ERR		4
+
+#include "strutils.h"
 
 struct command {
 	long op;
@@ -78,6 +89,9 @@ static void __attribute__((__noreturn__)) print_usage(FILE *out)
 {
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options] <device>\n"), program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Set various parameters for the line printer.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -i, --irq <num>              specify parallel port irq\n"), out);
@@ -100,21 +114,6 @@ static void __attribute__((__noreturn__)) print_usage(FILE *out)
 	fprintf(out, USAGE_MAN_TAIL("tunelp(8)"));
 
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
-}
-
-static long get_val(char *val)
-{
-	long ret;
-	if (!(sscanf(val, "%ld", &ret) == 1))
-		errx(EXIT_BAD_VALUE, _("bad value"));
-	return ret;
-}
-
-static long get_onoff(char *val)
-{
-	if (!strncasecmp("on", val, 2))
-		return 1;
-	return 0;
 }
 
 int main(int argc, char **argv)
@@ -159,57 +158,52 @@ int main(int argc, char **argv)
 			break;
 		case 'i':
 			cmds->op = LPSETIRQ;
-			cmds->val = get_val(optarg);
+			cmds->val = strtol_or_err(optarg, _("argument error"));
 			cmds->next = xmalloc(sizeof(struct command));
 			cmds = cmds->next;
 			cmds->next = 0;
 			break;
 		case 't':
 			cmds->op = LPTIME;
-			cmds->val = get_val(optarg);
+			cmds->val = strtol_or_err(optarg, _("argument error"));
 			cmds->next = xmalloc(sizeof(struct command));
 			cmds = cmds->next;
 			cmds->next = 0;
 			break;
 		case 'c':
 			cmds->op = LPCHAR;
-			cmds->val = get_val(optarg);
+			cmds->val = strtol_or_err(optarg, _("argument error"));
 			cmds->next = xmalloc(sizeof(struct command));
 			cmds = cmds->next;
 			cmds->next = 0;
 			break;
 		case 'w':
 			cmds->op = LPWAIT;
-			cmds->val = get_val(optarg);
+			cmds->val = strtol_or_err(optarg, _("argument error"));
 			cmds->next = xmalloc(sizeof(struct command));
 			cmds = cmds->next;
 			cmds->next = 0;
 			break;
 		case 'a':
 			cmds->op = LPABORT;
-			cmds->val = get_onoff(optarg);
+			cmds->val = parse_switch(optarg, _("argument error"), "on", "off", NULL);
 			cmds->next = xmalloc(sizeof(struct command));
 			cmds = cmds->next;
 			cmds->next = 0;
 			break;
 		case 'q':
-			if (get_onoff(optarg)) {
-				show_irq = 1;
-			} else {
-				show_irq = 0;
-			}
+			show_irq = parse_switch(optarg, _("argument error"), "on", "off", NULL);
 			break;
-#ifdef LPGETSTATUS
 		case 'o':
 			cmds->op = LPABORTOPEN;
-			cmds->val = get_onoff(optarg);
+			cmds->val = parse_switch(optarg, _("argument error"), "on", "off", NULL);
 			cmds->next = xmalloc(sizeof(struct command));
 			cmds = cmds->next;
 			cmds->next = 0;
 			break;
 		case 'C':
 			cmds->op = LPCAREFUL;
-			cmds->val = get_onoff(optarg);
+			cmds->val = parse_switch(optarg, _("argument error"), "on", "off", NULL);
 			cmds->next = xmalloc(sizeof(struct command));
 			cmds = cmds->next;
 			cmds->next = 0;
@@ -222,8 +216,6 @@ int main(int argc, char **argv)
 			cmds = cmds->next;
 			cmds->next = 0;
 			break;
-#endif
-#ifdef LPRESET
 		case 'r':
 			cmds->op = LPRESET;
 			cmds->val = 0;
@@ -231,23 +223,19 @@ int main(int argc, char **argv)
 			cmds = cmds->next;
 			cmds->next = 0;
 			break;
-#endif
-#ifdef LPTRUSTIRQ
 		case 'T':
 			/* Note: this will do the wrong thing on
 			 * 2.0.36 when compiled under 2.2.x
 			 */
 			cmds->op = LPTRUSTIRQ;
-			cmds->val = get_onoff(optarg);
+			cmds->val = parse_switch(optarg, _("argument error"), "on", "off", NULL);
 			cmds->next = xmalloc(sizeof(struct command));
 			cmds = cmds->next;
 			cmds->next = 0;
 			break;
-#endif
 		case 'v':
 		case 'V':
-			printf(_("%s from %s\n"),
-			       program_invocation_short_name, PACKAGE_STRING);
+			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		default:
 			print_usage(stderr);
@@ -285,7 +273,6 @@ int main(int argc, char **argv)
 
 	cmds = cmdst;
 	while (cmds->next) {
-#ifdef LPGETSTATUS
 		if (cmds->op == LPGETSTATUS) {
 			status = 0xdeadbeef;
 			retval = ioctl(fd, LPGETSTATUS - offset, &status);
@@ -309,7 +296,6 @@ int main(int argc, char **argv)
 				printf("\n");
 			}
 		} else
-#endif /* LPGETSTATUS */
 		if (ioctl(fd, cmds->op - offset, cmds->val) < 0)
 			warn(_("ioctl failed"));
 		cmdst = cmds;

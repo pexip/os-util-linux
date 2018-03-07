@@ -44,17 +44,22 @@
 #include <getopt.h>
 #include <utime.h>
 #include <fcntl.h>
+
+/* We don't use our include/crc32.h, but crc32 from zlib!
+ *
+ * The zlib implemenation performs pre/post-conditioning. The util-linux
+ * imlemenation requires post-conditioning (xor) in the applications.
+ */
 #include <zlib.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
-#include <sys/sysmacros.h>	/* for major, minor */
 
+#include "c.h"
 #include "cramfs.h"
 #include "nls.h"
 #include "blkdev.h"
-#include "c.h"
 #include "exitcodes.h"
 #include "strutils.h"
 #include "closestream.h"
@@ -101,21 +106,26 @@ static size_t blksize = 0;
 /* Input status of 0 to print help and exit without an error. */
 static void __attribute__((__noreturn__)) usage(int status)
 {
-	FILE *stream = status ? stderr : stdout;
+	FILE *out = status ? stderr : stdout;
 
-	fputs(USAGE_HEADER, stream);
-	fprintf(stream,
+	fputs(USAGE_HEADER, out);
+	fprintf(out,
 		_(" %s [options] <file>\n"), program_invocation_short_name);
-	fputs(USAGE_OPTIONS, stream);
-	fputs(_(" -a                       for compatibility only, ignored\n"), stream);
-	fputs(_(" -v, --verbose            be more verbose\n"), stream);
-	fputs(_(" -y                       for compatibility only, ignored\n"), stream);
-	fputs(_(" -b, --blocksize <size>   use this blocksize, defaults to page size\n"), stream);
-	fputs(_("     --extract[=<dir>]    test uncompression, optionally extract into <dir>\n"), stream);
-	fputs(USAGE_SEPARATOR, stream);
-	fputs(USAGE_HELP, stream);
-	fputs(USAGE_VERSION, stream);
-	fputs(USAGE_SEPARATOR, stream);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Check and repair a compressed ROM filesystem.\n"), out);
+
+	fputs(USAGE_OPTIONS, out);
+	fputs(_(" -a                       for compatibility only, ignored\n"), out);
+	fputs(_(" -v, --verbose            be more verbose\n"), out);
+	fputs(_(" -y                       for compatibility only, ignored\n"), out);
+	fputs(_(" -b, --blocksize <size>   use this blocksize, defaults to page size\n"), out);
+	fputs(_("     --extract[=<dir>]    test uncompression, optionally extract into <dir>\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+	fputs(USAGE_HELP, out);
+	fputs(USAGE_VERSION, out);
+	fputs(USAGE_SEPARATOR, out);
+
 	exit(status);
 }
 
@@ -138,7 +148,7 @@ static void test_super(int *start, size_t * length)
 
 	/* find the physical size of the file or block device */
 	if (stat(filename, &st) < 0)
-		err(FSCK_EX_ERROR, _("stat failed %s"), filename);
+		err(FSCK_EX_ERROR, _("stat of %s failed"), filename);
 
 	fd = open(filename, O_RDONLY);
 	if (fd < 0)
@@ -221,7 +231,7 @@ static void test_crc(int start)
 		if (buf != MAP_FAILED) {
 			if (lseek(fd, 0, SEEK_SET) == (off_t) -1)
 				err(FSCK_EX_ERROR, _("seek on %s failed"), filename);
-			if (read(fd, buf, super.size) < 0)
+			if (read(fd, buf, super.size) != (ssize_t) super.size)
 				err(FSCK_EX_ERROR, _("cannot read %s"), filename);
 		}
 	}
@@ -360,7 +370,7 @@ static int uncompress_block(void *src, size_t len)
 #define lchown chown
 #endif
 
-static void do_uncompress(char *path, int fd, unsigned long offset,
+static void do_uncompress(char *path, int outfd, unsigned long offset,
 			  unsigned long size)
 {
 	unsigned long curr = offset + 4 * ((size + blksize - 1) / blksize);
@@ -377,14 +387,14 @@ static void do_uncompress(char *path, int fd, unsigned long offset,
 		offset += 4;
 		if (curr == next) {
 			if (opt_verbose > 1)
-				printf(_("  hole at %ld (%zd)\n"), curr,
+				printf(_("  hole at %lu (%zu)\n"), curr,
 				       blksize);
 			if (size < blksize)
 				out = size;
 			memset(outbuffer, 0x00, out);
 		} else {
 			if (opt_verbose > 1)
-				printf(_("  uncompressing block at %ld to %ld (%ld)\n"),
+				printf(_("  uncompressing block at %lu to %lu (%lu)\n"),
 				       curr, next, next - curr);
 			out = uncompress_block(romfs_read(curr), next - curr);
 		}
@@ -399,10 +409,8 @@ static void do_uncompress(char *path, int fd, unsigned long offset,
 				     size);
 		}
 		size -= out;
-		if (*extract_dir != '\0')
-			if (write(fd, outbuffer, out) < 0)
-				err(FSCK_EX_ERROR, _("write failed: %s"),
-				    path);
+		if (*extract_dir != '\0' && write(outfd, outbuffer, out) < 0)
+			err(FSCK_EX_ERROR, _("write failed: %s"), path);
 		curr = next;
 	} while (size);
 }
@@ -484,7 +492,7 @@ static void do_directory(char *path, struct cramfs_inode *i)
 static void do_file(char *path, struct cramfs_inode *i)
 {
 	unsigned long offset = i->offset << 2;
-	int fd = 0;
+	int outfd = 0;
 
 	if (offset == 0 && i->size != 0)
 		errx(FSCK_EX_UNCORRECTED,
@@ -497,14 +505,14 @@ static void do_file(char *path, struct cramfs_inode *i)
 	if (opt_verbose)
 		print_node('f', i, path);
 	if (*extract_dir != '\0') {
-		fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, i->mode);
-		if (fd < 0)
+		outfd = open(path, O_WRONLY | O_CREAT | O_TRUNC, i->mode);
+		if (outfd < 0)
 			err(FSCK_EX_ERROR, _("cannot open %s"), path);
 	}
 	if (i->size)
-		do_uncompress(path, fd, offset, i->size);
+		do_uncompress(path, outfd, offset, i->size);
 	if ( *extract_dir != '\0') {
-		if (close_fd(fd) != 0)
+		if (close_fd(outfd) != 0)
 			err(FSCK_EX_ERROR, _("write failed: %s"), path);
 		change_file_status(path, i);
 	}
@@ -539,7 +547,7 @@ static void do_symlink(char *path, struct cramfs_inode *i)
 		xasprintf(&str, "%s -> %s", path, outbuffer);
 		print_node('l', i, str);
 		if (opt_verbose > 1)
-			printf(_("  uncompressing block at %ld to %ld (%ld)\n"),
+			printf(_("  uncompressing block at %lu to %lu (%lu)\n"),
 			       curr, next, next - curr);
 		free(str);
 	}
@@ -625,9 +633,8 @@ static void test_fs(int start)
 			     _("directory data end (%lu) != file data start (%lu)"),
 			     end_dir, start_data);
 	}
-	if (super.flags & CRAMFS_FLAG_FSID_VERSION_2)
-		if (end_data > super.size)
-			errx(FSCK_EX_UNCORRECTED, _("invalid file data offset"));
+	if (super.flags & CRAMFS_FLAG_FSID_VERSION_2 && end_data > super.size)
+		errx(FSCK_EX_UNCORRECTED, _("invalid file data offset"));
 
 	iput(root);		/* free(root) */
 }

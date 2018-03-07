@@ -4,21 +4,14 @@ usrbin_exec_PROGRAMS += last
 dist_man_MANS += \
 	login-utils/last.1 \
 	login-utils/lastb.1
-last_SOURCES = login-utils/last.c lib/boottime.c
-last_LDADD = $(LDADD) libcommon.la -lrt
+last_SOURCES = login-utils/last.c lib/monotonic.c
+last_LDADD = $(LDADD) libcommon.la $(REALTIME_LIBS)
 
 install-exec-hook-last:
 	cd $(DESTDIR)$(usrbin_execdir) && ln -sf last lastb
 
 INSTALL_EXEC_HOOKS += install-exec-hook-last
 endif
-
-if BUILD_DEPRECATED_LAST
-usrbin_exec_PROGRAMS += last
-dist_man_MANS += login-utils/last-deprecated.1
-last_SOURCES = login-utils/last-deprecated.c
-endif # BUILD_DEPRECATED_LAST
-
 
 if BUILD_SULOGIN
 sbin_PROGRAMS += sulogin
@@ -38,8 +31,8 @@ endif
 
 check_PROGRAMS += test_consoles
 test_consoles_SOURCES = login-utils/sulogin-consoles.c
-test_consoles_CFLAGS = -DTEST_PROGRAM
-test_consoles_LDADD = libcommon.la
+test_consoles_CFLAGS = $(AM_CFLAGS) -DTEST_PROGRAM
+test_consoles_LDADD = $(LDADD) libcommon.la
 endif # BUILD_SULOGIN
 
 
@@ -50,7 +43,10 @@ login_SOURCES = \
 	login-utils/login.c \
 	login-utils/logindefs.c \
 	login-utils/logindefs.h
-login_LDADD = $(LDADD) libcommon.la -lpam -lpam_misc
+login_LDADD = $(LDADD) libcommon.la -lpam
+if HAVE_LINUXPAM
+login_LDADD += -lpam_misc
+endif
 if HAVE_AUDIT
 login_LDADD += -laudit
 endif
@@ -71,6 +67,7 @@ if BUILD_UTMPDUMP
 usrbin_exec_PROGRAMS += utmpdump
 dist_man_MANS += login-utils/utmpdump.1
 utmpdump_SOURCES = login-utils/utmpdump.c
+utmpdump_LDADD = $(LDADD) libcommon.la
 endif
 
 
@@ -80,17 +77,22 @@ dist_man_MANS += \
 	login-utils/chfn.1 \
 	login-utils/chsh.1
 
-chfn_chsh_sources =
+chfn_chsh_sources = \
+	login-utils/ch-common.h \
+	login-utils/ch-common.c
 chfn_chsh_cflags = $(SUID_CFLAGS) $(AM_CFLAGS)
 chfn_chsh_ldflags = $(SUID_LDFLAGS) $(AM_LDFLAGS)
 chfn_chsh_ldadd = libcommon.la
 
 if CHFN_CHSH_PASSWORD
-chfn_chsh_ldadd += -lpam -lpam_misc
+chfn_chsh_ldadd += -lpam
+if HAVE_LINUXPAM
+chfn_chsh_ldadd += -lpam_misc
+endif
 chfn_chsh_sources += \
 	login-utils/auth.c \
 	login-utils/auth.h
-endif
+endif # CHFN_CHSH_PASSWORD
 
 if HAVE_USER
 chfn_chsh_ldflags += $(LIBUSER_LIBS)
@@ -113,7 +115,11 @@ chfn_chsh_sources += \
 chfn_chsh_ldadd += -lselinux
 endif
 
-chfn_SOURCES = login-utils/chfn.c $(chfn_chsh_sources)
+chfn_SOURCES = \
+	login-utils/chfn.c \
+	login-utils/logindefs.c \
+	login-utils/logindefs.h \
+	$(chfn_chsh_sources)
 chfn_CFLAGS = $(chfn_chsh_cflags)
 chfn_LDFLAGS = $(chfn_chsh_ldflags)
 chfn_LDADD = $(LDADD) $(chfn_chsh_ldadd)
@@ -136,8 +142,11 @@ su_SOURCES = \
 	login-utils/logindefs.h
 su_CFLAGS = $(SUID_CFLAGS) $(AM_CFLAGS)
 su_LDFLAGS = $(SUID_LDFLAGS) $(AM_LDFLAGS)
-su_LDADD = $(LDADD) libcommon.la -lpam -lpam_misc
+su_LDADD = $(LDADD) libcommon.la -lpam
+if HAVE_LINUXPAM
+su_LDADD += -lpam_misc
 endif
+endif # BUILD_SU
 
 
 if BUILD_RUNUSER
@@ -149,8 +158,11 @@ runuser_SOURCES = \
 	login-utils/su-common.h \
 	login-utils/logindefs.c \
 	login-utils/logindefs.h
-runuser_LDADD = $(LDADD) libcommon.la -lpam -lpam_misc
+runuser_LDADD = $(LDADD) libcommon.la -lpam
+if HAVE_LINUXPAM
+runuser_LDADD += -lpam_misc
 endif
+endif # BUILD_RUNUSER
 
 
 if BUILD_NEWGRP

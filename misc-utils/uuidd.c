@@ -9,9 +9,7 @@
  * %End-Header%
  */
 #include <stdio.h>
-#ifdef HAVE_STDLIB_H
 #include <stdlib.h>
-#endif
 #include <unistd.h>
 #include <inttypes.h>
 #include <errno.h>
@@ -23,13 +21,9 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <string.h>
-#ifdef HAVE_GETOPT_H
 #include <getopt.h>
-#else
-extern int getopt(int argc, char * const argv[], const char *optstring);
-extern char *optarg;
-extern int optind;
-#endif
+#include <sys/signalfd.h>
+#include <poll.h>
 
 #include "uuid.h"
 #include "uuidd.h"
@@ -38,6 +32,8 @@ extern int optind;
 #include "closestream.h"
 #include "strutils.h"
 #include "optutils.h"
+#include "monotonic.h"
+#include "timer.h"
 
 #ifdef HAVE_LIBSYSTEMD
 # include <systemd/sd-daemon.h>
@@ -59,6 +55,8 @@ extern int optind;
 
 /* server loop control structure */
 struct uuidd_cxt_t {
+	const char	*cleanup_pidfile;
+	const char	*cleanup_socket;
 	uint32_t	timeout;
 	unsigned int	debug: 1,
 			quiet: 1,
@@ -68,26 +66,27 @@ struct uuidd_cxt_t {
 
 static void __attribute__ ((__noreturn__)) usage(FILE * out)
 {
-	fputs(_("\nUsage:\n"), out);
-	fprintf(out,
-	      _(" %s [options]\n"), program_invocation_short_name);
-
-	fputs(_("\nOptions:\n"), out);
-	fputs(_(" -p, --pid <path>        path to pid file\n"
-		" -s, --socket <path>     path to socket\n"
-		" -T, --timeout <sec>     specify inactivity timeout\n"
-		" -k, --kill              kill running daemon\n"
-		" -r, --random            test random-based generation\n"
-		" -t, --time              test time-based generation\n"
-		" -n, --uuids <num>       request number of uuids\n"
-		" -P, --no-pid            do not create pid file\n"
-		" -F, --no-fork           do not daemonize using double-fork\n"
-		" -S, --socket-activation do not create listening socket\n"
-		" -d, --debug             run in debugging mode\n"
-		" -q, --quiet             turn on quiet mode\n"
-		" -V, --version           output version information and exit\n"
-		" -h, --help              display this help and exit\n\n"), out);
-
+	fputs(USAGE_HEADER, out);
+	fprintf(out, _(" %s [options]\n"), program_invocation_short_name);
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("A daemon for generating UUIDs.\n"), out);
+	fputs(USAGE_OPTIONS, out);
+	fputs(_(" -p, --pid <path>        path to pid file\n"), out);
+	fputs(_(" -s, --socket <path>     path to socket\n"), out);
+	fputs(_(" -T, --timeout <sec>     specify inactivity timeout\n"), out);
+	fputs(_(" -k, --kill              kill running daemon\n"), out);
+	fputs(_(" -r, --random            test random-based generation\n"), out);
+	fputs(_(" -t, --time              test time-based generation\n"), out);
+	fputs(_(" -n, --uuids <num>       request number of uuids\n"), out);
+	fputs(_(" -P, --no-pid            do not create pid file\n"), out);
+	fputs(_(" -F, --no-fork           do not daemonize using double-fork\n"), out);
+	fputs(_(" -S, --socket-activation do not create listening socket\n"), out);
+	fputs(_(" -d, --debug             run in debugging mode\n"), out);
+	fputs(_(" -q, --quiet             turn on quiet mode\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+	fputs(USAGE_HELP, out);
+	fputs(USAGE_VERSION, out);
+	fprintf(out, USAGE_MAN_TAIL("uuidd(8)"));
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
 
@@ -101,17 +100,6 @@ static void create_daemon(void)
 	euid = geteuid();
 	if (setreuid(euid, euid) < 0)
 		err(EXIT_FAILURE, "setreuid");
-}
-
-static const char *cleanup_pidfile, *cleanup_socket;
-
-static void terminate_intr(int signo CODE_ATTR((unused)))
-{
-	if (cleanup_pidfile)
-		unlink(cleanup_pidfile);
-	if (cleanup_socket)
-		unlink(cleanup_socket);
-	exit(EXIT_SUCCESS);
 }
 
 static int call_daemon(const char *socket_path, int op, char *buf,
@@ -206,23 +194,20 @@ static int call_daemon(const char *socket_path, int op, char *buf,
 /*
  * Exclusively create and open a pid file with path @pidfile_path
  *
- * Set cleanup_pidfile global variable for the cleanup
- * handler. @pidfile_path must not be NULL.
- *
  * Return file descriptor of the created pid_file.
  */
-static int create_pidfile(const char *pidfile_path, int quiet)
+static int create_pidfile(struct uuidd_cxt_t *cxt, const char *pidfile_path)
 {
 	int		fd_pidfile;
 	struct flock	fl;
 
 	fd_pidfile = open(pidfile_path, O_CREAT | O_RDWR, 0664);
 	if (fd_pidfile < 0) {
-		if (!quiet)
+		if (!cxt->quiet)
 			warn(_("cannot open %s"), pidfile_path);
 		exit(EXIT_FAILURE);
 	}
-	cleanup_pidfile = pidfile_path;
+	cxt->cleanup_pidfile = pidfile_path;
 
 	fl.l_type = F_WRLCK;
 	fl.l_whence = SEEK_SET;
@@ -232,7 +217,7 @@ static int create_pidfile(const char *pidfile_path, int quiet)
 	while (fcntl(fd_pidfile, F_SETLKW, &fl) < 0) {
 		if ((errno == EAGAIN) || (errno == EINTR))
 			continue;
-		if (!quiet)
+		if (!cxt->quiet)
 			warn(_("cannot lock %s"), pidfile_path);
 		exit(EXIT_FAILURE);
 	}
@@ -244,19 +229,20 @@ static int create_pidfile(const char *pidfile_path, int quiet)
  * Create AF_UNIX, SOCK_STREAM socket and bind to @socket_path
  *
  * If @will_fork is true, then make sure the descriptor
- * of the socket is >2, so that it wont be later closed
+ * of the socket is >2, so that it won't be later closed
  * during create_daemon().
  *
  * Return file descriptor corresponding to created socket.
  */
-static int create_socket(const char *socket_path, int will_fork, int quiet)
+static int create_socket(struct uuidd_cxt_t *uuidd_cxt,
+			 const char *socket_path, int will_fork)
 {
 	struct sockaddr_un	my_addr;
 	mode_t			save_umask;
-	int 			s;
+	int			s;
 
 	if ((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
-		if (!quiet)
+		if (!uuidd_cxt->quiet)
 			warn(_("couldn't create unix stream socket"));
 		exit(EXIT_FAILURE);
 	}
@@ -281,18 +267,52 @@ static int create_socket(const char *socket_path, int will_fork, int quiet)
 	save_umask = umask(0);
 	if (bind(s, (const struct sockaddr *) &my_addr,
 		 sizeof(struct sockaddr_un)) < 0) {
-		if (!quiet)
+		if (!uuidd_cxt->quiet)
 			warn(_("couldn't bind unix socket %s"), socket_path);
 		exit(EXIT_FAILURE);
 	}
 	umask(save_umask);
-	cleanup_socket = socket_path;
+	uuidd_cxt->cleanup_socket = socket_path;
 
 	return s;
 }
 
+static void __attribute__((__noreturn__)) all_done(const struct uuidd_cxt_t *uuidd_cxt, int ret)
+{
+	if (uuidd_cxt->cleanup_pidfile)
+		unlink(uuidd_cxt->cleanup_pidfile);
+	if (uuidd_cxt->cleanup_socket)
+		unlink(uuidd_cxt->cleanup_socket);
+	exit(ret);
+}
+
+static void handle_signal(const struct uuidd_cxt_t *uuidd_cxt, int fd)
+{
+	struct signalfd_siginfo info;
+	ssize_t bytes;
+
+	bytes = read(fd, &info, sizeof(info));
+	if (bytes != sizeof(info)) {
+		if (errno == EAGAIN)
+			return;
+		warn(_("receiving signal failed"));
+		info.ssi_signo = 0;
+	}
+	if (info.ssi_signo == SIGPIPE)
+		return;		/* ignored */
+	all_done(uuidd_cxt, EXIT_SUCCESS);
+}
+
+static void timeout_handler(int sig __attribute__((__unused__)),
+			    siginfo_t * info,
+			    void *context __attribute__((__unused__)))
+{
+	if (info->si_code == SI_TIMER)
+		errx(EXIT_FAILURE, _("timed out"));
+}
+
 static void server_loop(const char *socket_path, const char *pidfile_path,
-			const struct uuidd_cxt_t *uuidd_cxt)
+			struct uuidd_cxt_t *uuidd_cxt)
 {
 	struct sockaddr_un	from_addr;
 	socklen_t		fromlen;
@@ -304,30 +324,39 @@ static void server_loop(const char *socket_path, const char *pidfile_path,
 	int			s = 0;
 	int			fd_pidfile = -1;
 	int			ret;
+	struct pollfd		pfd[2];
+	sigset_t		sigmask;
+	int			sigfd;
+	enum {
+				POLLFD_SIGNAL = 0,
+				POLLFD_SOCKET
+	};
 
 #ifdef HAVE_LIBSYSTEMD
 	if (!uuidd_cxt->no_sock)	/* no_sock implies no_fork and no_pid */
 #endif
 	{
+		static timer_t t_id;
+		struct itimerval timeout;
 
-		signal(SIGALRM, terminate_intr);
-		alarm(30);
+		memset(&timeout, 0, sizeof timeout);
+		timeout.it_value.tv_sec = 30;
+		if (setup_timer(&t_id, &timeout, &timeout_handler))
+			err(EXIT_FAILURE, _("cannot set up timer"));
 		if (pidfile_path)
-			fd_pidfile = create_pidfile(pidfile_path, uuidd_cxt->quiet);
-
+			fd_pidfile = create_pidfile(uuidd_cxt, pidfile_path);
 		ret = call_daemon(socket_path, UUIDD_OP_GETPID, reply_buf,
 				  sizeof(reply_buf), 0, NULL);
+		cancel_timer(&t_id);
 		if (ret > 0) {
 			if (!uuidd_cxt->quiet)
 				warnx(_("uuidd daemon is already running at pid %s"),
-				       reply_buf);
+					reply_buf);
 			exit(EXIT_FAILURE);
 		}
-		alarm(0);
 
-		s = create_socket(socket_path,
-				  (!uuidd_cxt->debug || !uuidd_cxt->no_fork),
-				  uuidd_cxt->quiet);
+		s = create_socket(uuidd_cxt, socket_path,
+				  (!uuidd_cxt->debug || !uuidd_cxt->no_fork));
 		if (listen(s, SOMAXCONN) < 0) {
 			if (!uuidd_cxt->quiet)
 				warn(_("couldn't listen on unix socket %s"), socket_path);
@@ -342,34 +371,66 @@ static void server_loop(const char *socket_path, const char *pidfile_path,
 			if (ftruncate(fd_pidfile, 0))
 				err(EXIT_FAILURE, _("could not truncate file: %s"), pidfile_path);
 			write_all(fd_pidfile, reply_buf, strlen(reply_buf));
-			if (fd_pidfile > 1)
-				if (close_fd(fd_pidfile) != 0) /* Unlock the pid file */
-					err(EXIT_FAILURE, _("write failed: %s"), pidfile_path);
+			if (fd_pidfile > 1 && close_fd(fd_pidfile) != 0)
+				err(EXIT_FAILURE, _("write failed: %s"), pidfile_path);
 		}
 
 	}
 
-	signal(SIGHUP, terminate_intr);
-	signal(SIGINT, terminate_intr);
-	signal(SIGTERM, terminate_intr);
-	signal(SIGALRM, terminate_intr);
-	signal(SIGPIPE, SIG_IGN);
-
 #ifdef HAVE_LIBSYSTEMD
 	if (uuidd_cxt->no_sock) {
-		if (sd_listen_fds(0) != 1)
-			errx(EXIT_FAILURE, _("no or too many file descriptors received"));
+		const int r = sd_listen_fds(0);
 
+		if (r < 0) {
+			errno = r * -1;
+			err(EXIT_FAILURE, _("sd_listen_fds() failed"));
+		} else if (r == 0)
+			errx(EXIT_FAILURE,
+			     _("no file descriptors received, check systemctl status uuidd.socket"));
+		else if (1 < r)
+			errx(EXIT_FAILURE,
+			     _("too many file descriptors received, check uuidd.socket"));
 		s = SD_LISTEN_FDS_START + 0;
 	}
 #endif
 
+	sigemptyset(&sigmask);
+	sigaddset(&sigmask, SIGHUP);
+	sigaddset(&sigmask, SIGINT);
+	sigaddset(&sigmask, SIGTERM);
+	sigaddset(&sigmask, SIGALRM);
+	sigaddset(&sigmask, SIGPIPE);
+	/* Block signals so that they aren't handled according to their
+	 * default dispositions */
+	sigprocmask(SIG_BLOCK, &sigmask, NULL);
+	if ((sigfd = signalfd(-1, &sigmask, 0)) < 0)
+		err(EXIT_FAILURE, _("cannot set signal handler"));
+
+	pfd[POLLFD_SIGNAL].fd = sigfd;
+	pfd[POLLFD_SOCKET].fd = s;
+	pfd[POLLFD_SIGNAL].events = pfd[POLLFD_SOCKET].events = POLLIN | POLLERR | POLLHUP;
+
 	while (1) {
+		ret = poll(pfd, ARRAY_SIZE(pfd),
+				uuidd_cxt->timeout ?
+					(int) uuidd_cxt->timeout * 1000 : -1);
+		if (ret < 0) {
+			if (errno == EAGAIN)
+				continue;
+			warn(_("poll failed"));
+				all_done(uuidd_cxt, EXIT_FAILURE);
+		}
+		if (ret == 0) {		/* true when poll() times out */
+			if (uuidd_cxt->debug)
+				fprintf(stderr, _("timeout [%d sec]\n"), uuidd_cxt->timeout),
+			all_done(uuidd_cxt, EXIT_SUCCESS);
+		}
+		if (pfd[POLLFD_SIGNAL].revents != 0)
+			handle_signal(uuidd_cxt, sigfd);
+		if (pfd[POLLFD_SOCKET].revents == 0)
+			continue;
 		fromlen = sizeof(from_addr);
-		if (uuidd_cxt->timeout != 0)
-			alarm(uuidd_cxt->timeout);
 		ns = accept(s, (struct sockaddr *) &from_addr, &fromlen);
-		alarm(0);
 		if (ns < 0) {
 			if ((errno == EAGAIN) || (errno == EINTR))
 				continue;
@@ -482,7 +543,6 @@ int main(int argc, char **argv)
 {
 	const char	*socket_path = UUIDD_SOCKET_PATH;
 	const char	*pidfile_path = NULL;
-	const char	*pidfile_path_param = NULL;
 	const char	*err_context = NULL;
 	char		buf[1024], *cp;
 	char		str[UUID_STR_LEN];
@@ -540,7 +600,7 @@ int main(int argc, char **argv)
 						_("failed to parse --uuids"));
 			break;
 		case 'p':
-			pidfile_path_param = optarg;
+			pidfile_path = optarg;
 			break;
 		case 'P':
 			no_pid = 1;
@@ -585,10 +645,8 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (!no_pid && !pidfile_path_param)
+	if (!no_pid && !pidfile_path)
 		pidfile_path = UUIDD_PIDFILE_PATH;
-	else if (pidfile_path_param)
-		pidfile_path = pidfile_path_param;
 
 	/* custom socket path and socket-activation make no sense */
 	if (s_flag && uuidd_cxt.no_sock && !uuidd_cxt.quiet)

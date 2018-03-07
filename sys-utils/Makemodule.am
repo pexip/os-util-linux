@@ -1,8 +1,8 @@
 if BUILD_FLOCK
 usrbin_exec_PROGRAMS += flock
 dist_man_MANS += sys-utils/flock.1
-flock_SOURCES = sys-utils/flock.c
-flock_LDADD = $(LDADD) libcommon.la
+flock_SOURCES = sys-utils/flock.c lib/monotonic.c lib/timer.c
+flock_LDADD = $(LDADD) libcommon.la $(REALTIME_LIBS)
 endif
 
 if BUILD_IPCMK
@@ -28,6 +28,16 @@ ipcs_SOURCES =	sys-utils/ipcs.c \
 ipcs_LDADD = $(LDADD) libcommon.la
 endif
 
+if BUILD_LSIPC
+usrbin_exec_PROGRAMS += lsipc
+dist_man_MANS += sys-utils/lsipc.1
+lsipc_SOURCES =	sys-utils/lsipc.c \
+		sys-utils/ipcutils.c \
+		sys-utils/ipcutils.h
+lsipc_LDADD = $(LDADD) libcommon.la libsmartcols.la
+lsipc_CFLAGS = $(AM_CFLAGS) -I$(ul_libsmartcols_incdir)
+endif
+
 if BUILD_RENICE
 usrbin_exec_PROGRAMS += renice
 dist_man_MANS += sys-utils/renice.1
@@ -50,6 +60,7 @@ if BUILD_TUNELP
 usrsbin_exec_PROGRAMS += tunelp
 dist_man_MANS += sys-utils/tunelp.8
 tunelp_SOURCES = sys-utils/tunelp.c sys-utils/lp.h
+tunelp_LDADD = $(LDADD) libcommon.la
 endif
 
 if BUILD_FSTRIM
@@ -71,14 +82,20 @@ EXTRA_DIST += sys-utils/fstrim.timer
 if BUILD_DMESG
 bin_PROGRAMS += dmesg
 dist_man_MANS += sys-utils/dmesg.1
-dmesg_SOURCES = sys-utils/dmesg.c lib/boottime.c
-dmesg_LDADD = $(LDADD) libcommon.la -lrt
+dmesg_SOURCES = sys-utils/dmesg.c lib/monotonic.c
+dmesg_LDADD = $(LDADD) libcommon.la libtcolors.la $(REALTIME_LIBS)
+dmesg_CFLAGS = $(AM_CFLAGS)
+check_PROGRAMS += test_dmesg
+test_dmesg_SOURCES = $(dmesg_SOURCES)
+test_dmesg_LDADD = $(dmesg_LDADD)
+test_dmesg_CFLAGS = -DTEST_DMESG $(dmesg_CFLAGS)
 endif
 
 if BUILD_CTRLALTDEL
 sbin_PROGRAMS += ctrlaltdel
 dist_man_MANS += sys-utils/ctrlaltdel.8
 ctrlaltdel_SOURCES = sys-utils/ctrlaltdel.c
+ctrlaltdel_LDADD = $(LDADD) libcommon.la
 endif
 
 if BUILD_FSFREEZE
@@ -90,8 +107,8 @@ endif
 if BUILD_BLKDISCARD
 sbin_PROGRAMS += blkdiscard
 dist_man_MANS += sys-utils/blkdiscard.8
-blkdiscard_SOURCES = sys-utils/blkdiscard.c
-blkdiscard_LDADD = $(LDADD) libcommon.la
+blkdiscard_SOURCES = sys-utils/blkdiscard.c lib/monotonic.c
+blkdiscard_LDADD = $(LDADD) libcommon.la $(REALTIME_LIBS)
 endif
 
 if BUILD_LDATTACH
@@ -146,6 +163,7 @@ man_MANS += $(SETARCH_MAN_LINKS)
 CLEANFILES += $(SETARCH_MAN_LINKS)
 
 $(SETARCH_MAN_LINKS):
+	$(AM_V_at) $(MKDIR_P) sys-utils
 	$(AM_V_GEN)echo ".so man8/setarch.8" > $@
 
 install-exec-hook-setarch:
@@ -166,8 +184,8 @@ endif # BUILD_SETARCH
 
 if BUILD_EJECT
 usrbin_exec_PROGRAMS += eject
-eject_SOURCES =  sys-utils/eject.c
-eject_LDADD = $(LDADD) libmount.la libcommon.la
+eject_SOURCES =  sys-utils/eject.c lib/monotonic.c
+eject_LDADD = $(LDADD) libmount.la libcommon.la $(REALTIME_LIBS)
 eject_CFLAGS = $(AM_CFLAGS) -I$(ul_libmount_incdir)
 dist_man_MANS += sys-utils/eject.1
 endif
@@ -190,6 +208,15 @@ endif
 endif # BUILD_LOSETUP
 
 
+if BUILD_ZRAMCTL
+sbin_PROGRAMS += zramctl
+dist_man_MANS += sys-utils/zramctl.8
+zramctl_SOURCES = sys-utils/zramctl.c
+zramctl_LDADD = $(LDADD) libcommon.la libsmartcols.la
+zramctl_CFLAGS = $(AM_CFLAGS) -I$(ul_libsmartcols_incdir)
+endif
+
+
 if BUILD_PRLIMIT
 usrbin_exec_PROGRAMS += prlimit
 dist_man_MANS += sys-utils/prlimit.1
@@ -199,11 +226,16 @@ prlimit_CFLAGS = $(AM_CFLAGS) -I$(ul_libsmartcols_incdir)
 endif
 
 
+if BUILD_LSNS
+usrbin_exec_PROGRAMS += lsns
+dist_man_MANS += sys-utils/lsns.8
+lsns_SOURCES =	sys-utils/lsns.c
+lsns_LDADD = $(LDADD) libcommon.la libsmartcols.la
+lsns_CFLAGS = $(AM_CFLAGS) -I$(ul_libsmartcols_incdir)
+endif
+
+
 if BUILD_MOUNT
-#
-# The original mount is in mount/ directory
-# -- temporary we share some man pages
-#
 bin_PROGRAMS += mount umount
 dist_man_MANS += \
 	sys-utils/mount.8 \
@@ -254,14 +286,32 @@ dist_man_MANS += \
 swapon_SOURCES = \
 	sys-utils/swapon.c \
 	sys-utils/swapon-common.c \
-	sys-utils/swapon-common.h
+	sys-utils/swapon-common.h \
+	lib/swapprober.c \
+	include/swapprober.h
+swapon_CFLAGS = $(AM_CFLAGS) \
+	-I$(ul_libblkid_incdir) \
+	-I$(ul_libmount_incdir) \
+	-I$(ul_libsmartcols_incdir)
+swapon_LDADD = $(LDADD) \
+	libblkid.la \
+	libcommon.la \
+	libmount.la \
+	libsmartcols.la
 
-swapon_CFLAGS = $(AM_CFLAGS) -I$(ul_libmount_incdir) -I$(ul_libsmartcols_incdir)
-swapon_LDADD = $(LDADD) libcommon.la libmount.la libsmartcols.la
-
-swapoff_SOURCES = sys-utils/swapoff.c sys-utils/swapon-common.c
-swapoff_CFLAGS = $(AM_CFLAGS) -I$(ul_libmount_incdir)
-swapoff_LDADD = $(LDADD) libmount.la
+swapoff_SOURCES = \
+	sys-utils/swapoff.c \
+	sys-utils/swapon-common.c \
+	sys-utils/swapon-common.h \
+	lib/swapprober.c \
+	include/swapprober.h
+swapoff_CFLAGS = $(AM_CFLAGS) \
+	-I$(ul_libblkid_incdir) \
+	-I$(ul_libmount_incdir)
+swapoff_LDADD = $(LDADD) \
+	libmount.la \
+	libblkid.la \
+	libcommon.la
 endif
 
 if BUILD_LSCPU
@@ -270,7 +320,7 @@ lscpu_SOURCES = \
 	sys-utils/lscpu.c \
 	sys-utils/lscpu.h \
 	sys-utils/lscpu-dmi.c
-lscpu_LDADD = $(LDADD) libcommon.la libsmartcols.la
+lscpu_LDADD = $(LDADD) libcommon.la libsmartcols.la $(RTAS_LIBS)
 lscpu_CFLAGS = $(AM_CFLAGS) -I$(ul_libsmartcols_incdir)
 dist_man_MANS += sys-utils/lscpu.1
 endif
@@ -323,13 +373,28 @@ dist_man_MANS += sys-utils/unshare.1
 unshare_SOURCES = sys-utils/unshare.c
 unshare_LDADD = $(LDADD) libcommon.la
 unshare_CFLAGS = $(AM_CFLAGS) -I$(ul_libmount_incdir)
+
+if HAVE_STATIC_UNSHARE
+usrbin_exec_PROGRAMS += unshare.static
+unshare_static_SOURCES = $(unshare_SOURCES)
+unshare_static_LDFLAGS = -all-static
+unshare_static_LDADD = $(unshare_LDADD)
+unshare_static_CFLAGS = $(unshare_CFLAGS)
+endif
 endif
 
 if BUILD_NSENTER
 usrbin_exec_PROGRAMS += nsenter
 dist_man_MANS += sys-utils/nsenter.1
 nsenter_SOURCES = sys-utils/nsenter.c
-nsenter_LDADD = $(LDADD) libcommon.la
+nsenter_LDADD = $(LDADD) libcommon.la $(SELINUX_LIBS)
+
+if HAVE_STATIC_NSENTER
+usrbin_exec_PROGRAMS += nsenter.static
+nsenter_static_SOURCES = $(nsenter_SOURCES)
+nsenter_static_LDFLAGS = -all-static
+nsenter_static_LDADD = $(nsenter_LDADD)
+endif
 endif
 
 if BUILD_HWCLOCK
@@ -339,12 +404,11 @@ PATHFILES += sys-utils/hwclock.8
 hwclock_SOURCES = \
 	sys-utils/hwclock.c \
 	sys-utils/hwclock.h \
-	sys-utils/hwclock-cmos.c \
-	sys-utils/hwclock-kd.c
+	sys-utils/hwclock-cmos.c
 if LINUX
 hwclock_SOURCES += sys-utils/hwclock-rtc.c
 endif
-hwclock_LDADD = $(LDADD) libcommon.la
+hwclock_LDADD = $(LDADD) libcommon.la $(MATH_LIBS)
 if HAVE_AUDIT
 hwclock_LDADD += -laudit
 endif

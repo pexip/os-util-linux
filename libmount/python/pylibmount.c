@@ -130,7 +130,7 @@ char *pystos(PyObject *pys)
 	"Please note that none of the classes' attributes may be deleted.\n" \
 	"This is not a complete mapping to the libmount C API, nor is it\n" \
 	"attempting to be one.\n" "Iterator functions only allow forward\n" \
-	"iteration for now. Contex.get_{user_,}mflags() differs from the C API\n" \
+	"iteration for now. Context.get_{user_,}mflags() differs from the C API\n" \
 	"and returns the flags directly. Fs.get_tag() differs from the C API\n" \
 	"and returns a (tag, value) tuple. Every attribute is \"filtered\"" \
 	"through appropriate getters/setters, no values are set directly."
@@ -229,7 +229,9 @@ PyMODINIT_FUNC initpylibmount(void)
 
 	FS_AddModuleObject(m);
 	Table_AddModuleObject(m);
+#ifdef __linux__
 	Context_AddModuleObject(m);
+#endif
 
 	/*
 	 * mount(8) userspace options masks (MNT_MAP_USERSPACE map)

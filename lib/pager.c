@@ -12,14 +12,15 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <signal.h>
 
 #include "c.h"
 #include "xalloc.h"
 #include "nls.h"
+#include "ttyutils.h"
+#include "pager.h"
 
 #define NULL_DEVICE	"/dev/null"
-
-void setup_pager(void);
 
 static const char *pager_argv[] = { "sh", "-c", NULL, NULL };
 
@@ -29,6 +30,15 @@ struct child_process {
 	int in;
 	int out;
 	int err;
+
+	int org_err;
+	int org_out;
+	struct sigaction orig_sigint;
+	struct sigaction orig_sighup;
+	struct sigaction orig_sigterm;
+	struct sigaction orig_sigquit;
+	struct sigaction orig_sigpipe;
+
 	unsigned no_stdin:1;
 	void (*preexec_cb)(void);
 };
@@ -137,11 +147,15 @@ static void pager_preexec(void)
 	FD_SET(STDIN_FILENO, &in);
 	select(1, &in, NULL, &in, NULL);
 
-	setenv("LESS", "FRSX", 0);
+	if (setenv("LESS", "FRSX", 0) != 0)
+		warn(_("failed to set the %s environment variable"), "LESS");
 }
 
 static void wait_for_pager(void)
 {
+	if (pager_process.pid == 0)
+		return;
+
 	fflush(stdout);
 	fflush(stderr);
 	/* signal EOF to pager */
@@ -156,9 +170,10 @@ static void wait_for_pager_signal(int signo)
 	raise(signo);
 }
 
-void setup_pager(void)
+static void __setup_pager(void)
 {
 	const char *pager = getenv("PAGER");
+	struct sigaction sa;
 
 	if (!isatty(STDOUT_FILENO))
 		return;
@@ -183,14 +198,66 @@ void setup_pager(void)
 		dup2(pager_process.in, STDERR_FILENO);
 	close(pager_process.in);
 
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = wait_for_pager_signal;
+
 	/* this makes sure that the parent terminates after the pager */
-	signal(SIGINT, wait_for_pager_signal);
-	signal(SIGHUP, wait_for_pager_signal);
-	signal(SIGTERM, wait_for_pager_signal);
-	signal(SIGQUIT, wait_for_pager_signal);
-	signal(SIGPIPE, wait_for_pager_signal);
+	sigaction(SIGINT,  &sa, &pager_process.orig_sigint);
+	sigaction(SIGHUP,  &sa, &pager_process.orig_sighup);
+	sigaction(SIGTERM, &sa, &pager_process.orig_sigterm);
+	sigaction(SIGQUIT, &sa, &pager_process.orig_sigquit);
+	sigaction(SIGPIPE, &sa, &pager_process.orig_sigpipe);
+}
+
+/* Setup pager and redirects output to the $PAGER. The pager is closed at exit.
+ */
+void pager_redirect(void)
+{
+	if (pager_process.pid)
+		return;		/* already running */
+
+	__setup_pager();
 
 	atexit(wait_for_pager);
+}
+
+/* Setup pager and redirect output, the pager may be closed by pager_close().
+ */
+void pager_open(void)
+{
+	if (pager_process.pid)
+		return;		/* already running */
+
+	pager_process.org_out = dup(STDOUT_FILENO);
+	pager_process.org_err = dup(STDERR_FILENO);
+
+	__setup_pager();
+}
+
+/* Close pager and restore original std{out,err}.
+ */
+void pager_close(void)
+{
+	if (pager_process.pid == 0)
+		return;
+
+	wait_for_pager();
+
+	/* restore original output */
+	dup2(pager_process.org_out, STDOUT_FILENO);
+	dup2(pager_process.org_err, STDERR_FILENO);
+
+	close(pager_process.org_out);
+	close(pager_process.org_err);
+
+	/* restore original segnals setting */
+	sigaction(SIGINT,  &pager_process.orig_sigint, NULL);
+	sigaction(SIGHUP,  &pager_process.orig_sighup, NULL);
+	sigaction(SIGTERM, &pager_process.orig_sigterm, NULL);
+	sigaction(SIGQUIT, &pager_process.orig_sigquit, NULL);
+	sigaction(SIGPIPE, &pager_process.orig_sigpipe, NULL);
+
+	memset(&pager_process, 0, sizeof(pager_process));
 }
 
 #ifdef TEST_PROGRAM
@@ -202,7 +269,7 @@ int main(int argc __attribute__ ((__unused__)),
 {
 	int i;
 
-	setup_pager();
+	pager_redirect();
 	for (i = 0; i < MAX; i++)
 		printf("%d\n", i);
 	return EXIT_SUCCESS;

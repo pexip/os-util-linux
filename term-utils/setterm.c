@@ -101,6 +101,21 @@ enum {
 	DEFAULT
 };
 
+static const char *colornames[] = {
+	[BLACK] = "black",
+	[RED]	= "red",
+	[GREEN]	= "green",
+	[YELLOW]= "yellow",
+	[BLUE]	= "blue",
+	[MAGENTA]="magenta",
+	[CYAN]	= "cyan",
+	[WHITE]	= "white",
+	[GREY]	= "grey",
+	[DEFAULT] = "default"
+};
+
+#define is_valid_color(x)	(x >= 0 && (size_t) x < ARRAY_SIZE(colornames))
+
 /* Blank commands */
 enum {
 	BLANKSCREEN	= -1,
@@ -151,10 +166,10 @@ struct setterm_control {
 	int opt_bl_min;		/* blank screen */
 	int opt_blength_l;	/* bell duration in milliseconds */
 	int opt_bfreq_f;	/* bell frequency in Hz */
-	int opt_sn_num;		/* console number to be snapshoted */
+	int opt_sn_num;		/* console number to be snapshot */
 	char *opt_sn_name;	/* path to write snap */
 	char *in_device;	/* device to snapshot */
-	int opt_msglevel_num;	/* printk() loging level */
+	int opt_msglevel_num;	/* printk() logging level */
 	int opt_ps_mode;	/* powersave mode */
 	int opt_pd_min;		/* powerdown time */
 	int opt_rt_len;		/* regular tab length */
@@ -178,110 +193,73 @@ struct setterm_control {
 	    opt_powerdown:1, opt_blength:1, opt_bfreq:1;
 };
 
-/* Command line parsing routines.
- *
- * Note that it is an error for a given option to be invoked more than once.
- */
-
-static int parse_switch(const char *arg, const char *t, const char *f)
+static int parse_color(const char *arg)
 {
-	if (strcmp(arg, t) == 0)
-		return 1;
-	else if (strcmp(arg, f) == 0)
-		return 0;
-	errx(EXIT_FAILURE, _("argument error: %s"), arg);
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(colornames); i++) {
+		if (strcmp(colornames[i], arg) == 0)
+			return i;
+	}
+
+	return -EINVAL;
 }
 
 static int parse_febg_color(const char *arg)
 {
-	int color;
+	int color = parse_color(arg);
 
-	if (strcmp(arg, "black") == 0)
-		return BLACK;
-	else if (strcmp(arg, "red") == 0)
-		return RED;
-	else if (strcmp(arg, "green") == 0)
-		return GREEN;
-	else if (strcmp(arg, "yellow") == 0)
-		return YELLOW;
-	else if (strcmp(arg, "blue") == 0)
-		return BLUE;
-	else if (strcmp(arg, "magenta") == 0)
-		return MAGENTA;
-	else if (strcmp(arg, "cyan") == 0)
-		return CYAN;
-	else if (strcmp(arg, "white") == 0)
-		return WHITE;
-	else if (strcmp(arg, "default") == 0)
-		return DEFAULT;
-	else
+	if (color < 0)
 		color = strtos32_or_err(arg, _("argument error"));
-	if (color < BLACK || DEFAULT < color || color == GREY)
-		errx(EXIT_FAILURE, _("argument error: %s"), arg);
+
+	if (!is_valid_color(color) || color == GREY)
+		errx(EXIT_FAILURE, "%s: %s", _("argument error"), arg);
 	return color;
 }
 
-static int parse_ulhb_color(char **argv, int *optind)
+static int parse_ulhb_color(char **av, int *oi)
 {
 	char *color_name;
 	int bright = 0;
 	int color = -1;
 
-	if (argv[*optind] && strcmp(argv[*optind - 1], "bright") == 0) {
+	if (av[*oi] && strcmp(av[*oi - 1], "bright") == 0) {
 		bright = 1;
-		color_name = argv[*optind];
-		(*optind)++;
+		color_name = av[*oi];
+		(*oi)++;
 	} else
-		color_name = argv[*optind - 1];
+		color_name = av[*oi - 1];
 
-	if (strcmp(color_name, "black") == 0)
-		color = BLACK;
-	else if (strcmp(color_name, "grey") == 0)
-		color = GREY;
-	else if (strcmp(color_name, "red") == 0)
-		color = RED;
-	else if (strcmp(color_name, "green") == 0)
-		color = GREEN;
-	else if (strcmp(color_name, "yellow") == 0)
-		color = YELLOW;
-	else if (strcmp(color_name, "blue") == 0)
-		color = BLUE;
-	else if (strcmp(color_name, "magenta") == 0)
-		color = MAGENTA;
-	else if (strcmp(color_name, "cyan") == 0)
-		color = CYAN;
-	else if (strcmp(color_name, "white") == 0)
-		color = WHITE;
-	else {
+	color = parse_color(color_name);
+	if (color < 0)
 		color = strtos32_or_err(color_name, _("argument error"));
-		if (color < BLACK || DEFAULT < color)
-			errx(EXIT_FAILURE, _("argument error: %s"), color_name);
-	}
+	if (!is_valid_color(color))
+		errx(EXIT_FAILURE, "%s: %s", _("argument error"), color_name);
 	if (bright && (color == BLACK || color == GREY))
 		errx(EXIT_FAILURE, _("argument error: bright %s is not supported"), color_name);
 
 	return color;
 }
 
-static char *find_optional_arg(char **argv, char *optarg, int *optind)
+static char *find_optional_arg(char **av, char *oa, int *oi)
 {
 	char *arg;
-	if (optarg)
-		return optarg;
+	if (oa)
+		return oa;
 	else {
-		arg = argv[*optind];
+		arg = av[*oi];
 		if (!arg || arg[0] == '-')
 			return NULL;
 	}
-	(*optind)++;
+	(*oi)++;
 	return arg;
 }
 
-static int parse_blank(char **argv, char *optarg, int *optind)
+static int parse_blank(char **av, char *oa, int *oi)
 {
 	char *arg;
 
-	arg = find_optional_arg(argv, optarg, optind);
+	arg = find_optional_arg(av, oa, oi);
 	if (!arg)
 		return BLANKEDSCREEN;
 	if (!strcmp(arg, "force"))
@@ -293,11 +271,9 @@ static int parse_blank(char **argv, char *optarg, int *optind)
 
 		ret = strtos32_or_err(arg, _("argument error"));
 		if (ret < 0 || BLANK_MAX < ret)
-			errx(EXIT_FAILURE, _("argument error: %s"), arg);
+			errx(EXIT_FAILURE, "%s: %s", _("argument error"), arg);
 		return ret;
 	}
-	/* should be impossible to reach */
-	abort();
 }
 
 static int parse_powersave(const char *arg)
@@ -312,7 +288,7 @@ static int parse_powersave(const char *arg)
 		return VESA_BLANK_MODE_POWERDOWN;
 	else if (strcmp(arg, "off") == 0)
 		return VESA_BLANK_MODE_OFF;
-	errx(EXIT_FAILURE, _("argument error: %s"), arg);
+	errx(EXIT_FAILURE, "%s: %s", _("argument error"), arg);
 }
 
 static int parse_msglevel(const char *arg)
@@ -321,77 +297,77 @@ static int parse_msglevel(const char *arg)
 
 	ret = strtos32_or_err(arg, _("argument error"));
 	if (ret < CONSOLE_LEVEL_MIN || CONSOLE_LEVEL_MAX < ret)
-		errx(EXIT_FAILURE, _("argument error: %s"), arg);
+		errx(EXIT_FAILURE, "%s: %s", _("argument error"), arg);
 	return ret;
 }
 
-static int parse_snap(char **argv, char *optarg, int *optind)
+static int parse_snap(char **av, char *oa, int *oi)
 {
 	int ret;
 	char *arg;
 
-	arg = find_optional_arg(argv, optarg, optind);
+	arg = find_optional_arg(av, oa, oi);
 	if (!arg)
 		return 0;
 	ret = strtos32_or_err(arg, _("argument error"));
 	if (ret < 1)
-		errx(EXIT_FAILURE, _("argument error: %s"), arg);
+		errx(EXIT_FAILURE, "%s: %s", _("argument error"), arg);
 	return ret;
 }
 
-static void parse_tabs(char **argv, char *optarg, int *optind, int *tab_array)
+static void parse_tabs(char **av, char *oa, int *oi, int *tab_array)
 {
 	int i = 0;
 
-	if (optarg) {
-		tab_array[i] = strtos32_or_err(optarg, _("argument error"));
+	if (oa) {
+		tab_array[i] = strtos32_or_err(oa, _("argument error"));
 		i++;
 	}
-	while (argv[*optind]) {
+	while (av[*oi]) {
 		if (TABS_MAX < i)
 			errx(EXIT_FAILURE, _("too many tabs"));
-		if (argv[*optind][0] == '-')
+		if (av[*oi][0] == '-')
 			break;
-		tab_array[i] = strtos32_or_err(argv[*optind], _("argument error"));
-		(*optind)++;
+		tab_array[i] = strtos32_or_err(av[*oi], _("argument error"));
+		(*oi)++;
 		i++;
 	}
 	tab_array[i] = -1;
 }
 
-static int parse_regtabs(char **argv, char *optarg, int *optind)
+static int parse_regtabs(char **av, char *oa, int *oi)
 {
 	int ret;
 	char *arg;
 
-	arg = find_optional_arg(argv, optarg, optind);
+	arg = find_optional_arg(av, oa, oi);
 	if (!arg)
 		return DEFAULT_TAB_LEN;
 	ret = strtos32_or_err(arg, _("argument error"));
 	if (ret < 1 || TABS_MAX < ret)
-		errx(EXIT_FAILURE, _("argument error: %s"), arg);
+		errx(EXIT_FAILURE, "%s: %s", _("argument error"), arg);
 	return ret;
 }
 
-static int parse_blength(char **argv, char *optarg, int *optind)
+static int parse_blength(char **av, char *oa, int *oi)
 {
 	int ret = -1;
 	char *arg;
 
-	arg = find_optional_arg(argv, optarg, optind);
+	arg = find_optional_arg(av, oa, oi);
 	if (!arg)
 		return 0;
 	ret = strtos32_or_err(arg, _("argument error"));
 	if (ret < 0 || BLENGTH_MAX < ret)
-		errx(EXIT_FAILURE, _("argument error: %s"), arg);
+		errx(EXIT_FAILURE, "%s: %s", _("argument error"), arg);
 	return ret;
 }
 
-static int parse_bfreq(char **argv, char *optarg, int *optind)
+static int parse_bfreq(char **av, char *oa, int *oi)
 {
 	char *arg;
 
-	arg = find_optional_arg(argv, optarg, optind);
+	arg = find_optional_arg(av, oa, oi);
 	if (!arg)
 		return 0;
 	return strtos32_or_err(arg, _("argument error"));
@@ -402,6 +378,10 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
 	      _(" %s [options]\n"), program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Set the attributes of a terminal.\n"), out);
+
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" --term          <terminal_name>   override TERM environment variable\n"), out);
 	fputs(_(" --reset                           reset terminal to power-on state\n"), out);
@@ -451,7 +431,7 @@ static int __attribute__((__pure__)) set_opt_flag(int opt)
 	return 1;
 }
 
-static void parse_option(struct setterm_control *ctl, int argc, char **argv)
+static void parse_option(struct setterm_control *ctl, int ac, char **av)
 {
 	int c;
 	enum {
@@ -537,7 +517,7 @@ static void parse_option(struct setterm_control *ctl, int argc, char **argv)
 	};
 	int excl_st[ARRAY_SIZE(excl)] = UL_EXCL_STATUS_INIT;
 
-	while ((c = getopt_long_only(argc, argv, "", longopts, NULL)) != -1) {
+	while ((c = getopt_long_only(ac, av, "", longopts, NULL)) != -1) {
 		err_exclusive_options(c, longopts, excl, excl_st);
 		switch (c) {
 		case OPT_TERM:
@@ -552,19 +532,23 @@ static void parse_option(struct setterm_control *ctl, int argc, char **argv)
 			break;
 		case OPT_CURSOR:
 			ctl->opt_cursor = set_opt_flag(ctl->opt_cursor);
-			ctl->opt_cu_on = parse_switch(optarg, "on", "off");
+			ctl->opt_cu_on = parse_switch(optarg, _("argument error"),
+						"on", "off", NULL);
 			break;
 		case OPT_REPEAT:
 			ctl->opt_repeat = set_opt_flag(ctl->opt_repeat);
-			ctl->opt_rep_on = parse_switch(optarg, "on", "off");
+			ctl->opt_rep_on = parse_switch(optarg, _("argument error"),
+						"on", "off", NULL);
 			break;
 		case OPT_APPCURSORKEYS:
 			ctl->opt_appcursorkeys = set_opt_flag(ctl->opt_appcursorkeys);
-			ctl->opt_appck_on = parse_switch(optarg, "on", "off");
+			ctl->opt_appck_on = parse_switch(optarg, _("argument error"),
+						"on", "off", NULL);
 			break;
 		case OPT_LINEWRAP:
 			ctl->opt_linewrap = set_opt_flag(ctl->opt_linewrap);
-			ctl->opt_li_on = parse_switch(optarg, "on", "off");
+			ctl->opt_li_on = parse_switch(optarg, _("argument error"),
+						"on", "off", NULL);
 			break;
 		case OPT_DEFAULT:
 			ctl->opt_default = set_opt_flag(ctl->opt_default);
@@ -579,66 +563,73 @@ static void parse_option(struct setterm_control *ctl, int argc, char **argv)
 			break;
 		case OPT_ULCOLOR:
 			ctl->opt_ulcolor = set_opt_flag(ctl->opt_ulcolor);
-			ctl->opt_ul_color = parse_ulhb_color(argv, &optind);
+			ctl->opt_ul_color = parse_ulhb_color(av, &optind);
 			break;
 		case OPT_HBCOLOR:
 			ctl->opt_hbcolor = set_opt_flag(ctl->opt_hbcolor);
-			ctl->opt_hb_color = parse_ulhb_color(argv, &optind);
+			ctl->opt_hb_color = parse_ulhb_color(av, &optind);
 			break;
 		case OPT_INVERSESCREEN:
 			ctl->opt_inversescreen = set_opt_flag(ctl->opt_inversescreen);
-			ctl->opt_invsc_on = parse_switch(optarg, "on", "off");
+			ctl->opt_invsc_on = parse_switch(optarg, _("argument error"),
+						"on", "off", NULL);
 			break;
 		case OPT_BOLD:
 			ctl->opt_bold = set_opt_flag(ctl->opt_bold);
-			ctl->opt_bo_on = parse_switch(optarg, "on", "off");
+			ctl->opt_bo_on = parse_switch(optarg, _("argument error"),
+						"on", "off", NULL);
 			break;
 		case OPT_HALF_BRIGHT:
 			ctl->opt_halfbright = set_opt_flag(ctl->opt_halfbright);
-			ctl->opt_hb_on = parse_switch(optarg, "on", "off");
+			ctl->opt_hb_on = parse_switch(optarg, _("argument error"),
+						"on", "off", NULL);
 			break;
 		case OPT_BLINK:
 			ctl->opt_blink = set_opt_flag(ctl->opt_blink);
-			ctl->opt_bl_on = parse_switch(optarg, "on", "off");
+			ctl->opt_bl_on = parse_switch(optarg, _("argument error"),
+						"on", "off", NULL);
 			break;
 		case OPT_REVERSE:
 			ctl->opt_reverse = set_opt_flag(ctl->opt_reverse);
-			ctl->opt_re_on = parse_switch(optarg, "on", "off");
+			ctl->opt_re_on = parse_switch(optarg, _("argument error"),
+						"on", "off", NULL);
 			break;
 		case OPT_UNDERLINE:
 			ctl->opt_underline = set_opt_flag(ctl->opt_underline);
-			ctl->opt_un_on = parse_switch(optarg, "on", "off");
+			ctl->opt_un_on = parse_switch(optarg, _("argument error"),
+						"on", "off", NULL);
 			break;
 		case OPT_STORE:
 			ctl->opt_store = set_opt_flag(ctl->opt_store);
 			break;
 		case OPT_CLEAR:
 			ctl->opt_clear = set_opt_flag(ctl->opt_clear);
-			ctl->opt_cl_all = parse_switch(optarg, "all", "reset");
+			ctl->opt_cl_all = parse_switch(optarg, _("argument error"),
+						"all", "reset", NULL);
 			break;
 		case OPT_TABS:
 			ctl->opt_tabs = set_opt_flag(ctl->opt_tabs);
-			parse_tabs(argv, optarg, &optind, ctl->opt_tb_array);
+			parse_tabs(av, optarg, &optind, ctl->opt_tb_array);
 			break;
 		case OPT_CLRTABS:
 			ctl->opt_clrtabs = set_opt_flag(ctl->opt_clrtabs);
-			parse_tabs(argv, optarg, &optind, ctl->opt_tb_array);
+			parse_tabs(av, optarg, &optind, ctl->opt_tb_array);
 			break;
 		case OPT_REGTABS:
 			ctl->opt_regtabs = set_opt_flag(ctl->opt_regtabs);
-			ctl->opt_rt_len = parse_regtabs(argv, optarg, &optind);
+			ctl->opt_rt_len = parse_regtabs(av, optarg, &optind);
 			break;
 		case OPT_BLANK:
 			ctl->opt_blank = set_opt_flag(ctl->opt_blank);
-			ctl->opt_bl_min = parse_blank(argv, optarg, &optind);
+			ctl->opt_bl_min = parse_blank(av, optarg, &optind);
 			break;
 		case OPT_DUMP:
 			ctl->opt_snap = set_opt_flag(ctl->opt_snap);
-			ctl->opt_sn_num = parse_snap(argv, optarg, &optind);
+			ctl->opt_sn_num = parse_snap(av, optarg, &optind);
 			break;
 		case OPT_APPEND:
 			ctl->opt_append = set_opt_flag(ctl->opt_append);
-			ctl->opt_sn_num = parse_snap(argv, optarg, &optind);
+			ctl->opt_sn_num = parse_snap(av, optarg, &optind);
 			break;
 		case OPT_FILE:
 			ctl->opt_snapfile = set_opt_flag(ctl->opt_snapfile);
@@ -646,7 +637,8 @@ static void parse_option(struct setterm_control *ctl, int argc, char **argv)
 			break;
 		case OPT_MSG:
 			ctl->opt_msg = set_opt_flag(ctl->opt_msg);
-			ctl->opt_msg_on = parse_switch(optarg, "on", "off");
+			ctl->opt_msg_on = parse_switch(optarg, _("argument error"),
+						"on", "off", NULL);
 			break;
 		case OPT_MSGLEVEL:
 			ctl->opt_msglevel = set_opt_flag(ctl->opt_msglevel);
@@ -662,15 +654,15 @@ static void parse_option(struct setterm_control *ctl, int argc, char **argv)
 			break;
 		case OPT_POWERDOWN:
 			ctl->opt_powerdown = set_opt_flag(ctl->opt_powerdown);
-			ctl->opt_pd_min = parse_blank(argv, optarg, &optind);
+			ctl->opt_pd_min = parse_blank(av, optarg, &optind);
 			break;
 		case OPT_BLENGTH:
 			ctl->opt_blength = set_opt_flag(ctl->opt_blength);
-			ctl->opt_blength_l = parse_blength(argv, optarg, &optind);
+			ctl->opt_blength_l = parse_blength(av, optarg, &optind);
 			break;
 		case OPT_BFREQ:
 			ctl->opt_bfreq = set_opt_flag(ctl->opt_bfreq);
-			ctl->opt_bfreq_f = parse_bfreq(argv, optarg, &optind);
+			ctl->opt_bfreq_f = parse_bfreq(av, optarg, &optind);
 			break;
 		case OPT_VERSION:
 			printf(UTIL_LINUX_VERSION);
@@ -682,8 +674,6 @@ static void parse_option(struct setterm_control *ctl, int argc, char **argv)
 		}
 	}
 }
-
-/* End of command line parsing routines. */
 
 /* Return the specified terminfo string, or an empty string if no such
  * terminfo capability exists.  */
@@ -819,11 +809,9 @@ static void screendump(struct setterm_control *ctl)
 /* Some options are applicable when terminal is virtual console. */
 static int vc_only(struct setterm_control *ctl, const char *err)
 {
-	if (!ctl->vcterm) {
-		if (err)
-			warnx(_("terminal %s does not support %s"),
-			      ctl->opt_te_terminal_name, err);
-	}
+	if (!ctl->vcterm && err)
+		warnx(_("terminal %s does not support %s"),
+		      ctl->opt_te_terminal_name, err);
 	return ctl->vcterm;
 }
 

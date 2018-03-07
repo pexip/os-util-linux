@@ -44,6 +44,15 @@
  *
  */
 
+/*
+ * This command is deprecated.  The utility is in maintenance mode,
+ * meaning we keep them in source tree for backward compatibility
+ * only.  Do not waste time making this command better, unless the
+ * fix is about security or other very critical issue.
+ *
+ * See Documentation/deprecated.txt for more information.
+ */
+
 #include <stdlib.h>
 #include <errno.h>
 #include <ctype.h>
@@ -121,6 +130,9 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 		"\nUsage:\n"
 		" %s [options]\n"), program_invocation_short_name);
 
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Filter out reverse line feeds.\n"), out);
+
 	fprintf(out, _(
 		"\nOptions:\n"
 		" -b, --no-backspaces    do not output backspaces\n"
@@ -136,6 +148,7 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 		"%s reads from standard input and writes to standard output\n\n"),
 		program_invocation_short_name);
 
+	fprintf(out, USAGE_MAN_TAIL("col(1)"));
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
 
@@ -205,8 +218,7 @@ int main(int argc, char **argv)
 			compress_spaces = 0;
 			break;
 		case 'V':
-			printf(_("%s from %s\n"), program_invocation_short_name,
-						  PACKAGE_STRING);
+			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'H':
 			usage(stdout);
@@ -350,7 +362,7 @@ int main(int argc, char **argv)
 			int need;
 
 			need = l->l_lsize ? l->l_lsize * 2 : 90;
-			l->l_line = (CHAR *)xrealloc((void *) l->l_line,
+			l->l_line = xrealloc((void *) l->l_line,
 						    (unsigned) need * sizeof(CHAR));
 			l->l_lsize = need;
 		}
@@ -460,7 +472,7 @@ void flush_line(LINE *l)
 		 */
 		if (l->l_lsize > sorted_size) {
 			sorted_size = l->l_lsize;
-			sorted = (CHAR *)xrealloc((void *)sorted,
+			sorted = xrealloc((void *)sorted,
 						  (unsigned)sizeof(CHAR) * sorted_size);
 		}
 		if (l->l_max_col >= count_size) {

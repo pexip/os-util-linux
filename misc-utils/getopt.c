@@ -1,6 +1,6 @@
 /*
  *  getopt.c - Enhanced implementation of BSD getopt(1)
- *  Copyright (c) 1997-2005 Frodo Looijaard <frodo@frodo.looijaard.name>
+ *  Copyright (c) 1997-2014 Frodo Looijaard <frodo@frodo.looijaard.name>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -37,6 +37,11 @@
  *     <misiek@pld.org.pl>)
  * Version 1.1.4: Mon Nov 7 2005
  *   Fixed a few type's in the manpage
+ * Version 1.1.5: Sun Aug 12 2012
+ *  Sync with util-linux-2.21, fixed build problems, many new translations
+ * Version 1.1.6: Mon Nov 24 2014
+ *  Sync with util-linux git 20141120, detect ambiguous long options, fix
+ *  backslash problem in tcsh
  */
 
 /* Exit codes:
@@ -49,6 +54,7 @@
 #define GETOPT_EXIT_CODE	1
 #define PARAMETER_EXIT_CODE	2
 #define XALLOC_EXIT_CODE	3
+#define CLOSE_EXIT_CODE		XALLOC_EXIT_CODE
 #define TEST_EXIT_CODE		4
 
 #include <stdio.h>
@@ -57,40 +63,42 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <getopt.h>
+#ifdef HAVE_SYS_PARAM_H
+# include <sys/param.h> /* BSD */
+#endif
 
 #include "closestream.h"
 #include "nls.h"
 #include "xalloc.h"
 
-/* NON_OPT is the code that is returned when a non-option is found in '+'
- * mode */
+/* NON_OPT is the code that is returned getopt(3) when a non-option is
+ * found in 'char optstring[]="-abc...";', e.g., it begins by '-' */
 #define NON_OPT 1
 /* LONG_OPT is the code that is returned when a long option is found. */
-#define LONG_OPT 2
+#define LONG_OPT 0
 
 /* The shells recognized. */
 typedef enum { BASH, TCSH } shell_t;
 
+struct getopt_control {
+	shell_t shell;			/* the shell we generate output for */
+	char *optstr;			/* getopt(3) optstring */
+	char *name;
+	struct option *long_options;	/* long options */
+	int long_options_length;	/* length of options array */
+	int long_options_nr;		/* number of used elements in array */
+	unsigned int
+		compatible:1,		/* compatibility mode for 'difficult' programs */
+		quiet_errors:1,		/* print errors */
+		quiet_output:1,		/* print output */
+		quote:1;		/* quote output */
+};
 
-/* Some global variables that tells us how to parse. */
-static shell_t shell = BASH;	/* The shell we generate output for. */
-static int quiet_errors = 0;	/* 0 is not quiet. */
-static int quiet_output = 0;	/* 0 is not quiet. */
-static int quote = 1;		/* 1 is do quote. */
+enum { REALLOC_INCREMENT = 8 };
 
-/* Allow changing which getopt is in use with function pointer */
+/* Allow changing which getopt is in use with function pointer. */
 int (*getopt_long_fp) (int argc, char *const *argv, const char *optstr,
 		       const struct option * longopts, int *longindex);
-
-/* Function prototypes */
-static const char *normalize(const char *arg);
-static int generate_output(char *argv[], int argc, const char *optstr,
-			   const struct option *longopts);
-static void parse_error(const char *message);
-static void add_long_options(char *options);
-static void add_longopt(const char *name, int has_arg);
-static void print_help(void);
-static void set_shell(const char *new_shell);
 
 /*
  * This function 'normalizes' a single argument: it puts single quotes
@@ -101,17 +109,15 @@ static void set_shell(const char *new_shell);
  * exclamation marks within single quotes, and nukes whitespace. This
  * function returns a pointer to a buffer that is overwritten by each call.
  */
-static const char *normalize(const char *arg)
+static void print_normalized(const struct getopt_control *ctl, const char *arg)
 {
-	static char *BUFFER = NULL;
+	char *buf;
 	const char *argptr = arg;
 	char *bufptr;
 
-	if (!quote) {
-		/* Just copy arg */
-		BUFFER = xmalloc(strlen(arg) + 1);
-		strcpy(BUFFER, arg);
-		return BUFFER;
+	if (!ctl->quote) {
+		printf(" %s", arg);
+		return;
 	}
 
 	/*
@@ -120,42 +126,54 @@ static const char *normalize(const char *arg)
 	 * and an opening quote! We need also the global opening and closing
 	 * quote, and one extra character for '\0'.
 	 */
-	BUFFER = xmalloc(strlen(arg) * 4 + 3);
+	buf = xmalloc(strlen(arg) * 4 + 3);
+	bufptr = buf;
 
-	bufptr = BUFFER;
-	*bufptr++ = '\'';
-
-	while (*argptr) {
+	for (*bufptr++ = '\''; *argptr; argptr++) {
+		if (ctl->shell == TCSH) {
+			switch (*argptr) {
+			case '\\':
+				/* Backslash: replace it with: '\\' */
+				*bufptr++ = '\\';
+				*bufptr++ = '\\';
+				continue;
+			case '!':
+				/* Exclamation mark: replace it with: \! */
+				*bufptr++ = '\'';
+				*bufptr++ = '\\';
+				*bufptr++ = '!';
+				*bufptr++ = '\'';
+				continue;
+			case '\n':
+				/* Newline: replace it with: \n */
+				*bufptr++ = '\\';
+				*bufptr++ = 'n';
+				continue;
+			}
+			if (isspace(*argptr)) {
+				/* Non-newline whitespace: replace it with \<ws> */
+				*bufptr++ = '\'';
+				*bufptr++ = '\\';
+				*bufptr++ = *argptr;
+				*bufptr++ = '\'';
+				continue;
+			}
+		}
 		if (*argptr == '\'') {
 			/* Quote: replace it with: '\'' */
 			*bufptr++ = '\'';
 			*bufptr++ = '\\';
 			*bufptr++ = '\'';
 			*bufptr++ = '\'';
-		} else if (shell == TCSH && *argptr == '!') {
-			/* Exclamation mark: replace it with: \! */
-			*bufptr++ = '\'';
-			*bufptr++ = '\\';
-			*bufptr++ = '!';
-			*bufptr++ = '\'';
-		} else if (shell == TCSH && *argptr == '\n') {
-			/* Newline: replace it with: \n */
-			*bufptr++ = '\\';
-			*bufptr++ = 'n';
-		} else if (shell == TCSH && isspace(*argptr)) {
-			/* Non-newline whitespace: replace it with \<ws> */
-			*bufptr++ = '\'';
-			*bufptr++ = '\\';
-			*bufptr++ = *argptr;
-			*bufptr++ = '\'';
 		} else
 			/* Just copy */
 			*bufptr++ = *argptr;
-		argptr++;
 	}
+
 	*bufptr++ = '\'';
 	*bufptr++ = '\0';
-	return BUFFER;
+	printf(" %s", buf);
+	free(buf);
 }
 
 /*
@@ -165,46 +183,55 @@ static const char *normalize(const char *arg)
  * optstr must contain the short options, and longopts the long options.
  * Other settings are found in global variables.
  */
-static int generate_output(char *argv[], int argc, const char *optstr,
-			   const struct option *longopts)
+static int generate_output(struct getopt_control *ctl, char *argv[], int argc)
 {
 	int exit_code = EXIT_SUCCESS;	/* Assume everything will be OK */
 	int opt;
 	int longindex;
 	const char *charptr;
 
-	if (quiet_errors)
+	if (ctl->quiet_errors)
 		/* No error reporting from getopt(3) */
 		opterr = 0;
 	/* Reset getopt(3) */
 	optind = 0;
 
 	while ((opt =
-		(getopt_long_fp(argc, argv, optstr, longopts, &longindex)))
-	       != EOF)
+		(getopt_long_fp
+		 (argc, argv, ctl->optstr,
+		  (const struct option *)ctl->long_options, &longindex)))
+	       != EOF) {
 		if (opt == '?' || opt == ':')
 			exit_code = GETOPT_EXIT_CODE;
-		else if (!quiet_output) {
-			if (opt == LONG_OPT) {
-				printf(" --%s", longopts[longindex].name);
-				if (longopts[longindex].has_arg)
-					printf(" %s", normalize(optarg ? optarg : ""));
-			} else if (opt == NON_OPT)
-				printf(" %s", normalize(optarg ? optarg : ""));
-			else {
+		else if (!ctl->quiet_output) {
+			switch (opt) {
+			case LONG_OPT:
+				printf(" --%s", ctl->long_options[longindex].name);
+				if (ctl->long_options[longindex].has_arg)
+					print_normalized(ctl, optarg ? optarg : "");
+				break;
+			case NON_OPT:
+				print_normalized(ctl, optarg ? optarg : "");
+				break;
+			default:
 				printf(" -%c", opt);
-				charptr = strchr(optstr, opt);
+				charptr = strchr(ctl->optstr, opt);
 				if (charptr != NULL && *++charptr == ':')
-					printf(" %s", normalize(optarg ? optarg : ""));
+					print_normalized(ctl, optarg ? optarg : "");
 			}
 		}
-
-	if (!quiet_output) {
+	}
+	if (!ctl->quiet_output) {
 		printf(" --");
 		while (optind < argc)
-			printf(" %s", normalize(argv[optind++]));
+			print_normalized(ctl, argv[optind++]);
 		printf("\n");
 	}
+	for (longindex = 0; longindex < ctl->long_options_nr; longindex++)
+		free((char *)ctl->long_options[longindex].name);
+	free(ctl->long_options);
+	free(ctl->optstr);
+	free(ctl->name);
 	return exit_code;
 }
 
@@ -221,46 +248,32 @@ static void __attribute__ ((__noreturn__)) parse_error(const char *message)
 	exit(PARAMETER_EXIT_CODE);
 }
 
-static struct option *long_options = NULL;
-static int long_options_length = 0;	/* Length of array */
-static int long_options_nr = 0;		/* Nr of used elements in array */
-#define LONG_OPTIONS_INCR 10
-#define init_longopt() add_longopt(NULL,0)
 
 /* Register a long option. The contents of name is copied. */
-static void add_longopt(const char *name, int has_arg)
+static void add_longopt(struct getopt_control *ctl, const char *name, int has_arg)
 {
-	char *tmp;
-	if (!name) {
-		/* init */
-		free(long_options);
-		long_options = NULL;
-		long_options_length = 0;
-		long_options_nr = 0;
+	static int flag;
+	int nr = ctl->long_options_nr;
+
+	if (ctl->long_options_nr == ctl->long_options_length) {
+		ctl->long_options_length += REALLOC_INCREMENT;
+		ctl->long_options = xrealloc(ctl->long_options,
+					     sizeof(struct option) *
+					     ctl->long_options_length);
 	}
-
-	if (long_options_nr == long_options_length) {
-		long_options_length += LONG_OPTIONS_INCR;
-		long_options = xrealloc(long_options,
-					sizeof(struct option) *
-					long_options_length);
-	}
-
-	long_options[long_options_nr].name = NULL;
-	long_options[long_options_nr].has_arg = 0;
-	long_options[long_options_nr].flag = NULL;
-	long_options[long_options_nr].val = 0;
-
-	if (long_options_nr && name) {
+	if (name) {
 		/* Not for init! */
-		long_options[long_options_nr - 1].has_arg = has_arg;
-		long_options[long_options_nr - 1].flag = NULL;
-		long_options[long_options_nr - 1].val = LONG_OPT;
-		tmp = xmalloc(strlen(name) + 1);
-		strcpy(tmp, name);
-		long_options[long_options_nr - 1].name = tmp;
+		ctl->long_options[nr].has_arg = has_arg;
+		ctl->long_options[nr].flag = &flag;
+		ctl->long_options[nr].val = ctl->long_options_nr;
+		ctl->long_options[nr].name = xstrdup(name);
+	} else {
+		/* lets use add_longopt(ct, NULL, 0) to terminate the array */
+		ctl->long_options[nr].name = NULL;
+		ctl->long_options[nr].has_arg = 0;
+		ctl->long_options[nr].flag = NULL;
+		ctl->long_options[nr].val = 0;
 	}
-	long_options_nr++;
 }
 
 
@@ -268,80 +281,86 @@ static void add_longopt(const char *name, int has_arg)
  * Register several long options. options is a string of long options,
  * separated by commas or whitespace. This nukes options!
  */
-static void add_long_options(char *options)
+static void add_long_options(struct getopt_control *ctl, char *options)
 {
 	int arg_opt;
 	char *tokptr = strtok(options, ", \t\n");
+
 	while (tokptr) {
+		size_t len = strlen(tokptr);
+
 		arg_opt = no_argument;
-		if (strlen(tokptr) > 0) {
-			if (tokptr[strlen(tokptr) - 1] == ':') {
-				if (tokptr[strlen(tokptr) - 2] == ':') {
-					tokptr[strlen(tokptr) - 2] = '\0';
+		if (len > 0) {
+			if (tokptr[len - 1] == ':') {
+				if (tokptr[len - 2] == ':') {
+					tokptr[len - 2] = '\0';
 					arg_opt = optional_argument;
 				} else {
-					tokptr[strlen(tokptr) - 1] = '\0';
+					tokptr[len - 1] = '\0';
 					arg_opt = required_argument;
 				}
-				if (strlen(tokptr) == 0)
+				if (!*tokptr)
 					parse_error(_
 						    ("empty long option after "
 						     "-l or --long argument"));
 			}
-			add_longopt(tokptr, arg_opt);
+			add_longopt(ctl, tokptr, arg_opt);
+			ctl->long_options_nr++;
 		}
 		tokptr = strtok(NULL, ", \t\n");
 	}
+	add_longopt(ctl, NULL, 0);	/* ensure long_options[] is not full */
 }
 
-static void set_shell(const char *new_shell)
+static shell_t shell_type(const char *new_shell)
 {
 	if (!strcmp(new_shell, "bash"))
-		shell = BASH;
-	else if (!strcmp(new_shell, "tcsh"))
-		shell = TCSH;
-	else if (!strcmp(new_shell, "sh"))
-		shell = BASH;
-	else if (!strcmp(new_shell, "csh"))
-		shell = TCSH;
-	else
-		parse_error(_
-			    ("unknown shell after -s or --shell argument"));
+		return BASH;
+	if (!strcmp(new_shell, "sh"))
+		return BASH;
+	if (!strcmp(new_shell, "tcsh"))
+		return TCSH;
+	if (!strcmp(new_shell, "csh"))
+		return TCSH;
+	parse_error(_("unknown shell after -s or --shell argument"));
 }
 
 static void __attribute__ ((__noreturn__)) print_help(void)
 {
-	fputs(_("\nUsage:\n"), stderr);
-
+	fputs(USAGE_HEADER, stderr);
 	fprintf(stderr, _(
-		" %1$s optstring parameters\n"
-		" %1$s [options] [--] optstring parameters\n"
-		" %1$s [options] -o|--options optstring [options] [--] parameters\n"),
+		" %1$s <optstring> <parameters>\n"
+		" %1$s [options] [--] <optstring> <parameters>\n"
+		" %1$s [options] -o|--options <optstring> [options] [--] <parameters>\n"),
 		program_invocation_short_name);
 
-	fputs(_("\nOptions:\n"), stderr);
-	fputs(_(" -a, --alternative            Allow long options starting with single -\n"), stderr);
-	fputs(_(" -h, --help                   This small usage guide\n"), stderr);
-	fputs(_(" -l, --longoptions <longopts> Long options to be recognized\n"), stderr);
-	fputs(_(" -n, --name <progname>        The name under which errors are reported\n"), stderr);
-	fputs(_(" -o, --options <optstring>    Short options to be recognized\n"), stderr);
-	fputs(_(" -q, --quiet                  Disable error reporting by getopt(3)\n"), stderr);
-	fputs(_(" -Q, --quiet-output           No normal output\n"), stderr);
-	fputs(_(" -s, --shell <shell>          Set shell quoting conventions\n"), stderr);
-	fputs(_(" -T, --test                   Test for getopt(1) version\n"), stderr);
-	fputs(_(" -u, --unquoted               Do not quote the output\n"), stderr);
-	fputs(_(" -V, --version                Output version information\n"), stderr);
-	fputc('\n', stderr);
+	fputs(USAGE_SEPARATOR, stderr);
+	fputs(_("Parse command options.\n"), stderr);
 
+	fputs(USAGE_OPTIONS, stderr);
+	fputs(_(" -a, --alternative             allow long options starting with single -\n"), stderr);
+	fputs(_(" -l, --longoptions <longopts>  the long options to be recognized\n"), stderr);
+	fputs(_(" -n, --name <progname>         the name under which errors are reported\n"), stderr);
+	fputs(_(" -o, --options <optstring>     the short options to be recognized\n"), stderr);
+	fputs(_(" -q, --quiet                   disable error reporting by getopt(3)\n"), stderr);
+	fputs(_(" -Q, --quiet-output            no normal output\n"), stderr);
+	fputs(_(" -s, --shell <shell>           set quoting conventions to those of <shell>\n"), stderr);
+	fputs(_(" -T, --test                    test for getopt(1) version\n"), stderr);
+	fputs(_(" -u, --unquoted                do not quote the output\n"), stderr);
+	fputs(USAGE_SEPARATOR, stderr);
+	fputs(USAGE_HELP, stderr);
+	fputs(USAGE_VERSION, stderr);
+	fprintf(stderr, USAGE_MAN_TAIL("getopt(1)"));
 	exit(PARAMETER_EXIT_CODE);
 }
 
 int main(int argc, char *argv[])
 {
-	char *optstr = NULL;
-	char *name = NULL;
+	struct getopt_control ctl = {
+		.shell = BASH,
+		.quote = 1
+	};
 	int opt;
-	int compatible = 0;
 
 	/* Stop scanning as soon as a non-option argument is found! */
 	static const char *shortopts = "+ao:l:n:qQs:TuhV";
@@ -365,14 +384,11 @@ int main(int argc, char *argv[])
 	textdomain(PACKAGE);
 	atexit(close_stdout);
 
-	init_longopt();
-	getopt_long_fp = getopt_long;
-
 	if (getenv("GETOPT_COMPATIBLE"))
-		compatible = 1;
+		ctl.compatible = 1;
 
 	if (argc == 1) {
-		if (compatible) {
+		if (ctl.compatible) {
 			/*
 			 * For some reason, the original getopt gave no
 			 * error when there were no arguments.
@@ -383,13 +399,15 @@ int main(int argc, char *argv[])
 			parse_error(_("missing optstring argument"));
 	}
 
-	if (argv[1][0] != '-' || compatible) {
-		quote = 0;
-		optstr = xmalloc(strlen(argv[1]) + 1);
-		strcpy(optstr, argv[1] + strspn(argv[1], "-+"));
+	add_longopt(&ctl, NULL, 0);	/* init */
+	getopt_long_fp = getopt_long;
+
+	if (argv[1][0] != '-' || ctl.compatible) {
+		ctl.quote = 0;
+		ctl.optstr = xmalloc(strlen(argv[1]) + 1);
+		strcpy(ctl.optstr, argv[1] + strspn(argv[1], "-+"));
 		argv[1] = argv[0];
-		return generate_output(argv + 1, argc - 1, optstr,
-				       long_options);
+		return generate_output(&ctl, argv + 1, argc - 1);
 	}
 
 	while ((opt =
@@ -401,31 +419,30 @@ int main(int argc, char *argv[])
 		case 'h':
 			print_help();
 		case 'o':
-			free(optstr);
-			optstr = xmalloc(strlen(optarg) + 1);
-			strcpy(optstr, optarg);
+			free(ctl.optstr);
+			ctl.optstr = xstrdup(optarg);
 			break;
 		case 'l':
-			add_long_options(optarg);
+			add_long_options(&ctl, optarg);
 			break;
 		case 'n':
-			free(name);
-			name = xmalloc(strlen(optarg) + 1);
-			strcpy(name, optarg);
+			free(ctl.name);
+			ctl.name = xstrdup(optarg);
 			break;
 		case 'q':
-			quiet_errors = 1;
+			ctl.quiet_errors = 1;
 			break;
 		case 'Q':
-			quiet_output = 1;
+			ctl.quiet_output = 1;
 			break;
 		case 's':
-			set_shell(optarg);
+			ctl.shell = shell_type(optarg);
 			break;
 		case 'T':
+			free(ctl.long_options);
 			return TEST_EXIT_CODE;
 		case 'u':
-			quote = 0;
+			ctl.quote = 0;
 			break;
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
@@ -437,20 +454,22 @@ int main(int argc, char *argv[])
 			parse_error(_("internal error, contact the author."));
 		}
 
-	if (!optstr) {
+	if (!ctl.optstr) {
 		if (optind >= argc)
 			parse_error(_("missing optstring argument"));
 		else {
-			optstr = xmalloc(strlen(argv[optind]) + 1);
-			strcpy(optstr, argv[optind]);
+			ctl.optstr = xstrdup(argv[optind]);
 			optind++;
 		}
 	}
-	if (name)
-		argv[optind - 1] = name;
-	else
+
+	if (ctl.name) {
+		argv[optind - 1] = ctl.name;
+#if defined (HAVE_SETPROGNAME) && !defined (__linux__)
+		setprogname(ctl.name);
+#endif
+	} else
 		argv[optind - 1] = argv[0];
 
-	return generate_output(argv + optind - 1, argc-optind + 1,
-			       optstr, long_options);
+	return generate_output(&ctl, argv + optind - 1, argc - optind + 1);
 }

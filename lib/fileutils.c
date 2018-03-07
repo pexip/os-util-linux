@@ -13,34 +13,56 @@
 #include "fileutils.h"
 #include "pathnames.h"
 
+int mkstemp_cloexec(char *template)
+{
+#ifdef HAVE_MKOSTEMP
+	return mkostemp(template, O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC);
+#else
+	int fd, old_flags, errno_save;
+
+	fd = mkstemp(template);
+	if (fd < 0)
+		return fd;
+
+	old_flags = fcntl(fd, F_GETFD, 0);
+	if (old_flags < 0)
+		goto unwind;
+	if (fcntl(fd, F_SETFD, old_flags | O_CLOEXEC) < 0)
+		goto unwind;
+
+	return fd;
+
+unwind:
+	errno_save = errno;
+	unlink(template);
+	close(fd);
+	errno = errno_save;
+
+	return -1;
+#endif
+}
+
 /* Create open temporary file in safe way.  Please notice that the
  * file permissions are -rw------- by default. */
-int xmkstemp(char **tmpname, char *dir)
+int xmkstemp(char **tmpname, const char *dir, const char *prefix)
 {
 	char *localtmp;
-	char *tmpenv;
+	const char *tmpenv;
 	mode_t old_mode;
 	int fd, rc;
 
 	/* Some use cases must be capable of being moved atomically
 	 * with rename(2), which is the reason why dir is here.  */
-	if (dir != NULL)
-		tmpenv = dir;
-	else
-		tmpenv = getenv("TMPDIR");
+	tmpenv = dir ? dir : getenv("TMPDIR");
+	if (!tmpenv)
+		tmpenv = _PATH_TMP;
 
-	if (tmpenv)
-		rc = asprintf(&localtmp, "%s/%s.XXXXXX", tmpenv,
-			  program_invocation_short_name);
-	else
-		rc = asprintf(&localtmp, "%s/%s.XXXXXX", _PATH_TMP,
-			  program_invocation_short_name);
-
+	rc = asprintf(&localtmp, "%s/%s.XXXXXX", tmpenv, prefix);
 	if (rc < 0)
 		return -1;
 
 	old_mode = umask(077);
-	fd = mkostemp(localtmp, O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC);
+	fd = mkstemp_cloexec(localtmp);
 	umask(old_mode);
 	if (fd == -1) {
 		free(localtmp);
@@ -48,6 +70,36 @@ int xmkstemp(char **tmpname, char *dir)
 	}
 	*tmpname = localtmp;
 	return fd;
+}
+
+int dup_fd_cloexec(int oldfd, int lowfd)
+{
+	int fd, flags, errno_save;
+
+#ifdef F_DUPFD_CLOEXEC
+	fd = fcntl(oldfd, F_DUPFD_CLOEXEC, lowfd);
+	if (fd >= 0)
+		return fd;
+#endif
+
+	fd = dup(oldfd);
+	if (fd < 0)
+		return fd;
+
+	flags = fcntl(fd, F_GETFD);
+	if (flags < 0)
+		goto unwind;
+	if (fcntl(fd, F_SETFD, flags | FD_CLOEXEC) < 0)
+		goto unwind;
+
+	return fd;
+
+unwind:
+	errno_save = errno;
+	close(fd);
+	errno = errno_save;
+
+	return -1;
 }
 
 /*
@@ -77,7 +129,7 @@ int main(void)
 {
 	FILE *f;
 	char *tmpname;
-	f = xfmkstemp(&tmpname, NULL);
+	f = xfmkstemp(&tmpname, NULL, "test");
 	unlink(tmpname);
 	free(tmpname);
 	fclose(f);

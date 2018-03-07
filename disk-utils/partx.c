@@ -32,7 +32,6 @@
 #include "partx.h"
 #include "sysfs.h"
 #include "loopdev.h"
-#include "at.h"
 #include "closestream.h"
 #include "optutils.h"
 
@@ -99,7 +98,8 @@ struct colinfo infos[] = {
 #define NCOLS ARRAY_SIZE(infos)
 
 /* array with IDs of enabled columns */
-static int columns[NCOLS], ncolumns;
+static int columns[NCOLS];
+size_t ncolumns;
 
 static int verbose;
 static int partx_flags;
@@ -136,7 +136,7 @@ static void assoc_loopdev(const char *fname)
 static inline int get_column_id(int num)
 {
 	assert(ARRAY_SIZE(columns) == NCOLS);
-	assert(num < ncolumns);
+	assert((size_t)num < ncolumns);
 	assert(columns[num] < (int) NCOLS);
 	return columns[num];
 }
@@ -193,10 +193,10 @@ static int get_partno_from_device(char *partition, dev_t devno)
 	sz = strlen(partition);
 	p = partition + sz - 1;
 
-	if (!isdigit((unsigned int) *p))
+	if (!isdigit((unsigned char) *p))
 		goto err;
 
-	while (isdigit((unsigned int) *(p - 1))) p--;
+	while (isdigit((unsigned char) *(p - 1))) p--;
 
 	errno = 0;
 	partno = strtol(p, &end, 10);
@@ -248,7 +248,7 @@ static int get_max_partno(const char *disk, dev_t devno)
 			continue;
 		snprintf(path, sizeof(path), "%s/partition", d->d_name);
 
-		fd = open_at(dirfd(dir), dirname, path, O_RDONLY);
+		fd = openat(dirfd(dir), path, O_RDONLY);
 		if (fd) {
 			int x = 0;
 			FILE *f = fdopen(fd, "r");
@@ -265,6 +265,30 @@ static int get_max_partno(const char *disk, dev_t devno)
 	return partno;
 dflt:
 	return SLICES_MAX;
+}
+
+static int recount_range_by_pt(blkid_partlist ls, int *lower, int *upper)
+{
+	int n = 0, i, nparts = blkid_partlist_numof_partitions(ls);
+
+	for (i = 0; i < nparts; i++) {
+		blkid_partition par = blkid_partlist_get_partition(ls, i);
+		int partno = blkid_partition_get_partno(par);
+		n = max(partno, n);
+	}
+
+	if (*lower < 0)
+		*lower = n + *lower + 1;
+	if (*upper < 0)
+		*upper = n + *upper + 1;
+
+	if (*lower > *upper && *upper != 0) {
+		warnx(_("specified range <%d:%d> does not make sense"), *lower, *upper);
+		return -EINVAL;
+	}
+	if (verbose)
+		printf(_("range recount: max partno=%d, lower=%d, upper=%d\n"), n, *lower, *upper);
+	return 0;
 }
 
 static void del_parts_warnx(const char *device, int first, int last)
@@ -284,6 +308,7 @@ static int del_parts(int fd, const char *device, dev_t devno,
 	assert(fd >= 0);
 	assert(device);
 
+	/* recount range by information in /sys */
 	if (!lower)
 		lower = 1;
 	if (!upper || lower < 0 || upper < 0) {
@@ -309,7 +334,7 @@ static int del_parts(int fd, const char *device, dev_t devno,
 			continue;
 		} else if (errno == ENXIO) {
 			if (verbose)
-				printf(_("%s: partition #%d already doesn't exist\n"), device, i);
+				printf(_("%s: partition #%d doesn't exist\n"), device, i);
 			continue;
 		}
 		rc = -1;
@@ -343,11 +368,15 @@ static void add_parts_warnx(const char *device, int first, int last)
 static int add_parts(int fd, const char *device,
 		     blkid_partlist ls, int lower, int upper)
 {
-	int i, nparts, rc = 0, errfirst = 0, errlast = 0;
+	int i, nparts, rc, errfirst = 0, errlast = 0;
 
 	assert(fd >= 0);
 	assert(device);
 	assert(ls);
+
+	rc = recount_range_by_pt(ls, &lower, &upper);
+	if (rc)
+		return rc;
 
 	nparts = blkid_partlist_numof_partitions(ls);
 
@@ -430,6 +459,8 @@ static int upd_parts(int fd, const char *device, dev_t devno,
 	assert(device);
 	assert(ls);
 
+	/* recount range by information in /sys, if on disk number of
+	 * partitions is greater than in /sys the use on-disk limit */
 	nparts = blkid_partlist_numof_partitions(ls);
 	if (!lower)
 		lower = 1;
@@ -505,9 +536,13 @@ static int upd_parts(int fd, const char *device, dev_t devno,
 
 static int list_parts(blkid_partlist ls, int lower, int upper)
 {
-	int i, nparts;
+	int i, nparts, rc;
 
 	assert(ls);
+
+	rc = recount_range_by_pt(ls, &lower, &upper);
+	if (rc)
+		return rc;
 
 	nparts = blkid_partlist_numof_partitions(ls);
 
@@ -547,7 +582,7 @@ static int add_scols_line(struct libscols_table *table, blkid_partition par)
 		return -ENOMEM;
 	}
 
-	for (i = 0; i < ncolumns; i++) {
+	for (i = 0; (size_t)i < ncolumns; i++) {
 		char *str = NULL;			/* allocated string */
 		const char *cstr = NULL;		/* foreign string */
 
@@ -636,7 +671,7 @@ static int show_parts(blkid_partlist ls, int scols_flags, int lower, int upper)
 	scols_table_enable_export(table, !!(scols_flags & PARTX_EXPORT));
 	scols_table_enable_noheadings(table, !!(scols_flags & PARTX_NOHEADINGS));
 
-	for (i = 0; i < ncolumns; i++) {
+	for (i = 0; (size_t)i < ncolumns; i++) {
 		struct colinfo *col = get_column_info(i);
 
 		if (!scols_table_new_column(table, col->name, col->whint, col->flags)) {
@@ -644,6 +679,10 @@ static int show_parts(blkid_partlist ls, int scols_flags, int lower, int upper)
 			goto done;
 		}
 	}
+
+	rc = recount_range_by_pt(ls, &lower, &upper);
+	if (rc)
+		goto done;
 
 	for (i = 0; i < nparts; i++) {
 		blkid_partition par = blkid_partlist_get_partition(ls, i);
@@ -713,6 +752,9 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	      _(" %s [-a|-d|-s|-u] [--nr <n:m> | <partition>] <disk>\n"),
 		program_invocation_short_name);
 
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Tell the kernel about the presence and numbering of partitions.\n"), out);
+
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -a, --add            add specified partitions or all of them\n"), out);
 	fputs(_(" -d, --delete         delete specified partitions or all of them\n"), out);
@@ -771,7 +813,7 @@ int main(int argc, char **argv)
 	};
 
 	static const ul_excl_t excl[] = {	/* rows and cols in in ASCII order */
-		{ 'P','a','d','l','r','s' },
+		{ 'P','a','d','l','r','s','u' },
 		{ 0 }
 	};
 	int excl_st[ARRAY_SIZE(excl)] = UL_EXCL_STATUS_INIT;
@@ -877,6 +919,9 @@ int main(int argc, char **argv)
 		} else {
 			device = argv[optind];
 			wholedisk = xstrdup(argv[optind + 1]);
+
+			if (device && wholedisk && !startswith(device, wholedisk))
+				errx(EXIT_FAILURE, _("partition and disk name do not match"));
 		}
 	} else if (optind == argc - 1) {
 		/* passed only one arg (ie: /dev/sda3 or /dev/sda) */
@@ -885,7 +930,7 @@ int main(int argc, char **argv)
 		device = argv[optind];
 
 		if (stat(device, &sb))
-			err(EXIT_FAILURE, _("stat failed %s"), device);
+			err(EXIT_FAILURE, _("stat of %s failed"), device);
 
 		part_devno = sb.st_rdev;
 
@@ -961,18 +1006,6 @@ int main(int argc, char **argv)
 			ls = get_partlist(pr, wholedisk, type);
 
 		if (ls) {
-			int n = blkid_partlist_numof_partitions(ls);
-
-			if (lower < 0)
-				lower = n + lower + 1;
-			if (upper < 0)
-				upper = n + upper + 1;
-			if (lower > upper) {
-				warnx(_("specified range <%d:%d> "
-					"does not make sense"), lower, upper);
-				rc = -1, what = ACT_NONE;
-			}
-
 			switch (what) {
 			case ACT_SHOW:
 				rc = show_parts(ls, scols_flags, lower, upper);
@@ -985,6 +1018,7 @@ int main(int argc, char **argv)
 				break;
 			case ACT_UPD:
 				rc = upd_parts(fd, wholedisk, disk_devno, ls, lower, upper);
+				break;
 			case ACT_NONE:
 				break;
 			default:

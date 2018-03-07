@@ -4,7 +4,7 @@
  * Copyright (C) 2012 Davidlohr Bueso <dave@gnu.org>
  *
  * Very generally based on lslk(8) by Victor A. Abell <abe@purdue.edu>
- * Since it stopped being maingained over a decade ago, this
+ * Since it stopped being maintained over a decade ago, this
  * program should be considered its replacement.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -39,11 +39,12 @@
 #include "canonicalize.h"
 #include "nls.h"
 #include "xalloc.h"
-#include "at.h"
 #include "strutils.h"
 #include "c.h"
 #include "list.h"
 #include "closestream.h"
+#include "optutils.h"
+#include "procutils.h"
 
 /* column IDs */
 enum {
@@ -82,7 +83,7 @@ static struct colinfo infos[] = {
 };
 
 static int columns[ARRAY_SIZE(infos) * 2];
-static int ncolumns;
+static size_t ncolumns;
 
 static pid_t pid = 0;
 
@@ -90,7 +91,9 @@ static struct libmnt_table *tab;		/* /proc/self/mountinfo */
 
 /* basic output flags */
 static int no_headings;
+static int no_inaccessible;
 static int raw;
+static int json;
 
 struct lock {
 	struct list_head locks;
@@ -108,6 +111,20 @@ struct lock {
 	int id;
 };
 
+static void rem_lock(struct lock *lock)
+{
+	if (!lock)
+		return;
+
+	free(lock->path);
+	free(lock->size);
+	free(lock->mode);
+	free(lock->cmdname);
+	free(lock->type);
+	list_del(&lock->locks);
+	free(lock);
+}
+
 static void disable_columns_truncate(void)
 {
 	size_t i;
@@ -117,33 +134,12 @@ static void disable_columns_truncate(void)
 }
 
 /*
- * Return a PID's command name
- */
-static char *get_cmdname(pid_t id)
-{
-	FILE *fp;
-	char path[PATH_MAX], *ret = NULL;
-
-	sprintf(path, "/proc/%d/comm", id);
-	if (!(fp = fopen(path, "r")))
-		return NULL;
-
-	if (!fgets(path, sizeof(path), fp))
-		goto out;
-
-	path[strlen(path) - 1] = '\0';
-	ret = xstrdup(path);
-out:
-	fclose(fp);
-	return ret;
-}
-
-/*
  * Associate the device's mountpoint for a filename
  */
 static char *get_fallback_filename(dev_t dev)
 {
 	struct libmnt_fs *fs;
+	char *res = NULL;
 
 	if (!tab) {
 		tab = mnt_new_table_from_file(_PATH_PROC_MOUNTINFO);
@@ -155,14 +151,15 @@ static char *get_fallback_filename(dev_t dev)
 	if (!fs)
 		return NULL;
 
-	return xstrdup(mnt_fs_get_target(fs));
+	xasprintf(&res, "%s...", mnt_fs_get_target(fs));
+	return res;
 }
 
 /*
  * Return the absolute path of a file from
  * a given inode number (and its size)
  */
-static char *get_filename_sz(ino_t inode, pid_t pid, size_t *size)
+static char *get_filename_sz(ino_t inode, pid_t lock_pid, size_t *size)
 {
 	struct stat sb;
 	struct dirent *dp;
@@ -180,7 +177,7 @@ static char *get_filename_sz(ino_t inode, pid_t pid, size_t *size)
 	 * iterate the *entire* filesystem searching
 	 * for the damn file.
 	 */
-	sprintf(path, "/proc/%d/fd/", pid);
+	sprintf(path, "/proc/%d/fd/", lock_pid);
 	if (!(dirp = opendir(path)))
 		return NULL;
 
@@ -199,12 +196,11 @@ static char *get_filename_sz(ino_t inode, pid_t pid, size_t *size)
 		if (!strtol(dp->d_name, (char **) NULL, 10))
 			continue;
 
-		if (!fstat_at(fd, path, dp->d_name, &sb, 0)
+		if (!fstatat(fd, dp->d_name, &sb, 0)
 		    && inode != sb.st_ino)
 			continue;
 
-		if ((len = readlink_at(fd, path, dp->d_name,
-				       sym, sizeof(sym) - 1)) < 1)
+		if ((len = readlinkat(fd, dp->d_name, sym, sizeof(sym) - 1)) < 1)
 			goto out;
 
 		*size = sb.st_size;
@@ -223,7 +219,7 @@ out:
  */
 static ino_t get_dev_inode(char *str, dev_t *dev)
 {
-	int maj = 0, min = 0;
+	unsigned int maj = 0, min = 0;
 	ino_t inum = 0;
 
 	sscanf(str, "%02x:%02x:%ju", &maj, &min, &inum);
@@ -237,7 +233,7 @@ static int get_local_locks(struct list_head *locks)
 	int i;
 	ino_t inode = 0;
 	FILE *fp;
-	char buf[PATH_MAX], *szstr = NULL, *tok = NULL;
+	char buf[PATH_MAX], *tok = NULL;
 	size_t sz;
 	struct lock *l;
 	dev_t dev = 0;
@@ -283,7 +279,7 @@ static int get_local_locks(struct list_head *locks)
 				 * to the list, no need to worry now.
 				 */
 				l->pid = strtos32_or_err(tok, _("failed to parse pid"));
-				l->cmdname = get_cmdname(l->pid);
+				l->cmdname = proc_get_command_name(l->pid);
 				if (!l->cmdname)
 					l->cmdname = xstrdup(_("(unknown)"));
 				break;
@@ -306,17 +302,23 @@ static int get_local_locks(struct list_head *locks)
 			default:
 				break;
 			}
-
-			l->path = get_filename_sz(inode, l->pid, &sz);
-			if (!l->path)
-				/* probably no permission to peek into l->pid's path */
-				l->path = get_fallback_filename(dev);
-
-			/* avoid leaking */
-			szstr = size_to_human_string(SIZE_SUFFIX_1LETTER, sz);
-			l->size = xstrdup(szstr);
-			free(szstr);
 		}
+
+		l->path = get_filename_sz(inode, l->pid, &sz);
+
+		/* no permissions -- ignore */
+		if (!l->path && no_inaccessible) {
+			rem_lock(l);
+			continue;
+		}
+
+		if (!l->path) {
+			/* probably no permission to peek into l->pid's path */
+			l->path = get_fallback_filename(dev);
+			l->size = xstrdup("");
+		} else
+			/* avoid leaking */
+			l->size = size_to_human_string(SIZE_SUFFIX_1LETTER, sz);
 
 		list_add(&l->locks, locks);
 	}
@@ -343,7 +345,8 @@ static int column_name_to_id(const char *name, size_t namesz)
 
 static inline int get_column_id(int num)
 {
-	assert(num < ncolumns);
+	assert(num >= 0);
+	assert((size_t) num < ncolumns);
 	assert(columns[num] < (int) ARRAY_SIZE(infos));
 
 	return columns[num];
@@ -353,20 +356,6 @@ static inline int get_column_id(int num)
 static inline struct colinfo *get_column_info(unsigned num)
 {
 	return &infos[ get_column_id(num) ];
-}
-
-static void rem_lock(struct lock *lock)
-{
-	if (!lock)
-		return;
-
-	free(lock->path);
-	free(lock->size);
-	free(lock->mode);
-	free(lock->cmdname);
-	free(lock->type);
-	list_del(&lock->locks);
-	free(lock);
 }
 
 static pid_t get_blocker(int id, struct list_head *locks)
@@ -385,7 +374,7 @@ static pid_t get_blocker(int id, struct list_head *locks)
 
 static void add_scols_line(struct libscols_table *table, struct lock *l, struct list_head *locks)
 {
-	int i;
+	size_t i;
 	struct libscols_line *line;
 	/*
 	 * Whenever cmdname or filename is NULL it is most
@@ -452,7 +441,8 @@ static void add_scols_line(struct libscols_table *table, struct lock *l, struct 
 
 static int show_locks(struct list_head *locks)
 {
-	int i, rc = 0;
+	int rc = 0;
+	size_t i;
 	struct list_head *p, *pnext;
 	struct libscols_table *table;
 
@@ -462,7 +452,11 @@ static int show_locks(struct list_head *locks)
 		return -1;
 	}
 	scols_table_enable_raw(table, raw);
+	scols_table_enable_json(table, json);
 	scols_table_enable_noheadings(table, no_headings);
+
+	if (json)
+		scols_table_set_name(table, "locks");
 
 	for (i = 0; i < ncolumns; i++) {
 		struct colinfo *col = get_column_info(i);
@@ -506,14 +500,21 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fprintf(out,
 		_(" %s [options]\n"), program_invocation_short_name);
 
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("List local system locks.\n"), out);
+
 	fputs(USAGE_OPTIONS, out);
-	fputs(_(" -p, --pid <pid>        process id\n"
-		" -o, --output <list>    define which output columns to use\n"
-		" -n, --noheadings       don't print headings\n"
-		" -r, --raw              use the raw output format\n"
-		" -u, --notruncate       don't truncate text in columns\n"
-		" -h, --help             display this help and exit\n"
-		" -V, --version          output version information and exit\n"), out);
+	fputs(_(" -J, --json             use JSON output format\n"), out);
+	fputs(_(" -i, --noinaccessible   ignore locks without read permissions\n"), out);
+	fputs(_(" -n, --noheadings       don't print headings\n"), out);
+	fputs(_(" -o, --output <list>    define which output columns to use\n"), out);
+	fputs(_(" -p, --pid <pid>        display only locks held by this process\n"), out);
+	fputs(_(" -r, --raw              use the raw output format\n"), out);
+	fputs(_(" -u, --notruncate       don't truncate text in columns\n"), out);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(USAGE_HELP, out);
+	fputs(USAGE_VERSION, out);
 
 	fputs(_("\nAvailable columns (for --output):\n"), out);
 
@@ -531,6 +532,7 @@ int main(int argc, char *argv[])
 	struct list_head locks;
 	char *outarg = NULL;
 	static const struct option long_opts[] = {
+		{ "json",       no_argument,       NULL, 'J' },
 		{ "pid",	required_argument, NULL, 'p' },
 		{ "help",	no_argument,       NULL, 'h' },
 		{ "output",     required_argument, NULL, 'o' },
@@ -538,18 +540,32 @@ int main(int argc, char *argv[])
 		{ "version",    no_argument,       NULL, 'V' },
 		{ "noheadings", no_argument,       NULL, 'n' },
 		{ "raw",        no_argument,       NULL, 'r' },
+		{ "noinaccessible", no_argument, NULL, 'i' },
 		{ NULL, 0, NULL, 0 }
 	};
 
+	static const ul_excl_t excl[] = {	/* rows and cols in ASCII order */
+		{ 'J','r' },
+		{ 0 }
+	};
+	int excl_st[ARRAY_SIZE(excl)] = UL_EXCL_STATUS_INIT;
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
 	atexit(close_stdout);
 
 	while ((c = getopt_long(argc, argv,
-				"p:o:nruhV", long_opts, NULL)) != -1) {
+				"iJp:o:nruhV", long_opts, NULL)) != -1) {
+
+		err_exclusive_options(c, long_opts, excl, excl_st);
 
 		switch(c) {
+		case 'i':
+			no_inaccessible = 1;
+			break;
+		case 'J':
+			json = 1;
+			break;
 		case 'p':
 			pid = strtos32_or_err(optarg, _("invalid PID argument"));
 			break;

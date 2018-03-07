@@ -25,6 +25,7 @@
 #include "closestream.h"
 #include "pathnames.h"
 #include "mountP.h"
+#include "monotonic.h"
 
 /*
  * lock handler
@@ -55,7 +56,8 @@ struct libmnt_lock *mnt_new_lock(const char *datafile, pid_t id)
 	char *lo = NULL, *ln = NULL;
 	size_t losz;
 
-	assert(datafile);
+	if (!datafile)
+		return NULL;
 
 	/* for flock we use "foo.lock, for mtab "foo~"
 	 */
@@ -258,7 +260,12 @@ static int mnt_wait_mtab_lock(struct libmnt_lock *ml, struct flock *fl, time_t m
 	struct sigaction sa, osa;
 	int ret = 0;
 
-	gettimeofday(&now, NULL);
+	gettime_monotonic(&now);
+	DBG(LOCKS, ul_debugobj(ml, "(%d) waiting for F_SETLKW (now=%lu, maxtime=%lu, diff=%lu)",
+				getpid(),
+				(unsigned long) now.tv_sec,
+				(unsigned long) maxtime,
+				(unsigned long) (maxtime - now.tv_sec)));
 
 	if (now.tv_sec >= maxtime)
 		return 1;		/* timeout */
@@ -270,7 +277,6 @@ static int mnt_wait_mtab_lock(struct libmnt_lock *ml, struct flock *fl, time_t m
 
 	sigaction(SIGALRM, &sa, &osa);
 
-	DBG(LOCKS, ul_debugobj(ml, "(%d) waiting for F_SETLKW", getpid()));
 
 	alarm(maxtime - now.tv_sec);
 	if (fcntl(ml->lockfile_fd, F_SETLKW, fl) == -1)
@@ -408,7 +414,7 @@ static int lock_mtab(struct libmnt_lock *ml)
 	}
 	close(i);
 
-	gettimeofday(&maxtime, NULL);
+	gettime_monotonic(&maxtime);
 	maxtime.tv_sec += MOUNTLOCK_MAXTIME;
 
 	waittime.tv_sec = 0;
@@ -434,7 +440,7 @@ static int lock_mtab(struct libmnt_lock *ml)
 		if (ml->lockfile_fd < 0) {
 			/* Strange... Maybe the file was just deleted? */
 			int errsv = errno;
-			gettimeofday(&now, NULL);
+			gettime_monotonic(&now);
 			if (errsv == ENOENT && now.tv_sec < maxtime.tv_sec) {
 				ml->locked = 0;
 				continue;
@@ -502,8 +508,12 @@ failed:
  *
  *   1. create linkfile (e.g. /etc/mtab~.$PID)
  *   2. link linkfile --> lockfile (e.g. /etc/mtab~.$PID --> /etc/mtab~)
- *   3. a) link() success: setups F_SETLK lock (see fcnlt(2))
+ *   3. a) link() success: setups F_SETLK lock (see fcntl(2))
  *      b) link() failed:  wait (max 30s) on F_SETLKW lock, goto 2.
+ *
+ * Note that when the lock is used by mnt_update_table() interface then libmount
+ * uses flock() for private library file /run/mount/utab. The fcntl(2) is used only
+ * for backwardly compatible stuff like /etc/mtab.
  *
  * Returns: 0 on success or negative number in case of error (-ETIMEOUT is case
  * of stale lock file).
@@ -556,7 +566,7 @@ struct libmnt_lock *lock;
  * read number from @filename, increment the number and
  * write the number back to the file
  */
-void increment_data(const char *filename, int verbose, int loopno)
+static void increment_data(const char *filename, int verbose, int loopno)
 {
 	long num;
 	FILE *f;
@@ -584,7 +594,7 @@ void increment_data(const char *filename, int verbose, int loopno)
 				filename, num - 1, num, loopno);
 }
 
-void clean_lock(void)
+static void clean_lock(void)
 {
 	if (!lock)
 		return;
@@ -592,16 +602,15 @@ void clean_lock(void)
 	mnt_free_lock(lock);
 }
 
-void __attribute__((__noreturn__)) sig_handler(int sig)
+static void __attribute__((__noreturn__)) sig_handler(int sig)
 {
 	errx(EXIT_FAILURE, "\n%d: catch signal: %s\n", getpid(), strsignal(sig));
 }
 
-int test_lock(struct libmnt_test *ts, int argc, char *argv[])
+static int test_lock(struct libmnt_test *ts, int argc, char *argv[])
 {
 	time_t synctime = 0;
 	unsigned int usecs;
-	struct timeval tv;
 	const char *datafile = NULL;
 	int verbose = 0, loops = 0, l, idx = 1;
 
@@ -646,6 +655,8 @@ int test_lock(struct libmnt_test *ts, int argc, char *argv[])
 
 	/* start the test in exactly defined time */
 	if (synctime) {
+		struct timeval tv;
+
 		gettimeofday(&tv, NULL);
 		if (synctime && synctime - tv.tv_sec > 1) {
 			usecs = ((synctime - tv.tv_sec) * 1000000UL) -

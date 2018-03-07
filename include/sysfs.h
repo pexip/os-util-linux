@@ -27,7 +27,8 @@ struct sysfs_cxt {
 			scsi_target,
 			scsi_lun;
 
-	unsigned int	has_hctl : 1;
+	unsigned int	has_hctl   : 1,
+			hctl_error : 1 ;
 };
 
 #define UL_SYSFSCXT_EMPTY { 0, -1, NULL, NULL, 0, 0, 0, 0, 0 }
@@ -58,6 +59,9 @@ extern int sysfs_read_s64(struct sysfs_cxt *cxt, const char *attr, int64_t *res)
 extern int sysfs_read_u64(struct sysfs_cxt *cxt, const char *attr, uint64_t *res);
 extern int sysfs_read_int(struct sysfs_cxt *cxt, const char *attr, int *res);
 
+extern int sysfs_write_string(struct sysfs_cxt *cxt, const char *attr, const char *str);
+extern int sysfs_write_u64(struct sysfs_cxt *cxt, const char *attr, uint64_t num);
+
 extern char *sysfs_get_devname(struct sysfs_cxt *cxt, char *buf, size_t bufsiz);
 
 extern char *sysfs_strdup(struct sysfs_cxt *cxt, const char *attr);
@@ -66,6 +70,10 @@ extern int sysfs_count_dirents(struct sysfs_cxt *cxt, const char *attr);
 extern int sysfs_count_partitions(struct sysfs_cxt *cxt, const char *devname);
 extern dev_t sysfs_partno_to_devno(struct sysfs_cxt *cxt, int partno);
 extern char *sysfs_get_slave(struct sysfs_cxt *cxt);
+
+extern char *sysfs_get_devchain(struct sysfs_cxt *cxt, char *buf, size_t bufsz);
+extern int sysfs_next_subsystem(struct sysfs_cxt *cxt, char *devchain, char **subsys);
+extern int sysfs_is_hotpluggable(struct sysfs_cxt *cxt);
 
 extern int sysfs_is_partition_dirent(DIR *dir, struct dirent *d,
 			const char *parent_name);
@@ -83,5 +91,38 @@ extern char *sysfs_scsi_host_strdup_attribute(struct sysfs_cxt *cxt,
 extern int sysfs_scsi_host_is(struct sysfs_cxt *cxt, const char *type);
 extern int sysfs_scsi_has_attribute(struct sysfs_cxt *cxt, const char *attr);
 extern int sysfs_scsi_path_contains(struct sysfs_cxt *cxt, const char *pattern);
+
+/**
+ * sysfs_devname_sys_to_dev:
+ * @name: devname to be converted in place
+ *
+ * Linux kernel linux/drivers/base/core.c: device_get_devnode()
+ * defines a replacement of '!' in the /sys device name by '/' in the
+ * /dev device name. This helper replaces all occurrences of '!' in
+ * @name by '/' to convert from /sys to /dev.
+ */
+static inline void sysfs_devname_sys_to_dev(char *name)
+{
+	char *c;
+
+	if (name)
+		while ((c = strchr(name, '!')))
+			c[0] = '/';
+}
+
+/**
+ * sysfs_devname_dev_to_sys:
+ * @name: devname to be converted in place
+ *
+ * See sysfs_devname_sys_to_dev().
+ */
+static inline void sysfs_devname_dev_to_sys(char *name)
+{
+	char *c;
+
+	if (name)
+		while ((c = strchr(name, '/')))
+			c[0] = '!';
+}
 
 #endif /* UTIL_LINUX_SYSFS_H */

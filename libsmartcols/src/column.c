@@ -11,7 +11,7 @@
 /**
  * SECTION: column
  * @title: Column
- * @short_description: column API
+ * @short_description: defines output columns formats, headers, etc.
  *
  * An API to access and modify per-column data and information.
  */
@@ -22,6 +22,8 @@
 #include <string.h>
 #include <ctype.h>
 
+#include "mbsalign.h"
+
 #include "smartcolsP.h"
 
 /**
@@ -29,7 +31,7 @@
  *
  * Allocates space for a new column.
  *
- * Returns: a pointer to a new struct libscols_cell instance, NULL in case of an ENOMEM error.
+ * Returns: a pointer to a new struct libscols_column instance, NULL in case of an ENOMEM error.
  */
 struct libscols_column *scols_new_column(void)
 {
@@ -70,6 +72,8 @@ void scols_unref_column(struct libscols_column *cl)
 		list_del(&cl->cl_columns);
 		scols_reset_cell(&cl->header);
 		free(cl->color);
+		free(cl->safechars);
+		free(cl->pending_data_buf);
 		free(cl);
 	}
 }
@@ -86,14 +90,13 @@ struct libscols_column *scols_copy_column(const struct libscols_column *cl)
 {
 	struct libscols_column *ret;
 
-	assert (cl);
 	if (!cl)
 		return NULL;
 	ret = scols_new_column();
 	if (!ret)
 		return NULL;
 
-	DBG(COL, ul_debugobj((void *) cl, "copy to %p", ret));
+	DBG(COL, ul_debugobj(cl, "copy to %p", ret));
 
 	if (scols_column_set_color(ret, cl->color))
 		goto err;
@@ -119,14 +122,12 @@ err:
  * @cl: a pointer to a struct libscols_column instance
  * @whint: a width hint
  *
- * Sets the width hint of column @cl to @whint.
+ * Sets the width hint of column @cl to @whint. See scols_table_new_column().
  *
  * Returns: 0, a negative value in case of an error.
  */
 int scols_column_set_whint(struct libscols_column *cl, double whint)
 {
-	assert(cl);
-
 	if (!cl)
 		return -EINVAL;
 
@@ -140,10 +141,9 @@ int scols_column_set_whint(struct libscols_column *cl, double whint)
  *
  * Returns: The width hint of column @cl, a negative value in case of an error.
  */
-double scols_column_get_whint(struct libscols_column *cl)
+double scols_column_get_whint(const struct libscols_column *cl)
 {
-	assert(cl);
-	return cl ? cl->width_hint : -EINVAL;
+	return cl->width_hint;
 }
 
 /**
@@ -157,13 +157,29 @@ double scols_column_get_whint(struct libscols_column *cl)
  */
 int scols_column_set_flags(struct libscols_column *cl, int flags)
 {
-	assert(cl);
-
 	if (!cl)
 		return -EINVAL;
 
+	if (cl->table) {
+		if (!(cl->flags & SCOLS_FL_TREE) && (flags & SCOLS_FL_TREE))
+			cl->table->ntreecols++;
+		else if ((cl->flags & SCOLS_FL_TREE) && !(flags & SCOLS_FL_TREE))
+			cl->table->ntreecols--;
+	}
+
 	cl->flags = flags;
 	return 0;
+}
+
+/**
+ * scols_column_get_table:
+ * @cl: a pointer to a struct libscols_column instance
+ *
+ * Returns: pointer to the table where columns is used
+ */
+struct libscols_table *scols_column_get_table(const struct libscols_column *cl)
+{
+	return cl->table;
 }
 
 /**
@@ -172,10 +188,9 @@ int scols_column_set_flags(struct libscols_column *cl, int flags)
  *
  * Returns: The flag mask of @cl, a negative value in case of an error.
  */
-int scols_column_get_flags(struct libscols_column *cl)
+int scols_column_get_flags(const struct libscols_column *cl)
 {
-	assert(cl);
-	return cl ? cl->flags : -EINVAL;
+	return cl->flags;
 }
 
 /**
@@ -187,8 +202,7 @@ int scols_column_get_flags(struct libscols_column *cl)
  */
 struct libscols_cell *scols_column_get_header(struct libscols_column *cl)
 {
-	assert(cl);
-	return cl ? &cl->header : NULL;
+	return &cl->header;
 }
 
 /**
@@ -208,26 +222,12 @@ struct libscols_cell *scols_column_get_header(struct libscols_column *cl)
  */
 int scols_column_set_color(struct libscols_column *cl, const char *color)
 {
-	char *p = NULL;
-
-	assert(cl);
-	if (!cl)
-		return -EINVAL;
-	if (color) {
-		if (isalpha(*color)) {
-			color = color_sequence_from_colorname(color);
-
-			if (!color)
-				return -EINVAL;
-		}
-		p = strdup(color);
-		if (!p)
-			return -ENOMEM;
+	if (color && isalpha(*color)) {
+		color = color_sequence_from_colorname(color);
+		if (!color)
+			return -EINVAL;
 	}
-
-	free(cl->color);
-	cl->color = p;
-	return 0;
+	return strdup_to_struct_member(cl, color, color);
 }
 
 /**
@@ -236,12 +236,79 @@ int scols_column_set_color(struct libscols_column *cl, const char *color)
  *
  * Returns: The current color setting of the column @cl.
  */
-const char *scols_column_get_color(struct libscols_column *cl)
+const char *scols_column_get_color(const struct libscols_column *cl)
 {
-	assert(cl);
-	return cl ? cl->color : NULL;
+	return cl->color;
 }
 
+/**
+ * scols_wrapnl_nextchunk:
+ * @cl: a pointer to a struct libscols_column instance
+ * @data: string
+ * @userdata: callback private data
+ *
+ * This is built-in function for scols_column_set_wrapfunc(). This function
+ * terminates the current chunk by \0 and returns pointer to the begin of
+ * the next chunk. The chunks are based on \n.
+ *
+ * For example for data "AAA\nBBB\nCCC" the next chunk is "BBB".
+ *
+ * Returns: next chunk
+ *
+ * Since: 2.29
+ */
+char *scols_wrapnl_nextchunk(const struct libscols_column *cl __attribute__((unused)),
+			char *data,
+			void *userdata __attribute__((unused)))
+{
+	char *p = data ? strchr(data, '\n') : NULL;
+
+	if (p) {
+		*p = '\0';
+		return p + 1;
+	}
+	return NULL;
+}
+
+/**
+ * scols_wrapnl_chunksize:
+ * @cl: a pointer to a struct libscols_column instance
+ * @data: string
+ * @userdata: callback private data
+ *
+ * Analyzes @data and returns size of the largest chunk. The chunks are based
+ * on \n. For example for data "AAA\nBBB\nCCCC" the largest chunk size is 4.
+ *
+ * Note that the size has to be based on number of terminal cells rather than
+ * bytes to support multu-byte output.
+ *
+ * Returns: size of the largest chunk.
+ *
+ * Since: 2.29
+ */
+size_t scols_wrapnl_chunksize(const struct libscols_column *cl __attribute__((unused)),
+		const char *data,
+		void *userdata __attribute__((unused)))
+{
+	size_t sum = 0;
+
+	while (data && *data) {
+		const char *p = data;
+		size_t sz;
+
+		p = strchr(data, '\n');
+		if (p) {
+			sz = mbs_safe_nwidth(data, p - data, NULL);
+			p++;
+		} else
+			sz = mbs_safe_width(data);
+
+		sum = max(sum, sz);
+		data = p;;
+	}
+
+	return sum;
+}
 
 /**
  * scols_column_set_cmpfunc:
@@ -257,7 +324,6 @@ int scols_column_set_cmpfunc(struct libscols_column *cl,
 				   void *),
 			void *data)
 {
-	assert(cl);
 	if (!cl)
 		return -EINVAL;
 
@@ -267,19 +333,114 @@ int scols_column_set_cmpfunc(struct libscols_column *cl,
 }
 
 /**
+ * scols_column_set_wrapfunc:
+ * @cl: a pointer to a struct libscols_column instance
+ * @wrap_chunksize: function to return size of the largest chink of data
+ * @wrap_nextchunk: function to return next zero terminated data
+ * @userdata: optional stuff for callbacks
+ *
+ * Extends SCOLS_FL_WRAP and allows to set custom wrap function. The default
+ * is to wrap by column size, but you can create functions to wrap for example
+ * after \n or after words, etc.
+ *
+ * Returns: 0, a negative value in case of an error.
+ *
+ * Since: 2.29
+ */
+int scols_column_set_wrapfunc(struct libscols_column *cl,
+			size_t (*wrap_chunksize)(const struct libscols_column *,
+						 const char *,
+						 void *),
+			char * (*wrap_nextchunk)(const struct libscols_column *,
+						 char *,
+						 void *),
+			void *userdata)
+{
+	if (!cl)
+		return -EINVAL;
+
+	cl->wrap_nextchunk = wrap_nextchunk;
+	cl->wrap_chunksize = wrap_chunksize;
+	cl->wrapfunc_data = userdata;
+	return 0;
+}
+
+/**
+ * scols_column_set_safechars:
+ * @cl: a pointer to a struct libscols_column instance
+ * @safe: safe characters (e.g. "\n\t")
+ *
+ * Use for bytes you don't want to encode on output. This is for example
+ * necessary if you want to use custom wrap function based on \n, in this case
+ * you have to set "\n" as a safe char.
+ *
+ * Returns: 0, a negative value in case of an error.
+ *
+ * Since: 2.29
+ */
+int scols_column_set_safechars(struct libscols_column *cl, const char *safe)
+{
+	return strdup_to_struct_member(cl, safechars, safe);
+}
+
+/**
+ * scols_column_get_safechars:
+ * @cl: a pointer to a struct libscols_column instance
+ *
+ * Returns: safe chars
+ *
+ * Since: 2.29
+ */
+const char *scols_column_get_safechars(const struct libscols_column *cl)
+{
+	return cl->safechars;
+}
+
+/**
+ * scols_column_get_width:
+ * @cl: a pointer to a struct libscols_column instance
+ *
+ * Important note: the column width is unknown until library starts printing
+ * (width is calculated before printing). The function is usable for example in
+ * nextchunk() callback specified by scols_column_set_wrapfunc().
+ *
+ * See also scols_column_get_whint(), it returns wanted size (!= final size).
+ *
+ * Returns: column width
+ *
+ * Since: 2.29
+ */
+size_t scols_column_get_width(const struct libscols_column *cl)
+{
+	return cl->width;
+}
+
+/**
+ * scols_column_is_hidden:
+ * @cl: a pointer to a struct libscols_column instance
+ *
+ * Gets the value of @cl's flag hidden.
+ *
+ * Returns: 0 or 1
+ *
+ * Since: 2.27
+ */
+int scols_column_is_hidden(const struct libscols_column *cl)
+{
+	return cl->flags & SCOLS_FL_HIDDEN ? 1 : 0;
+}
+
+/**
  * scols_column_is_trunc:
  * @cl: a pointer to a struct libscols_column instance
  *
  * Gets the value of @cl's flag trunc.
  *
- * Returns: trunc flag value, negative value in case of an error.
+ * Returns: 0 or 1
  */
-int scols_column_is_trunc(struct libscols_column *cl)
+int scols_column_is_trunc(const struct libscols_column *cl)
 {
-	assert(cl);
-	if (!cl)
-		return -EINVAL;
-	return cl->flags & SCOLS_FL_TRUNC;
+	return cl->flags & SCOLS_FL_TRUNC ? 1 : 0;
 }
 /**
  * scols_column_is_tree:
@@ -287,14 +448,11 @@ int scols_column_is_trunc(struct libscols_column *cl)
  *
  * Gets the value of @cl's flag tree.
  *
- * Returns: tree flag value, negative value in case of an error.
+ * Returns: 0 or 1
  */
-int scols_column_is_tree(struct libscols_column *cl)
+int scols_column_is_tree(const struct libscols_column *cl)
 {
-	assert(cl);
-	if (!cl)
-		return -EINVAL;
-	return cl->flags & SCOLS_FL_TREE;
+	return cl->flags & SCOLS_FL_TREE ? 1 : 0;
 }
 /**
  * scols_column_is_right:
@@ -302,14 +460,11 @@ int scols_column_is_tree(struct libscols_column *cl)
  *
  * Gets the value of @cl's flag right.
  *
- * Returns: right flag value, negative value in case of an error.
+ * Returns: 0 or 1
  */
-int scols_column_is_right(struct libscols_column *cl)
+int scols_column_is_right(const struct libscols_column *cl)
 {
-	assert(cl);
-	if (!cl)
-		return -EINVAL;
-	return cl->flags & SCOLS_FL_RIGHT;
+	return cl->flags & SCOLS_FL_RIGHT ? 1 : 0;
 }
 /**
  * scols_column_is_strict_width:
@@ -317,14 +472,11 @@ int scols_column_is_right(struct libscols_column *cl)
  *
  * Gets the value of @cl's flag strict_width.
  *
- * Returns: strict_width flag value, negative value in case of an error.
+ * Returns: 0 or 1
  */
-int scols_column_is_strict_width(struct libscols_column *cl)
+int scols_column_is_strict_width(const struct libscols_column *cl)
 {
-	assert(cl);
-	if (!cl)
-		return -EINVAL;
-	return cl->flags & SCOLS_FL_STRICTWIDTH;
+	return cl->flags & SCOLS_FL_STRICTWIDTH ? 1 : 0;
 }
 /**
  * scols_column_is_noextremes:
@@ -332,12 +484,37 @@ int scols_column_is_strict_width(struct libscols_column *cl)
  *
  * Gets the value of @cl's flag no_extremes.
  *
- * Returns: no_extremes flag value, negative value in case of an error.
+ * Returns: 0 or 1
  */
-int scols_column_is_noextremes(struct libscols_column *cl)
+int scols_column_is_noextremes(const struct libscols_column *cl)
 {
-	assert(cl);
-	if (!cl)
-		return -EINVAL;
-	return cl->flags & SCOLS_FL_NOEXTREMES;
+	return cl->flags & SCOLS_FL_NOEXTREMES ? 1 : 0;
+}
+/**
+ * scols_column_is_wrap:
+ * @cl: a pointer to a struct libscols_column instance
+ *
+ * Gets the value of @cl's flag wrap.
+ *
+ * Returns: 0 or 1
+ *
+ * Since: 2.28
+ */
+int scols_column_is_wrap(const struct libscols_column *cl)
+{
+	return cl->flags & SCOLS_FL_WRAP ? 1 : 0;
+}
+/**
+ * scols_column_is_customwrap:
+ * @cl: a pointer to a struct libscols_column instance
+ *
+ * Returns: 0 or 1
+ *
+ * Since: 2.29
+ */
+int scols_column_is_customwrap(const struct libscols_column *cl)
+{
+	return (cl->flags & SCOLS_FL_WRAP)
+		&& cl->wrap_chunksize
+		&& cl->wrap_nextchunk ? 1 : 0;
 }

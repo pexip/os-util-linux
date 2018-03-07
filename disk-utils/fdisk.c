@@ -21,6 +21,10 @@
 #include <sys/time.h>
 #include <time.h>
 #include <limits.h>
+#include <libsmartcols.h>
+#ifdef HAVE_LIBREADLINE
+# include <readline/readline.h>
+#endif
 
 #include "c.h"
 #include "xalloc.h"
@@ -29,12 +33,13 @@
 #include "rpmatch.h"
 #include "blkdev.h"
 #include "mbsalign.h"
-#include "fdisk.h"
 #include "pathnames.h"
 #include "canonicalize.h"
 #include "strutils.h"
 #include "closestream.h"
-#include "sysfs.h"
+#include "pager.h"
+
+#include "fdisk.h"
 
 #include "pt-sun.h"		/* to toggle flags */
 
@@ -45,7 +50,35 @@
 # include <linux/blkpg.h>
 #endif
 
+int pwipemode = WIPEMODE_AUTO;
 
+/*
+ * fdisk debug stuff (see fdisk.h and include/debug.h)
+ */
+UL_DEBUG_DEFINE_MASK(fdisk);
+UL_DEBUG_DEFINE_MASKNAMES(fdisk) = UL_DEBUG_EMPTY_MASKNAMES;
+
+static void fdiskprog_init_debug(void)
+{
+	__UL_INIT_DEBUG(fdisk, FDISKPROG_DEBUG_, 0, FDISK_DEBUG);
+}
+
+#ifdef HAVE_LIBREADLINE
+static char *rl_fgets(char *s, int n, FILE *stream, const char *prompt)
+{
+	char *p;
+
+	rl_outstream = stream;
+	p = readline(prompt);
+	if (!p)
+		return NULL;
+
+	strncpy(s, p, n);
+	s[n - 1] = '\0';
+	free(p);
+	return s;
+}
+#endif
 
 int get_user_reply(struct fdisk_context *cxt, const char *prompt,
 			  char *buf, size_t bufsz)
@@ -54,20 +87,37 @@ int get_user_reply(struct fdisk_context *cxt, const char *prompt,
 	size_t sz;
 
 	do {
-	        fputs(prompt, stdout);
-		fflush(stdout);
+#ifdef HAVE_LIBREADLINE
+		if (isatty(STDIN_FILENO)) {
+			if (!rl_fgets(buf, bufsz, stdout, prompt)) {
+				if (fdisk_label_is_changed(fdisk_get_label(cxt, NULL))) {
+					if (rl_fgets(buf, bufsz, stderr,
+							_("\nDo you really want to quit? "))
+							&& !rpmatch(buf))
+						continue;
+				}
+				fdisk_unref_context(cxt);
+				exit(EXIT_FAILURE);
+			} else
+				break;
+		}
+		else
+#endif
+		{
+			fputs(prompt, stdout);
+			fflush(stdout);
+			if (!fgets(buf, bufsz, stdin)) {
+				if (fdisk_label_is_changed(fdisk_get_label(cxt, NULL))) {
+					fprintf(stderr, _("\nDo you really want to quit? "));
 
-		if (!fgets(buf, bufsz, stdin)) {
-			if (fdisk_label_is_changed(cxt->label)) {
-				fprintf(stderr, _("\nDo you really want to quit? "));
-
-				if (fgets(buf, bufsz, stdin) && !rpmatch(buf))
-					continue;
-			}
-			fdisk_free_context(cxt);
-			exit(EXIT_FAILURE);
-		} else
-			break;
+					if (fgets(buf, bufsz, stdin) && !rpmatch(buf))
+						continue;
+				}
+				fdisk_unref_context(cxt);
+				exit(EXIT_FAILURE);
+			} else
+				break;
+		}
 	} while (1);
 
 	for (p = buf; *p && !isgraph(*p); p++);	/* get first non-blank */
@@ -96,7 +146,7 @@ static int ask_menu(struct fdisk_context *cxt, struct fdisk_ask *ask,
 
 	do {
 		char prompt[128];
-		int key, c;
+		int key, c, rc;
 		const char *name, *desc;
 		size_t i = 0;
 
@@ -106,7 +156,9 @@ static int ask_menu(struct fdisk_context *cxt, struct fdisk_ask *ask,
 
 		/* ask for key */
 		snprintf(prompt, sizeof(prompt), _("Select (default %c): "), dft);
-		get_user_reply(cxt, prompt, buf, bufsz);
+		rc = get_user_reply(cxt, prompt, buf, bufsz);
+		if (rc)
+			return rc;
 		if (!*buf) {
 			fdisk_info(cxt, _("Using default response %c."), dft);
 			c = dft;
@@ -145,7 +197,7 @@ static int ask_number(struct fdisk_context *cxt,
 	assert(q);
 
 	DBG(ASK, ul_debug("asking for number "
-			"['%s', <%ju,%ju>, default=%ju, range: %s]",
+			"['%s', <%"PRIu64",%"PRIu64">, default=%"PRIu64", range: %s]",
 			q, low, high, dflt, range));
 
 	if (range && dflt >= low && dflt <= high) {
@@ -153,7 +205,7 @@ static int ask_number(struct fdisk_context *cxt,
 			snprintf(prompt, sizeof(prompt), _("%s (%s, default %c): "),
 					q, range, tochar(dflt));
 		else
-			snprintf(prompt, sizeof(prompt), _("%s (%s, default %ju): "),
+			snprintf(prompt, sizeof(prompt), _("%s (%s, default %"PRIu64"): "),
 					q, range, dflt);
 
 	} else if (dflt >= low && dflt <= high) {
@@ -161,13 +213,14 @@ static int ask_number(struct fdisk_context *cxt,
 			snprintf(prompt, sizeof(prompt), _("%s (%c-%c, default %c): "),
 					q, tochar(low), tochar(high), tochar(dflt));
 		else
-			snprintf(prompt, sizeof(prompt), _("%s (%ju-%ju, default %ju): "),
+			snprintf(prompt, sizeof(prompt),
+					_("%s (%"PRIu64"-%"PRIu64", default %"PRIu64"): "),
 					q, low, high, dflt);
 	} else if (inchar)
 		snprintf(prompt, sizeof(prompt), _("%s (%c-%c): "),
 				q, tochar(low), tochar(high));
 	else
-		snprintf(prompt, sizeof(prompt), _("%s (%ju-%ju): "),
+		snprintf(prompt, sizeof(prompt), _("%s (%"PRIu64"-%"PRIu64"): "),
 				q, low, high);
 
 	do {
@@ -215,18 +268,22 @@ static int ask_offset(struct fdisk_context *cxt,
 
 	assert(q);
 
-	DBG(ASK, ul_debug("asking for offset ['%s', <%ju,%ju>, base=%ju, default=%ju, range: %s]",
+	DBG(ASK, ul_debug("asking for offset ['%s', <%"PRIu64",%"PRIu64">, base=%"PRIu64", default=%"PRIu64", range: %s]",
 				q, low, high, base, dflt, range));
 
 	if (range && dflt >= low && dflt <= high)
-		snprintf(prompt, sizeof(prompt), _("%s (%s, default %ju): "), q, range, dflt);
+		snprintf(prompt, sizeof(prompt), _("%s (%s, default %"PRIu64"): "),
+		         q, range, dflt);
 	else if (dflt >= low && dflt <= high)
-		snprintf(prompt, sizeof(prompt), _("%s (%ju-%ju, default %ju): "), q, low, high, dflt);
+		snprintf(prompt, sizeof(prompt),
+		         _("%s (%"PRIu64"-%"PRIu64", default %"PRIu64"): "),
+		         q, low, high, dflt);
 	else
-		snprintf(prompt, sizeof(prompt), _("%s (%ju-%ju): "), q, low, high);
+		snprintf(prompt, sizeof(prompt), _("%s (%"PRIu64"-%"PRIu64"): "),
+		         q, low, high);
 
 	do {
-		uint64_t num = 0;
+		uintmax_t num = 0;
 		char sig = 0, *p;
 		int pwr = 0;
 
@@ -261,9 +318,9 @@ static int ask_offset(struct fdisk_context *cxt,
 				num, sig, pwr,
 				sig ? "relative" : "absolute"));
 		if (num >= low && num <= high) {
-			if (sig)
+			if (sig && pwr)
 				fdisk_ask_number_set_relative(ask, 1);
-			return fdisk_ask_number_set_result(ask, num);
+			return fdisk_ask_number_set_result(ask, (uint64_t)num);
 		}
 		fdisk_warnx(cxt, _("Value out of range."));
 	} while (1);
@@ -308,16 +365,19 @@ int ask_callback(struct fdisk_context *cxt, struct fdisk_ask *ask,
 	case FDISK_ASKTYPE_OFFSET:
 		return ask_offset(cxt, ask, buf, sizeof(buf));
 	case FDISK_ASKTYPE_INFO:
-		info_count++;
+		if (!fdisk_is_listonly(cxt))
+			info_count++;
 		fputs_info(ask, stdout);
 		break;
 	case FDISK_ASKTYPE_WARNX:
+		fflush(stdout);
 		color_scheme_fenable("warn", UL_COLOR_RED, stderr);
 		fputs(fdisk_ask_print_get_mesg(ask), stderr);
 		color_fdisable(stderr);
 		fputc('\n', stderr);
 		break;
 	case FDISK_ASKTYPE_WARN:
+		fflush(stdout);
 		color_scheme_fenable("warn", UL_COLOR_RED, stderr);
 		fputs(fdisk_ask_print_get_mesg(ask), stderr);
 		errno = fdisk_ask_print_get_errno(ask);
@@ -333,7 +393,7 @@ int ask_callback(struct fdisk_context *cxt, struct fdisk_ask *ask,
 			if (rc)
 				break;
 			x = rpmatch(buf);
-			if (x == 1 || x == 0) {
+			if (x == RPMATCH_YES || x == RPMATCH_NO) {
 				fdisk_ask_yesno_set_result(ask, x);
 				break;
 			}
@@ -358,14 +418,18 @@ int ask_callback(struct fdisk_context *cxt, struct fdisk_ask *ask,
 	return rc;
 }
 
-struct fdisk_parttype *ask_partition_type(struct fdisk_context *cxt)
+static struct fdisk_parttype *ask_partition_type(struct fdisk_context *cxt)
 {
 	const char *q;
+	struct fdisk_label *lb;
 
-	if (!cxt || !cxt->label || !cxt->label->nparttypes)
+	assert(cxt);
+	lb = fdisk_get_label(cxt, NULL);
+
+	if (!lb)
 		return NULL;
 
-        q = fdisk_is_parttype_string(cxt) ?
+        q = fdisk_label_has_code_parttypes(lb) ?
 		_("Partition type (type L to list all types): ") :
 		_("Hex code (type L to list all codes): ");
 	do {
@@ -378,24 +442,27 @@ struct fdisk_parttype *ask_partition_type(struct fdisk_context *cxt)
 		if (buf[1] == '\0' && toupper(*buf) == 'L')
 			list_partition_types(cxt);
 		else if (*buf)
-			return fdisk_parse_parttype(cxt, buf);
+			return fdisk_label_parse_parttype(lb, buf);
         } while (1);
 
 	return NULL;
 }
 
+
 void list_partition_types(struct fdisk_context *cxt)
 {
-	struct fdisk_parttype *types;
 	size_t ntypes = 0;
+	struct fdisk_label *lb;
 
-	if (!cxt || !cxt->label || !cxt->label->parttypes)
+	assert(cxt);
+	lb = fdisk_get_label(cxt, NULL);
+	if (!lb)
+		return;
+	ntypes = fdisk_label_get_nparttypes(lb);
+	if (!ntypes)
 		return;
 
-	types = cxt->label->parttypes;
-	ntypes = cxt->label->nparttypes;
-
-	if (types[0].typestr == NULL) {
+	if (fdisk_label_has_code_parttypes(lb)) {
 		/*
 		 * Prints in 4 columns in format <hex> <name>
 		 */
@@ -403,8 +470,6 @@ void list_partition_types(struct fdisk_context *cxt)
 		int i;
 
 		size = ntypes;
-		if (types[ntypes - 1].name == NULL)
-			size--;
 
 		for (i = 3; i >= 0; i--)
 			last[3 - i] = done += (size + i - done) / (i + 1);
@@ -414,16 +479,19 @@ void list_partition_types(struct fdisk_context *cxt)
 			#define NAME_WIDTH 15
 			char name[NAME_WIDTH * MB_LEN_MAX];
 			size_t width = NAME_WIDTH;
-			struct fdisk_parttype *t = &types[next];
+			const struct fdisk_parttype *t = fdisk_label_get_parttype(lb, next);
 			size_t ret;
 
-			if (t->name) {
-				printf("%c%2x  ", i ? ' ' : '\n', t->type);
-				ret = mbsalign(_(t->name), name, sizeof(name),
-						      &width, MBS_ALIGN_LEFT, 0);
+			if (fdisk_parttype_get_name(t)) {
+				printf("%c%2x  ", i ? ' ' : '\n',
+						fdisk_parttype_get_code(t));
+				ret = mbsalign(_(fdisk_parttype_get_name(t)),
+						name, sizeof(name),
+						&width, MBS_ALIGN_LEFT, 0);
 
 				if (ret == (size_t)-1 || ret >= sizeof(name))
-					printf("%-15.15s", _(t->name));
+					printf("%-15.15s",
+						_(fdisk_parttype_get_name(t)));
 				else
 					fputs(name, stdout);
 			}
@@ -439,21 +507,25 @@ void list_partition_types(struct fdisk_context *cxt)
 		/*
 		 * Prints 1 column in format <idx> <name> <typestr>
 		 */
-		struct fdisk_parttype *t;
 		size_t i;
 
-		for (i = 0, t = types; t && i < ntypes; t++, i++) {
-			if (t->name)
-				printf("%3zu %-30s %s\n", i + 1,
-						t->name, t->typestr);
+		pager_open();
+
+		for (i = 0; i < ntypes; i++) {
+			const struct fdisk_parttype *t = fdisk_label_get_parttype(lb, i);
+			printf("%3zu %-30s %s\n", i + 1,
+					fdisk_parttype_get_name(t),
+					fdisk_parttype_get_string(t));
 		}
+
+		pager_close();
 	}
 	putchar('\n');
 }
 
 void toggle_dos_compatibility_flag(struct fdisk_context *cxt)
 {
-	struct fdisk_label *lb = fdisk_context_get_label(cxt, "dos");
+	struct fdisk_label *lb = fdisk_get_label(cxt, "dos");
 	int flag;
 
 	if (!lb)
@@ -466,7 +538,7 @@ void toggle_dos_compatibility_flag(struct fdisk_context *cxt)
 
 	fdisk_dos_enable_compatible(lb, flag);
 
-	if (fdisk_is_disklabel(cxt, DOS))
+	if (fdisk_is_label(cxt, DOS))
 		fdisk_reset_alignment(cxt);	/* reset the current label */
 }
 
@@ -478,7 +550,6 @@ void change_partition_type(struct fdisk_context *cxt)
 	const char *old = NULL;
 
 	assert(cxt);
-	assert(cxt->label);
 
 	if (fdisk_ask_partnum(cxt, &i, FALSE))
 		return;
@@ -489,105 +560,65 @@ void change_partition_type(struct fdisk_context *cxt)
 	}
 
 	t = (struct fdisk_parttype *) fdisk_partition_get_type(pa);
-	old = t ? t->name : _("Unknown");
+	old = t ? fdisk_parttype_get_name(t) : _("Unknown");
 
 	do {
 		t = ask_partition_type(cxt);
 	} while (!t);
 
 	if (fdisk_set_partition_type(cxt, i, t) == 0)
-		fdisk_sinfo(cxt, FDISK_INFO_SUCCESS,
+		fdisk_info(cxt,
 			_("Changed type of partition '%s' to '%s'."),
-			old, t ? t->name : _("Unknown"));
+			old, t ? fdisk_parttype_get_name(t) : _("Unknown"));
 	else
 		fdisk_info(cxt,
 			_("Type of partition %zu is unchanged: %s."),
 			i + 1, old);
 
 	fdisk_unref_partition(pa);
+	fdisk_unref_parttype(t);
 }
 
-void list_disk_geometry(struct fdisk_context *cxt)
+int print_partition_info(struct fdisk_context *cxt)
 {
-	char *id = NULL;
-	uint64_t bytes = cxt->total_sectors * cxt->sector_size;
-	char *strsz = size_to_human_string(SIZE_SUFFIX_SPACE
-					   | SIZE_SUFFIX_3LETTER, bytes);
-
-	fdisk_info(cxt,	_("Disk %s: %s, %ju bytes, %ju sectors"),
-			cxt->dev_path, strsz,
-			bytes, (uintmax_t) cxt->total_sectors);
-	free(strsz);
-
-	if (fdisk_require_geometry(cxt) || fdisk_context_use_cylinders(cxt))
-		fdisk_info(cxt, _("Geometry: %d heads, %llu sectors/track, %llu cylinders"),
-			       cxt->geom.heads, cxt->geom.sectors, cxt->geom.cylinders);
-
-	fdisk_info(cxt, _("Units: %s of %d * %ld = %ld bytes"),
-	       fdisk_context_get_unit(cxt, PLURAL),
-	       fdisk_context_get_units_per_sector(cxt),
-	       cxt->sector_size,
-	       fdisk_context_get_units_per_sector(cxt) * cxt->sector_size);
-
-	fdisk_info(cxt, _("Sector size (logical/physical): %lu bytes / %lu bytes"),
-				cxt->sector_size, cxt->phy_sector_size);
-	fdisk_info(cxt, _("I/O size (minimum/optimal): %lu bytes / %lu bytes"),
-				cxt->min_io_size, cxt->io_size);
-	if (cxt->alignment_offset)
-		fdisk_info(cxt, _("Alignment offset: %lu bytes"),
-				cxt->alignment_offset);
-	if (fdisk_dev_has_disklabel(cxt))
-		fdisk_info(cxt, _("Disklabel type: %s"), cxt->label->name);
-
-	if (fdisk_get_disklabel_id(cxt, &id) == 0 && id)
-		fdisk_info(cxt, _("Disk identifier: %s"), id);
-}
-
-void list_disklabel(struct fdisk_context *cxt)
-{
-	struct fdisk_table *tb = NULL;
 	struct fdisk_partition *pa = NULL;
-	struct fdisk_iter *itr;
+	int rc = 0;
+	size_t i, nfields;
+	int *fields = NULL;
+	struct fdisk_label *lb = fdisk_get_label(cxt, NULL);
 
-	char *str;
+	if ((rc = fdisk_ask_partnum(cxt, &i, FALSE)))
+		return rc;
 
-	/* print label specific stuff by libfdisk FDISK_ASK_INFO API */
-	fdisk_list_disklabel(cxt);
-
-	/* print partitions */
-	if (fdisk_get_partitions(cxt, &tb))
-		return;
-	if (fdisk_table_to_string(tb, cxt, NULL, 0, &str) == 0) {
-		fputc('\n', stdout);
-		if (str) {
-			char *p = str;
-			char *next = strchr(str, '\n');
-			if (next && colors_wanted()) {
-				*next = '\0';
-				color_scheme_enable("header", UL_COLOR_BOLD);
-				fputs(p, stdout);
-				color_disable();
-				fputc('\n', stdout);
-				p = ++next;
-			}
-			fputs(p, stdout);
-			free(str);
-		}
+	if ((rc = fdisk_get_partition(cxt, i, &pa))) {
+		fdisk_warnx(cxt, _("Partition %zu does not exist yet!"), i + 1);
+		return rc;
 	}
 
-	fputc('\n', stdout);
+	if ((rc = fdisk_label_get_fields_ids_all(lb, cxt, &fields, &nfields)))
+		goto clean_data;
 
-	itr = fdisk_new_iter(FDISK_ITER_FORWARD);
+	for (i = 0; i < nfields; ++i) {
+		int id = fields[i];
+		char *data = NULL;
+		const struct fdisk_field *fd = fdisk_label_get_field(lb, id);
 
-	while (itr && fdisk_table_next_partition(tb, itr, &pa) == 0)
-		fdisk_warn_alignment(cxt, fdisk_partition_get_start(pa),
-					  fdisk_partition_get_partno(pa) + 1);
+		if (!fd)
+			continue;
 
-	if (fdisk_table_wrong_order(tb))
-		fdisk_info(cxt, _("Partition table entries are not in disk order."));
+		rc = fdisk_partition_to_string(pa, cxt, id, &data);
+		if (rc < 0)
+			goto clean_data;
+		if (!data || !*data)
+			continue;
+		fdisk_info(cxt, _("%15s: %s"), fdisk_field_get_name(fd), data);
+		free(data);
+	}
 
-	fdisk_unref_table(tb);
-	fdisk_free_iter(itr);
+clean_data:
+	fdisk_unref_partition(pa);
+	free(fields);
+	return rc;
 }
 
 static size_t skip_empty(const unsigned char *buf, size_t i, size_t sz)
@@ -613,7 +644,7 @@ static void dump_buffer(off_t base, unsigned char *buf, size_t sz, int all)
 		if (l == 0) {
 			if (all == 0 && !next)
 				next = skip_empty(buf, i, sz);
-			printf("%08jx ", base + i);
+			printf("%08jx ", (intmax_t)base + i);
 		}
 		printf(" %02x", buf[i]);
 		if (l == 7)				/* words separator */
@@ -633,17 +664,21 @@ static void dump_buffer(off_t base, unsigned char *buf, size_t sz, int all)
 }
 
 static void dump_blkdev(struct fdisk_context *cxt, const char *name,
-			off_t offset, size_t size, int all)
+			uint64_t offset, size_t size, int all)
 {
-	fdisk_info(cxt, _("\n%s: offset = %ju, size = %zu bytes."),
+	int fd = fdisk_get_devfd(cxt);
+
+	fdisk_info(cxt, _("\n%s: offset = %"PRIu64", size = %zu bytes."),
 			name, offset, size);
 
-	if (lseek(cxt->dev_fd, offset, SEEK_SET) == (off_t) -1)
+	assert(fd >= 0);
+
+	if (lseek(fd, (off_t) offset, SEEK_SET) == (off_t) -1)
 		fdisk_warn(cxt, _("cannot seek"));
 	else {
 		unsigned char *buf = xmalloc(size);
 
-		if (read_all(cxt->dev_fd, (char *) buf, size) != (ssize_t) size)
+		if (read_all(fd, (char *) buf, size) != (ssize_t) size)
 			fdisk_warn(cxt, _("cannot read"));
 		else
 			dump_buffer(offset, buf, size, all);
@@ -656,9 +691,8 @@ void dump_firstsector(struct fdisk_context *cxt)
 	int all = !isatty(STDOUT_FILENO);
 
 	assert(cxt);
-	assert(cxt->label);
 
-	dump_blkdev(cxt, _("First sector"), 0, cxt->sector_size, all);
+	dump_blkdev(cxt, _("First sector"), 0, fdisk_get_sector_size(cxt), all);
 }
 
 void dump_disklabel(struct fdisk_context *cxt)
@@ -666,91 +700,23 @@ void dump_disklabel(struct fdisk_context *cxt)
 	int all = !isatty(STDOUT_FILENO);
 	int i = 0;
 	const char *name = NULL;
-	off_t offset = 0;
+	uint64_t offset = 0;
 	size_t size = 0;
 
 	assert(cxt);
-	assert(cxt->label);
 
 	while (fdisk_locate_disklabel(cxt, i++, &name, &offset, &size) == 0 && size)
 		dump_blkdev(cxt, name, offset, size, all);
 }
 
-static int is_ide_cdrom_or_tape(char *device)
+static fdisk_sector_t get_dev_blocks(char *dev)
 {
 	int fd, ret;
-
-	if ((fd = open(device, O_RDONLY)) < 0)
-		return 0;
-	ret = blkdev_is_cdrom(fd);
-
-	close(fd);
-	return ret;
-}
-
-static void print_device_pt(struct fdisk_context *cxt, char *device, int warnme)
-{
-	if (fdisk_context_assign_device(cxt, device, 1) != 0) {	/* read-only */
-		if (warnme || errno == EACCES)
-			warn(_("cannot open %s"), device);
-		return;
-	}
-
-	list_disk_geometry(cxt);
-
-	if (fdisk_dev_has_disklabel(cxt))
-		list_disklabel(cxt);
-}
-
-static void print_all_devices_pt(struct fdisk_context *cxt)
-{
-	FILE *f;
-	char line[128 + 1];
-
-	f = fopen(_PATH_PROC_PARTITIONS, "r");
-	if (!f) {
-		warn(_("cannot open %s"), _PATH_PROC_PARTITIONS);
-		return;
-	}
-
-	DBG(FRONTEND, ul_debug("reading "_PATH_PROC_PARTITIONS));
-
-	while (fgets(line, sizeof(line), f)) {
-		char buf[PATH_MAX], *cn;
-		dev_t devno;
-
-		if (sscanf(line, " %*d %*d %*d %128[^\n ]", buf) != 1)
-			continue;
-
-		devno = sysfs_devname_to_devno(buf, NULL);
-		if (devno <= 0)
-			continue;
-
-		if (sysfs_devno_is_lvm_private(devno) ||
-		    sysfs_devno_is_wholedisk(devno) <= 0)
-			continue;
-
-		if (!sysfs_devno_to_devpath(devno, buf, sizeof(buf)))
-			continue;
-
-		cn = canonicalize_path(buf);
-		if (!cn)
-			continue;
-		if (!is_ide_cdrom_or_tape(cn))
-			print_device_pt(cxt, cn, 0);
-		free(cn);
-	}
-	fclose(f);
-}
-
-static sector_t get_dev_blocks(char *dev)
-{
-	int fd, ret;
-	sector_t size;
+	fdisk_sector_t size;
 
 	if ((fd = open(dev, O_RDONLY)) < 0)
 		err(EXIT_FAILURE, _("cannot open %s"), dev);
-	ret = blkdev_get_sectors(fd, &size);
+	ret = blkdev_get_sectors(fd, (unsigned long long *) &size);
 	close(fd);
 	if (ret < 0)
 		err(EXIT_FAILURE, _("BLKGETSIZE ioctl failed on %s"), dev);
@@ -766,14 +732,24 @@ static void __attribute__ ((__noreturn__)) usage(FILE *out)
 	        " %1$s [options] -l [<disk>] list partition table(s)\n"),
 	       program_invocation_short_name);
 
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Display or manipulate a disk partition table.\n"), out);
+
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -b, --sector-size <size>      physical and logical sector size\n"), out);
+	fputs(_(" -B, --protect-boot            don't erase bootbits when creating a new label\n"), out);
 	fputs(_(" -c, --compatibility[=<mode>]  mode is 'dos' or 'nondos' (default)\n"), out);
 	fputs(_(" -L, --color[=<when>]          colorize output (auto, always or never)\n"), out);
-	fputs(_(" -l, --list                    display partitions end exit\n"), out);
+	fprintf(out,
+	        "                                 %s\n", USAGE_COLORS_DEFAULT);
+	fputs(_(" -l, --list                    display partitions and exit\n"), out);
+	fputs(_(" -o, --output <list>           output columns\n"), out);
 	fputs(_(" -t, --type <type>             recognize specified partition table type only\n"), out);
 	fputs(_(" -u, --units[=<unit>]          display units: 'cylinders' or 'sectors' (default)\n"), out);
 	fputs(_(" -s, --getsz                   display device size in 512-byte sectors [DEPRECATED]\n"), out);
+	fputs(_("     --bytes                   print SIZE in bytes rather than in human readable format\n"), out);
+	fputs(_(" -w, --wipe <mode>             wipe signatures (auto, always or never)\n"), out);
+	fputs(_(" -W, --wipe-partitions <mode>  wipe signatures from new partitions (auto, always or never)\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_(" -C, --cylinders <number>      specify the number of cylinders\n"), out);
@@ -783,6 +759,8 @@ static void __attribute__ ((__noreturn__)) usage(FILE *out)
 	fputs(USAGE_SEPARATOR, out);
 	fputs(USAGE_HELP, out);
 	fputs(USAGE_VERSION, out);
+
+	list_available_columns(out);
 
 	fprintf(out, USAGE_MAN_TAIL("fdisk(8)"));
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
@@ -799,9 +777,14 @@ int main(int argc, char **argv)
 {
 	int rc, i, c, act = ACT_FDISK;
 	int colormode = UL_COLORMODE_UNDEF;
+	int wipemode = WIPEMODE_AUTO;
 	struct fdisk_context *cxt;
-
+	char *outarg = NULL;
+	enum {
+		OPT_BYTES	= CHAR_MAX + 1
+	};
 	static const struct option longopts[] = {
+		{ "bytes",          no_argument,       NULL, OPT_BYTES },
 		{ "color",          optional_argument, NULL, 'L' },
 		{ "compatibility",  optional_argument, NULL, 'c' },
 		{ "cylinders",      required_argument, NULL, 'C' },
@@ -814,6 +797,10 @@ int main(int argc, char **argv)
 		{ "type",           required_argument, NULL, 't' },
 		{ "units",          optional_argument, NULL, 'u' },
 		{ "version",        no_argument,       NULL, 'V' },
+		{ "output",         no_argument,       NULL, 'o' },
+		{ "protect-boot",   no_argument,       NULL, 'B' },
+		{ "wipe",           required_argument, NULL, 'w' },
+		{ "wipe-partitions",required_argument, NULL, 'W' },
 		{ NULL, 0, NULL, 0 }
 	};
 
@@ -823,13 +810,16 @@ int main(int argc, char **argv)
 	atexit(close_stdout);
 
 	fdisk_init_debug(0);
+	scols_init_debug(0);
+	fdiskprog_init_debug();
+
 	cxt = fdisk_new_context();
 	if (!cxt)
 		err(EXIT_FAILURE, _("failed to allocate libfdisk context"));
 
-	fdisk_context_set_ask(cxt, ask_callback, NULL);
+	fdisk_set_ask(cxt, ask_callback, NULL);
 
-	while ((c = getopt_long(argc, argv, "b:c::C:hH:lL::sS:t:u::vV",
+	while ((c = getopt_long(argc, argv, "b:Bc::C:hH:lL::o:sS:t:u::vVw:W:",
 				longopts, NULL)) != -1) {
 		switch (c) {
 		case 'b':
@@ -841,6 +831,9 @@ int main(int argc, char **argv)
 			fdisk_save_user_sector_size(cxt, sz, sz);
 			break;
 		}
+		case 'B':
+			fdisk_enable_bootbits_protection(cxt, 1);
+			break;
 		case 'C':
 			fdisk_save_user_geometry(cxt,
 				strtou32_or_err(optarg,
@@ -853,7 +846,7 @@ int main(int argc, char **argv)
 				 * actively used label
 				 */
 				char *p = *optarg == '=' ? optarg + 1 : optarg;
-				struct fdisk_label *lb = fdisk_context_get_label(cxt, "dos");
+				struct fdisk_label *lb = fdisk_get_label(cxt, "dos");
 
 				if (!lb)
 					err(EXIT_FAILURE, _("not found DOS label driver"));
@@ -883,9 +876,13 @@ int main(int argc, char **argv)
 			act = ACT_LIST;
 			break;
 		case 'L':
+			colormode = UL_COLORMODE_AUTO;
 			if (optarg)
 				colormode = colormode_or_err(optarg,
 						_("unsupported color mode"));
+			break;
+		case 'o':
+			outarg = optarg;
 			break;
 		case 's':
 			act = ACT_SHOWSIZE;
@@ -894,26 +891,40 @@ int main(int argc, char **argv)
 		{
 			struct fdisk_label *lb = NULL;
 
-			while (fdisk_context_next_label(cxt, &lb) == 0)
+			while (fdisk_next_label(cxt, &lb) == 0)
 				fdisk_label_set_disabled(lb, 1);
 
-			lb = fdisk_context_get_label(cxt, optarg);
+			lb = fdisk_get_label(cxt, optarg);
 			if (!lb)
 				errx(EXIT_FAILURE, _("unsupported disklabel: %s"), optarg);
 			fdisk_label_set_disabled(lb, 0);
+			break;
 		}
 		case 'u':
 			if (optarg && *optarg == '=')
 				optarg++;
-			if (fdisk_context_set_unit(cxt, optarg) != 0)
+			if (fdisk_set_unit(cxt, optarg) != 0)
 				usage(stderr);
 			break;
 		case 'V': /* preferred for util-linux */
 		case 'v': /* for backward compatibility only */
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
+		case 'w':
+			wipemode = wipemode_from_string(optarg);
+			if (wipemode < 0)
+				errx(EXIT_FAILURE, _("unsupported wipe mode"));
+			break;
+		case 'W':
+			pwipemode = wipemode_from_string(optarg);
+			if (pwipemode < 0)
+				errx(EXIT_FAILURE, _("unsupported wipe mode"));
+			break;
 		case 'h':
 			usage(stdout);
+		case OPT_BYTES:
+			fdisk_set_size_unit(cxt, FDISK_SIZEUNIT_BYTES);
+			break;
 		default:
 			usage(stderr);
 		}
@@ -927,14 +938,24 @@ int main(int argc, char **argv)
 
 	switch (act) {
 	case ACT_LIST:
-		fdisk_context_enable_listonly(cxt, 1);
+		fdisk_enable_listonly(cxt, 1);
+		init_fields(cxt, outarg, NULL);
 
 		if (argc > optind) {
 			int k;
-			for (k = optind; k < argc; k++)
-				print_device_pt(cxt, argv[k], 1);
+			int ct = 0;
+
+			for (rc = 0, k = optind; k < argc; k++) {
+				if (ct)
+				    fputs("\n\n", stdout);
+
+				rc += print_device_pt(cxt, argv[k], 1, 0);
+				ct++;
+			}
+			if (rc)
+				return EXIT_FAILURE;
 		} else
-			print_all_devices_pt(cxt);
+			print_all_devices_pt(cxt, 0);
 		break;
 
 	case ACT_SHOWSIZE:
@@ -943,10 +964,12 @@ int main(int argc, char **argv)
 			usage(stderr);
 
 		for (i = optind; i < argc; i++) {
+			uintmax_t blks = get_dev_blocks(argv[i]);
+
 			if (argc - optind == 1)
-				printf("%llu\n", get_dev_blocks(argv[i]));
+				printf("%ju\n", blks);
 			else
-				printf("%s: %llu\n", argv[i], get_dev_blocks(argv[i]));
+				printf("%s: %ju\n", argv[i], blks);
 		}
 		break;
 
@@ -961,30 +984,50 @@ int main(int argc, char **argv)
 		fdisk_info(cxt, _("Changes will remain in memory only, until you decide to write them.\n"
 				  "Be careful before using the write command.\n"));
 
-		rc = fdisk_context_assign_device(cxt, argv[optind], 0);
+		rc = fdisk_assign_device(cxt, argv[optind], 0);
 		if (rc == -EACCES) {
-			rc = fdisk_context_assign_device(cxt, argv[optind], 1);
+			rc = fdisk_assign_device(cxt, argv[optind], 1);
 			if (rc == 0)
-				fdisk_warnx(cxt, _("Device open in read-only mode."));
+				fdisk_warnx(cxt, _("Device is open in read-only mode."));
 		}
 		if (rc)
 			err(EXIT_FAILURE, _("cannot open %s"), argv[optind]);
 
 		fflush(stdout);
 
-		if (!fdisk_dev_has_disklabel(cxt)) {
+		if (fdisk_get_collision(cxt)) {
+			int dowipe = wipemode == WIPEMODE_ALWAYS ? 1 : 0;
+
+			fdisk_warnx(cxt, _("Device %s already contains a %s signature."),
+				argv[optind], fdisk_get_collision(cxt));
+
+			if (isatty(STDIN_FILENO) && wipemode == WIPEMODE_AUTO)
+				dowipe = 1;	/* do it in interactive mode */
+
+			fdisk_enable_wipe(cxt, dowipe);
+			if (dowipe)
+				fdisk_warnx(cxt, _(
+					"The signature will be removed by a write command."));
+			else
+				fdisk_warnx(cxt, _(
+					"It is strongly recommended to wipe the device with "
+					"wipefs(8), in order to avoid possible collisions."));
+		}
+		if (!fdisk_has_label(cxt)) {
 			fdisk_info(cxt, _("Device does not contain a recognized partition table."));
 			fdisk_create_disklabel(cxt, NULL);
 
-		} else if (fdisk_is_disklabel(cxt, GPT) && fdisk_gpt_is_hybrid(cxt))
+		} else if (fdisk_is_label(cxt, GPT) && fdisk_gpt_is_hybrid(cxt))
 			fdisk_warnx(cxt, _(
 				  "A hybrid GPT was detected. You have to sync "
 				  "the hybrid MBR manually (expert command 'M')."));
+
+		init_fields(cxt, outarg, NULL);		/* -o <columns> */
 
 		while (1)
 			process_fdisk_menu(&cxt);
 	}
 
-	fdisk_free_context(cxt);
+	fdisk_unref_context(cxt);
 	return EXIT_SUCCESS;
 }

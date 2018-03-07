@@ -66,10 +66,10 @@ parse_args(int argc, char **argv, struct hexdump *hex)
 
 	static const struct option longopts[] = {
 		{"one-byte-octal", no_argument, NULL, 'b'},
-		{"one-byte-char", required_argument, NULL, 'c'},
-		{"canonical", required_argument, NULL, 'C'},
+		{"one-byte-char", no_argument, NULL, 'c'},
+		{"canonical", no_argument, NULL, 'C'},
 		{"two-bytes-decimal", no_argument, NULL, 'd'},
-		{"two-bytes-octal", required_argument, NULL, 'o'},
+		{"two-bytes-octal", no_argument, NULL, 'o'},
 		{"two-bytes-hex", no_argument, NULL, 'x'},
 		{"format", required_argument, NULL, 'e'},
 		{"format-file", required_argument, NULL, 'f'},
@@ -153,6 +153,10 @@ void __attribute__((__noreturn__)) usage(FILE *out)
 {
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options] <file>...\n"), program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Display file contents in hexadecimal, decimal, octal, or ascii.\n"), out);
+
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -b, --one-byte-octal      one-byte octal display\n"), out);
 	fputs(_(" -c, --one-byte-char       one-byte character display\n"), out);
@@ -161,6 +165,8 @@ void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(_(" -o, --two-bytes-octal     two-byte octal display\n"), out);
 	fputs(_(" -x, --two-bytes-hex       two-byte hexadecimal display\n"), out);
 	fputs(_(" -L, --color[=<mode>]      interpret color formatting specifiers\n"), out);
+	fprintf(out,
+	        "                             %s\n", USAGE_COLORS_DEFAULT);
 	fputs(_(" -e, --format <format>     format string to be used for displaying data\n"), out);
 	fputs(_(" -f, --format-file <file>  file that contains format strings\n"), out);
 	fputs(_(" -n, --length <length>     interpret only length bytes of input\n"), out);

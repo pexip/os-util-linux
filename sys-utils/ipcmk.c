@@ -62,19 +62,23 @@ static int create_sem(int nsems, int permission)
 
 static void __attribute__ ((__noreturn__)) usage(FILE * out)
 {
-	fprintf(out, USAGE_HEADER);
+	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options]\n"), program_invocation_short_name);
-	fprintf(out, USAGE_OPTIONS);
 
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Create various IPC resources.\n"), out);
+
+	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -M, --shmem <size>       create shared memory segment of size <size>\n"), out);
-	fputs(_(" -S, --semaphore <nsems>  create semaphore array with <nsems> elements\n"), out);
+	fputs(_(" -S, --semaphore <number> create semaphore array with <number> elements\n"), out);
 	fputs(_(" -Q, --queue              create message queue\n"), out);
 	fputs(_(" -p, --mode <mode>        permission for the resource (default is 0644)\n"), out);
 
-	fprintf(out, USAGE_SEPARATOR);
-	fprintf(out, USAGE_HELP);
-	fprintf(out, USAGE_VERSION);
+	fputs(USAGE_SEPARATOR, out);
+	fputs(USAGE_HELP, out);
+	fputs(USAGE_VERSION, out);
 	fprintf(out, USAGE_MAN_TAIL("ipcmk(1)"));
+
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
 
@@ -103,7 +107,7 @@ int main(int argc, char **argv)
 	while((opt = getopt_long(argc, argv, "hM:QS:p:Vh", longopts, NULL)) != -1) {
 		switch(opt) {
 		case 'M':
-			size = strtou64_or_err(optarg, _("failed to parse size"));
+			size = strtosize_or_err(optarg, _("failed to parse size"));
 			ask_shm = 1;
 			break;
 		case 'Q':

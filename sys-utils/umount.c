@@ -43,9 +43,8 @@ static int table_parser_errcb(struct libmnt_table *tb __attribute__((__unused__)
 			const char *filename, int line)
 {
 	if (filename)
-		warnx(_("%s: parse error: ignore entry at line %d."),
-							filename, line);
-	return 0;
+		warnx(_("%s: parse error at line %d -- ignored"), filename, line);
+	return 1;
 }
 
 
@@ -77,6 +76,9 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 		" %1$s -a [options]\n"
 		" %1$s [options] <source> | <directory>\n"),
 		program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Unmount filesystems.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -a, --all               unmount all filesystems\n"), out);
@@ -342,7 +344,7 @@ static int umount_one_if_mounted(struct libmnt_context *cxt, const char *spec)
 
 	rc = mnt_context_find_umount_fs(cxt, spec, &fs);
 	if (rc == 1) {
-		rc = MOUNT_EX_SUCCESS;		/* alredy unmounted */
+		rc = MOUNT_EX_SUCCESS;		/* already unmounted */
 		mnt_reset_context(cxt);
 	} else if (rc < 0) {
 		rc = mk_exit_code(cxt, rc);	/* error */
@@ -363,7 +365,7 @@ static int umount_do_recurse(struct libmnt_context *cxt,
 	if (!itr)
 		err(MOUNT_EX_SYSERR, _("libmount iterator allocation failed"));
 
-	/* umount all childern */
+	/* umount all children */
 	for (;;) {
 		rc = mnt_table_next_child_fs(tb, itr, fs, &child);
 		if (rc < 0) {
@@ -450,7 +452,7 @@ static int umount_alltargets(struct libmnt_context *cxt, const char *spec, int r
 		goto done;
 	}
 
-	/* Note that @fs is from mount context and the context will be reseted
+	/* Note that @fs is from mount context and the context will be reset
 	 * after each umount() call */
 	devno = mnt_fs_get_devno(fs);
 	fs = NULL;
@@ -618,7 +620,7 @@ int main(int argc, char **argv)
 
 	if (all) {
 		if (!types)
-			types = "noproc,nodevfs,nodevpts,nosysfs,norpc_pipefs,nonfsd";
+			types = "noproc,nodevfs,nodevpts,nosysfs,norpc_pipefs,nonfsd,noselinuxfs";
 
 		mnt_context_set_fstype_pattern(cxt, types);
 		rc = umount_all(cxt);

@@ -1,9 +1,8 @@
 /*
- * taskset.c - command-line utility for setting and retrieving
- *             a task's CPU affinity
+ * taskset.c - set or retrieve a task's CPU affinity
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, v2, as
+ * it under the terms of the GNU General Public License, version 2, as
  * published by the Free Software Foundation
  *
  * This program is distributed in the hope that it will be useful,
@@ -52,6 +51,10 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 		_("Usage: %s [options] [mask | cpu-list] [pid|cmd [args...]]\n\n"),
 		program_invocation_short_name);
 
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Show or change the CPU affinity of a process.\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+
 	fprintf(out, _(
 		"Options:\n"
 		" -a, --all-tasks         operate on all the tasks (threads) for a given pid\n"
@@ -73,7 +76,7 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 		"    e.g. 0-31:2 is equivalent to mask 0x55555555\n"),
 		program_invocation_short_name);
 
-	fprintf(out, _("\nFor more information see taskset(1).\n"));
+	fprintf(out, USAGE_MAN_TAIL("taskset(1)"));
 
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
@@ -163,8 +166,7 @@ int main(int argc, char **argv)
 			ts.use_list = 1;
 			break;
 		case 'V':
-			printf(_("%s from %s\n"), program_invocation_short_name,
-			       PACKAGE_STRING);
+			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
 			usage(stdout);

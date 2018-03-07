@@ -24,7 +24,7 @@ is used when signing onto a system.  If no argument is given,
 .B login
 prompts for the username.
 .PP
-The user is then prompted for a password, where approprate.  Echoing
+The user is then prompted for a password, where appropriate.  Echoing
 is disabled to prevent revealing the password.  Only a small number
 of password failures are permitted before
 .B login
@@ -67,9 +67,9 @@ option is given), else it will be initialized to the terminal type on your tty.
 .PP
 Then the user's shell is started.  If no shell is specified for the
 user in
-.BR /etc\:/passwd ,
+.IR /etc\:/passwd ,
 then
-.B /bin\:/sh
+.I /bin\:/sh
 is used.  If there is no directory specified in
 .IR /etc\:/passwd ,
 then
@@ -285,12 +285,12 @@ the superuser logs in.  The default value is
 .I .hushlogin
 .fi
 .SH "SEE ALSO"
-.BR init (8),
-.BR getty (8),
 .BR mail (1),
 .BR passwd (1),
 .BR passwd (5),
 .BR environ (7),
+.BR getty (8),
+.BR init (8),
 .BR shutdown (8)
 .SH BUGS
 The undocumented BSD

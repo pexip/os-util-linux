@@ -44,15 +44,6 @@
  * - fixed strerr(errno) in gettext calls
  */
 
-/*
- * This command is deprecated.  The utility is in maintenance mode,
- * meaning we keep them in source tree for backward compatibility
- * only.  Do not waste time making this command better, unless the
- * fix is about security or other very critical issue.
- *
- * See Documentation/deprecated.txt for more information.
- */
-
 #include <errno.h>
 #include <fcntl.h>
 #include <paths.h>
@@ -94,7 +85,7 @@ int program;
 char orig_file[FILENAMELEN];	/* original file /etc/passwd or /etc/group */
 char *tmp_file;			/* tmp file */
 
-void pw_error __P((char *, int, int));
+void pw_error (char *, int, int);
 
 static void copyfile(int from, int to)
 {
@@ -144,9 +135,8 @@ static FILE * pw_tmpfile(int lockfd)
 {
 	FILE *fd;
 	char *tmpname = NULL;
-	char *dir = "/etc";
 
-	if ((fd = xfmkstemp(&tmpname, dir)) == NULL) {
+	if ((fd = xfmkstemp(&tmpname, "/etc", ".vipw")) == NULL) {
 		ulckpwdf();
 		err(EXIT_FAILURE, _("can't open temporary file"));
 	}
@@ -191,6 +181,7 @@ static void pw_write(void)
 	}
 	unlink(tmp_file);
 	free(tmp_file);
+	tmp_file = NULL;
 }
 
 static void pw_edit(void)
@@ -243,7 +234,9 @@ pw_error(char *name, int err, int eval)
 			warn(NULL);
 	}
 	warnx(_("%s unchanged"), orig_file);
-	unlink(tmp_file);
+
+	if (tmp_file)
+		unlink(tmp_file);
 	ulckpwdf();
 	exit(eval);
 }
@@ -279,7 +272,7 @@ static void edit_file(int is_shadow)
 		if (close_stream(tmp_fd) != 0)
 			err(EXIT_FAILURE, _("write error"));
 		tmp_fd = fopen(tmp_file, "r");
-		if (!tmp_file)
+		if (!tmp_fd)
 			err(EXIT_FAILURE, _("cannot open %s"), tmp_file);
 		if (fstat(fileno(tmp_fd), &end))
 			pw_error(tmp_file, 1, 1);
@@ -306,6 +299,10 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 {
 	fputs(USAGE_HEADER, out);
 	fprintf(out, " %s\n", program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Edit the password or group file.\n"), out);
+
 	fputs(USAGE_OPTIONS, out);
 	fputs(USAGE_HELP, out);
 	fputs(USAGE_VERSION, out);
@@ -349,17 +346,17 @@ int main(int argc, char *argv[])
 	if (access(orig_file, F_OK) == 0) {
 		char response[80];
 
-		printf((program == VIGR)
+		fputs((program == VIGR)
 		       ? _("You are using shadow groups on this system.\n")
-		       : _("You are using shadow passwords on this system.\n"));
+		       : _("You are using shadow passwords on this system.\n"), stdout);
+
 		/* TRANSLATORS: this program uses for y and n rpmatch(3),
 		 * which means they can be translated. */
 		printf(_("Would you like to edit %s now [y/n]? "), orig_file);
 
-		if (fgets(response, sizeof(response), stdin)) {
-			if (rpmatch(response) == 1)
-				edit_file(1);
-		}
+		if (fgets(response, sizeof(response), stdin) &&
+		    rpmatch(response) == RPMATCH_YES)
+			edit_file(1);
 	}
 	exit(EXIT_SUCCESS);
 }

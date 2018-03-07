@@ -22,5 +22,4 @@ extern void add_uuid(const char *uuid);
 extern const char *get_uuid(size_t i);
 extern size_t numof_uuids(void);
 
-
 #endif /* UTIL_LINUX_SWAPON_COMMON_H */
