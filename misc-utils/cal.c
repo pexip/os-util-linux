@@ -41,7 +41,7 @@
  *
  * 2000-09-01  Michael Charles Pruznick <dummy@netwiz.net>
  *             Added "-3" option to print prev/next month with current.
- *             Added over-ridable default NUM_MONTHS and "-1" option to
+ *             Added overridable default MONTHS_IN_ROW and "-1" option to
  *             get traditional output when -3 is the default.  I hope that
  *             enough people will like -3 as the default that one day the
  *             product can be shipped that way.
@@ -59,6 +59,7 @@
 
 #include <ctype.h>
 #include <getopt.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -72,6 +73,11 @@
 #include "nls.h"
 #include "mbsalign.h"
 #include "strutils.h"
+#include "optutils.h"
+#include "timeutils.h"
+
+static int has_term = 0;
+static const char *Senter = "", *Sexit = "";	/* enter and exit standout mode */
 
 #if defined(HAVE_LIBNCURSES) || defined(HAVE_LIBNCURSESW)
 # ifdef HAVE_NCURSES_H
@@ -80,77 +86,51 @@
 #  include <ncurses/ncurses.h>
 # endif
 # include <term.h>
+#endif
 
-static void my_setupterm(const char *term, int fildes, int *errret)
+static int setup_terminal(char *term
+#if !defined(HAVE_LIBNCURSES) && !defined(HAVE_LIBNCURSESW)
+			__attribute__((__unused__))
+#endif
+		)
 {
-	setupterm((char *)term, fildes, errret);
+#if defined(HAVE_LIBNCURSES) || defined(HAVE_LIBNCURSESW)
+	int ret;
+
+	if (setupterm(term, STDOUT_FILENO, &ret) != OK || ret != 1)
+		return -1;
+#endif
+	return 0;
 }
 
 static void my_putstring(char *s)
 {
-	putp(s);
+#if defined(HAVE_LIBNCURSES) || defined(HAVE_LIBNCURSESW)
+	if (has_term)
+		putp(s);
+	else
+#endif
+		fputs(s, stdout);
 }
 
-static const char *my_tgetstr(char *s __attribute__((__unused__)), char *ss)
+static const char *my_tgetstr(char *ss
+	#if !defined(HAVE_LIBNCURSES) && !defined(HAVE_LIBNCURSESW)
+			__attribute__((__unused__))
+#endif
+		)
 {
-	const char *ret = tigetstr(ss);
+	const char *ret = NULL;
+
+#if defined(HAVE_LIBNCURSES) || defined(HAVE_LIBNCURSESW)
+	if (has_term)
+		ret = tigetstr(ss);
+#endif
 	if (!ret || ret == (char *)-1)
 		return "";
-
 	return ret;
 }
-
-#elif defined(HAVE_LIBTERMCAP)
-# include <termcap.h>
-
-static char termbuffer[4096];
-static char tcbuffer[4096];
-static char *strbuf = termbuffer;
-
-static void my_setupterm(const char *term, int fildes __attribute__((__unused__)), int *errret)
-{
-	*errret = tgetent(tcbuffer, term);
-}
-
-static void my_putstring(char *s)
-{
-	tputs(s, 1, putchar);
-}
-
-static const char *my_tgetstr(char *s, char *ss __attribute__((__unused__)))
-{
-	const char *ret = tgetstr(s, &strbuf);
-	if (!ret)
-		return "";
-
-	return ret;
-}
-
-#else	/* ! (HAVE_LIBTERMCAP || HAVE_LIBNCURSES || HAVE_LIBNCURSESW) */
-
-static void my_putstring(char *s)
-{
-	fputs(s, stdout);
-}
-
-#endif	/* end of LIBTERMCAP / NCURSES */
-
-#if defined(HAVE_LIBNCURSES) || defined(HAVE_LIBNCURSESW) || defined(HAVE_LIBTERMCAP)
-static const char	*term="";
-#endif
-
-static const char	*Senter="", *Sexit="";/* enter and exit standout mode */
 
 #include "widechar.h"
-
-/* allow compile-time define to over-ride default */
-#ifndef NUM_MONTHS
-# define NUM_MONTHS 1
-#endif
-
-#if ( NUM_MONTHS != 1 && NUM_MONTHS !=3 )
-# error NUM_MONTHS must be 1 or 3
-#endif
 
 enum {
 	SUNDAY = 0,
@@ -164,15 +144,27 @@ enum {
 	NONEDAY
 };
 
-#define	FIRST_WEEKDAY		SATURDAY	/* Jan 1st, 1 was a Saturday */
+enum {
+	JANUARY = 1,
+	FEBRUARY,
+	MARCH,
+	APRIL,
+	MAY,
+	JUNE,
+	JULY,
+	AUGUST,
+	SEPTEMBER,
+	OCTOBER,
+	NOVEMBER,
+	DECEMBER
+};
+
 #define REFORMATION_YEAR	1752		/* Signed-off-by: Lord Chesterfield */
-#define REFORMATION_MONTH	9		/* September */
-#define	FIRST_MISSING_DAY	639799		/* 3 Sep 1752 */
+#define REFORMATION_MONTH	SEPTEMBER
 #define	NUMBER_MISSING_DAYS	11		/* 11 day correction */
 #define YDAY_AFTER_MISSING	258             /* 14th in Sep 1752 */
 
-#define DAYS_IN_YEAR		365		/* the common case, leap years are calculated */
-#define MONTHS_IN_YEAR		12
+#define MONTHS_IN_YEAR		DECEMBER
 #define DAYS_IN_MONTH		31
 #define	MAXDAYS			42		/* slots in a month array */
 #define	SPACE			-1		/* used in day array */
@@ -181,11 +173,8 @@ enum {
 
 #define	DAY_LEN			3		/* 3 spaces per day */
 #define	WEEK_LEN		(DAYS_IN_WEEK * DAY_LEN)
-#define	HEAD_SEP		2
-#define MONTH_COLS		3		/* month columns in year view */
+#define MONTHS_IN_YEAR_ROW	3		/* month columns in year view */
 #define WNUM_LEN                3
-
-#define TODAY_FLAG		0x400		/* flag day for highlighting */
 
 #define FMT_ST_CHARS 300	/* 90 suffices in most locales */
 
@@ -209,12 +198,17 @@ struct cal_request {
 	int month;
 	int32_t year;
 	int week;
+	int start_month;
 };
 
 struct cal_control {
 	const char *full_month[MONTHS_IN_YEAR];	/* month names */
+	const char *abbr_month[MONTHS_IN_YEAR];	/* abbreviated month names */
+
 	int colormode;			/* day and week number highlight */
-	int num_months;			/* number of months horizontally in print out */
+	int num_months;			/* number of requested monts */
+	int span_months;		/* span the date */
+	int months_in_row;		/* number of months horizontally in print out */
 	int weekstart;			/* day the week starts, often Sun or Mon */
 	int weektype;			/* WEEK_TYPE_{NONE,ISO,US} */
 	size_t day_width;		/* day width in characters in printout */
@@ -222,7 +216,7 @@ struct cal_control {
 	int gutter_width;		/* spaces in between horizontal month outputs */
 	struct cal_request req;		/* the times user is interested */
 	unsigned int	julian:1,	/* julian output */
-			yflag:1,	/* print whole year */
+			header_year:1,	/* print year number */
 			header_hint:1;	/* does month name + year need two lines to fit */
 };
 
@@ -236,13 +230,12 @@ struct cal_month {
 
 /* function prototypes */
 static int leap_year(int32_t year);
+static int monthname_to_number(struct cal_control *ctl, const char *name);
 static void headers_init(struct cal_control *ctl);
-static void set_consecutive_months(struct cal_month *month, int m, int32_t y);
 static void cal_fill_month(struct cal_month *month, const struct cal_control *ctl);
 static void cal_output_header(struct cal_month *month, const struct cal_control *ctl);
 static void cal_output_months(struct cal_month *month, const struct cal_control *ctl);
 static void monthly(const struct cal_control *ctl);
-static void monthly3(const struct cal_control *ctl);
 static void yearly(const struct cal_control *ctl);
 static int day_in_year(int day, int month, int32_t year);
 static int day_in_week(int day, int month, int32_t year);
@@ -255,11 +248,13 @@ static void __attribute__((__noreturn__)) usage(FILE *out);
 int main(int argc, char **argv)
 {
 	struct tm *local_time;
+	char *term;
 	time_t now;
-	int ch;
+	int ch = 0, yflag = 0, Yflag = 0;
 	static struct cal_control ctl = {
 		.weekstart = SUNDAY,
-		.num_months = NUM_MONTHS,
+		.num_months = 1,		/* default is "cal -1" */
+		.span_months = 0,
 		.colormode = UL_COLORMODE_UNDEF,
 		.weektype = WEEK_NUM_DISABLED,
 		.day_width = DAY_LEN,
@@ -278,29 +273,36 @@ int main(int argc, char **argv)
 		{"sunday", no_argument, NULL, 's'},
 		{"monday", no_argument, NULL, 'm'},
 		{"julian", no_argument, NULL, 'j'},
+		{"months", required_argument, NULL, 'n'},
+		{"span", no_argument, NULL, 'S'},
 		{"year", no_argument, NULL, 'y'},
 		{"week", optional_argument, NULL, 'w'},
 		{"color", optional_argument, NULL, OPT_COLOR},
 		{"version", no_argument, NULL, 'V'},
+		{"twelve", no_argument, NULL, 'Y'},
 		{"help", no_argument, NULL, 'h'},
 		{NULL, 0, NULL, 0}
 	};
+
+	static const ul_excl_t excl[] = {       /* rows and cols in in ASCII order */
+		{ 'Y','n','y' },
+		{ 0 }
+	};
+	int excl_st[ARRAY_SIZE(excl)] = UL_EXCL_STATUS_INIT;
 
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
 	atexit(close_stdout);
 
-#if defined(HAVE_LIBNCURSES) || defined(HAVE_LIBNCURSESW) || defined(HAVE_LIBTERMCAP)
-	if ((term = getenv("TERM"))) {
-		int ret;
-		my_setupterm(term, STDOUT_FILENO, &ret);
-		if (ret > 0) {
-			Senter = my_tgetstr("so","smso");
-			Sexit = my_tgetstr("se","rmso");
+	term = getenv("TERM");
+	if (term) {
+		has_term = setup_terminal(term) == 0;
+		if (has_term) {
+			Senter = my_tgetstr("smso");
+			Sexit = my_tgetstr("rmso");
 		}
 	}
-#endif
 
 /*
  * The traditional Unix cal utility starts the week at Sunday,
@@ -336,14 +338,18 @@ int main(int argc, char **argv)
 		ctl.weekstart = (wfd + *nl_langinfo(_NL_TIME_FIRST_WEEKDAY) - 1) % DAYS_IN_WEEK;
 	}
 #endif
+	while ((ch = getopt_long(argc, argv, "13mjn:sSywYVh", longopts, NULL)) != -1) {
 
-	while ((ch = getopt_long(argc, argv, "13mjsywVh", longopts, NULL)) != -1)
+		err_exclusive_options(ch, longopts, excl, excl_st);
+
 		switch(ch) {
 		case '1':
-			ctl.num_months = 1;		/* default */
+			/* default */
 			break;
 		case '3':
 			ctl.num_months = 3;
+			ctl.span_months = 1;
+			ctl.months_in_row = 3;
 			break;
 		case 's':
 			ctl.weekstart = SUNDAY;		/* default */
@@ -356,18 +362,29 @@ int main(int argc, char **argv)
 			ctl.day_width = DAY_LEN + 1;
 			break;
 		case 'y':
-			ctl.yflag = 1;
+			yflag = 1;
+			break;
+		case 'Y':
+			Yflag = 1;
+			break;
+		case 'n':
+			ctl.num_months = strtou32_or_err(optarg,
+						_("invalid month argument"));
+			break;
+		case 'S':
+			ctl.span_months = 1;
 			break;
 		case 'w':
 			if (optarg) {
 				ctl.req.week = strtos32_or_err(optarg,
 						_("invalid week argument"));
-				if (ctl.req.week < 1 || 53 < ctl.req.week)
-					errx(EXIT_FAILURE,_("illegal week value: use 1-53"));
+				if (ctl.req.week < 1 || 54 < ctl.req.week)
+					errx(EXIT_FAILURE,_("illegal week value: use 1-54"));
 			}
 			ctl.weektype = WEEK_NUM_US;	/* default per weekstart */
 			break;
 		case OPT_COLOR:
+			ctl.colormode = UL_COLORMODE_AUTO;
 			if (optarg)
 				ctl.colormode = colormode_or_err(optarg,
 						_("unsupported color mode"));
@@ -381,6 +398,8 @@ int main(int argc, char **argv)
 		default:
 			usage(stderr);
 		}
+	}
+
 	argc -= optind;
 	argv += optind;
 
@@ -391,7 +410,20 @@ int main(int argc, char **argv)
 	} else
 		ctl.week_width = ctl.day_width * DAYS_IN_WEEK;
 
-	time(&now);
+	if (argc == 1 && !isdigit_string(*argv)) {
+		usec_t x;
+		/* cal <timestamp> */
+		if (parse_timestamp(*argv, &x) == 0)
+			now = (time_t) (x / 1000000);
+		/* cal <monthname> */
+		else if ((ctl.req.month = monthname_to_number(&ctl, *argv)) > 0)
+			time(&now);	/* this year */
+		else
+			errx(EXIT_FAILURE, _("failed to parse timestamp or unknown month name: %s"), *argv);
+		argc = 0;
+	} else
+		time(&now);
+
 	local_time = localtime(&now);
 
 	switch(argc) {
@@ -401,7 +433,14 @@ int main(int argc, char **argv)
 			errx(EXIT_FAILURE, _("illegal day value: use 1-%d"), DAYS_IN_MONTH);
 		/* FALLTHROUGH */
 	case 2:
-		ctl.req.month = strtos32_or_err(*argv++, _("illegal month value: use 1-12"));
+		if (isdigit(**argv))
+			ctl.req.month = strtos32_or_err(*argv++, _("illegal month value: use 1-12"));
+		else {
+			ctl.req.month = monthname_to_number(&ctl, *argv);
+			if (ctl.req.month < 0)
+				errx(EXIT_FAILURE, _("unknown month name: %s"), *argv);
+			argv++;
+		}
 		if (ctl.req.month < 1 || MONTHS_IN_YEAR < ctl.req.month)
 			errx(EXIT_FAILURE, _("illegal month value: use 1-12"));
 		/* FALLTHROUGH */
@@ -421,13 +460,14 @@ int main(int argc, char **argv)
 		}
 		if (!ctl.req.month && !ctl.req.week) {
 			ctl.req.month = local_time->tm_mon + 1;
-			ctl.yflag = 1;
+			yflag = 1;
 		}
 		break;
 	case 0:
 		ctl.req.day = local_time->tm_yday + 1;
 		ctl.req.year = local_time->tm_year + 1900;
-		ctl.req.month = local_time->tm_mon + 1;
+		if (!ctl.req.month)
+			ctl.req.month = local_time->tm_mon + 1;
 		break;
 	default:
 		usage(stderr);
@@ -442,22 +482,22 @@ int main(int argc, char **argv)
 			errx(EXIT_FAILURE, _("illegal week value: year %d "
 					     "doesn't have week %d"),
 					ctl.req.year, ctl.req.week);
-		while (m <= 12 && yday > days_in_month[leap][m])
+		while (m <= DECEMBER && yday > days_in_month[leap][m])
 			yday -= days_in_month[leap][m++];
-		if (m > 12) {
+		if (DECEMBER < m && ctl.weektype & WEEK_NUM_ISO) {
 			/* In some years (e.g. 2010 in ISO mode) it's possible
 			 * to have a remnant of week 53 starting the year yet
 			 * the year in question ends during 52, in this case
 			 * we're assuming that early remnant is being referred
 			 * to if 53 is given as argument. */
-			if (ctl.req.week != week_number(31, 12, ctl.req.year - 1, &ctl))
+			if (ctl.req.week != week_number(31, DECEMBER, ctl.req.year - 1, &ctl))
 				errx(EXIT_FAILURE,
 					_("illegal week value: year %d "
 					  "doesn't have week %d"),
 					ctl.req.year, ctl.req.week);
 		}
 		if (!ctl.req.month)
-			ctl.req.month = 12 < m ? 1 : m;
+			ctl.req.month = MONTHS_IN_YEAR < m ? 1 : m;
 	}
 
 	headers_init(&ctl);
@@ -467,17 +507,25 @@ int main(int argc, char **argv)
 		ctl.weektype &= ~WEEK_NUM_MASK;
 	}
 
-	if (ctl.yflag) {
-		if (ctl.julian)
-			ctl.num_months = MONTH_COLS - 1;
-		else
-			ctl.num_months = MONTH_COLS;
+	if (yflag || Yflag) {
 		ctl.gutter_width = 3;
+		ctl.num_months = MONTHS_IN_YEAR;
+		if (yflag) {
+			ctl.req.start_month = 1;	/* start from Jan */
+			ctl.header_year = 1;		/* print year number */
+		}
+	}
+
+	if (ctl.num_months > 1 && ctl.months_in_row == 0)
+		ctl.months_in_row = ctl.julian ? MONTHS_IN_YEAR_ROW - 1 :
+						 MONTHS_IN_YEAR_ROW;
+	else if (!ctl.months_in_row)
+		ctl.months_in_row = 1;
+
+	if (yflag || Yflag)
 		yearly(&ctl);
-	} else if (ctl.num_months == 1)
+	else
 		monthly(&ctl);
-	else if (ctl.num_months == 3)
-		monthly3(&ctl);
 
 	return EXIT_SUCCESS;
 }
@@ -491,14 +539,58 @@ static int leap_year(int32_t year)
 		return ( !(year % 4) && (year % 100) ) || !(year % 400);
 }
 
+static void init_monthnames(struct cal_control *ctl)
+{
+	size_t i;
+
+	if (ctl->full_month[0] != '\0')
+		return;		/* already initialized */
+
+	for (i = 0; i < MONTHS_IN_YEAR; i++)
+		ctl->full_month[i] = nl_langinfo(MON_1 + i);
+}
+
+static void init_abbr_monthnames(struct cal_control *ctl)
+{
+	size_t i;
+
+	if (ctl->abbr_month[0] != '\0')
+		return;		/* already initialized */
+
+	for (i = 0; i < MONTHS_IN_YEAR; i++)
+		ctl->abbr_month[i] = nl_langinfo(ABMON_1 + i);
+}
+
+static int monthname_to_number(struct cal_control *ctl, const char *name)
+{
+	size_t i;
+
+	init_monthnames(ctl);
+	for (i = 0; i < MONTHS_IN_YEAR; i++)
+		if (strcasecmp(ctl->full_month[i], name) == 0)
+			return i + 1;
+
+	init_abbr_monthnames(ctl);
+	for (i = 0; i < MONTHS_IN_YEAR; i++)
+		if (strcasecmp(ctl->abbr_month[i], name) == 0)
+			return i + 1;
+
+	return -EINVAL;
+}
+
 static void headers_init(struct cal_control *ctl)
 {
 	size_t i, wd;
 	char *cur_dh = day_headings;
 	char tmp[FMT_ST_CHARS];
-	size_t year_len;
+	int year_len;
 
-	year_len = snprintf(tmp, sizeof(tmp), "%d", ctl->req.year);
+	year_len = snprintf(tmp, sizeof(tmp), "%04d", ctl->req.year);
+
+	if (year_len < 0 || (size_t)year_len >= sizeof(tmp)) {
+		/* XXX impossible error */
+		return;
+	}
 
 	for (i = 0; i < DAYS_IN_WEEK; i++) {
 		size_t space_left;
@@ -514,24 +606,12 @@ static void headers_init(struct cal_control *ctl)
 				     space_left, ctl->day_width - 1);
 	}
 
+	init_monthnames(ctl);
+
 	for (i = 0; i < MONTHS_IN_YEAR; i++) {
-		ctl->full_month[i] = nl_langinfo(MON_1 + i);
 		/* The +1 after year_len is space in between month and year. */
 		if (ctl->week_width < strlen(ctl->full_month[i]) + year_len + 1)
 			ctl->header_hint = 1;
-	}
-}
-
-static void set_consecutive_months(struct cal_month *month, int m, int32_t y)
-{
-	struct cal_month *i;
-	for (i = month; i; i = i->next) {
-		i->month = m++;
-		i->year = y;
-		if (MONTHS_IN_YEAR < m) {
-			m = 1;
-			y++;
-		}
 	}
 }
 
@@ -563,7 +643,7 @@ static void cal_fill_month(struct cal_month *month, const struct cal_control *ct
 			continue;
 		}
 		if (j < month_days) {
-			if (month->year == 1752 && month->month == 9 && (j == 3 || j == 247))
+			if (month->year == REFORMATION_YEAR && month->month == REFORMATION_MONTH && (j == 3 || j == 247))
 				j += NUMBER_MISSING_DAYS;
 			month->days[i] = j;
 			j++;
@@ -578,15 +658,13 @@ static void cal_fill_month(struct cal_month *month, const struct cal_control *ct
 		int weeknum = week_number(1, month->month, month->year, ctl);
 		weeklines = MAXDAYS / DAYS_IN_WEEK - weeklines / DAYS_IN_WEEK;
 		for (i = 0; i < MAXDAYS / DAYS_IN_WEEK; i++) {
-			if (0 < weeklines)
+			if (0 < weeklines) {
+				if (52 < weeknum)
+					weeknum = week_number(month->days[i * DAYS_IN_WEEK], month->month, month->year, ctl);
 				month->weeks[i] = weeknum++;
-			else
+			} else
 				month->weeks[i] = SPACE;
 			weeklines--;
-			if (52 < weeknum && i == 0)
-				weeknum = week_number(month->days[DAYS_IN_WEEK * (i + 1)], 1, month->year, ctl);
-			else if (52 < weeknum)
-				weeknum = week_number(31, 12, month->year, ctl);
 		}
 	}
 }
@@ -596,21 +674,21 @@ static void cal_output_header(struct cal_month *month, const struct cal_control 
 	char out[FMT_ST_CHARS];
 	struct cal_month *i;
 
-	if (ctl->header_hint || ctl->yflag) {
+	if (ctl->header_hint || ctl->header_year) {
 		for (i = month; i; i = i->next) {
 			sprintf(out, _("%s"), ctl->full_month[i->month - 1]);
 			center(out, ctl->week_width - 1, i->next == NULL ? 0 : ctl->gutter_width);
 		}
-		if (!ctl->yflag) {
+		if (!ctl->header_year) {
 			my_putstring("\n");
 			for (i = month; i; i = i->next) {
-				sprintf(out, _("%d"), i->year);
+				sprintf(out, _("%04d"), i->year);
 				center(out, ctl->week_width - 1, i->next == NULL ? 0 : ctl->gutter_width);
 			}
 		}
 	} else {
 		for (i = month; i; i = i->next) {
-			sprintf(out, _("%s %d"), ctl->full_month[i->month - 1], i->year);
+			sprintf(out, _("%s %04d"), ctl->full_month[i->month - 1], i->year);
 			center(out, ctl->week_width - 1, i->next == NULL ? 0 : ctl->gutter_width);
 		}
 	}
@@ -690,7 +768,8 @@ static void cal_output_months(struct cal_month *month, const struct cal_control 
 			}
 		}
 		if (i == NULL) {
-			sprintf(out, "%*s\n", ctl->gutter_width - (ctl->yflag ? 0 : 1), "");
+			int extra = ctl->num_months > 3 ? 0 : 1;
+			sprintf(out, "%*s\n", ctl->gutter_width - extra, "");
 			my_putstring(out);
 		}
 	}
@@ -698,74 +777,67 @@ static void cal_output_months(struct cal_month *month, const struct cal_control 
 
 static void monthly(const struct cal_control *ctl)
 {
-	struct cal_month month;
+	struct cal_month m1,m2,m3, *m;
+	int i, rows, new_month, month = ctl->req.start_month ? ctl->req.start_month : ctl->req.month;
+	int32_t year = ctl->req.year;
 
-	month.month = ctl->req.month;
-	month.year = ctl->req.year;
-	month.next = NULL;
-
-	cal_fill_month(&month, ctl);
-
-	cal_output_header(&month, ctl);
-	cal_output_months(&month, ctl);
-}
-
-static void monthly3(const struct cal_control *ctl)
-{
-	struct cal_month m1, m2, m3, *i;
-	int first_month;
-	int32_t first_year;
-
-	m1.next = &m2;
-	m2.next = &m3;
-	m3.next = NULL;
-
-	if (ctl->req.month == 1) {
-		first_month = MONTHS_IN_YEAR;
-		first_year = ctl->req.year - 1;
-	} else {
-		first_month = ctl->req.month - 1;
-		first_year = ctl->req.year;
+	/* cal -3, cal -Y --span, etc. */
+	if (ctl->span_months) {
+		new_month = month - ctl->num_months / 2;
+		if (new_month < 1) {
+			month = new_month + MONTHS_IN_YEAR;
+			year--;
+		}
+		else
+			month = new_month;
 	}
 
-	set_consecutive_months(&m1, first_month, first_year);
-	for (i = &m1; i; i = i->next)
-		cal_fill_month(i, ctl);
-	cal_output_header(&m1, ctl);
-	cal_output_months(&m1, ctl);
+	m1.next = (ctl->months_in_row > 1) ? &m2 : NULL;
+	m2.next = (ctl->months_in_row > 2) ? &m3 : NULL;
+	m3.next = NULL;
+
+	rows = (ctl->num_months - 1) / ctl->months_in_row;
+	for (i = 0; i < rows + 1 ; i++){
+		if (i == rows){
+			switch (ctl->num_months % ctl->months_in_row){
+				case 1:
+					m1.next = NULL;
+					/* fallthrough */
+				case 2:
+					m2.next = NULL;
+					/* fallthrough */
+			}
+		}
+		for (m = &m1; m; m = m->next){
+			m->month = month++;
+			m->year = year;
+			if (MONTHS_IN_YEAR < month) {
+				year++;
+				month = 1;
+			}
+			cal_fill_month(m, ctl);
+		}
+		cal_output_header(&m1, ctl);
+		cal_output_months(&m1, ctl);
+	}
 }
 
 static void yearly(const struct cal_control *ctl)
 {
-	struct cal_month m1, m2, m3, *i;
-	int month;
 	char out[FMT_ST_CHARS];
 	int year_width = 0;
 
-	m1.next = &m2;
-	if (ctl->julian)
-		m2.next = NULL;
-	else {
-		m2.next = &m3;
-		m3.next = NULL;
-	}
-
-	/* year header */
-	for (i = &m1; i; i = i->next)
-		year_width += ctl->week_width + 1;
+	year_width += (ctl->week_width + 1) * (ctl->julian ? 2 : 3);
 	if (ctl->julian)
 		year_width--;
-	sprintf(out, "%d", ctl->req.year);
-	center(out, year_width, 0);
-	my_putstring("\n\n");
 
-	for (month = 1; month < MONTHS_IN_YEAR; month += ctl->julian ? 2 : 3) {
-		set_consecutive_months(&m1, month, ctl->req.year);
-		for (i = &m1; i; i = i->next)
-			cal_fill_month(i, ctl);
-		cal_output_header(&m1, ctl);
-		cal_output_months(&m1, ctl);
+	if (ctl->header_year) {
+		sprintf(out, "%04d", ctl->req.year);
+		center(out, year_width, 0);
+		my_putstring("\n\n");
 	}
+	monthly(ctl);
+
 	/* Is empty line at the end year output really needed? */
 	my_putstring("\n");
 }
@@ -801,25 +873,27 @@ static int day_in_week(int day, int month, int32_t year)
 		FRIDAY, MONDAY, SUNDAY, WEDNESDAY, FRIDAY, MONDAY,
 		WEDNESDAY, SATURDAY, TUESDAY, THURSDAY, SUNDAY, TUESDAY
 	};
-	if (year != 1753)
-		year -= month < 3;
+	if (year != REFORMATION_YEAR + 1)
+		year -= month < MARCH;
 	else
-		year -= (month < 3) + 14;
+		year -= (month < MARCH) + 14;
 	if (REFORMATION_YEAR < year
-	    || (year == REFORMATION_YEAR && 9 < month)
-	    || (year == REFORMATION_YEAR && month == 9 && 13 < day))
-		return (year + (year / 4) - (year / 100) + (year / 400) + reform[month - 1] +
-			day) % 7;
+	    || (year == REFORMATION_YEAR && REFORMATION_MONTH < month)
+	    || (year == REFORMATION_YEAR && month == REFORMATION_MONTH && 13 < day)) {
+		int64_t long_year = year;
+		return (long_year + (year / 4) - (year / 100) + (year / 400) + reform[month - 1] +
+			day) % DAYS_IN_WEEK;
+	}
 	if (year < REFORMATION_YEAR
-	    || (year == REFORMATION_YEAR && month < 9)
-	    || (year == REFORMATION_YEAR && month == 9 && day < 3))
-		return (year + year / 4 + old[month - 1] + day) % 7;
+	    || (year == REFORMATION_YEAR && month < REFORMATION_MONTH)
+	    || (year == REFORMATION_YEAR && month == REFORMATION_MONTH && day < 3))
+		return (year + year / 4 + old[month - 1] + day) % DAYS_IN_WEEK;
 	return NONEDAY;
 }
 
 /*
  * week_number
- *      return the week number of a given date, 1..53.
+ *      return the week number of a given date, 1..54.
  *      Supports ISO-8601 and North American modes.
  *      Day may be given as Julian day of the year mode, in which
  *      case the month is disregarded entirely.
@@ -827,32 +901,29 @@ static int day_in_week(int day, int month, int32_t year)
 static int week_number(int day, int month, int32_t year, const struct cal_control *ctl)
 {
 	int fday = 0, yday;
-	int wday = day_in_week(1, 1, year);
+	const int wday = day_in_week(1, JANUARY, year);
 
 	if (ctl->weektype & WEEK_NUM_ISO)
 		fday = wday + (wday >= FRIDAY ? -2 : 5);
-	else
-		/* WEEK_NUM_US
-		 * - according to gcal, the first Sun is in the first week
-		 * - according to wikipedia, the first Sat is in the first week
-		 */
-		fday = wday + (wday == SUNDAY ? 6 : -1);
-
+	else {
+		/* WEEK_NUM_US: Jan 1 is always First week, that may
+		 * begin previous year.  That means there is very seldom
+		 * more than 52 weeks, */
+		fday = wday + 6;
+	}
 	/* For julian dates the month can be set to 1, the global julian
 	 * variable cannot be relied upon here, because we may recurse
 	 * internally for 31.12. which would not work. */
-	if (day > 31)
-		month = 1;
+	if (day > DAYS_IN_MONTH)
+		month = JANUARY;
 
 	yday = day_in_year(day,month,year);
-	if (year == REFORMATION_YEAR) {
-		if (yday >= YDAY_AFTER_MISSING)
-			fday -= NUMBER_MISSING_DAYS;
-	}
+	if (year == REFORMATION_YEAR && yday >= YDAY_AFTER_MISSING)
+		fday -= NUMBER_MISSING_DAYS;
 
 	/* Last year is last year */
-	if (yday + fday < 7)
-		return week_number(31, 12, year - 1, ctl);
+	if (yday + fday < DAYS_IN_WEEK)
+		return week_number(31, DECEMBER, year - 1, ctl);
 
 	/* Or it could be part of the next year.  The reformation year had less
 	 * days than 365 making this check invalid, but reformation year ended
@@ -860,11 +931,11 @@ static int week_number(int day, int month, int32_t year, const struct cal_contro
 	if (ctl->weektype == WEEK_NUM_ISO && yday >= 363
 	    && day_in_week(day, month, year) >= MONDAY
 	    && day_in_week(day, month, year) <= WEDNESDAY
-	    && day_in_week(31, 12, year) >= MONDAY
-	    && day_in_week(31, 12, year) <= WEDNESDAY)
-		return  week_number(1, 1, year + 1, ctl);
+	    && day_in_week(31, DECEMBER, year) >= MONDAY
+	    && day_in_week(31, DECEMBER, year) <= WEDNESDAY)
+		return week_number(1, JANUARY, year + 1, ctl);
 
-	return (yday + fday) / 7;
+	return (yday + fday) / DAYS_IN_WEEK;
 }
 
 /*
@@ -878,8 +949,8 @@ static int week_to_day(const struct cal_control *ctl)
 {
 	int yday, wday;
 
-	wday = day_in_week(1, 1, ctl->req.year);
-	yday = ctl->req.week * 7 - wday;
+	wday = day_in_week(1, JANUARY, ctl->req.year);
+	yday = ctl->req.week * DAYS_IN_WEEK - wday;
 
 	if (ctl->weektype & WEEK_NUM_ISO)
 		yday -= (wday >= FRIDAY ? -2 : 5);
@@ -920,6 +991,7 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 {
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options] [[[day] month] year]\n"), program_invocation_short_name);
+	fprintf(out, _(" %s [options] <timestamp|monthname>\n"), program_invocation_short_name);
 
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_("Display a calendar, or some part of it.\n"), out);
@@ -928,12 +1000,17 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -1, --one             show only a single month (default)\n"), out);
 	fputs(_(" -3, --three           show three months spanning the date\n"), out);
+	fputs(_(" -n, --months <num>    show num months starting with date's month\n"), out);
+	fputs(_(" -S, --span            span the date when displaying multiple months\n"), out);
 	fputs(_(" -s, --sunday          Sunday as first day of week\n"), out);
 	fputs(_(" -m, --monday          Monday as first day of week\n"), out);
 	fputs(_(" -j, --julian          output Julian dates\n"), out);
 	fputs(_(" -y, --year            show the whole year\n"), out);
+	fputs(_(" -Y, --twelve          show the next twelve months\n"), out);
 	fputs(_(" -w, --week[=<num>]    show US or ISO-8601 week numbers\n"), out);
 	fputs(_("     --color[=<when>]  colorize messages (auto, always or never)\n"), out);
+	fprintf(out,
+	        "                         %s\n", USAGE_COLORS_DEFAULT);
 
 	fputs(USAGE_SEPARATOR, out);
 	fputs(USAGE_HELP, out);

@@ -26,7 +26,7 @@
  */
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/fcntl.h>
+#include <fcntl.h>
 #include <time.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -50,7 +50,7 @@
 #include "carefulputc.h"
 #include "strutils.h"
 #include "timeutils.h"
-#include "boottime.h"
+#include "monotonic.h"
 
 #if defined(_HAVE_UT_TV)
 # define UL_UT_TIME ut_tv.tv_sec
@@ -90,10 +90,6 @@ struct last_control {
 
 	char **show;		/* Match search list */
 
-	char **altv;		/* Alternate wtmp files */
-	unsigned int altc;	/* Number of alternative files */
-	unsigned int alti;	/* Index number of the alternative file */
-
 	struct timeval boot_time; /* system boot time */
 	time_t since;		/* at what time to start displaying the file */
 	time_t until;		/* at what time to stop displaying the file */
@@ -107,7 +103,6 @@ struct utmplist {
 	struct utmplist *next;
 	struct utmplist *prev;
 };
-struct utmplist *utmplist = NULL;
 
 /* Types of listing */
 enum {
@@ -122,46 +117,68 @@ enum {
 
 enum {
 	LAST_TIMEFTM_NONE = 0,
-	LAST_TIMEFTM_SHORT_CTIME,
-	LAST_TIMEFTM_FULL_CTIME,
-	LAST_TIMEFTM_ISO8601
+	LAST_TIMEFTM_SHORT,
+	LAST_TIMEFTM_CTIME,
+	LAST_TIMEFTM_ISO8601,
+
+	LAST_TIMEFTM_HHMM,	/* non-public */
 };
 
 struct last_timefmt {
 	const char *name;
-	int in;
-	int out;
+	int in_len;	/* log-in */
+	int in_fmt;
+	int out_len;	/* log-out */
+	int out_fmt;
 };
 
 static struct last_timefmt timefmts[] = {
-	[LAST_TIMEFTM_NONE]	   = { "notime", 0, 0 },
-	[LAST_TIMEFTM_SHORT_CTIME] = { "short", 16, 7},
-	[LAST_TIMEFTM_FULL_CTIME]  = { "full",  24, 26},
-	[LAST_TIMEFTM_ISO8601]	   = { "iso", 24, 26}
+	[LAST_TIMEFTM_NONE] = { .name = "notime" },
+	[LAST_TIMEFTM_SHORT] = {
+		.name    = "short",
+		.in_len  = 16,
+		.out_len = 7,
+		.in_fmt  = LAST_TIMEFTM_CTIME,
+		.out_fmt = LAST_TIMEFTM_HHMM
+	},
+	[LAST_TIMEFTM_CTIME] = {
+		.name    = "full",
+		.in_len  = 24,
+		.out_len = 26,
+		.in_fmt  = LAST_TIMEFTM_CTIME,
+		.out_fmt = LAST_TIMEFTM_CTIME
+	},
+	[LAST_TIMEFTM_ISO8601] = {
+		.name    = "iso",
+		.in_len  = 24,
+		.out_len = 26,
+		.in_fmt  = LAST_TIMEFTM_ISO8601,
+		.out_fmt = LAST_TIMEFTM_ISO8601
+	}
 };
 
 /* Global variables */
 static unsigned int recsdone;	/* Number of records listed */
 static time_t lastdate;		/* Last date we've seen */
+static time_t currentdate;	/* date when we started processing the file */
 
 /* --time-format=option parser */
-static int which_time_format(const char *optarg)
+static int which_time_format(const char *s)
 {
 	size_t i;
 
 	for (i = 0; i < ARRAY_SIZE(timefmts); i++) {
-		if (strcmp(timefmts[i].name, optarg) == 0)
+		if (strcmp(timefmts[i].name, s) == 0)
 			return i;
 	}
-	errx(EXIT_FAILURE, _("unknown time format: %s"), optarg);
+	errx(EXIT_FAILURE, _("unknown time format: %s"), s);
 }
 
 /*
  *	Read one utmp entry, return in new format.
  *	Automatically reposition file pointer.
  */
-static int uread(const struct last_control *ctl, FILE *fp, struct utmp *u,
-		 int *quit)
+static int uread(FILE *fp, struct utmp *u,  int *quit, const char *filename)
 {
 	static int utsize;
 	static char buf[UCHUNKSIZE];
@@ -188,12 +205,12 @@ static int uread(const struct last_control *ctl, FILE *fp, struct utmp *u,
 			return 0;
 		o = ((fpos - 1) / UCHUNKSIZE) * UCHUNKSIZE;
 		if (fseeko(fp, o, SEEK_SET) < 0) {
-			warn(_("seek on %s failed"), ctl->altv[ctl->alti]);
+			warn(_("seek on %s failed"), filename);
 			return 0;
 		}
 		bpos = (int)(fpos - o);
 		if (fread(buf, bpos, 1, fp) != 1) {
-			warn(_("cannot read %s"), ctl->altv[ctl->alti]);
+			warn(_("cannot read %s"), filename);
 			return 0;
 		}
 		fpos = o;
@@ -222,7 +239,7 @@ static int uread(const struct last_control *ctl, FILE *fp, struct utmp *u,
 	 */
 	memcpy(tmp + (-bpos), buf, utsize + bpos);
 	if (fseeko(fp, fpos, SEEK_SET) < 0) {
-		warn(_("seek on %s failed"), ctl->altv[ctl->alti]);
+		warn(_("seek on %s failed"), filename);
 		return 0;
 	}
 
@@ -230,7 +247,7 @@ static int uread(const struct last_control *ctl, FILE *fp, struct utmp *u,
 	 *	Read another UCHUNKSIZE bytes.
 	 */
 	if (fread(buf, UCHUNKSIZE, 1, fp) != 1) {
-		warn(_("cannot read %s"), ctl->altv[ctl->alti]);
+		warn(_("cannot read %s"), filename);
 		return 0;
 	}
 
@@ -317,38 +334,26 @@ static int dns_lookup(char *result, int size, int useip, int32_t *a)
 	return getnameinfo(sa, salen, result, size, NULL, 0, flags);
 }
 
-static int time_formatter(const struct last_control *ctl, char *dst,
-			  size_t dlen, time_t *when, int pos)
+static int time_formatter(int fmt, char *dst, size_t dlen, time_t *when)
 {
-	struct tm *tm;
 	int ret = 0;
 
-	switch (ctl->time_fmt) {
+	switch (fmt) {
 	case LAST_TIMEFTM_NONE:
 		*dst = 0;
 		break;
-	case LAST_TIMEFTM_SHORT_CTIME:
-		if (pos == 0)
-			ret = sprintf(dst, "%s", ctime(when));
-		else {
-			tm = localtime(when);
-			if (!strftime(dst, dlen, "- %H:%M", tm))
-				ret = -1;
-		}
+	case LAST_TIMEFTM_HHMM:
+	{
+		struct tm *tm = localtime(when);
+		if (!snprintf(dst, dlen, "%02d:%02d", tm->tm_hour, tm->tm_min))
+			ret = -1;
 		break;
-	case LAST_TIMEFTM_FULL_CTIME:
-		if (pos == 0)
-			ret = sprintf(dst, "%s", ctime(when));
-		else
-			ret = sprintf(dst, "- %s", ctime(when));
+	}
+	case LAST_TIMEFTM_CTIME:
+		ret = snprintf(dst, dlen, "%s", ctime(when));
 		break;
 	case LAST_TIMEFTM_ISO8601:
-		tm = localtime(when);
-		if (pos == 0) {
-			if (!strftime(dst, dlen, "%Y-%m-%dT%H:%M:%S%z", tm))
-				ret = -1;
-		} else if (!strftime(dst, dlen, "- %Y-%m-%dT%H:%M:%S%z", tm))
-			ret = -1;
+		ret = strtime_iso(when, ISO_8601_DATE|ISO_8601_TIME|ISO_8601_TIMEZONE, dst, dlen);
 		break;
 	default:
 		abort();
@@ -376,9 +381,9 @@ static void trim_trailing_spaces(char *s)
 /*
  *	Show one line of information on screen
  */
-static int list(const struct last_control *ctl, struct utmp *p, time_t t, int what)
+static int list(const struct last_control *ctl, struct utmp *p, time_t logout_time, int what)
 {
-	time_t		secs, tmp, epoch;
+	time_t		secs, utmp_time;
 	char		logintime[LAST_TIMESTAMP_LEN];
 	char		logouttime[LAST_TIMESTAMP_LEN];
 	char		length[LAST_TIMESTAMP_LEN];
@@ -417,33 +422,46 @@ static int list(const struct last_control *ctl, struct utmp *p, time_t t, int wh
 	/*
 	 *	Calculate times
 	 */
-	tmp = p->UL_UT_TIME;
+	fmt = &timefmts[ctl->time_fmt];
 
-	if (ctl->present && (ctl->present < tmp || (0 < t && t < ctl->present)))
-		return 0;
+	utmp_time = p->UL_UT_TIME;
 
-	if (time_formatter(ctl, &logintime[0], sizeof(logintime), &tmp, 0) < 0 ||
-	    time_formatter(ctl, &logouttime[0], sizeof(logouttime), &t, 1) < 0)
+	if (ctl->present) {
+		if (ctl->present < utmp_time)
+			return 0;
+		if (0 < logout_time && logout_time < ctl->present)
+			return 0;
+	}
+
+	/* log-in time */
+	if (time_formatter(fmt->in_fmt, logintime,
+			   sizeof(logintime), &utmp_time) < 0)
 		errx(EXIT_FAILURE, _("preallocation size exceeded"));
 
-	secs = t - p->UL_UT_TIME;
+	/* log-out time */
+	secs  = logout_time - utmp_time;
 	mins  = (secs / 60) % 60;
 	hours = (secs / 3600) % 24;
 	days  = secs / 86400;
 
-	epoch = time(NULL);
-	if (t == epoch) {
-		if (ctl->time_fmt > LAST_TIMEFTM_SHORT_CTIME) {
+	strcpy(logouttime, "- ");
+	if (time_formatter(fmt->out_fmt, logouttime + 2,
+			   sizeof(logouttime) - 2, &logout_time) < 0)
+		errx(EXIT_FAILURE, _("preallocation size exceeded"));
+
+	if (logout_time == currentdate) {
+		if (ctl->time_fmt > LAST_TIMEFTM_SHORT) {
 			sprintf(logouttime, "  still running");
 			length[0] = 0;
 		} else {
 			sprintf(logouttime, "  still");
 			sprintf(length, "running");
 		}
-	} else if (days)
+	} else if (days) {
 		sprintf(length, "(%d+%02d:%02d)", days, hours, mins);
-	else
+	} else {
 		sprintf(length, " (%02d:%02d)", hours, mins);
+	}
 
 	switch(what) {
 		case R_CRASH:
@@ -453,7 +471,7 @@ static int list(const struct last_control *ctl, struct utmp *p, time_t t, int wh
 			sprintf(logouttime, "- down ");
 			break;
 		case R_NOW:
-			if (ctl->time_fmt > LAST_TIMEFTM_SHORT_CTIME) {
+			if (ctl->time_fmt > LAST_TIMEFTM_SHORT) {
 				sprintf(logouttime, "  still logged in");
 				length[0] = 0;
 			} else {
@@ -462,10 +480,10 @@ static int list(const struct last_control *ctl, struct utmp *p, time_t t, int wh
 			}
 			break;
 		case R_PHANTOM:
-			if (ctl->time_fmt > LAST_TIMEFTM_SHORT_CTIME) {
+			if (ctl->time_fmt > LAST_TIMEFTM_SHORT) {
 				sprintf(logouttime, "  gone - no logout");
 				length[0] = 0;
-			} else if (ctl->time_fmt == LAST_TIMEFTM_SHORT_CTIME) {
+			} else if (ctl->time_fmt == LAST_TIMEFTM_SHORT) {
 				sprintf(logouttime, "   gone");
 				sprintf(length, "- no logout");
 			} else {
@@ -473,13 +491,12 @@ static int list(const struct last_control *ctl, struct utmp *p, time_t t, int wh
 				sprintf(length, "no logout");
 			}
 			break;
-		case R_REBOOT:
-			break;
 		case R_TIMECHANGE:
 			logouttime[0] = 0;
 			length[0] = 0;
 			break;
 		case R_NORMAL:
+		case R_REBOOT:
 			break;
 		default:
 			abort();
@@ -498,7 +515,6 @@ static int list(const struct last_control *ctl, struct utmp *p, time_t t, int wh
 		strncat(domain, p->ut_host, len);
 	}
 
-	fmt = &timefmts[ctl->time_fmt];
 
 	if (ctl->showhost) {
 		if (!ctl->altlist) {
@@ -506,20 +522,20 @@ static int list(const struct last_control *ctl, struct utmp *p, time_t t, int wh
 				"%-8.*s %-12.12s %-16.*s %-*.*s %-*.*s %s\n",
 				ctl->name_len, p->ut_user, utline,
 				ctl->domain_len, domain,
-				fmt->in, fmt->in, logintime, fmt->out, fmt->out,
+				fmt->in_len, fmt->in_len, logintime, fmt->out_len, fmt->out_len,
 				logouttime, length);
 		} else {
 			len = snprintf(final, sizeof(final),
 				"%-8.*s %-12.12s %-*.*s %-*.*s %-12.12s %s\n",
 				ctl->name_len, p->ut_user, utline,
-				fmt->in, fmt->in, logintime, fmt->out, fmt->out,
+				fmt->in_len, fmt->in_len, logintime, fmt->out_len, fmt->out_len,
 				logouttime, length, domain);
 		}
 	} else
 		len = snprintf(final, sizeof(final),
 			"%-8.*s %-12.12s %-*.*s %-*.*s %s\n",
 			ctl->name_len, p->ut_user, utline,
-			fmt->in, fmt->in, logintime, fmt->out, fmt->out,
+			fmt->in_len, fmt->in_len, logintime, fmt->out_len, fmt->out_len,
 			logouttime, length);
 
 #if defined(__GLIBC__)
@@ -546,18 +562,21 @@ static int list(const struct last_control *ctl, struct utmp *p, time_t t, int wh
 }
 
 
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(const struct last_control *ctl, FILE *out)
 {
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(
 		" %s [options] [<username>...] [<tty>...]\n"), program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Show a listing of last logged in users.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -<number>            how many lines to show\n"), out);
 	fputs(_(" -a, --hostlast       display hostnames in the last column\n"), out);
 	fputs(_(" -d, --dns            translate the IP number back into a hostname\n"), out);
 	fprintf(out,
-	      _(" -f, --file <file>    use a specific file instead of %s\n"), _PATH_WTMP);
+	      _(" -f, --file <file>    use a specific file instead of %s\n"), ctl->lastb ? _PATH_BTMP : _PATH_WTMP);
 	fputs(_(" -F, --fulltimes      print full login and logout times and dates\n"), out);
 	fputs(_(" -i, --ip             display IP numbers in numbers-and-dots notation\n"), out);
 	fputs(_(" -n, --limit <number> how many lines to show\n"), out);
@@ -586,7 +605,7 @@ static int is_phantom(const struct last_control *ctl, struct utmp *ut)
 
 	if (ut->UL_UT_TIME < ctl->boot_time.tv_sec)
 		return 1;
-	pw = getpwnam(ut->ut_name);
+	pw = getpwnam(ut->ut_user);
 	if (!pw)
 		return 1;
 	sprintf(path, "/proc/%u/loginuid", ut->ut_pid);
@@ -613,11 +632,13 @@ static int is_phantom(const struct last_control *ctl, struct utmp *ut)
 	return ret;
 }
 
-static void process_wtmp_file(const struct last_control *ctl)
+static void process_wtmp_file(const struct last_control *ctl,
+			      const char *filename)
 {
-	FILE *fp;		/* Filepointer of wtmp file */
+	FILE *fp;		/* File pointer of wtmp file */
 
 	struct utmp ut;		/* Current utmp entry */
+	struct utmplist *ulist = NULL;	/* All entries */
 	struct utmplist *p;	/* Pointer into utmplist */
 	struct utmplist *next;	/* Pointer into utmplist */
 
@@ -633,12 +654,10 @@ static void process_wtmp_file(const struct last_control *ctl)
 	int down = 0;		/* Down flag */
 
 	time(&lastdown);
-	lastrch = lastdown;
-
 	/*
 	 * Fill in 'lastdate'
 	 */
-	lastdate = lastdown;
+	lastdate = currentdate = lastrch = lastdown;
 
 	/*
 	 * Install signal handlers
@@ -649,8 +668,8 @@ static void process_wtmp_file(const struct last_control *ctl)
 	/*
 	 * Open the utmp file
 	 */
-	if ((fp = fopen(ctl->altv[ctl->alti], "r")) == NULL)
-		err(EXIT_FAILURE, _("cannot open %s"), ctl->altv[ctl->alti]);
+	if ((fp = fopen(filename, "r")) == NULL)
+		err(EXIT_FAILURE, _("cannot open %s"), filename);
 
 	/*
 	 * Optimize the buffer size.
@@ -660,11 +679,11 @@ static void process_wtmp_file(const struct last_control *ctl)
 	/*
 	 * Read first structure to capture the time field
 	 */
-	if (uread(ctl, fp, &ut, NULL) == 1)
+	if (uread(fp, &ut, NULL, filename) == 1)
 		begintime = ut.UL_UT_TIME;
 	else {
 		if (fstat(fileno(fp), &st) != 0)
-			err(EXIT_FAILURE, _("stat failed %s"), ctl->altv[ctl->alti]);
+			err(EXIT_FAILURE, _("stat of %s failed"), filename);
 		begintime = st.st_ctime;
 		quit = 1;
 	}
@@ -673,14 +692,14 @@ static void process_wtmp_file(const struct last_control *ctl)
 	 * Go to end of file minus one structure
 	 * and/or initialize utmp reading code.
 	 */
-	uread(ctl, fp, NULL, NULL);
+	uread(fp, NULL, NULL, filename);
 
 	/*
 	 * Read struct after struct backwards from the file.
 	 */
 	while (!quit) {
 
-		if (uread(ctl, fp, &ut, &quit) != 1)
+		if (uread(fp, &ut, &quit, filename) != 1)
 			break;
 
 		if (ctl->since && ut.UL_UT_TIME < ctl->since)
@@ -781,7 +800,7 @@ static void process_wtmp_file(const struct last_control *ctl)
 			 * the same ut_line.
 			 */
 			c = 0;
-			for (p = utmplist; p; p = next) {
+			for (p = ulist; p; p = next) {
 				next = p->next;
 				if (strncmp(p->ut.ut_line, ut.ut_line,
 				    UT_LINESIZE) == 0) {
@@ -790,11 +809,12 @@ static void process_wtmp_file(const struct last_control *ctl)
 						quit = list(ctl, &ut, p->ut.UL_UT_TIME, R_NORMAL);
 						c = 1;
 					}
-					if (p->next) p->next->prev = p->prev;
+					if (p->next)
+						p->next->prev = p->prev;
 					if (p->prev)
 						p->prev->next = p->next;
 					else
-						utmplist = p->next;
+						ulist = p->next;
 					free(p);
 				}
 			}
@@ -823,10 +843,11 @@ static void process_wtmp_file(const struct last_control *ctl)
 				break;
 			p = xmalloc(sizeof(struct utmplist));
 			memcpy(&p->ut, &ut, sizeof(struct utmp));
-			p->next  = utmplist;
+			p->next  = ulist;
 			p->prev  = NULL;
-			if (utmplist) utmplist->prev = p;
-			utmplist = p;
+			if (ulist)
+				ulist->prev = p;
+			ulist = p;
 			break;
 
 		case EMPTY:
@@ -837,28 +858,29 @@ static void process_wtmp_file(const struct last_control *ctl)
 			break;
 
 		default:
-			warnx("unrecogized ut_type: %d", ut.ut_type);
+			warnx("unrecognized ut_type: %d", ut.ut_type);
 		}
 
 		/*
 		 * If we saw a shutdown/reboot record we can remove
-		 * the entire current utmplist.
+		 * the entire current ulist.
 		 */
 		if (down) {
 			lastboot = ut.UL_UT_TIME;
 			whydown = (ut.ut_type == SHUTDOWN_TIME) ? R_DOWN : R_CRASH;
-			for (p = utmplist; p; p = next) {
+			for (p = ulist; p; p = next) {
 				next = p->next;
 				free(p);
 			}
-			utmplist = NULL;
+			ulist = NULL;
 			down = 0;
 		}
 	}
 
-	printf(_("\n%s begins %s"), basename(ctl->altv[ctl->alti]), ctime(&begintime));
+	printf(_("\n%s begins %s"), basename(filename), ctime(&begintime));
 	fclose(fp);
-	for (p = utmplist; p; p = next) {
+
+	for (p = ulist; p; p = next) {
 		next = p->next;
 		free(p);
 	}
@@ -869,9 +891,11 @@ int main(int argc, char **argv)
 	struct last_control ctl = {
 		.showhost = TRUE,
 		.name_len = LAST_LOGIN_LEN,
-		.time_fmt = LAST_TIMEFTM_SHORT_CTIME,
+		.time_fmt = LAST_TIMEFTM_SHORT,
 		.domain_len = LAST_DOMAIN_LEN
 	};
+	char **files = NULL;
+	size_t i, nfiles = 0;
 	int c;
 	usec_t p;
 
@@ -906,7 +930,10 @@ int main(int argc, char **argv)
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
 	atexit(close_stdout);
-
+	/*
+	 * Which file do we want to read?
+	 */
+	ctl.lastb = strcmp(program_invocation_short_name, "lastb") == 0 ? 1 : 0;
 	while ((c = getopt_long(argc, argv,
 			"hVf:n:RxadFit:p:s:0123456789w", long_opts, NULL)) != -1) {
 
@@ -914,7 +941,7 @@ int main(int argc, char **argv)
 
 		switch(c) {
 		case 'h':
-			usage(stdout);
+			usage(&ctl, stdout);
 			break;
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
@@ -929,9 +956,9 @@ int main(int argc, char **argv)
 			ctl.maxrecs = strtos32_or_err(optarg, _("failed to parse number"));
 			break;
 		case 'f':
-			if (!ctl.altv)
-				ctl.altv = xmalloc(sizeof(char *) * argc);
-			ctl.altv[ctl.altc++] = xstrdup(optarg);
+			if (!files)
+				files = xmalloc(sizeof(char *) * argc);
+			files[nfiles++] = xstrdup(optarg);
 			break;
 		case 'd':
 			ctl.usedns = 1;
@@ -943,7 +970,7 @@ int main(int argc, char **argv)
 			ctl.altlist = 1;
 			break;
 		case 'F':
-			ctl.time_fmt = LAST_TIMEFTM_FULL_CTIME;
+			ctl.time_fmt = LAST_TIMEFTM_CTIME;
 			break;
 		case 'p':
 			if (parse_timestamp(optarg, &p) < 0)
@@ -974,7 +1001,7 @@ int main(int argc, char **argv)
 			ctl.time_fmt = which_time_format(optarg);
 			break;
 		default:
-			usage(stderr);
+			usage(&ctl, stderr);
 			break;
 		}
 	}
@@ -982,24 +1009,16 @@ int main(int argc, char **argv)
 	if (optind < argc)
 		ctl.show = argv + optind;
 
-	/*
-	 * Which file do we want to read?
-	 */
-	ctl.lastb = strcmp(program_invocation_short_name, "lastb") == 0 ? 1 : 0;
-	if (!ctl.altc) {
-		ctl.altv = xmalloc(sizeof(char *));
-		if (ctl.lastb)
-			ctl.altv[0] = xstrdup(_PATH_BTMP);
-		else
-			ctl.altv[0] = xstrdup(_PATH_WTMP);
-		ctl.altc++;
+	if (!files) {
+		files = xmalloc(sizeof(char *));
+		files[nfiles++] = xstrdup(ctl.lastb ? _PATH_BTMP : _PATH_WTMP);
 	}
 
-	for (; ctl.alti < ctl.altc; ctl.alti++) {
+	for (i = 0; i < nfiles; i++) {
 		get_boot_time(&ctl.boot_time);
-		process_wtmp_file(&ctl);
-		free(ctl.altv[ctl.alti]);
+		process_wtmp_file(&ctl, files[i]);
+		free(files[i]);
 	}
-	free(ctl.altv);
+	free(files);
 	return EXIT_SUCCESS;
 }

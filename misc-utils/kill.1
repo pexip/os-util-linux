@@ -21,11 +21,19 @@ kill \- terminate a process
 The command
 .B kill
 sends the specified \fIsignal\fR to the specified processes or process groups.
-If no signal is specified, the TERM signal is sent.  This TERM signal will kill
-processes that do not catch it; for other processes it may be necessary to use
-the KILL signal (number 9), since this signal cannot be caught.
 .PP
-Most modern shells have a builtin kill function, with a usage rather similar to
+If no signal is specified, the TERM signal is sent.
+The default action for this signal is to terminate the process.
+This signal should be used in preference to the
+KILL signal (number 9), since a process may install a handler for the
+TERM signal in order to perform clean-up steps before terminating in
+an orderly fashion.
+If a process does not terminate after a TERM signal has been sent,
+then the KILL signal may be used; be aware that the latter signal
+cannot be caught, and so does not give the target process the opportunity
+to perform any clean-up before terminating.
+.PP
+Most modern shells have a builtin kill command, with a usage rather similar to
 that of the command described here.  The
 .BR \-\-all ,
 .BR \-\-pid ", and"
@@ -35,7 +43,7 @@ options, and the possibility to specify processes by command name, are local ext
 If \fIsignal\fR is 0, then no actual signal is sent, but error checking is still performed.
 
 .SH ARGUMENTS
-The list of processes to be signaled can be a mixture of names and pids.
+The list of processes to be signaled can be a mixture of names and PIDs.
 .TP
 .I pid
 Each
@@ -46,7 +54,7 @@ can be one of four things:
 .I n
 where
 .I n
-is larger than 0.  The process with pid
+is larger than 0.  The process with PID
 .I n
 is signaled.
 .TP
@@ -54,7 +62,7 @@ is signaled.
 All processes in the current process group are signaled.
 .TP
 .B -1
-All processes with a pid larger than 1 are signaled.
+All processes with a PID larger than 1 are signaled.
 .TP
 .BI - n
 where
@@ -85,51 +93,51 @@ Similar to \fB\-l\fR, but it will print signal names and their corresponding
 numbers.
 .TP
 \fB\-a\fR, \fB\-\-all\fR
-Do not restrict the commandname-to-pid conversion to processes with the same
-uid as the present process.
+Do not restrict the command-name-to-PID conversion to processes with the same
+UID as the present process.
 .TP
 \fB\-p\fR, \fB\-\-pid\fR
-Only print the process id (pid) of the named processes, do not send any
+Only print the process ID (PID) of the named processes, do not send any
 signals.
-.IP
-The \fB\-\-pid\fR option is automatically enabled when the \fBkill\fR command
-is invoked with the name of
-.BR pid .
-This functionality is deprecated, and will be removed in March 2016.
+.TP
+\fB\-\-verbose\fR
+Print PID(s) that will be signaled with kill along with the signal.
 .TP
 \fB\-q\fR, \fB\-\-queue\fR \fIvalue\fR
 Use
-.BR sigqueue (2)
+.BR sigqueue (3)
 rather than
 .BR kill (2).
 The
 .I value
 argument is an integer that is sent along with the signal.  If the
-receiving process has installed a handler for this signal using the SA_SIGINFO
+receiving process has installed a handler for this signal using the
+.B SA_SIGINFO
 flag to
 .BR sigaction (2),
-then it can obtain this data via the si_sigval field of the siginfo_t structure.
+then it can obtain this data via the
+.I si_sigval
+field of the
+.I siginfo_t
+structure.
 
 .SH NOTES
-It is not possible to send a signal to an explicitly selected thread in a
-multithreaded process using the
-.BR kill (2)
-syscall.  If
-.BR kill(2)
-is used to send a signal to a thread group, then the kernel selects an arbitrary
-member of the thread group that has not blocked the signal.  For more details
-see
-.BR clone (2),
-the CLONE_THREAD description.
-.PP
-The command
-.BR kill (1)
-as well as syscall
-.BR kill (2)
-accept a TID (thread ID, see
+Although it is possible to specify the TID (thread ID, see
 .BR gettid (2))
-as an argument.  In this case the kill behavior is not changed and the signal is
-also delivered to the thread group rather than to the specified thread.
+of one of the threads in a multithreaded process as the argument of
+.BR kill ,
+the signal is nevertheless directed to the process
+(i.e., the entire thread group).
+In other words, it is not possible to send a signal to an
+explicitly selected thread in a multithreaded process.
+The signal will be delivered to an arbitrarily selected thread
+in the target process that is not blocking the signal.
+For more details, see
+.BR signal (7)
+and the description of
+.BR CLONE_THREAD
+in
+.BR clone (2).
 
 .SH RETURN CODES
 .B kill
@@ -147,8 +155,9 @@ partial success (when more than one process specified)
 .SH SEE ALSO
 .BR bash (1),
 .BR tcsh (1),
+.BR sigaction (2),
 .BR kill (2),
-.BR sigvec (2),
+.BR sigqueue (3),
 .BR signal (7)
 
 .SH AUTHORS

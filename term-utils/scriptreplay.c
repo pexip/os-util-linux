@@ -30,6 +30,7 @@
 
 #include "closestream.h"
 #include "nls.h"
+#include "strutils.h"
 #include "c.h"
 
 #define SCRIPT_MIN_DELAY 0.0001		/* from original sripreplay.pl */
@@ -37,12 +38,15 @@
 static void __attribute__((__noreturn__))
 usage(FILE *out)
 {
-	fputs(_("\nUsage:\n"), out);
+	fputs(USAGE_HEADER, out);
 	fprintf(out,
 	      _(" %s [-t] timingfile [typescript] [divisor]\n"),
 	      program_invocation_short_name);
 
-	fputs(_("\nOptions:\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Play back terminal typescripts, using timing information.\n"), out);
+
+	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -t, --timing <file>     script timing output file\n"
 		" -s, --typescript <file> script terminal session output file\n"
 		" -d, --divisor <num>     speed up or slow down execution with time divisor\n"
@@ -50,27 +54,18 @@ usage(FILE *out)
 		" -V, --version           output version information and exit\n"
 		" -h, --help              display this help and exit\n\n"), out);
 
+	fprintf(out, USAGE_MAN_TAIL("scriptreplay(1)"));
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
 
 static double
 getnum(const char *s)
 {
-	double d;
-	char *end;
+	const double d = strtod_or_err(s, _("failed to parse number"));
 
-	errno = 0;
-	d = strtod(s, &end);
-
-	if (end && *end != '\0')
-		errx(EXIT_FAILURE, _("expected a number, but got '%s'"), s);
-
-	if ((d == HUGE_VAL || d == -HUGE_VAL) && ERANGE == errno)
-		err(EXIT_FAILURE, _("divisor '%s'"), s);
-
-	if (!(d==d)) { /* did they specify "nan"? */
+	if (isnan(d)) {
 		errno = EINVAL;
-		err(EXIT_FAILURE, _("divisor '%s'"), s);
+		err(EXIT_FAILURE, "%s: %s", _("failed to parse number"), s);
 	}
 	return d;
 }
@@ -134,7 +129,7 @@ main(int argc, char *argv[])
 	double divi = 1, maxdelay = 0;
 	int c, diviopt = FALSE, maxdelayopt = FALSE, idx;
 	unsigned long line;
-	char ch;
+	int ch;
 
 	static const struct option longopts[] = {
 		{ "timing",	required_argument,	0, 't' },
@@ -174,8 +169,7 @@ main(int argc, char *argv[])
 			maxdelay = getnum(optarg);
 			break;
 		case 'V':
-			printf(_("%s from %s\n"), program_invocation_short_name,
-						  PACKAGE_STRING);
+			printf(UTIL_LINUX_VERSION);
 			exit(EXIT_SUCCESS);
 		case 'h':
 			usage(stdout);
@@ -208,7 +202,7 @@ main(int argc, char *argv[])
 	/* ignore the first typescript line */
 	while((c = fgetc(sfile)) != EOF && c != '\n');
 
-	for(line = 0; ; line++) {
+	for(line = 1; ; line++) {
 		double delay;
 		size_t blk;
 		char nl;
@@ -220,7 +214,7 @@ main(int argc, char *argv[])
 				err(EXIT_FAILURE,
 					_("failed to read timing file %s"), tname);
 			errx(EXIT_FAILURE,
-				_("timings file %s: %lu: unexpected format"),
+				_("timing file %s: line %lu: unexpected format"),
 				tname, line);
 		}
 		delay /= divi;

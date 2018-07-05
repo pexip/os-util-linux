@@ -1,9 +1,6 @@
 /*
- * Simple functions to access files, paths maybe be globally prefixed by a
- * global prefix to read data from alternative destination (e.g. /proc dump for
- * regression tests).
- *
- * Taken from lscpu.c
+ * Simple functions to access files. Paths can be globally prefixed to read
+ * data from an alternative source (e.g. a /proc dump for regression tests).
  *
  * Copyright (C) 2008 Cai Qian <qcai@redhat.com>
  * Copyright (C) 2008-2012 Karel Zak <kzak@redhat.com>
@@ -247,8 +244,6 @@ path_read_cpulist(int maxcpus, const char *path, ...)
 	return set;
 }
 
-#endif /* HAVE_CPU_SET_T */
-
 void
 path_set_prefix(const char *prefix)
 {
@@ -256,3 +251,5 @@ path_set_prefix(const char *prefix)
 	strncpy(pathbuf, prefix, sizeof(pathbuf));
 	pathbuf[sizeof(pathbuf) - 1] = '\0';
 }
+
+#endif /* HAVE_CPU_SET_T */

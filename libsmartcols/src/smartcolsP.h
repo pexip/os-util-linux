@@ -13,23 +13,16 @@
 
 #include "c.h"
 #include "list.h"
-#include "colors.h"
+#include "strutils.h"
+#include "color-names.h"
 #include "debug.h"
 
 #include "libsmartcols.h"
 
-/* features */
-#define CONFIG_LIBSMARTCOLS_ASSERT
-
-#ifdef CONFIG_LIBSMARTCOLS_ASSERT
-# include <assert.h>
-#else
-# define assert(x)
-#endif
-
 /*
  * Debug
  */
+#define SCOLS_DEBUG_HELP	(1 << 0)
 #define SCOLS_DEBUG_INIT	(1 << 1)
 #define SCOLS_DEBUG_CELL	(1 << 2)
 #define SCOLS_DEBUG_LINE	(1 << 3)
@@ -60,6 +53,8 @@ struct libscols_symbols {
 	char	*branch;
 	char	*vert;
 	char	*right;
+	char	*title_padding;
+	char	*cell_padding;
 };
 
 /*
@@ -69,6 +64,7 @@ struct libscols_cell {
 	char	*data;
 	char	*color;
 	void    *userdata;
+	int	flags;
 };
 
 
@@ -83,19 +79,34 @@ struct libscols_column {
 	size_t	width_min;	/* minimal width (usually header width) */
 	size_t  width_max;	/* maximal width */
 	size_t  width_avg;	/* average width, used to detect extreme fields */
+	size_t	width_treeart;	/* size of the tree ascii art */
 	double	width_hint;	/* hint (N < 1 is in percent of termwidth) */
 
 	int	flags;
 	int	is_extreme;
 	char	*color;		/* default column color */
+	char	*safechars;	/* do not encode this bytes */
+
+	char	*pending_data;
+	size_t	pending_data_sz;
+	char	*pending_data_buf;
 
 	int (*cmpfunc)(struct libscols_cell *,
 		       struct libscols_cell *,
 		       void *);			/* cells comparison function */
 	void *cmpfunc_data;
 
+	size_t (*wrap_chunksize)(const struct libscols_column *,
+			const char *, void *);
+	char *(*wrap_nextchunk)(const struct libscols_column *,
+			char *, void *);
+	void *wrapfunc_data;
+
+
 	struct libscols_cell	header;
 	struct list_head	cl_columns;
+
+	struct libscols_table	*table;
 };
 
 /*
@@ -121,7 +132,8 @@ struct libscols_line {
 enum {
 	SCOLS_FMT_HUMAN = 0,		/* default, human readable */
 	SCOLS_FMT_RAW,			/* space separated */
-	SCOLS_FMT_EXPORT		/* COLNAME="data" ... */
+	SCOLS_FMT_EXPORT,		/* COLNAME="data" ... */
+	SCOLS_FMT_JSON			/* http://en.wikipedia.org/wiki/JSON */
 };
 
 /*
@@ -129,11 +141,13 @@ enum {
  */
 struct libscols_table {
 	int	refcount;
+	char	*name;		/* optional table name (for JSON) */
 	size_t	ncols;		/* number of columns */
 	size_t  ntreecols;	/* number of columns with SCOLS_FL_TREE */
 	size_t	nlines;		/* number of lines */
 	size_t	termwidth;	/* terminal width */
 	size_t  termreduce;	/* extra blank space */
+	int	termforce;	/* SCOLS_TERMFORCE_* */
 	FILE	*out;		/* output stream */
 
 	char	*colsep;	/* column separator */
@@ -142,15 +156,23 @@ struct libscols_table {
 	struct list_head	tb_columns;
 	struct list_head	tb_lines;
 	struct libscols_symbols	*symbols;
+	struct libscols_cell	title;		/* optional table title (for humans) */
 
+	int	indent;		/* indention counter */
+	int	indent_last_sep;/* last printed has been line separator */
 	int	format;		/* SCOLS_FMT_* */
 
 	/* flags */
 	unsigned int	ascii		:1,	/* don't use unicode */
 			colors_wanted	:1,	/* enable colors */
 			is_term		:1,	/* isatty() */
-			maxout		:1,	/* maximalize output */
-			no_headings	:1;	/* don't print header */
+			padding_debug	:1,	/* output visible padding chars */
+			maxout		:1,	/* maximize output */
+			header_printed  :1,	/* header already printed */
+			priv_symbols	:1,	/* default private symbols */
+			no_headings	:1,	/* don't print header */
+			no_linesep	:1,	/* don't print line separator */
+			no_wrap		:1;	/* never wrap lines */
 };
 
 #define IS_ITER_FORWARD(_i)	((_i)->direction == SCOLS_ITER_FORWARD)
@@ -169,5 +191,17 @@ struct libscols_table {
 		(itr)->p = IS_ITER_FORWARD(itr) ? \
 				(itr)->p->next : (itr)->p->prev; \
 	} while(0)
+
+
+static inline int scols_iter_is_last(const struct libscols_iter *itr)
+{
+	if (!itr || !itr->head || !itr->p)
+		return 0;
+
+	return itr->p == itr->head;
+}
+
+/* temporary for 2.29.1, public for v2.30 */
+extern int scols_cell_get_alignment(const struct libscols_cell *ce);
 
 #endif /* _LIBSMARTCOLS_PRIVATE_H */

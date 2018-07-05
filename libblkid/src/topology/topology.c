@@ -110,8 +110,6 @@ const struct blkid_chaindrv topology_drv = {
  */
 int blkid_probe_enable_topology(blkid_probe pr, int enable)
 {
-	if (!pr)
-		return -1;
 	pr->chains[BLKID_CHAIN_TOPLGY].enabled = enable;
 	return 0;
 }
@@ -128,10 +126,10 @@ int blkid_probe_enable_topology(blkid_probe pr, int enable)
  *
  * WARNING: the returned object will be overwritten by the next
  *          blkid_probe_get_topology() call for the same @pr. If you want to
- *          use more blkid_topopogy objects in the same time you have to create
+ *          use more blkid_topology objects in the same time you have to create
  *          more blkid_probe handlers (see blkid_new_probe()).
  *
- * Returns: blkid_topopogy, or NULL in case of error.
+ * Returns: blkid_topology, or NULL in case of error.
  */
 blkid_topology blkid_probe_get_topology(blkid_probe pr)
 {
@@ -146,7 +144,7 @@ static int topology_probe(blkid_probe pr, struct blkid_chain *chn)
 {
 	size_t i;
 
-	if (!pr || chn->idx < -1)
+	if (chn->idx < -1)
 		return -1;
 
 	if (!S_ISBLK(pr->mode))
@@ -167,7 +165,7 @@ static int topology_probe(blkid_probe pr, struct blkid_chain *chn)
 		}
 	}
 
-	blkid_probe_chain_reset_vals(pr, chn);
+	blkid_probe_chain_reset_values(pr, chn);
 
 	DBG(LOWPROBE, ul_debug("--> starting probing loop [TOPOLOGY idx=%d]",
 		chn->idx));
@@ -218,7 +216,7 @@ static int topology_set_value(blkid_probe pr, const char *name,
 		return 0;	/* ignore zeros */
 
 	if (chn->binary) {
-		memcpy(chn->data + structoff, &data, sizeof(data));
+		memcpy((char *) chn->data + structoff, &data, sizeof(data));
 		return 0;
 	}
 	return blkid_probe_sprintf_value(pr, name, "%lu", data);

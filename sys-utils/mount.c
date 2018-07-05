@@ -99,9 +99,8 @@ static int table_parser_errcb(struct libmnt_table *tb __attribute__((__unused__)
 			const char *filename, int line)
 {
 	if (filename)
-		warnx(_("%s: parse error: ignore entry at line %d."),
-							filename, line);
-	return 0;
+		warnx(_("%s: parse error at line %d -- ignored"), filename, line);
+	return 1;
 }
 
 /*
@@ -403,6 +402,15 @@ try_readonly:
 		case -EBUSY:
 			warnx(_("%s is already mounted"), src);
 			return MOUNT_EX_USAGE;
+		/* -EROFS before syscall can happen only for loop mount */
+		case -EROFS:
+			warnx(_("%s is used as read only loop, mounting read-only"), src);
+			mnt_context_reset_status(cxt);
+			mnt_context_set_mflags(cxt, mflags | MS_RDONLY);
+			rc = mnt_context_mount(cxt);
+			if (!rc)
+				rc = mnt_context_finalize_mount(cxt);
+			goto try_readonly;
 		case -MNT_ERR_NOFSTAB:
 			if (mnt_context_is_swapmatch(cxt)) {
 				warnx(_("can't find %s in %s"),
@@ -446,6 +454,9 @@ try_readonly:
 			return MOUNT_EX_USAGE;
 		case -MNT_ERR_LOOPDEV:
 			warn(_("%s: failed to setup loop device"), src);
+			return MOUNT_EX_FAIL;
+		case -MNT_ERR_LOOPOVERLAP:
+			warnx(_("%s: overlapping loop device exists"), src);
 			return MOUNT_EX_FAIL;
 		default:
 			return handle_generic_errors(rc, _("%s: mount failed"),
@@ -521,7 +532,12 @@ try_readonly:
 			warnx(_("special device %s does not exist"), src);
 		} else {
 			errno = syserr;
-			warn(_("mount(2) failed"));	/* print errno */
+			if (tgt)
+				warn("%s: %s", _("mount(2) failed"), tgt);
+			else if (src)
+				warn("%s: %s", _("mount(2) failed"), src);
+			else
+				warn(_("mount(2) failed"));
 		}
 		break;
 
@@ -536,7 +552,7 @@ try_readonly:
 				 "(a path prefix is not a directory)"), src);
 		} else {
 			errno = syserr;
-			warn(_("mount(2) failed"));     /* print errno */
+			warn("%s: %s", _("mount(2) failed"), tgt);
 		}
 		break;
 
@@ -572,7 +588,10 @@ try_readonly:
 		break;
 
 	case ENODEV:
-		warnx(_("unknown filesystem type '%s'"), mnt_context_get_fstype(cxt));
+		if (mnt_context_get_fstype(cxt))
+			warnx(_("unknown filesystem type '%s'"), mnt_context_get_fstype(cxt));
+		else
+			warnx(_("unknown filesystem type"));
 		break;
 
 	case ENOTBLK:
@@ -608,6 +627,9 @@ try_readonly:
 		else if (mflags & MS_REMOUNT)
 			warnx(_("cannot remount %s read-write, is write-protected"), src);
 
+		else if (mflags & MS_BIND)
+			warn(_("mount %s on %s failed"), src, tgt);
+
 		else {
 			warnx(_("%s is write-protected, mounting read-only"), src);
 
@@ -622,6 +644,9 @@ try_readonly:
 		break;
 
 	case ENOMEDIUM:
+		if (uflags & MNT_MS_NOFAIL)
+			return MOUNT_EX_SUCCESS;
+
 		warnx(_("no medium found on %s"), src);
 		break;
 
@@ -715,6 +740,9 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 		" %1$s <operation> <mountpoint> [<target>]\n"),
 		program_invocation_short_name);
 
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Mount a filesystem.\n"), out);
+
 	fputs(USAGE_OPTIONS, out);
 	fprintf(out, _(
 	" -a, --all               mount all filesystems mentioned in fstab\n"
@@ -723,9 +751,10 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	" -F, --fork              fork off for each device (use with -a)\n"
 	" -T, --fstab <path>      alternative file to /etc/fstab\n"));
 	fprintf(out, _(
-	" -h, --help              display this help text and exit\n"
-	" -i, --internal-only     don't call the mount.<type> helpers\n"
-	" -l, --show-labels       lists all mounts with LABELs\n"
+	" -i, --internal-only     don't call the mount.<type> helpers\n"));
+	fprintf(out, _(
+	" -l, --show-labels       show also filesystem labels\n"));
+	fprintf(out, _(
 	" -n, --no-mtab           don't write to /etc/mtab\n"));
 	fprintf(out, _(
 	" -o, --options <list>    comma-separated list of mount options\n"
@@ -736,8 +765,8 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	"     --source <src>      explicitly specifies source (path, label, uuid)\n"
 	"     --target <target>   explicitly specifies mountpoint\n"));
 	fprintf(out, _(
-	" -v, --verbose           say what is being done\n"
-	" -V, --version           display version information and exit\n"
+	" -v, --verbose           say what is being done\n"));
+	fprintf(out, _(
 	" -w, --rw, --read-write  mount the filesystem read-write (default)\n"));
 
 	fputs(USAGE_SEPARATOR, out);

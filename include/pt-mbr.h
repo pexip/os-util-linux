@@ -11,6 +11,7 @@ struct dos_partition {
 } __attribute__((packed));
 
 #define MBR_PT_OFFSET		0x1be
+#define MBR_PT_BOOTBITS_SIZE	440
 
 static inline struct dos_partition *mbr_get_partition(unsigned char *mbr, int i)
 {
@@ -128,7 +129,8 @@ enum {
 	MBR_LINUX_SWAP_PARTITION	= 0x82,
 	MBR_SOLARIS_X86_PARTITION	= MBR_LINUX_SWAP_PARTITION,
 	MBR_LINUX_DATA_PARTITION	= 0x83,
-	MBR_OS2_HIDDEN_DRIVE_PARTITION	= 0x84,
+	MBR_OS2_HIDDEN_DRIVE_PARTITION	= 0x84, /* also hibernation MS APM, Intel Rapid Start */
+	MBR_INTEL_HIBERNATION_PARTITION	= MBR_OS2_HIDDEN_DRIVE_PARTITION,
 	MBR_LINUX_EXTENDED_PARTITION	= 0x85,
 	MBR_NTFS_VOL_SET1_PARTITION	= 0x86,
 	MBR_NTFS_VOL_SET2_PARTITION	= 0x87,
@@ -148,6 +150,7 @@ enum {
 	MBR_BSDI_FS_PARTITION		= 0xb7,
 	MBR_BSDI_SWAP_PARTITION		= 0xb8,
 	MBR_BOOTWIZARD_HIDDEN_PARTITION	= 0xbb,
+	MBR_ACRONIS_FAT32LBA_PARTITION  = 0xbc, /* Acronis Secure Zone with ipl for loader F11.SYS */
 	MBR_SOLARIS_BOOT_PARTITION	= 0xbe,
 	MBR_SOLARIS_PARTITION		= 0xbf,
 	MBR_DRDOS_FAT12_PARTITION	= 0xc1,
@@ -161,6 +164,7 @@ enum {
 	MBR_DOS_ACCESS_PARTITION	= 0xe1, /* DOS access or SpeedStor 12-bit FAT extended partition */
 	MBR_DOS_RO_PARTITION		= 0xe3, /* DOS R/O or SpeedStor */
 	MBR_SPEEDSTOR_EXTENDED_PARTITION = 0xe4, /* SpeedStor 16-bit FAT extended partition < 1024 cyl. */
+	MBR_RUFUS_EXTRA_PARTITION	= 0xea, /* Rufus extra partition for alignment */
 	MBR_BEOS_FS_PARTITION		= 0xeb,
 	MBR_GPT_PARTITION		= 0xee, /* Intel EFI GUID Partition Table */
 	MBR_EFI_SYSTEM_PARTITION	= 0xef, /* Intel EFI System Partition */

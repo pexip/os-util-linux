@@ -47,8 +47,9 @@
 #include "strutils.h"
 #include "loopdev.h"
 #include "fileutils.h"
+#include "canonicalize.h"
 
-static int is_mountinfo(struct libmnt_table *tb)
+int is_mountinfo(struct libmnt_table *tb)
 {
 	struct libmnt_fs *fs;
 
@@ -151,7 +152,7 @@ void mnt_unref_table(struct libmnt_table *tb)
  * Deallocates the table. This function does not care about reference count. Don't
  * use this function directly -- it's better to use use mnt_unref_table().
  *
- * The table entries (filesystems) are unrefrenced by mnt_reset_table() and
+ * The table entries (filesystems) are unreferenced by mnt_reset_table() and
  * cache by mnt_unref_cache().
  */
 void mnt_free_table(struct libmnt_table *tb)
@@ -187,7 +188,6 @@ int mnt_table_get_nents(struct libmnt_table *tb)
  */
 int mnt_table_is_empty(struct libmnt_table *tb)
 {
-	assert(tb);
 	return tb == NULL || list_empty(&tb->ents) ? 1 : 0;
 }
 
@@ -202,7 +202,6 @@ int mnt_table_is_empty(struct libmnt_table *tb)
  */
 int mnt_table_set_userdata(struct libmnt_table *tb, void *data)
 {
-	assert(tb);
 	if (!tb)
 		return -EINVAL;
 
@@ -218,7 +217,6 @@ int mnt_table_set_userdata(struct libmnt_table *tb, void *data)
  */
 void *mnt_table_get_userdata(struct libmnt_table *tb)
 {
-	assert(tb);
 	return tb ? tb->userdata : NULL;
 }
 
@@ -244,14 +242,13 @@ void *mnt_table_get_userdata(struct libmnt_table *tb)
  *	# this comments belongs to the first fs
  *	LABEL=foo /mnt/foo auto defaults 1 2
  *	# this comments belongs to the second fs
- *	LABEL=bar /mnt/bar auto defaults 1 2 
+ *	LABEL=bar /mnt/bar auto defaults 1 2
  *	# tailing comment
  *  </programlisting>
  * </informalexample>
  */
 void mnt_table_enable_comments(struct libmnt_table *tb, int enable)
 {
-	assert(tb);
 	if (tb)
 		tb->comms = enable;
 }
@@ -276,7 +273,6 @@ int mnt_table_with_comments(struct libmnt_table *tb)
  */
 const char *mnt_table_get_intro_comment(struct libmnt_table *tb)
 {
-	assert(tb);
 	return tb ? tb->comm_intro : NULL;
 }
 
@@ -291,19 +287,7 @@ const char *mnt_table_get_intro_comment(struct libmnt_table *tb)
  */
 int mnt_table_set_intro_comment(struct libmnt_table *tb, const char *comm)
 {
-	char *p = NULL;
-
-	assert(tb);
-	if (!tb)
-		return -EINVAL;
-	if (comm) {
-		p = strdup(comm);
-		if (!p)
-			return -ENOMEM;
-	}
-	free(tb->comm_intro);
-	tb->comm_intro = p;
-	return 0;
+	return strdup_to_struct_member(tb, comm_intro, comm);
 }
 
 /**
@@ -317,7 +301,6 @@ int mnt_table_set_intro_comment(struct libmnt_table *tb, const char *comm)
  */
 int mnt_table_append_intro_comment(struct libmnt_table *tb, const char *comm)
 {
-	assert(tb);
 	if (!tb)
 		return -EINVAL;
 	return append_string(&tb->comm_intro, comm);
@@ -331,7 +314,6 @@ int mnt_table_append_intro_comment(struct libmnt_table *tb, const char *comm)
  */
 const char *mnt_table_get_trailing_comment(struct libmnt_table *tb)
 {
-	assert(tb);
 	return tb ? tb->comm_tail : NULL;
 }
 
@@ -346,19 +328,7 @@ const char *mnt_table_get_trailing_comment(struct libmnt_table *tb)
  */
 int mnt_table_set_trailing_comment(struct libmnt_table *tb, const char *comm)
 {
-	char *p = NULL;
-
-	assert(tb);
-	if (!tb)
-		return -EINVAL;
-	if (comm) {
-		p = strdup(comm);
-		if (!p)
-			return -ENOMEM;
-	}
-	free(tb->comm_tail);
-	tb->comm_tail = p;
-	return 0;
+	return strdup_to_struct_member(tb, comm_tail, comm);
 }
 
 /**
@@ -372,7 +342,6 @@ int mnt_table_set_trailing_comment(struct libmnt_table *tb, const char *comm)
  */
 int mnt_table_append_trailing_comment(struct libmnt_table *tb, const char *comm)
 {
-	assert(tb);
 	if (!tb)
 		return -EINVAL;
 	return append_string(&tb->comm_tail, comm);
@@ -390,7 +359,7 @@ int mnt_table_append_trailing_comment(struct libmnt_table *tb, const char *comm)
  * same cache between more threads -- currently the cache does not provide any
  * locking method.
  *
- * This function increments cache reference counter. It's recomented to use
+ * This function increments cache reference counter. It's recommended to use
  * mnt_unref_cache() after mnt_table_set_cache() if you want to keep the cache
  * referenced by @tb only.
  *
@@ -400,7 +369,6 @@ int mnt_table_append_trailing_comment(struct libmnt_table *tb, const char *comm)
  */
 int mnt_table_set_cache(struct libmnt_table *tb, struct libmnt_cache *mpc)
 {
-	assert(tb);
 	if (!tb)
 		return -EINVAL;
 
@@ -418,7 +386,6 @@ int mnt_table_set_cache(struct libmnt_table *tb, struct libmnt_cache *mpc)
  */
 struct libmnt_cache *mnt_table_get_cache(struct libmnt_table *tb)
 {
-	assert(tb);
 	return tb ? tb->cache : NULL;
 }
 
@@ -435,9 +402,6 @@ struct libmnt_cache *mnt_table_get_cache(struct libmnt_table *tb)
  */
 int mnt_table_add_fs(struct libmnt_table *tb, struct libmnt_fs *fs)
 {
-	assert(tb);
-	assert(fs);
-
 	if (!tb || !fs)
 		return -EINVAL;
 
@@ -463,9 +427,6 @@ int mnt_table_add_fs(struct libmnt_table *tb, struct libmnt_fs *fs)
  */
 int mnt_table_remove_fs(struct libmnt_table *tb, struct libmnt_fs *fs)
 {
-	assert(tb);
-	assert(fs);
-
 	if (!tb || !fs)
 		return -EINVAL;
 
@@ -477,15 +438,31 @@ int mnt_table_remove_fs(struct libmnt_table *tb, struct libmnt_fs *fs)
 	return 0;
 }
 
+static inline struct libmnt_fs *get_parent_fs(struct libmnt_table *tb, struct libmnt_fs *fs)
+{
+	struct libmnt_iter itr;
+	struct libmnt_fs *x;
+	int parent_id = mnt_fs_get_parent_id(fs);
+
+	mnt_reset_iter(&itr, MNT_ITER_FORWARD);
+	while (mnt_table_next_fs(tb, &itr, &x) == 0) {
+		if (mnt_fs_get_id(x) == parent_id)
+			return x;
+	}
+
+	return NULL;
+}
+
 /**
  * mnt_table_get_root_fs:
  * @tb: mountinfo file (/proc/self/mountinfo)
  * @root: returns pointer to the root filesystem (/)
  *
- * The function uses the parent ID from the mountinfo file to determine the root filesystem
- * (the filesystem with the smallest ID). The function is designed mostly for
- * applications where it is necessary to sort mountpoints by IDs to get the tree
- * of the mountpoints (e.g. findmnt default output).
+ * The function uses the parent ID from the mountinfo file to determine the
+ * root filesystem (the filesystem with the smallest ID with parent ID missing
+ * in the table). The function is designed mostly for applications where it is
+ * necessary to sort mountpoints by IDs to get the tree of the mountpoints
+ * (e.g. findmnt default output).
  *
  * If you're not sure, then use
  *
@@ -501,9 +478,6 @@ int mnt_table_get_root_fs(struct libmnt_table *tb, struct libmnt_fs **root)
 	struct libmnt_fs *fs;
 	int root_id = 0;
 
-	assert(tb);
-	assert(root);
-
 	if (!tb || !root || !is_mountinfo(tb))
 		return -EINVAL;
 
@@ -511,6 +485,7 @@ int mnt_table_get_root_fs(struct libmnt_table *tb, struct libmnt_fs **root)
 
 	*root = NULL;
 
+	/* get smallest possible ID from the table */
 	mnt_reset_iter(&itr, MNT_ITER_FORWARD);
 	while(mnt_table_next_fs(tb, &itr, &fs) == 0) {
 		int id = mnt_fs_get_parent_id(fs);
@@ -519,6 +494,15 @@ int mnt_table_get_root_fs(struct libmnt_table *tb, struct libmnt_fs **root)
 			*root = fs;
 			root_id = id;
 		}
+	}
+
+	/* go to the root node by "parent_id -> id" relation */
+	while (*root) {
+		struct libmnt_fs *x = get_parent_fs(tb, *root);
+		if (!x || x == *root)
+			break;
+		DBG(TAB, ul_debugobj(tb, " messy mountinfo, walk to %s", mnt_fs_get_target(x)));
+		*root = x;
 	}
 
 	return *root ? 0 : -EINVAL;
@@ -612,10 +596,6 @@ int mnt_table_next_fs(struct libmnt_table *tb, struct libmnt_iter *itr, struct l
 {
 	int rc = 1;
 
-	assert(tb);
-	assert(itr);
-	assert(fs);
-
 	if (!tb || !itr || !fs)
 		return -EINVAL;
 	*fs = NULL;
@@ -639,9 +619,6 @@ int mnt_table_next_fs(struct libmnt_table *tb, struct libmnt_iter *itr, struct l
  */
 int mnt_table_first_fs(struct libmnt_table *tb, struct libmnt_fs **fs)
 {
-	assert(tb);
-	assert(fs);
-
 	if (!tb || !fs)
 		return -EINVAL;
 	if (list_empty(&tb->ents))
@@ -659,9 +636,6 @@ int mnt_table_first_fs(struct libmnt_table *tb, struct libmnt_fs **fs)
  */
 int mnt_table_last_fs(struct libmnt_table *tb, struct libmnt_fs **fs)
 {
-	assert(tb);
-	assert(fs);
-
 	if (!tb || !fs)
 		return -EINVAL;
 	if (list_empty(&tb->ents))
@@ -713,8 +687,6 @@ static int mnt_table_move_parent(struct libmnt_table *tb, int oldid, int newid)
 	struct libmnt_iter itr;
 	struct libmnt_fs *fs;
 
-	assert(tb);
-
 	if (!tb)
 		return -EINVAL;
 	if (list_empty(&tb->ents))
@@ -744,7 +716,7 @@ static int mnt_table_move_parent(struct libmnt_table *tb, int oldid, int newid)
  * backward mode iterator).
  *
  * @MNT_UNIQ_FORWARD:  remove later mounted filesystems
- * @MNT_UNIQ_KEEPTREE: keep parent->id relation ship stil valid
+ * @MNT_UNIQ_KEEPTREE: keep parent->id relationship still valid
  *
  * Returns: negative number in case of error, or 0 o success.
  */
@@ -756,9 +728,6 @@ int mnt_table_uniq_fs(struct libmnt_table *tb, int flags,
 	struct libmnt_iter itr;
 	struct libmnt_fs *fs;
 	int direction = MNT_ITER_BACKWARD;
-
-	assert(tb);
-	assert(cmp);
 
 	if (!tb || !cmp)
 		return -EINVAL;
@@ -812,10 +781,6 @@ int mnt_table_uniq_fs(struct libmnt_table *tb, int flags,
  */
 int mnt_table_set_iter(struct libmnt_table *tb, struct libmnt_iter *itr, struct libmnt_fs *fs)
 {
-	assert(tb);
-	assert(itr);
-	assert(fs);
-
 	if (!tb || !itr || !fs)
 		return -EINVAL;
 
@@ -841,6 +806,7 @@ struct libmnt_fs *mnt_table_find_mountpoint(struct libmnt_table *tb,
 					    int direction)
 {
 	char *mnt;
+	struct stat st;
 
 	if (!tb || !path || !*path)
 		return NULL;
@@ -848,6 +814,9 @@ struct libmnt_fs *mnt_table_find_mountpoint(struct libmnt_table *tb,
 		return NULL;
 
 	DBG(TAB, ul_debugobj(tb, "lookup MOUNTPOINT: '%s'", path));
+
+	if (mnt_stat_mountpoint(path, &st))
+		return NULL;
 
 	mnt = strdup(path);
 	if (!mnt)
@@ -893,9 +862,6 @@ struct libmnt_fs *mnt_table_find_target(struct libmnt_table *tb, const char *pat
 	struct libmnt_fs *fs = NULL;
 	char *cn;
 
-	assert(tb);
-	assert(path);
-
 	if (!tb || !path || !*path)
 		return NULL;
 	if (direction != MNT_ITER_FORWARD && direction != MNT_ITER_BACKWARD)
@@ -909,6 +875,20 @@ struct libmnt_fs *mnt_table_find_target(struct libmnt_table *tb, const char *pat
 		if (mnt_fs_streq_target(fs, path))
 			return fs;
 	}
+
+	/* try absolute path */
+	if (is_relative_path(path) && (cn = absolute_path(path))) {
+		DBG(TAB, ul_debugobj(tb, "lookup absolute TARGET: '%s'", cn));
+		mnt_reset_iter(&itr, direction);
+		while (mnt_table_next_fs(tb, &itr, &fs) == 0) {
+			if (mnt_fs_streq_target(fs, cn)) {
+				free(cn);
+				return fs;
+			}
+		}
+		free(cn);
+	}
+
 	if (!tb->cache || !(cn = mnt_resolve_path(path, tb->cache)))
 		return NULL;
 
@@ -921,7 +901,7 @@ struct libmnt_fs *mnt_table_find_target(struct libmnt_table *tb, const char *pat
 			return fs;
 	}
 
-	/* non-canonicaled path in struct libmnt_table
+	/* non-canonical path in struct libmnt_table
 	 * -- note that mountpoint in /proc/self/mountinfo is already
 	 *    canonicalized by the kernel
 	 */
@@ -969,7 +949,6 @@ struct libmnt_fs *mnt_table_find_srcpath(struct libmnt_table *tb, const char *pa
 	char *cn;
 	const char *p;
 
-	assert(tb);
 	if (!tb || !path || !*path)
 		return NULL;
 	if (direction != MNT_ITER_FORWARD && direction != MNT_ITER_BACKWARD)
@@ -1076,10 +1055,6 @@ struct libmnt_fs *mnt_table_find_tag(struct libmnt_table *tb, const char *tag,
 	struct libmnt_iter itr;
 	struct libmnt_fs *fs = NULL;
 
-	assert(tb);
-	assert(tag);
-	assert(val);
-
 	if (!tb || !tag || !*tag || !val)
 		return NULL;
 	if (direction != MNT_ITER_FORWARD && direction != MNT_ITER_BACKWARD)
@@ -1106,6 +1081,50 @@ struct libmnt_fs *mnt_table_find_tag(struct libmnt_table *tb, const char *tag,
 }
 
 /**
+ * mnt_table_find_target_with_option:
+ * @tb: tab pointer
+ * @path: mountpoint directory
+ * @option: option name (e.g "subvol", "subvolid", ...)
+ * @val: option value or NULL
+ * @direction: MNT_ITER_{FORWARD,BACKWARD}
+ *
+ * Try to lookup an entry in the given tab that matches combination of @path
+ * and @option. In difference to mnt_table_find_target(), only @path iteration
+ * is done. No lookup by device name, no canonicalization.
+ *
+ * Returns: a tab entry or NULL.
+ *
+ * Since: 2.28
+ */
+struct libmnt_fs *mnt_table_find_target_with_option(
+			struct libmnt_table *tb, const char *path,
+			const char *option, const char *val, int direction)
+{
+	struct libmnt_iter itr;
+	struct libmnt_fs *fs = NULL;
+	char *optval = NULL;
+	size_t optvalsz = 0, valsz = val ? strlen(val) : 0;
+
+	if (!tb || !path || !*path || !option || !*option || !val)
+		return NULL;
+	if (direction != MNT_ITER_FORWARD && direction != MNT_ITER_BACKWARD)
+		return NULL;
+
+	DBG(TAB, ul_debugobj(tb, "lookup TARGET: '%s' with OPTION %s %s", path, option, val));
+
+	/* look up by native @target with OPTION */
+	mnt_reset_iter(&itr, direction);
+	while (mnt_table_next_fs(tb, &itr, &fs) == 0) {
+		if (mnt_fs_streq_target(fs, path)
+		    && mnt_fs_get_option(fs, option, &optval, &optvalsz) == 0
+		    && (!val || (optvalsz == valsz
+				 && strncmp(optval, val, optvalsz) == 0)))
+			return fs;
+	}
+	return NULL;
+}
+
+/**
  * mnt_table_find_source:
  * @tb: tab pointer
  * @source: TAG or path
@@ -1122,8 +1141,6 @@ struct libmnt_fs *mnt_table_find_source(struct libmnt_table *tb,
 {
 	struct libmnt_fs *fs;
 	char *t = NULL, *v = NULL;
-
-	assert(tb);
 
 	if (!tb)
 		return NULL;
@@ -1162,9 +1179,6 @@ struct libmnt_fs *mnt_table_find_pair(struct libmnt_table *tb, const char *sourc
 	struct libmnt_fs *fs = NULL;
 	struct libmnt_iter itr;
 
-	assert(tb);
-	assert(target);
-
 	if (!tb || !target || !*target || !source || !*source)
 		return NULL;
 	if (direction != MNT_ITER_FORWARD && direction != MNT_ITER_BACKWARD)
@@ -1200,8 +1214,6 @@ struct libmnt_fs *mnt_table_find_devno(struct libmnt_table *tb,
 	struct libmnt_fs *fs = NULL;
 	struct libmnt_iter itr;
 
-	assert(tb);
-
 	if (!tb)
 		return NULL;
 	if (direction != MNT_ITER_FORWARD && direction != MNT_ITER_BACKWARD)
@@ -1219,6 +1231,148 @@ struct libmnt_fs *mnt_table_find_devno(struct libmnt_table *tb,
 	return NULL;
 }
 
+static char *remove_mountpoint_from_path(const char *path, const char *mnt)
+{
+        char *res;
+	const char *p;
+	size_t sz;
+
+	sz = strlen(mnt);
+	p = sz > 1 ? path + sz : path;
+
+	res = *p ? strdup(p) : strdup("/");
+	DBG(UTILS, ul_debug("%s fs-root is %s", path, res));
+	return res;
+}
+
+#ifdef HAVE_BTRFS_SUPPORT
+static int get_btrfs_fs_root(struct libmnt_table *tb, struct libmnt_fs *fs, char **root)
+{
+	char *vol = NULL, *p;
+	size_t sz, volsz = 0;
+
+	DBG(BTRFS, ul_debug("lookup for btrfs FS root"));
+	*root = NULL;
+
+	if (mnt_fs_get_option(fs, "subvolid", &vol, &volsz) == 0) {
+		char *target;
+		struct libmnt_fs *f;
+		char subvolidstr[sizeof(stringify_value(UINT64_MAX))];
+
+		DBG(BTRFS, ul_debug(" found subvolid=%s, checking", vol));
+
+		assert (volsz + 1 < sizeof(stringify_value(UINT64_MAX)));
+		memcpy(subvolidstr, vol, volsz);
+		subvolidstr[volsz] = '\0';
+
+		target = mnt_resolve_target(mnt_fs_get_target(fs), tb->cache);
+		if (!target)
+			goto err;
+
+		DBG(BTRFS, ul_debug(" trying target=%s subvolid=%s", target, subvolidstr));
+		f = mnt_table_find_target_with_option(tb, target,
+					"subvolid", subvolidstr,
+					MNT_ITER_BACKWARD);
+		if (!tb->cache)
+			free(target);
+		if (!f)
+			goto not_found;
+
+		/* Instead of set of BACKREF queries constructing subvol path
+		 * corresponding to a particular subvolid, use the one in
+		 * mountinfo. Kernel keeps subvol path up to date.
+		 */
+		if (mnt_fs_get_option(f, "subvol", &vol, &volsz) != 0)
+			goto not_found;
+
+	} else if (mnt_fs_get_option(fs, "subvol", &vol, &volsz) != 0) {
+		/* If fstab entry does not contain "subvol", we have to
+		 * check, whether btrfs has default subvolume defined.
+		 */
+		uint64_t default_id;
+		char *target;
+		struct libmnt_fs *f;
+		char default_id_str[sizeof(stringify_value(UINT64_MAX))];
+
+		DBG(BTRFS, ul_debug(" subvolid/subvol not found, checking default"));
+
+		default_id = btrfs_get_default_subvol_id(mnt_fs_get_target(fs));
+		if (default_id == UINT64_MAX)
+			goto not_found;
+
+		/* Volume has default subvolume. Check if it matches to
+		 * the one in mountinfo.
+		 *
+		 * Only kernel >= 4.2 reports subvolid. On older
+		 * kernels, there is no reasonable way to detect which
+		 * subvolume was mounted.
+		 */
+		target = mnt_resolve_target(mnt_fs_get_target(fs), tb->cache);
+		if (!target)
+			goto err;
+
+		snprintf(default_id_str, sizeof(default_id_str), "%llu",
+				(unsigned long long int) default_id);
+
+		DBG(BTRFS, ul_debug(" trying target=%s default subvolid=%s",
+					target, default_id_str));
+
+		f = mnt_table_find_target_with_option(tb, target,
+					"subvolid", default_id_str,
+					MNT_ITER_BACKWARD);
+		if (!tb->cache)
+			free(target);
+		if (!f)
+			goto not_found;
+
+		/* Instead of set of BACKREF queries constructing
+		 * subvol path, use the one in mountinfo. Kernel does
+		 * the evaluation for us.
+		 */
+		DBG(BTRFS, ul_debug("setting FS root: btrfs default subvolid = %s",
+					default_id_str));
+
+		if (mnt_fs_get_option(f, "subvol", &vol, &volsz) != 0)
+			goto not_found;
+	}
+
+	DBG(BTRFS, ul_debug(" using subvol=%s", vol));
+	sz = volsz;
+	if (*vol != '/')
+		sz++;
+	*root = malloc(sz + 1);
+	if (!*root)
+		goto err;
+	p = *root;
+	if (*vol != '/')
+		*p++ = '/';
+	memcpy(p, vol, volsz);
+	*(*root + sz) = '\0';
+	return 0;
+
+not_found:
+	DBG(BTRFS, ul_debug(" not found btrfs volume setting"));
+	return 1;
+err:
+	DBG(BTRFS, ul_debug(" error on btrfs volume setting evaluation"));
+	return errno ? -errno : -1;
+}
+#endif /* HAVE_BTRFS_SUPPORT */
+
+static const char *get_cifs_unc_subdir_path (const char *unc)
+{
+	/*
+	 *  1 or more slash:     %*[/]
+	 *  1 or more non-slash: %*[^/]
+	 *  number of byte read: %n
+	 */
+	int share_end = 0;
+	int r = sscanf(unc, "%*[/]%*[^/]%*[/]%*[^/]%n", &share_end);
+	if (r == EOF || share_end == 0)
+		return NULL;
+	return unc + share_end;
+}
+
 /*
  * tb: /proc/self/mountinfo
  * fs: filesystem
@@ -1227,6 +1381,8 @@ struct libmnt_fs *mnt_table_find_devno(struct libmnt_table *tb,
  *          for @fs after mount(2)
  *
  * For btrfs subvolumes this function returns NULL, but @fsroot properly set.
+ *
+ * If @tb is NULL then defaults to '/'.
  *
  * Returns: entry from @tb that will be used as a source for @fs if the @fs is
  *          bindmount.
@@ -1238,7 +1394,8 @@ struct libmnt_fs *mnt_table_get_fs_root(struct libmnt_table *tb,
 					unsigned long mountflags,
 					char **fsroot)
 {
-	char *root = NULL, *mnt = NULL;
+	char *root = NULL;
+	const char *mnt = NULL;
 	const char *fstype;
 	struct libmnt_fs *src_fs = NULL;
 
@@ -1256,10 +1413,14 @@ struct libmnt_fs *mnt_table_get_fs_root(struct libmnt_table *tb,
 		DBG(TAB, ul_debug("fs-root for bind"));
 
 		src = xsrc = mnt_resolve_spec(mnt_fs_get_source(fs), tb->cache);
-		if (src)
-			mnt = mnt_get_mountpoint(src);
+		if (src) {
+			struct libmnt_fs *f = mnt_table_find_mountpoint(tb,
+							src, MNT_ITER_BACKWARD);
+			if (f)
+				mnt = mnt_fs_get_target(f);
+		}
 		if (mnt)
-			root = mnt_get_fs_root(src, mnt);
+			root = remove_mountpoint_from_path(src, mnt);
 
 		if (xsrc && !tb->cache) {
 			free(xsrc);
@@ -1274,48 +1435,47 @@ struct libmnt_fs *mnt_table_get_fs_root(struct libmnt_table *tb,
 			goto dflt;
 		}
 
-		/* on btrfs the subvolume is used as fs-root in
-		 * /proc/self/mountinfo, so we have to get the original subvolume
-		 * name from src_fs and prepend the subvolume name to the
-		 * fs-root path
+		/* It's possible that fstab_fs source is subdirectory on btrfs
+		 * subvolume or another bind mount. For example:
+		 *
+		 * /dev/sdc        /mnt/test       btrfs   subvol=/anydir
+		 * /dev/sdc        /mnt/test       btrfs   defaults
+		 * /mnt/test/foo   /mnt/test2      auto    bind
+		 *
+		 * in this case, the root for /mnt/test2 will be /anydir/foo on
+		 * /dev/sdc. It means we have to compose the final root from
+		 * root and src_root.
 		 */
 		src_root = mnt_fs_get_root(src_fs);
-		if (src_root && !startswith(root, src_root)) {
-			size_t sz = strlen(root) + strlen(src_root) + 1;
-			char *tmp = malloc(sz);
 
-			if (!tmp)
-				goto err;
-			snprintf(tmp, sz, "%s%s", src_root, root);
-			free(root);
-			root = tmp;
+		DBG(FS, ul_debugobj(fs, "source root: %s, source FS root: %s", root, src_root));
+
+		if (src_root && !startswith(root, src_root)) {
+			if (strcmp(root, "/") == 0) {
+				free(root);
+				root = strdup(src_root);
+				if (!root)
+					goto err;
+			} else {
+				char *tmp;
+				if (asprintf(&tmp, "%s%s", src_root, root) < 0)
+					goto err;
+				free(root);
+				root = tmp;
+			}
 		}
 	}
 
+#ifdef HAVE_BTRFS_SUPPORT
 	/*
 	 * btrfs-subvolume mount -- get subvolume name and use it as a root-fs path
 	 */
-	else if (fstype && !strcmp(fstype, "btrfs")) {
-		char *vol = NULL, *p;
-		size_t sz, volsz = 0;
-
-		if (mnt_fs_get_option(fs, "subvol", &vol, &volsz))
-			goto dflt;
-
-		DBG(TAB, ul_debug("setting FS root: btrfs subvol"));
-
-		sz = volsz;
-		if (*vol != '/')
-			sz++;
-		root = malloc(sz + 1);
-		if (!root)
+	else if (tb && fstype && (!strcmp(fstype, "btrfs") || !strcmp(fstype, "auto"))) {
+		if (get_btrfs_fs_root(tb, fs, &root) < 0)
 			goto err;
-		p = root;
-		if (*vol != '/')
-			*p++ = '/';
-		memcpy(p, vol, volsz);
-		*(root + sz) = '\0';
 	}
+#endif /* HAVE_BTRFS_SUPPORT */
+
 dflt:
 	if (!root) {
 		root = strdup("/");
@@ -1326,16 +1486,14 @@ dflt:
 
 	DBG(TAB, ul_debug("FS root result: %s", root));
 
-	free(mnt);
 	return src_fs;
 err:
 	free(root);
-	free(mnt);
 	return NULL;
 }
 
 /**
- * mnt_table_is_fs__mounted:
+ * mnt_table_is_fs_mounted:
  * @tb: /proc/self/mountinfo file
  * @fstab_fs: /etc/fstab entry
  *
@@ -1365,11 +1523,9 @@ int mnt_table_is_fs_mounted(struct libmnt_table *tb, struct libmnt_fs *fstab_fs)
 	int rc = 0;
 	dev_t devno = 0;
 
-	assert(tb);
-	assert(fstab_fs);
-
-	DBG(FS, ul_debugobj(fstab_fs, "is FS mounted? [target=%s]",
-				mnt_fs_get_target(fstab_fs)));
+	DBG(FS, ul_debugobj(fstab_fs, "mnt_table_is_fs_mounted: target=%s, source=%s",
+				mnt_fs_get_target(fstab_fs),
+				mnt_fs_get_source(fstab_fs)));
 
 	if (mnt_fs_is_swaparea(fstab_fs) || mnt_table_is_empty(tb)) {
 		DBG(FS, ul_debugobj(fstab_fs, "- ignore (swap or no data)"));
@@ -1411,6 +1567,8 @@ int mnt_table_is_fs_mounted(struct libmnt_table *tb, struct libmnt_fs *fstab_fs)
 	}
 	mnt_reset_iter(&itr, MNT_ITER_FORWARD);
 
+	DBG(FS, ul_debugobj(fstab_fs, "mnt_table_is_fs_mounted: src=%s, tgt=%s, root=%s", src, tgt, root));
+
 	while (mnt_table_next_fs(tb, &itr, &fs) == 0) {
 
 		int eq = mnt_fs_streq_srcpath(fs, src);
@@ -1425,30 +1583,42 @@ int mnt_table_is_fs_mounted(struct libmnt_table *tb, struct libmnt_fs *fstab_fs)
 			uint64_t offset = 0;
 			char *val;
 			size_t len;
-			int flags;
+			int flags = 0;
 
-			if (!mnt_fs_is_kernel(fs) ||
-			    !mnt_fs_get_srcpath(fs) ||
+			if (!mnt_fs_get_srcpath(fs) ||
 			    !startswith(mnt_fs_get_srcpath(fs), "/dev/loop"))
 				continue;	/* does not look like loopdev */
 
-			if (mnt_fs_get_option(fstab_fs, "offset", &val, &len) == 0 &&
-			    mnt_parse_offset(val, len, &offset)) {
-				DBG(FS, ul_debugobj(fstab_fs, "failed to parse offset="));
-				continue;
-			} else
+			if (mnt_fs_get_option(fstab_fs, "offset", &val, &len) == 0) {
+				if (mnt_parse_offset(val, len, &offset)) {
+					DBG(FS, ul_debugobj(fstab_fs, "failed to parse offset="));
+					continue;
+				}
 				flags = LOOPDEV_FL_OFFSET;
+			}
 
+			DBG(FS, ul_debugobj(fs, "checking for loop: src=%s", mnt_fs_get_srcpath(fs)));
 #if __linux__
-			if (loopdev_is_used(mnt_fs_get_srcpath(fs), src, offset, flags))
-				break;
+			if (!loopdev_is_used(mnt_fs_get_srcpath(fs), src, offset, 0, flags))
+				continue;
+
+			DBG(FS, ul_debugobj(fs, "used loop"));
 #endif
 		}
 
 		if (root) {
-			const char *r = mnt_fs_get_root(fs);
-			if (!r || strcmp(r, root) != 0)
-				continue;
+			const char *fstype = mnt_fs_get_fstype(fs);
+
+			if (fstype && strcmp(fstype, "cifs") == 0) {
+				const char *unc_subdir = get_cifs_unc_subdir_path(src);
+				const char *path_on_fs = mnt_fs_get_root(fs);
+				if (!unc_subdir || !path_on_fs || !streq_paths(unc_subdir, path_on_fs))
+					continue;
+			} else {
+				const char *r = mnt_fs_get_root(fs);
+				if (!r || strcmp(r, root) != 0)
+					continue;
+			}
 		}
 
 		/*
@@ -1485,7 +1655,7 @@ static int parser_errcb(struct libmnt_table *tb, const char *filename, int line)
 	return 1;	/* all errors are recoverable -- this is the default */
 }
 
-struct libmnt_table *create_table(const char *file, int comments)
+static struct libmnt_table *create_table(const char *file, int comments)
 {
 	struct libmnt_table *tb;
 
@@ -1507,7 +1677,7 @@ err:
 	return NULL;
 }
 
-int test_copy_fs(struct libmnt_test *ts, int argc, char *argv[])
+static int test_copy_fs(struct libmnt_test *ts, int argc, char *argv[])
 {
 	struct libmnt_table *tb;
 	struct libmnt_fs *fs;
@@ -1537,7 +1707,7 @@ done:
 	return rc;
 }
 
-int test_parse(struct libmnt_test *ts, int argc, char *argv[])
+static int test_parse(struct libmnt_test *ts, int argc, char *argv[])
 {
 	struct libmnt_table *tb = NULL;
 	struct libmnt_iter *itr = NULL;
@@ -1573,7 +1743,7 @@ done:
 	return rc;
 }
 
-int test_find(struct libmnt_test *ts, int argc, char *argv[], int dr)
+static int test_find(struct libmnt_test *ts, int argc, char *argv[], int dr)
 {
 	struct libmnt_table *tb;
 	struct libmnt_fs *fs = NULL;
@@ -1615,17 +1785,17 @@ done:
 	return rc;
 }
 
-int test_find_bw(struct libmnt_test *ts, int argc, char *argv[])
+static int test_find_bw(struct libmnt_test *ts, int argc, char *argv[])
 {
 	return test_find(ts, argc, argv, MNT_ITER_BACKWARD);
 }
 
-int test_find_fw(struct libmnt_test *ts, int argc, char *argv[])
+static int test_find_fw(struct libmnt_test *ts, int argc, char *argv[])
 {
 	return test_find(ts, argc, argv, MNT_ITER_FORWARD);
 }
 
-int test_find_pair(struct libmnt_test *ts, int argc, char *argv[])
+static int test_find_pair(struct libmnt_test *ts, int argc, char *argv[])
 {
 	struct libmnt_table *tb;
 	struct libmnt_fs *fs;
@@ -1652,7 +1822,7 @@ done:
 	return rc;
 }
 
-int test_find_mountpoint(struct libmnt_test *ts, int argc, char *argv[])
+static int test_find_mountpoint(struct libmnt_test *ts, int argc, char *argv[])
 {
 	struct libmnt_table *tb;
 	struct libmnt_fs *fs;
@@ -1685,9 +1855,14 @@ static int test_is_mounted(struct libmnt_test *ts, int argc, char *argv[])
 	struct libmnt_fs *fs;
 	struct libmnt_iter *itr = NULL;
 	struct libmnt_cache *mpc = NULL;
-	int rc;
+	int writable = 0;
+	const char *path = NULL;
 
-	tb = mnt_new_table_from_file("/proc/self/mountinfo");
+	if (mnt_has_regular_mtab(&path, &writable) == 1 && writable == 0)
+		tb = mnt_new_table_from_file(path);
+	else
+		tb = mnt_new_table_from_file("/proc/self/mountinfo");
+
 	if (!tb) {
 		fprintf(stderr, "failed to parse mountinfo\n");
 		return -1;
@@ -1707,7 +1882,7 @@ static int test_is_mounted(struct libmnt_test *ts, int argc, char *argv[])
 	mnt_table_set_cache(tb, mpc);
 	mnt_unref_cache(mpc);
 
-	while(mnt_table_next_fs(fstab, itr, &fs) == 0) {
+	while (mnt_table_next_fs(fstab, itr, &fs) == 0) {
 		if (mnt_table_is_fs_mounted(tb, fs))
 			printf("%s already mounted on %s\n",
 					mnt_fs_get_source(fs),
@@ -1718,12 +1893,11 @@ static int test_is_mounted(struct libmnt_test *ts, int argc, char *argv[])
 					mnt_fs_get_target(fs));
 	}
 
-	rc = 0;
 done:
 	mnt_unref_table(tb);
 	mnt_unref_table(fstab);
 	mnt_free_iter(itr);
-	return rc;
+	return 0;
 }
 
 /* returns 0 if @a and @b targets are the same */
@@ -1766,6 +1940,7 @@ done:
 	return rc;
 }
 
+
 int main(int argc, char *argv[])
 {
 	struct libmnt_test tss[] = {
@@ -1776,7 +1951,7 @@ int main(int argc, char *argv[])
 	{ "--find-pair",     test_find_pair, "<file> <source> <target>" },
 	{ "--find-mountpoint", test_find_mountpoint, "<path>" },
 	{ "--copy-fs",       test_copy_fs, "<file>  copy root FS from the file" },
-	{ "--is-mounted",    test_is_mounted, "<fstab> check what from <file> are already mounted" },
+	{ "--is-mounted",    test_is_mounted, "<fstab> check what from fstab is already mounted" },
 	{ NULL }
 	};
 

@@ -44,9 +44,9 @@
 #include <unistd.h>
 
 #include "nls.h"
-#include "widechar.h"
 #include "strutils.h"
 #include "c.h"
+#include "widechar.h"
 #include "closestream.h"
 
 /*
@@ -60,13 +60,15 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 		       " %s [startcol [endcol]]\n"),
 		       program_invocation_short_name);
 
-	fprintf(out, _("\nOptions:\n"
-		       " -V, --version   output version information and exit\n"
-		       " -h, --help      display this help and exit\n\n"));
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Filter out the specified columns.\n"), out);
 
+	fputs(USAGE_OPTIONS, out);
+	fputs(USAGE_HELP, out);
+	fputs(USAGE_VERSION, out);
 	fprintf(out, _("%s reads from standard input and writes to standard output\n\n"),
 		       program_invocation_short_name);
-
+	fprintf(out, USAGE_MAN_TAIL("colrm(1)"));
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
 
@@ -171,9 +173,7 @@ int main(int argc, char **argv)
 			    NULL)) != -1)
 		switch (opt) {
 		case 'V':
-			printf(_("%s from %s\n"),
-			       program_invocation_short_name,
-			       PACKAGE_STRING);
+			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
 			usage(stdout);

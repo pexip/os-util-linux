@@ -60,7 +60,7 @@ struct fstrim_range {
 static int fstrim_filesystem(const char *path, struct fstrim_range *rangetpl,
 			    int verbose)
 {
-	int fd;
+	int fd, rc;
 	struct stat sb;
 	struct fstrim_range range;
 
@@ -70,24 +70,26 @@ static int fstrim_filesystem(const char *path, struct fstrim_range *rangetpl,
 	fd = open(path, O_RDONLY);
 	if (fd < 0) {
 		warn(_("cannot open %s"), path);
-		return -1;
+		rc = -errno;
+		goto done;
 	}
 	if (fstat(fd, &sb) == -1) {
-		warn(_("stat failed %s"), path);
-		return -1;
+		warn(_("stat of %s failed"), path);
+		rc = -errno;
+		goto done;
 	}
 	if (!S_ISDIR(sb.st_mode)) {
 		warnx(_("%s: not a directory"), path);
-		return -1;
+		rc = -EINVAL;
+		goto done;
 	}
 	errno = 0;
 	if (ioctl(fd, FITRIM, &range)) {
-		int rc = errno == EOPNOTSUPP || errno == ENOTTY ? 1 : -1;
+		rc = errno == EOPNOTSUPP || errno == ENOTTY ? 1 : -errno;
 
 		if (rc != 1)
 			warn(_("%s: FITRIM ioctl failed"), path);
-		close(fd);
-		return rc;
+		goto done;
 	}
 
 	if (verbose) {
@@ -99,8 +101,12 @@ static int fstrim_filesystem(const char *path, struct fstrim_range *rangetpl,
 				path, str, (uint64_t) range.len);
 		free(str);
 	}
-	close(fd);
-	return 0;
+
+	rc = 0;
+done:
+	if (fd >= 0)
+		close(fd);
+	return rc;
 }
 
 static int has_discard(const char *devname, struct sysfs_cxt *wholedisk)
@@ -115,7 +121,7 @@ static int has_discard(const char *devname, struct sysfs_cxt *wholedisk)
 		return 1;
 	/*
 	 * This is tricky to read the info from sys/, because the queue
-	 * atrributes are provided for whole devices (disk) only. We're trying
+	 * attributes are provided for whole devices (disk) only. We're trying
 	 * to reuse the whole-disk sysfs context to optimize this stuff (as
 	 * system usually have just one disk only).
 	 */
@@ -147,6 +153,18 @@ static int uniq_fs_target_cmp(
 	return !mnt_fs_streq_target(a, mnt_fs_get_target(b));
 }
 
+static int uniq_fs_source_cmp(
+		struct libmnt_table *tb __attribute__((__unused__)),
+		struct libmnt_fs *a,
+		struct libmnt_fs *b)
+{
+	if (mnt_fs_is_pseudofs(a) || mnt_fs_is_netfs(a) ||
+	    mnt_fs_is_pseudofs(b) || mnt_fs_is_netfs(b))
+		return 1;
+
+	return !mnt_fs_streq_srcpath(a, mnt_fs_get_srcpath(b));
+}
+
 /*
  * fstrim --all follows "mount -a" return codes:
  *
@@ -172,8 +190,11 @@ static int fstrim_all(struct fstrim_range *rangetpl, int verbose)
 	if (!tab)
 		err(MOUNT_EX_FAIL, _("failed to parse %s"), _PATH_PROC_MOUNTINFO);
 
-	/* de-duplicate the table */
+	/* de-duplicate by mountpoints */
 	mnt_table_uniq_fs(tab, 0, uniq_fs_target_cmp);
+
+	/* de-duplicate by source and root */
+	mnt_table_uniq_fs(tab, 0, uniq_fs_source_cmp);
 
 	while (mnt_table_next_fs(tab, itr, &fs) == 0) {
 		const char *src = mnt_fs_get_srcpath(fs),
@@ -187,7 +208,7 @@ static int fstrim_all(struct fstrim_range *rangetpl, int verbose)
 			continue;
 
 		/* Is it really accessible mountpoint? Not all mountpoints are
-		 * accessible (maybe over mounted by another fylesystem) */
+		 * accessible (maybe over mounted by another filesystem) */
 		path = mnt_get_mountpoint(tgt);
 		if (path && strcmp(path, tgt) == 0)
 			rc = 0;
@@ -228,6 +249,10 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
 	      _(" %s [options] <mount point>\n"), program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Discard unused blocks on a mounted filesystem.\n"), out);
+
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -a, --all           trim all mounted filesystems that are supported\n"), out);
 	fputs(_(" -o, --offset <num>  the offset in bytes to start discarding from\n"), out);
@@ -244,7 +269,7 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 
 int main(int argc, char **argv)
 {
-	char *path;
+	char *path = NULL;
 	int c, rc, verbose = 0, all = 0;
 	struct fstrim_range range;
 

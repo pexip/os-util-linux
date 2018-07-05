@@ -32,6 +32,9 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 		" %s [options] <program> [arguments ...]\n"),
 		program_invocation_short_name);
 
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Run a program in a new session.\n"), out);
+
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -c, --ctty     set the controlling terminal to the current one\n"), out);
 	fputs(_(" -w, --wait     wait program to exit, and use the same return\n"), out);
@@ -80,7 +83,7 @@ int main(int argc, char **argv)
 			usage(stderr);
 		}
 
-	if (argc < 2)
+	if (argc - optind < 1)
 		usage(stderr);
 
 	if (getpgrp() == getpid()) {
@@ -106,10 +109,8 @@ int main(int argc, char **argv)
 		/* cannot happen */
 		err(EXIT_FAILURE, _("setsid failed"));
 
-	if (ctty) {
-		if (ioctl(STDIN_FILENO, TIOCSCTTY, 1))
-			err(EXIT_FAILURE, _("failed to set the controlling terminal"));
-	}
+	if (ctty && ioctl(STDIN_FILENO, TIOCSCTTY, 1))
+		err(EXIT_FAILURE, _("failed to set the controlling terminal"));
 	execvp(argv[optind], argv + optind);
 	err(EXIT_FAILURE, _("failed to execute %s"), argv[optind]);
 }

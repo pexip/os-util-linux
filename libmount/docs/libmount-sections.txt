@@ -8,11 +8,13 @@ mnt_unref_cache
 mnt_cache_device_has_tag
 mnt_cache_find_tag_value
 mnt_cache_read_tags
+mnt_cache_set_targets
 mnt_get_fstype
 mnt_pretty_path
 mnt_resolve_path
 mnt_resolve_spec
 mnt_resolve_tag
+mnt_resolve_target
 </SECTION>
 
 <SECTION>
@@ -102,6 +104,7 @@ MNT_ERR_MOUNTOPT
 MNT_ERR_NOFSTAB
 MNT_ERR_NOFSTYPE
 MNT_ERR_NOSOURCE
+MNT_ERR_LOOPOVERLAP
 </SECTION>
 
 <SECTION>
@@ -154,6 +157,7 @@ MS_SLAVE
 MS_STRICTATIME
 MS_SYNCHRONOUS
 MS_UNBINDABLE
+MS_LAZYTIME
 </SECTION>
 
 <SECTION>
@@ -223,6 +227,7 @@ mnt_fs_set_freq
 mnt_fs_set_fstype
 mnt_fs_set_options
 mnt_fs_set_passno
+mnt_fs_set_priority
 mnt_fs_set_root
 mnt_fs_set_source
 mnt_fs_set_target
@@ -261,6 +266,7 @@ mnt_lock_block_signals
 
 <SECTION>
 <FILE>optmap</FILE>
+libmnt_optmap
 mnt_get_builtin_optmap
 MNT_INVERT
 MNT_NOMTAB
@@ -305,6 +311,7 @@ mnt_table_find_source
 mnt_table_find_srcpath
 mnt_table_find_tag
 mnt_table_find_target
+mnt_table_find_target_with_option
 mnt_table_first_fs
 mnt_table_get_cache
 mnt_table_get_intro_comment
@@ -377,8 +384,26 @@ mnt_unmangle
 
 <SECTION>
 <FILE>version-utils</FILE>
+LIBMOUNT_MAJOR_VERSION
+LIBMOUNT_MINOR_VERSION
+LIBMOUNT_PATCH_VERSION
 mnt_parse_version_string
 mnt_get_library_version
 mnt_get_library_features
 LIBMOUNT_VERSION
+</SECTION>
+
+<SECTION>
+<FILE>monitor</FILE>
+libmnt_monitor
+mnt_new_monitor
+mnt_ref_monitor
+mnt_unref_monitor
+mnt_monitor_enable_userspace
+mnt_monitor_enable_kernel
+mnt_monitor_get_fd
+mnt_monitor_close_fd
+mnt_monitor_next_change
+mnt_monitor_event_cleanup
+mnt_monitor_wait
 </SECTION>

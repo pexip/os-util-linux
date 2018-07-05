@@ -3,12 +3,34 @@ deprecated utils are in maintenance mode and we keep them in source tree for
 backward compatibility only.
 
 
-what: "swapon --summary" output format
-why:  does not provide control on output data formatting. The recommended solution
-      is to use --show=<columns> in all scripts.
+what:  tailf
+why:   "tail -f" is better nowadays, tailf has unfixed bugs
 
-what: "pid" as binary name for "kill --pid"
-why:   too ugly, too obscure
+--------------------------
+
+what:  sfdisk --show-size
+why:   this does not belong to fdisk, use "blockdev --getsz"
+
+--------------------------
+
+what:   sfdisk --Linux
+why:    unnecessary option, only Linux (non-DOS mode) is supported
+
+--------------------------
+
+what:   sfdisk --unit
+why:    unnecessary option, only 'S'ector unit is supported
+
+--------------------------
+
+what:   sfdisk --show-pt-geometry
+why:    equal to --show-geometry for a long time
+
+--------------------------
+
+what:  "swapon --summary" output format
+why:   does not provide control on output data formatting. The recommended solution
+       is to use --show=<columns> in all scripts.
 
 --------------------------
 
@@ -69,10 +91,10 @@ What:   losetup output format without --list
 What:	tunelp
 Why:	parallel port printers are probably almost extinct devices
 
---------------------------
+----------------------------
 
-What:	deprecated_last(1)
-Why:	nobody uses this implementation
+What:	reset
+Why:	ncurses has better reset(1)
 
 ----------------------------
 

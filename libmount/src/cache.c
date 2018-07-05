@@ -155,7 +155,6 @@ void mnt_unref_cache(struct libmnt_cache *cache)
 int mnt_cache_set_targets(struct libmnt_cache *cache,
 				struct libmnt_table *mtab)
 {
-	assert(cache);
 	if (!cache)
 		return -EINVAL;
 
@@ -242,9 +241,6 @@ static const char *cache_find_path(struct libmnt_cache *cache, const char *path)
 {
 	size_t i;
 
-	assert(cache);
-	assert(path);
-
 	if (!cache || !path)
 		return NULL;
 
@@ -252,7 +248,7 @@ static const char *cache_find_path(struct libmnt_cache *cache, const char *path)
 		struct mnt_cache_entry *e = &cache->ents[i];
 		if (!(e->flag & MNT_CACHE_ISPATH))
 			continue;
-		if (streq_except_trailing_slash(path, e->key))
+		if (streq_paths(path, e->key))
 			return e->value;
 	}
 	return NULL;
@@ -266,10 +262,6 @@ static const char *cache_find_tag(struct libmnt_cache *cache,
 {
 	size_t i;
 	size_t tksz;
-
-	assert(cache);
-	assert(token);
-	assert(value);
 
 	if (!cache || !token || !value)
 		return NULL;
@@ -325,9 +317,6 @@ int mnt_cache_read_tags(struct libmnt_cache *cache, const char *devname)
 	int rc;
 	const char *tags[] = { "LABEL", "UUID", "TYPE", "PARTUUID", "PARTLABEL" };
 	const char *blktags[] = { "LABEL", "UUID", "TYPE", "PART_ENTRY_UUID", "PART_ENTRY_NAME" };
-
-	assert(cache);
-	assert(devname);
 
 	if (!cache || !devname)
 		return -EINVAL;
@@ -563,7 +552,7 @@ char *mnt_resolve_path(const char *path, struct libmnt_cache *cache)
  * Like mnt_resolve_path(), unless @cache is not NULL and
  * mnt_cache_set_targets(cache, mtab) was called: if @path is found in the
  * cached @mtab and the matching entry was provided by the kernel, assume that
- * @path is already canonicalized. By avoiding a call to canonicalize_path() on
+ * @path is already canonicalized. By avoiding a call to realpath(2) on
  * known mount points, there is a lower risk of stepping on a stale mount
  * point, which can result in an application freeze. This is also faster in
  * general, as stat(2) on a mount point is slower than on a regular file.
@@ -646,6 +635,7 @@ char *mnt_pretty_path(const char *path, struct libmnt_cache *cache)
 		if (loopcxt_is_autoclear(&lc)) {
 			char *tmp = loopcxt_get_backing_file(&lc);
 			if (tmp) {
+				loopcxt_deinit(&lc);
 				if (!cache)
 					free(pretty);	/* not cached, deallocate */
 				return tmp;		/* return backing file */
@@ -674,9 +664,6 @@ char *mnt_resolve_tag(const char *token, const char *value,
 		      struct libmnt_cache *cache)
 {
 	char *p = NULL;
-
-	assert(token);
-	assert(value);
 
 	/*DBG(CACHE, ul_debugobj(cache, "resolving tag token=%s value=%s",
 				token, value));*/
@@ -733,7 +720,7 @@ char *mnt_resolve_spec(const char *spec, struct libmnt_cache *cache)
 
 #ifdef TEST_PROGRAM
 
-int test_resolve_path(struct libmnt_test *ts, int argc, char *argv[])
+static int test_resolve_path(struct libmnt_test *ts, int argc, char *argv[])
 {
 	char line[BUFSIZ];
 	struct libmnt_cache *cache;
@@ -756,7 +743,7 @@ int test_resolve_path(struct libmnt_test *ts, int argc, char *argv[])
 	return 0;
 }
 
-int test_resolve_spec(struct libmnt_test *ts, int argc, char *argv[])
+static int test_resolve_spec(struct libmnt_test *ts, int argc, char *argv[])
 {
 	char line[BUFSIZ];
 	struct libmnt_cache *cache;
@@ -779,7 +766,7 @@ int test_resolve_spec(struct libmnt_test *ts, int argc, char *argv[])
 	return 0;
 }
 
-int test_read_tags(struct libmnt_test *ts, int argc, char *argv[])
+static int test_read_tags(struct libmnt_test *ts, int argc, char *argv[])
 {
 	char line[BUFSIZ];
 	struct libmnt_cache *cache;

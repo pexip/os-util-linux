@@ -100,13 +100,14 @@ static void ioprio_setid(int which, int ioclass, int data, int who)
 
 static void __attribute__ ((__noreturn__)) usage(FILE * out)
 {
-	fputs(_("\nSets or gets the IO scheduling class and priority of processes.\n"), out);
-
 	fputs(USAGE_HEADER, out);
 	fprintf(out,  _(" %1$s [options] -p <pid>...\n"
 			" %1$s [options] -P <pgid>...\n"
 			" %1$s [options] -u <uid>...\n"
 			" %1$s [options] <command>\n"), program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Show or change the I/O-scheduling class and priority of a process.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -c, --class <class>    name or number of scheduling class,\n"

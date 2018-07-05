@@ -1,4 +1,3 @@
-
 #include <inttypes.h>
 
 #include "c.h"
@@ -54,8 +53,8 @@ int ipc_sem_get_limits(struct ipc_limits *lim)
 
 	}
 
-	if (rc == 4) {
-		struct seminfo seminfo;
+	if (rc != 4) {
+		struct seminfo seminfo = { .semmni = 0 };
 		union semun arg = { .array = (ushort *) &seminfo };
 
 		if (semctl(0, 0, IPC_INFO, arg) < 0)
@@ -82,12 +81,15 @@ int ipc_shm_get_limits(struct ipc_limits *lim)
 		lim->shmmni = path_read_u64(_PATH_PROC_IPC_SHMMNI);
 
 	} else {
-		struct shminfo shminfo;
+		struct shminfo *shminfo;
+		struct shmid_ds shmbuf;
 
-		if (shmctl(0, IPC_INFO, (struct shmid_ds *) &shminfo) < 0)
+		if (shmctl(0, IPC_INFO, &shmbuf) < 0)
 			return 1;
-		lim->shmmni = shminfo.shmmni;
-		lim->shmall = shminfo.shmall;
+		shminfo = (struct shminfo *) &shmbuf;
+		lim->shmmni = shminfo->shmmni;
+		lim->shmall = shminfo->shmall;
+		lim->shmmax = shminfo->shmmax;
 	}
 
 	return 0;
@@ -97,8 +99,9 @@ int ipc_shm_get_info(int id, struct shm_data **shmds)
 {
 	FILE *f;
 	int i = 0, maxid;
+	char buf[BUFSIZ];
 	struct shm_data *p;
-	struct shm_info dummy;
+	struct shmid_ds dummy;
 
 	p = *shmds = xcalloc(1, sizeof(struct shm_data));
 	p->next = NULL;
@@ -109,8 +112,11 @@ int ipc_shm_get_info(int id, struct shm_data **shmds)
 
 	while (fgetc(f) != '\n');		/* skip header */
 
-	while (feof(f) == 0) {
-		if (fscanf(f,
+	while (fgets(buf, sizeof(buf), f) != NULL) {
+		/* scan for the first 14-16 columns (e.g. Linux 2.6.32 has 14) */
+		p->shm_rss = 0xdead;
+		p->shm_swp = 0xdead;
+		if (sscanf(buf,
 			  "%d %d  %o %"SCNu64 " %u %u  "
 			  "%"SCNu64 " %u %u %u %u %"SCNi64 " %"SCNi64 " %"SCNi64
 			  " %"SCNu64 " %"SCNu64 "\n",
@@ -129,8 +135,8 @@ int ipc_shm_get_info(int id, struct shm_data **shmds)
 			   &p->shm_dtim,
 			   &p->shm_ctim,
 			   &p->shm_rss,
-			   &p->shm_swp) != 16)
-			continue;
+			   &p->shm_swp) < 14)
+			continue; /* invalid line, skipped */
 
 		if (id > -1) {
 			/* ID specified */
@@ -154,7 +160,7 @@ int ipc_shm_get_info(int id, struct shm_data **shmds)
 
 	/* Fallback; /proc or /sys file(s) missing. */
 shm_fallback:
-	maxid = shmctl(0, SHM_INFO, (struct shmid_ds *) &dummy);
+	maxid = shmctl(0, SHM_INFO, &dummy);
 
 	for (int j = 0; j <= maxid; j++) {
 		int shmid;
@@ -385,10 +391,6 @@ int ipc_msg_get_info(int id, struct msg_data **msgds)
 		if (id > -1) {
 			/* ID specified */
 			if (id == p->msg_perm.id) {
-				/*
-				 * FIXME: q_qbytes are not in /proc
-				 *
-				 */
 				if (msgctl(id, IPC_STAT, &msgseg) != -1)
 					p->q_qbytes = msgseg.msg_qbytes;
 				i = 1;

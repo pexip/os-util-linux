@@ -31,13 +31,22 @@
 
 /* Sccsid @(#)pg.c 1.44 (gritter) 2/8/02 - modified for util-linux */
 
+/*
+ * This command is deprecated.  The utility is in maintenance mode,
+ * meaning we keep them in source tree for backward compatibility
+ * only.  Do not waste time making this command better, unless the
+ * fix is about security or other very critical issue.
+ *
+ * See Documentation/deprecated.txt for more information.
+ */
+
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
 #ifndef	TIOCGWINSZ
 # include <sys/ioctl.h>
 #endif
-#include <sys/termios.h>
+#include <termios.h>
 #include <fcntl.h>
 #include <regex.h>
 #include <stdio.h>
@@ -49,7 +58,6 @@
 #include <unistd.h>
 #include <signal.h>
 #include <setjmp.h>
-#include <libgen.h>
 
 #ifdef HAVE_NCURSES_H
 # include <ncurses.h>
@@ -68,7 +76,7 @@
 
 #define	READBUF		LINE_MAX	/* size of input buffer */
 #define CMDBUF		255		/* size of command buffer */
-#define	TABSIZE		8		/* spaces consumed by tab character */
+#define	PG_TABSIZE	8		/* spaces consumed by tab character */
 
 #define	cuc(c)		((c) & 0377)
 
@@ -213,6 +221,10 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fprintf(out,
 		_(" %s [options] [+line] [+/pattern/] [files]\n"),
 		program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Browse pagewise through text files.\n"), out);
+
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -number      lines per page\n"), out);
 	fputs(_(" -c           clear screen before displaying\n"), out);
@@ -405,7 +417,7 @@ static char *endline_for_mb(unsigned col, char *s)
 			goto ended;
 			/* Cursor right. */
 		case L'\t':
-			pos += TABSIZE - (pos % TABSIZE);
+			pos += PG_TABSIZE - (pos % PG_TABSIZE);
 			break;
 		default:
 			if (iswprint(*p))
@@ -469,7 +481,7 @@ static char *endline(unsigned col, char *s)
 			goto cend;
 			/* Cursor right. */
 		case '\t':
-			pos += TABSIZE - (pos % TABSIZE);
+			pos += PG_TABSIZE - (pos % PG_TABSIZE);
 			break;
 		default:
 			pos++;
@@ -793,7 +805,7 @@ static char *colb(char *s)
 }
 
 #ifdef HAVE_WIDECHAR
-/* Convert nonprintable characters to spaces in case MB_CUR_MAX > 1.  */
+/* Convert non-printable characters to spaces in case MB_CUR_MAX > 1.  */
 static void makeprint_for_mb(char *s, size_t l)
 {
 	char *t = s;
@@ -813,7 +825,7 @@ static void makeprint_for_mb(char *s, size_t l)
 }
 #endif
 
-/* Convert nonprintable characters to spaces. */
+/* Convert non-printable characters to spaces. */
 static void makeprint(char *s, size_t l)
 {
 #ifdef HAVE_WIDECHAR
@@ -926,7 +938,7 @@ static void pgfile(FILE *f, const char *name)
 	}
 	find = tmpfile();
 	if (fbuf == NULL || find == NULL) {
-		warn(_("Cannot create tempfile"));
+		warn(_("Cannot create temporary file"));
 		quit(++exitstatus);
 	}
 	if (searchfor) {

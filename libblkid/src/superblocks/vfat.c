@@ -15,7 +15,9 @@
 #include <errno.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <inttypes.h>
 
+#include "pt-mbr.h"
 #include "superblocks.h"
 
 /* Yucky misaligned values */
@@ -124,14 +126,14 @@ static unsigned char *search_fat_label(blkid_probe pr,
 	uint32_t i;
 
 	DBG(LOWPROBE, ul_debug("\tlook for label in root-dir "
-			"(entries: %d, offset: %jd)", entries, offset));
+			"(entries: %"PRIu32", offset: %"PRIu64")", entries, offset));
 
 	if (!blkid_probe_is_tiny(pr)) {
 		/* large disk, read whole root directory */
 		dir = (struct vfat_dir_entry *)
 			blkid_probe_get_buffer(pr,
 					offset,
-					(blkid_loff_t) entries *
+					(uint64_t) entries *
 						sizeof(struct vfat_dir_entry));
 		if (!dir)
 			return NULL;
@@ -146,7 +148,7 @@ static unsigned char *search_fat_label(blkid_probe pr,
 		if (!dir)
 			ent = (struct vfat_dir_entry *)
 				blkid_probe_get_buffer(pr,
-					(blkid_loff_t) offset + (i *
+					(uint64_t) offset + (i *
 						sizeof(struct vfat_dir_entry)),
 					sizeof(struct vfat_dir_entry));
 		else
@@ -169,7 +171,8 @@ static unsigned char *search_fat_label(blkid_probe pr,
 	return NULL;
 }
 
-static int fat_valid_superblock(const struct blkid_idmag *mag,
+static int fat_valid_superblock(blkid_probe pr,
+			const struct blkid_idmag *mag,
 			struct msdos_super_block *ms,
 			struct vfat_super_block *vs,
 			uint32_t *cluster_count, uint32_t *fat_size)
@@ -243,8 +246,25 @@ static int fat_valid_superblock(const struct blkid_idmag *mag,
 	if (cluster_count)
 		*cluster_count = __cluster_count;
 
+	if (blkid_probe_is_wholedisk(pr)) {
+		/* OK, seems like FAT, but it's possible that we found boot
+		 * sector with crazy FAT-like stuff (magic strings, media,
+		 * etc..) before MBR. Let's make sure that there is no MBR with
+		 * usable partition. */
+		unsigned char *buf = (unsigned char *) ms;
+		if (mbr_is_valid_magic(buf)) {
+			struct dos_partition *p0 = mbr_get_partition(buf, 0);
+			if (dos_partition_get_size(p0) != 0 &&
+			    (p0->boot_ind == 0 || p0->boot_ind == 0x80))
+				return 0;
+		}
+	}
+
 	return 1;	/* valid */
 }
+
+/* function prototype to avoid warnings (duplicate in partitions/dos.c) */
+extern int blkid_probe_is_vfat(blkid_probe pr);
 
 /*
  * This function is used by MBR partition table parser to avoid
@@ -270,7 +290,7 @@ int blkid_probe_is_vfat(blkid_probe pr)
 	if (!vs)
 		return errno ? -errno : 0;
 
-	return fat_valid_superblock(mag, ms, vs, NULL, NULL);
+	return fat_valid_superblock(pr, mag, ms, vs, NULL, NULL);
 }
 
 /* FAT label extraction from the root directory taken from Kay
@@ -293,7 +313,7 @@ static int probe_vfat(blkid_probe pr, const struct blkid_idmag *mag)
 	if (!vs)
 		return errno ? -errno : 1;
 
-	if (!fat_valid_superblock(mag, ms, vs, &cluster_count, &fat_size))
+	if (!fat_valid_superblock(pr, mag, ms, vs, &cluster_count, &fat_size))
 		return 1;
 
 	sector_size = unaligned_le16(&ms->ms_sector_size);
@@ -379,7 +399,7 @@ static int probe_vfat(blkid_probe pr, const struct blkid_idmag *mag)
 			struct fat32_fsinfo *fsinfo;
 
 			buf = blkid_probe_get_buffer(pr,
-					(blkid_loff_t) fsinfo_sect * sector_size,
+					(uint64_t) fsinfo_sect * sector_size,
 					sizeof(struct fat32_fsinfo));
 			if (buf == NULL)
 				return errno ? -errno : 1;

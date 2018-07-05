@@ -29,7 +29,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.\"	from: @(#)hexdump.1	8.2 (Berkeley) 4/18/94
+.\"	@(#)hexdump.1	8.2 (Berkeley) 4/18/94
 .\"
 .TH HEXDUMP "1" "April 2013" "util-linux" "User Commands"
 .SH NAME
@@ -82,9 +82,11 @@ Empty lines and lines whose first non-blank character is a hash mark (\&#)
 are ignored.
 .TP
 \fB\-L\fR, \fB\-\-color\fR[=\fIwhen\fR]
-Accept color units for the output (enabled by default).  The optional argument \fIwhen\fP
+Accept color units for the output.  The optional argument \fIwhen\fP
 can be \fBauto\fR, \fBnever\fR or \fBalways\fR.  If the \fIwhen\fR argument is omitted,
-then it defaults to \fBauto\fR.
+it defaults to \fBauto\fR.  The colors can be disabled; for the current built-in default
+see the \fB\-\-help\fR output.  See also the \fBColors\fR subsection and
+the \fBCOLORS\fR section below.
 .TP
 \fB\-n\fR, \fB\-\-length\fR \fIlength\fR
 Interpret only
@@ -223,13 +225,13 @@ conversion string except that it is only performed once, when all of the
 input data has been processed.
 .TP
 .B \&_c
-Output characters in the default character set.  Nonprinting characters are
+Output characters in the default character set.  Non-printing characters are
 displayed in three-character, zero-padded octal, except for those
 representable by standard escape notation (see above), which are displayed as
 two-character strings.
 .TP
 .B \&_p
-Output characters in the default character set.  Nonprinting characters are
+Output characters in the default character set.  Non-printing characters are
 displayed as a single
 .RB ' \&. '.
 .TP
@@ -334,10 +336,9 @@ conversion character or conversion string but with any
 .RB ' \&# '
 conversion flag characters removed, and referencing a NULL string.
 .PP
-If no format strings are specified, the default display is equivalent
-to specifying the
-.B \-x
-option.
+If no format strings are specified, the default display is very similar to
+the \fB\-x\fR output format (the \fB\-x\fR option causes more space to be
+used between format units than in the default output).
 .SH "EXIT STATUS"
 .B hexdump
 exits 0 on success and >0 if an error occurred.

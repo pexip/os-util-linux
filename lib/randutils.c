@@ -30,12 +30,16 @@
 THREAD_LOCAL unsigned short ul_jrand_seed[3];
 #endif
 
+int rand_get_number(int low_n, int high_n)
+{
+	return rand() % (high_n - low_n + 1) + low_n;
+}
+
 int random_get_fd(void)
 {
 	int i, fd;
-	struct timeval	tv;
+	struct timeval tv;
 
-	gettimeofday(&tv, 0);
 	fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
 	if (fd == -1)
 		fd = open("/dev/random", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
@@ -44,6 +48,8 @@ int random_get_fd(void)
 		if (i >= 0)
 			fcntl(fd, F_SETFD, i | FD_CLOEXEC);
 	}
+
+	gettimeofday(&tv, 0);
 	srand((getpid() << 16) ^ getuid() ^ tv.tv_sec ^ tv.tv_usec);
 
 #ifdef DO_JRAND_MIX

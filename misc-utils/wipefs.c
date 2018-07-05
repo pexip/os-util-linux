@@ -29,6 +29,7 @@
 #include <getopt.h>
 #include <string.h>
 #include <limits.h>
+#include <libgen.h>
 
 #include <blkid.h>
 
@@ -83,7 +84,7 @@ print_pretty(struct wipe_desc *wp, int line)
 		printf("----------------------------------------------------------------\n");
 	}
 
-	printf("0x%-17jx  %s   [%s]", wp->offset, wp->type, _(wp->usage));
+	printf("0x%-17jx  %s   [%s]", (intmax_t)wp->offset, wp->type, _(wp->usage));
 
 	if (wp->label && *wp->label)
 		printf("\n%27s %s", "LABEL:", wp->label);
@@ -100,7 +101,7 @@ print_parsable(struct wipe_desc *wp, int line)
 	if (!line)
 		printf("# offset,uuid,label,type\n");
 
-	printf("0x%jx,", wp->offset);
+	printf("0x%jx,", (intmax_t)wp->offset);
 
 	if (wp->uuid) {
 		blkid_encode_string(wp->uuid, enc, sizeof(enc));
@@ -240,7 +241,7 @@ new_probe(const char *devname, int mode)
 			goto error;
 
 		pr = blkid_new_probe();
-		if (pr && blkid_probe_set_device(pr, fd, 0, 0)) {
+		if (!pr || blkid_probe_set_device(pr, fd, 0, 0) != 0) {
 			close(fd);
 			goto error;
 		}
@@ -260,13 +261,12 @@ new_probe(const char *devname, int mode)
 			BLKID_SUBLKS_BADCSUM);	/* accept bad checksums */
 
 	blkid_probe_enable_partitions(pr, 1);
-	blkid_probe_set_partitions_flags(pr, BLKID_PARTS_MAGIC);
-
+	blkid_probe_set_partitions_flags(pr, BLKID_PARTS_MAGIC |
+					     BLKID_PARTS_FORCE_GPT);
 	return pr;
 error:
 	blkid_free_probe(pr);
 	err(EXIT_FAILURE, _("error: %s: probing initialization failed"), devname);
-	return NULL;
 }
 
 static struct wipe_desc *
@@ -311,7 +311,7 @@ static void do_wipe_real(blkid_probe pr, const char *devname,
 
 	if (blkid_do_wipe(pr, (flags & WP_FL_NOACT) != 0))
 		warn(_("%s: failed to erase %s magic string at offset 0x%08jx"),
-		     devname, w->type, w->offset);
+		     devname, w->type, (intmax_t)w->offset);
 
 	if (flags & WP_FL_QUIET)
 		return;
@@ -319,7 +319,7 @@ static void do_wipe_real(blkid_probe pr, const char *devname,
 	printf(P_("%s: %zd byte was erased at offset 0x%08jx (%s): ",
 		  "%s: %zd bytes were erased at offset 0x%08jx (%s): ",
 		  w->len),
-	       devname, w->len, w->offset, w->type);
+	       devname, w->len, (intmax_t)w->offset, w->type);
 
 	for (i = 0; i < w->len; i++) {
 		printf("%02x", w->magic[i]);
@@ -334,7 +334,7 @@ static void do_backup(struct wipe_desc *wp, const char *base)
 	char *fname = NULL;
 	int fd;
 
-	xasprintf(&fname, "%s0x%08jx.bak", base, wp->offset);
+	xasprintf(&fname, "%s0x%08jx.bak", base, (intmax_t)wp->offset);
 
 	fd = open(fname, O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR);
 	if (fd < 0)
@@ -379,9 +379,12 @@ do_wipe(struct wipe_desc *wp, const char *devname, int flags)
 
 	if (zap && (flags & WP_FL_BACKUP)) {
 		const char *home = getenv ("HOME");
+		char *tmp = xstrdup(devname);
+
 		if (!home)
 			errx(EXIT_FAILURE, _("failed to create a signature backup, $HOME undefined"));
-		xasprintf (&backup, "%s/wipefs-%s-", home, basename(devname));
+		xasprintf (&backup, "%s/wipefs-%s-", home, basename(tmp));
+		free(tmp);
 	}
 
 	wp0 = clone_offset(wp);
@@ -425,7 +428,7 @@ do_wipe(struct wipe_desc *wp, const char *devname, int flags)
 
 	for (w = wp0; w != NULL; w = w->next) {
 		if (!w->on_disk && !(flags & WP_FL_QUIET))
-			warnx(_("%s: offset 0x%jx not found"), devname, w->offset);
+			warnx(_("%s: offset 0x%jx not found"), devname, (uintmax_t)w->offset);
 	}
 
 	if (need_force)
@@ -448,11 +451,14 @@ do_wipe(struct wipe_desc *wp, const char *devname, int flags)
 static void __attribute__((__noreturn__))
 usage(FILE *out)
 {
-	fputs(_("\nUsage:\n"), out);
+	fputs(USAGE_HEADER, out);
 	fprintf(out,
 	      _(" %s [options] <device>\n"), program_invocation_short_name);
 
-	fputs(_("\nOptions:\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Wipe signatures from a device.\n"), out);
+
+	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -a, --all           wipe all magic strings (BE CAREFUL!)\n"
 		" -b, --backup        create a signature backup in $HOME\n"
 		" -f, --force         force erasure\n"
@@ -464,7 +470,7 @@ usage(FILE *out)
 		" -t, --types <list>  limit the set of filesystem, RAIDs or partition tables\n"
 		" -V, --version       output version information and exit\n"), out);
 
-	fprintf(out, _("\nFor more information see wipefs(8).\n"));
+	fprintf(out, USAGE_MAN_TAIL("wipefs(8)"));
 
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
@@ -502,7 +508,7 @@ main(int argc, char **argv)
 	textdomain(PACKAGE);
 	atexit(close_stdout);
 
-	while ((c = getopt_long(argc, argv, "afhno:pqt:V", longopts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "abfhno:pqt:V", longopts, NULL)) != -1) {
 
 		err_exclusive_options(c, longopts, excl, excl_st);
 

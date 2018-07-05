@@ -15,8 +15,14 @@
 #include <string.h>
 #include <errno.h>
 
+#include <assert.h>
+
 #ifdef HAVE_ERR_H
 # include <err.h>
+#endif
+
+#ifdef HAVE_SYS_SYSMACROS_H
+# include <sys/sysmacros.h>     /* for major, minor */
 #endif
 
 /*
@@ -37,7 +43,7 @@
 # define __must_be_array(a) \
 	UL_BUILD_BUG_ON_ZERO(__builtin_types_compatible_p(__typeof__(a), __typeof__(&a[0])))
 
-# define ignore_result(x) ({ \
+# define ignore_result(x) __extension__ ({ \
 	__typeof__(x) __dummy __attribute__((__unused__)) = (x); (void) __dummy; \
 })
 
@@ -72,7 +78,7 @@
  * e.g. in a structure initializer (or wherever else comma expressions
  * aren't permitted).
  */
-#define UL_BUILD_BUG_ON_ZERO(e) (sizeof(struct { int:-!!(e); }))
+#define UL_BUILD_BUG_ON_ZERO(e) __extension__ (sizeof(struct { int:-!!(e); }))
 #define BUILD_BUG_ON_NULL(e) ((void *)sizeof(struct { int:-!!(e); }))
 
 #ifndef ARRAY_SIZE
@@ -92,7 +98,7 @@
 #endif
 
 #ifndef min
-# define min(x, y) ({				\
+# define min(x, y) __extension__ ({		\
 	__typeof__(x) _min1 = (x);		\
 	__typeof__(y) _min2 = (y);		\
 	(void) (&_min1 == &_min2);		\
@@ -100,11 +106,19 @@
 #endif
 
 #ifndef max
-# define max(x, y) ({				\
+# define max(x, y) __extension__ ({		\
 	__typeof__(x) _max1 = (x);		\
 	__typeof__(y) _max2 = (y);		\
 	(void) (&_max1 == &_max2);		\
 	_max1 > _max2 ? _max1 : _max2; })
+#endif
+
+#ifndef cmp_numbers
+# define cmp_numbers(x, y) __extension__ ({	\
+	__typeof__(x) _a = (x);			\
+	__typeof__(y) _b = (y);			\
+	(void) (&_a == &_b);			\
+	_a == _b ? 0 : _a > _b ? 1 : -1; })
 #endif
 
 #ifndef offsetof
@@ -112,7 +126,7 @@
 #endif
 
 #ifndef container_of
-#define container_of(ptr, type, member) ({                       \
+#define container_of(ptr, type, member) __extension__ ({	 \
 	const __typeof__( ((type *)0)->member ) *__mptr = (ptr); \
 	(type *)( (char *)__mptr - offsetof(type,member) );})
 #endif
@@ -223,6 +237,12 @@ static inline int dirfd(DIR *d)
 #define O_CLOEXEC 0
 #endif
 
+#ifdef __FreeBSD_kernel__
+#ifndef F_DUPFD_CLOEXEC
+#define F_DUPFD_CLOEXEC	17	/* Like F_DUPFD, but FD_CLOEXEC is set */
+#endif
+#endif
+
 
 #ifndef AI_ADDRCONFIG
 #define AI_ADDRCONFIG 0x0020
@@ -312,5 +332,39 @@ static inline int xusleep(useconds_t usec)
  */
 #define stringify_value(s) stringify(s)
 #define stringify(s) #s
+
+/*
+ * UL_ASAN_BLACKLIST is a macro to tell AddressSanitizer (a compile-time
+ * instrumentation shipped with Clang and GCC) to not instrument the
+ * annotated function.  Furthermore, it will prevent the compiler from
+ * inlining the function because inlining currently breaks the blacklisting
+ * mechanism of AddressSanitizer.
+ */
+#if defined(__has_feature)
+# if __has_feature(address_sanitizer)
+#  define UL_ASAN_BLACKLIST __attribute__((noinline)) __attribute__((no_sanitize_memory)) __attribute__((no_sanitize_address))
+# else
+#  define UL_ASAN_BLACKLIST	/* nothing */
+# endif
+#else
+# define UL_ASAN_BLACKLIST	/* nothing */
+#endif
+
+
+
+/*
+ * Note that sysconf(_SC_GETPW_R_SIZE_MAX) returns *initial* suggested size for
+ * pwd buffer and in some cases it is not large enough. See POSIX and
+ * getpwnam_r man page for more details.
+ */
+#define UL_GETPW_BUFSIZ	(16 * 1024)
+
+/*
+ * Darwin or other BSDs may only have MAP_ANON. To get it on Darwin we must
+ * define _DARWIN_C_SOURCE before including sys/mman.h. We do this in config.h.
+ */
+#if !defined MAP_ANONYMOUS && defined MAP_ANON
+# define MAP_ANONYMOUS  (MAP_ANON)
+#endif
 
 #endif /* UTIL_LINUX_C_H */

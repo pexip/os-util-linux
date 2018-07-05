@@ -38,13 +38,10 @@
 #include "widechar.h"
 #include "strutils.h"
 #include "closestream.h"
+#include "idcache.h"
 
 #ifndef MAXSYMLINKS
 #define MAXSYMLINKS 256
-#endif
-
-#ifndef LOGIN_NAME_MAX
-#define LOGIN_NAME_MAX 256
 #endif
 
 #define NAMEI_NOLINKS	(1 << 1)
@@ -65,102 +62,9 @@ struct namei {
 	int		noent;		/* is this item not existing */
 };
 
-struct idcache {
-	unsigned long int	id;
-	char			*name;
-	struct idcache		*next;
-};
-
 static int flags;
-static int uwidth;		/* maximal width of username */
-static int gwidth;		/* maximal width of groupname */
 static struct idcache *gcache;	/* groupnames */
 static struct idcache *ucache;	/* usernames */
-
-static struct idcache *
-get_id(struct idcache *ic, unsigned long int id)
-{
-	while(ic) {
-		if (ic->id == id)
-			return ic;
-		ic = ic->next;
-	}
-	return NULL;
-}
-
-static void
-free_idcache(struct idcache *ic)
-{
-	while(ic) {
-		struct idcache *next = ic->next;
-		free(ic->name);
-		free(ic);
-		ic = next;
-	}
-}
-
-static void
-add_id(struct idcache **ic, char *name, unsigned long int id, int *width)
-{
-	struct idcache *nc, *x;
-	int w = 0;
-
-	nc = xcalloc(1, sizeof(*nc));
-	nc->id = id;
-
-	if (name) {
-#ifdef HAVE_WIDECHAR
-		wchar_t wc[LOGIN_NAME_MAX + 1];
-
-		if (mbstowcs(wc, name, LOGIN_NAME_MAX) > 0) {
-			wc[LOGIN_NAME_MAX] = '\0';
-			w = wcswidth(wc, LOGIN_NAME_MAX);
-		}
-		else
-#endif
-			w = strlen(name);
-	}
-	/* note, we ignore names with non-printable widechars */
-	if (w > 0)
-		nc->name = xstrdup(name);
-	else
-		xasprintf(&nc->name, "%lu", id);
-
-	for (x = *ic; x && x->next; x = x->next);
-
-	/* add 'nc' at end of the 'ic' list */
-	if (x)
-		x->next = nc;
-	else
-		*ic = nc;
-	if (w <= 0)
-		w = nc->name ? strlen(nc->name) : 0;
-
-	*width = *width < w ? w : *width;
-	return;
-}
-
-static void
-add_uid(unsigned long int id)
-{
-	struct idcache *ic = get_id(ucache, id);
-
-	if (!ic) {
-		struct passwd *pw = getpwuid((uid_t) id);
-		add_id(&ucache, pw ? pw->pw_name : NULL, id, &uwidth);
-	}
-}
-
-static void
-add_gid(unsigned long int id)
-{
-	struct idcache *ic = get_id(gcache, id);
-
-	if (!ic) {
-		struct group *gr = getgrgid((gid_t) id);
-		add_id(&gcache, gr ? gr->gr_name : NULL, id, &gwidth);
-	}
-}
 
 static void
 free_namei(struct namei *nm)
@@ -228,7 +132,7 @@ dotdot_stat(const char *dirname, struct stat *st)
 	memcpy(path + len, DOTDOTDIR, sizeof(DOTDOTDIR));
 
 	if (stat(path, st))
-		err(EXIT_FAILURE, _("stat failed %s"), path);
+		err(EXIT_FAILURE, _("stat of %s failed"), path);
 	free(path);
 	return st;
 }
@@ -254,8 +158,8 @@ new_namei(struct namei *parent, const char *path, const char *fname, int lev)
 	if (S_ISLNK(nm->st.st_mode))
 		readlink_to_namei(nm, path);
 	if (flags & NAMEI_OWNERS) {
-		add_uid(nm->st.st_uid);
-		add_gid(nm->st.st_gid);
+		add_uid(ucache, nm->st.st_uid);
+		add_gid(gcache, nm->st.st_gid);
 	}
 
 	if ((flags & NAMEI_MNTS) && S_ISDIR(nm->st.st_mode)) {
@@ -371,7 +275,7 @@ print_namei(struct namei *nm, char *path)
 			if (flags & NAMEI_MODES)
 				blanks += 9;
 			if (flags & NAMEI_OWNERS)
-				blanks += uwidth + gwidth + 2;
+				blanks += ucache->width + gcache->width + 2;
 			if (!(flags & NAMEI_VERTICAL))
 				blanks += 1;
 			blanks += nm->level * 2;
@@ -380,7 +284,7 @@ print_namei(struct namei *nm, char *path)
 			return -1;
 		}
 
-		strmode(nm->st.st_mode, md);
+		xstrmode(nm->st.st_mode, md);
 
 		if (nm->mountpoint)
 			md[0] = 'D';
@@ -397,9 +301,9 @@ print_namei(struct namei *nm, char *path)
 			printf("%c", md[0]);
 
 		if (flags & NAMEI_OWNERS) {
-			printf(" %-*s", uwidth,
+			printf(" %-*s", ucache->width,
 				get_id(ucache, nm->st.st_uid)->name);
-			printf(" %-*s", gwidth,
+			printf(" %-*s", gcache->width,
 				get_id(gcache, nm->st.st_gid)->name);
 		}
 
@@ -424,11 +328,14 @@ static void usage(int rc)
 	if (!*p)
 		p = "namei";
 
-	fputs(_("\nUsage:\n"), out);
+	fputs(USAGE_HEADER, out);
 	fprintf(out,
 	      _(" %s [options] <pathname>...\n"), p);
 
-	fputs(_("\nOptions:\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Follow a pathname until a terminal point is found.\n"), out);
+
+	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -h, --help          displays this help text\n"
 		" -V, --version       output version information and exit\n"
 		" -x, --mountpoints   show mount point directories with a 'D'\n"
@@ -438,7 +345,7 @@ static void usage(int rc)
 		" -n, --nosymlinks    don't follow symlinks\n"
 		" -v, --vertical      vertical align of modes and owners\n"), out);
 
-	fputs(_("\nFor more information see namei(1).\n"), out);
+	fprintf(out, USAGE_MAN_TAIL("namei(1)"));
 	exit(rc);
 }
 
@@ -501,6 +408,13 @@ main(int argc, char **argv)
 		warnx(_("pathname argument is missing"));
 		usage(EXIT_FAILURE);
 	}
+
+	ucache = new_idcache();
+	if (!ucache)
+		err(EXIT_FAILURE, _("failed to allocate UID cache"));
+	gcache = new_idcache();
+	if (!gcache)
+		err(EXIT_FAILURE, _("failed to allocate GID cache"));
 
 	for(; optind < argc; optind++) {
 		char *path = argv[optind];

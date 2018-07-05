@@ -32,7 +32,7 @@ char *blkid_get_tag_value(blkid_cache cache, const char *tagname,
 	blkid_cache c = cache;
 	char *ret = NULL;
 
-	DBG(RESOLVE, ul_debug("looking for %s on %s", tagname, devname));
+	DBG(TAG, ul_debug("looking for %s on %s", tagname, devname));
 
 	if (!devname)
 		return NULL;
@@ -68,7 +68,7 @@ char *blkid_get_devname(blkid_cache cache, const char *token,
 	if (!cache && blkid_get_cache(&c, NULL) < 0)
 		return NULL;
 
-	DBG(RESOLVE, ul_debug("looking for %s%s%s %s", token, value ? "=" : "",
+	DBG(TAG, ul_debug("looking for %s%s%s %s", token, value ? "=" : "",
 		   value ? value : "", cache ? "in cache" : "from disk"));
 
 	if (!value) {
@@ -76,8 +76,7 @@ char *blkid_get_devname(blkid_cache cache, const char *token,
 			ret = strdup(token);
 			goto out;
 		}
-		blkid_parse_tag_string(token, &t, &v);
-		if (!t || !v)
+		if (blkid_parse_tag_string(token, &t, &v) != 0 || !t || !v)
 			goto out;
 		token = t;
 		value = v;

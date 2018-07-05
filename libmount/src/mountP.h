@@ -25,29 +25,24 @@
 #include "debug.h"
 #include "libmount.h"
 
-/* features */
-#define CONFIG_LIBMOUNT_ASSERT
-
-#ifdef CONFIG_LIBMOUNT_ASSERT
-# include <assert.h>
-#else
-# define assert(x)
-#endif
-
 /*
  * Debug
  */
+#define MNT_DEBUG_HELP		(1 << 0)
 #define MNT_DEBUG_INIT		(1 << 1)
 #define MNT_DEBUG_CACHE		(1 << 2)
 #define MNT_DEBUG_OPTIONS	(1 << 3)
 #define MNT_DEBUG_LOCKS		(1 << 4)
 #define MNT_DEBUG_TAB		(1 << 5)
 #define MNT_DEBUG_FS		(1 << 6)
-#define MNT_DEBUG_OPTS		(1 << 7)
-#define MNT_DEBUG_UPDATE	(1 << 8)
-#define MNT_DEBUG_UTILS		(1 << 9)
-#define MNT_DEBUG_CXT		(1 << 10)
-#define MNT_DEBUG_DIFF		(1 << 11)
+#define MNT_DEBUG_UPDATE	(1 << 7)
+#define MNT_DEBUG_UTILS		(1 << 8)
+#define MNT_DEBUG_CXT		(1 << 9)
+#define MNT_DEBUG_DIFF		(1 << 10)
+#define MNT_DEBUG_MONITOR	(1 << 11)
+#define MNT_DEBUG_BTRFS		(1 << 12)
+#define MNT_DEBUG_LOOP		(1 << 13)
+
 #define MNT_DEBUG_ALL		0xFFFF
 
 UL_DEBUG_DECLARE_MASK(libmount);
@@ -97,7 +92,6 @@ extern int mnt_get_uid(const char *username, uid_t *uid);
 extern int mnt_get_gid(const char *groupname, gid_t *gid);
 extern int mnt_in_group(gid_t gid);
 
-extern char *mnt_get_fs_root(const char *path, const char *mountpoint);
 extern int mnt_open_uniq_filename(const char *filename, char **name);
 
 extern int mnt_has_regular_utab(const char **utab, int *writable);
@@ -107,20 +101,23 @@ extern int mnt_get_filesystems(char ***filesystems, const char *pattern);
 extern void mnt_free_filesystems(char **filesystems);
 
 extern char *mnt_get_kernel_cmdline_option(const char *name);
+extern int mnt_guess_system_root(dev_t devno, struct libmnt_cache *cache, char **path);
+extern int mnt_stat_mountpoint(const char *target, struct stat *st);
 
 /* tab.c */
+extern int is_mountinfo(struct libmnt_table *tb);
 extern int mnt_table_set_parser_fltrcb(	struct libmnt_table *tb,
 					int (*cb)(struct libmnt_fs *, void *),
 					void *data);
 
-extern struct libmnt_fs *mnt_table_get_fs_root(struct libmnt_table *tb,
-                                        struct libmnt_fs *fs,
-                                        unsigned long mountflags,
-                                        char **fsroot);
 extern int __mnt_table_parse_mtab(struct libmnt_table *tb,
 					const char *filename,
 					struct libmnt_table *u_tb);
 
+extern struct libmnt_fs *mnt_table_get_fs_root(struct libmnt_table *tb,
+					struct libmnt_fs *fs,
+					unsigned long mountflags,
+					char **fsroot);
 
 /*
  * Generic iterator
@@ -376,6 +373,9 @@ extern int mnt_context_mtab_writable(struct libmnt_context *cxt);
 extern int mnt_context_utab_writable(struct libmnt_context *cxt);
 extern const char *mnt_context_get_writable_tabpath(struct libmnt_context *cxt);
 
+extern int mnt_context_get_mtab_for_target(struct libmnt_context *cxt,
+				    struct libmnt_table **mtab, const char *tgt);
+
 extern int mnt_context_prepare_srcpath(struct libmnt_context *cxt);
 extern int mnt_context_prepare_target(struct libmnt_context *cxt);
 extern int mnt_context_guess_srcpath_fstype(struct libmnt_context *cxt, char **type);
@@ -413,5 +413,10 @@ extern int mnt_update_set_filename(struct libmnt_update *upd,
 				   const char *filename, int userspace_only);
 extern int mnt_update_already_done(struct libmnt_update *upd,
 				   struct libmnt_lock *lc);
+
+#if __linux__
+/* btrfs.c */
+extern uint64_t btrfs_get_default_subvol_id(const char *path);
+#endif
 
 #endif /* _LIBMOUNT_PRIVATE_H */

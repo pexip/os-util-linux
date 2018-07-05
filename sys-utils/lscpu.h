@@ -17,6 +17,8 @@ enum {
 	HYPER_VBOX,
 	HYPER_OS400,
 	HYPER_PHYP,
+	HYPER_SPAR,
+	HYPER_WSL,
 };
 
 extern int read_hypervisor_dmi(void);

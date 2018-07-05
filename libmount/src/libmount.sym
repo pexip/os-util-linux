@@ -1,7 +1,10 @@
 /*
- * The symbol versioning ensures that a new application requiring symbol foo;
- * can't run with old libblkid.so not providing foo;
- * version info can't enforce this since we never change the SONAME.
+ * The symbol versioning ensures that a new application requiring symbol foo,
+ * can't run with old library.so not providing foo.
+ *
+ * Version info can't enforce this since we never change the SONAME.
+ *
+ * Copyright (C) 2011-2014 Karel Zak <kzak@redhat.com> 
  */
 MOUNT_2.19 {
 global:
@@ -294,3 +297,21 @@ MOUNT_2.25 {
 	mnt_table_uniq_fs;
 	mnt_tag_is_valid;
 } MOUNT_2.24;
+
+MOUNT_2.26 {
+	mnt_monitor_close_fd;
+	mnt_monitor_enable_userspace;
+	mnt_monitor_enable_kernel;
+	mnt_monitor_event_cleanup;
+	mnt_monitor_get_fd;
+	mnt_monitor_next_change;
+	mnt_monitor_wait;
+	mnt_new_monitor;
+	mnt_ref_monitor;
+	mnt_unref_monitor;
+} MOUNT_2.25;
+
+MOUNT_2.28 {
+	mnt_table_find_target_with_option;
+	mnt_fs_set_priority;
+} MOUNT_2.26;

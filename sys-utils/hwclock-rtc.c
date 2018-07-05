@@ -280,18 +280,6 @@ static int synchronize_to_clock_tick_rtc(void)
 				       rtc_dev_name);
 			ret = busywait_for_rtc_clock_tick(rtc_fd);
 		} else if (rc == 0) {
-#ifdef Wait_until_update_interrupt
-			unsigned long dummy;
-
-			/* this blocks until the next update interrupt */
-			rc = read(rtc_fd, &dummy, sizeof(dummy));
-			ret = 1;
-			if (rc == -1)
-				warn(_("read() to %s to wait for clock tick failed"),
-				     rtc_dev_name);
-			else
-				ret = 0;
-#else
 			/*
 			 * Just reading rtc_fd fails on broken hardware: no
 			 * update interrupt comes and a bootscript with a
@@ -313,13 +301,12 @@ static int synchronize_to_clock_tick_rtc(void)
 			if (rc == -1)
 				warn(_("select() to %s to wait for clock tick failed"),
 				     rtc_dev_name);
-			else if (rc == 0 && debug)
-				printf(_("select() to %s to wait for clock tick timed out"),
-				     rtc_dev_name);
-			else
+			else if (rc == 0) {
+				if (debug)
+					printf(_("select() to %s to wait for clock tick timed out"),
+					       rtc_dev_name);
+			} else
 				ret = 0;
-#endif
-
 			/* Turn off update interrupts */
 			rc = ioctl(rtc_fd, RTC_UIE_OFF, 0);
 			if (rc == -1)
@@ -445,7 +432,7 @@ int get_epoch_rtc(unsigned long *epoch_p, int silent)
 	}
 
 	if (debug)
-		printf(_("we have read epoch %ld from %s "
+		printf(_("we have read epoch %lu from %s "
 			 "with RTC_EPOCH_READ ioctl.\n"), *epoch_p,
 		       rtc_dev_name);
 
@@ -484,7 +471,7 @@ int set_epoch_rtc(unsigned long epoch)
 	}
 
 	if (debug)
-		printf(_("setting epoch to %ld "
+		printf(_("setting epoch to %lu "
 			 "with RTC_EPOCH_SET ioctl to %s.\n"), epoch,
 		       rtc_dev_name);
 

@@ -35,7 +35,7 @@
    (setting argv[0] to "-su", passing -c only to certain shells, etc.).
    I don't see the point in doing that, and it's ugly.
 
-   Based on an implemenation by David MacKenzie <djm@gnu.ai.mit.edu>.  */
+   Based on an implementation by David MacKenzie <djm@gnu.ai.mit.edu>.  */
 
 enum
 {
@@ -50,7 +50,11 @@ enum
 #include <pwd.h>
 #include <grp.h>
 #include <security/pam_appl.h>
-#include <security/pam_misc.h>
+#ifdef HAVE_SECURITY_PAM_MISC_H
+# include <security/pam_misc.h>
+#elif defined(HAVE_SECURITY_OPENPAM_H)
+# include <security/openpam.h>
+#endif
 #include <signal.h>
 #include <sys/wait.h>
 #include <syslog.h>
@@ -75,8 +79,8 @@ enum
 #define PAM_SRVNAME_RUNUSER "runuser"
 #define PAM_SRVNAME_RUNUSER_L "runuser-l"
 
-#define _PATH_LOGINDEFS_SU	"/etc/defaults/su"
-#define _PATH_LOGINDEFS_RUNUSER "/etc/defaults/runuser"
+#define _PATH_LOGINDEFS_SU	"/etc/default/su"
+#define _PATH_LOGINDEFS_RUNUSER "/etc/default/runuser"
 
 #define is_pam_failure(_rc)	((_rc) != PAM_SUCCESS)
 
@@ -161,7 +165,7 @@ log_syslog(struct passwd const *pw, bool successful)
       old_user = pwd ? pwd->pw_name : "";
     }
 
-  if (get_terminal_name(STDERR_FILENO, NULL, &tty, NULL) != 0 || !tty)
+  if (get_terminal_name(NULL, &tty, NULL) != 0 || !tty)
     tty = "none";
 
   openlog (program_invocation_short_name, 0 , LOG_AUTH);
@@ -188,7 +192,7 @@ static void log_btmp(struct passwd const *pw)
 		pw && pw->pw_name ? pw->pw_name : "(unknown)",
 		sizeof(ut.ut_user));
 
-	get_terminal_name(STDERR_FILENO, NULL, &tty_name, &tty_num);
+	get_terminal_name(NULL, &tty_name, &tty_num);
 	if (tty_num)
 		xstrncpy(ut.ut_id, tty_num, sizeof(ut.ut_id));
 	if (tty_name)
@@ -220,8 +224,11 @@ static int su_pam_conv(int num_msg, const struct pam_message **msg,
 	    && msg
 	    && msg[0]->msg_style == PAM_TEXT_INFO)
 		return PAM_SUCCESS;
-
+#ifdef HAVE_SECURITY_PAM_MISC_H
 	return misc_conv(num_msg, msg, resp, appdata_ptr);
+#elif defined(HAVE_SECURITY_OPENPAM_H)
+	return openpam_ttyconv(num_msg, msg, resp, appdata_ptr);
+#endif
 }
 
 static struct pam_conv conv =
@@ -369,6 +376,9 @@ create_watching_parent (void)
             }
           else
             status = WEXITSTATUS (status);
+
+	  /* child is gone, don't use the PID anymore */
+	  child = (pid_t) -1;
         }
       else if (caught_signal)
         status = caught_signal + 128;
@@ -378,7 +388,7 @@ create_watching_parent (void)
   else
     status = 1;
 
-  if (caught_signal)
+  if (caught_signal && child != (pid_t)-1)
     {
       fprintf (stderr, _("\nSession terminated, killing shell..."));
       kill (child, SIGTERM);
@@ -388,9 +398,12 @@ create_watching_parent (void)
 
   if (caught_signal)
     {
-      sleep (2);
-      kill (child, SIGKILL);
-      fprintf (stderr, _(" ...killed.\n"));
+      if (child != (pid_t)-1)
+	{
+	  sleep (2);
+	  kill (child, SIGKILL);
+	  fprintf (stderr, _(" ...killed.\n"));
+	}
 
       /* Let's terminate itself with the received signal.
        *
@@ -513,7 +526,7 @@ set_path(const struct passwd* pw)
     r = logindefs_setenv("PATH", "ENV_SUPATH", _PATH_DEFPATH_ROOT);
 
   if (r != 0)
-    err (EXIT_FAILURE,  _("failed to set PATH"));
+    err (EXIT_FAILURE,  _("failed to set the %s environment variable"), "PATH");
 }
 
 /* Update `environ' for the new shell based on PW, with SHELL being
@@ -526,13 +539,15 @@ modify_environment (const struct passwd *pw, const char *shell)
     {
       /* Leave TERM unchanged.  Set HOME, SHELL, USER, LOGNAME, PATH.
          Unset all other environment variables.  */
-      char const *term = getenv ("TERM");
+      char *term = getenv ("TERM");
       if (term)
 	term = xstrdup (term);
       environ = xmalloc ((6 + !!term) * sizeof (char *));
       environ[0] = NULL;
-      if (term)
+      if (term) {
 	xsetenv ("TERM", term, 1);
+	free(term);
+      }
       xsetenv ("HOME", pw->pw_dir, 1);
       if (shell)
 	xsetenv ("SHELL", shell, 1);
@@ -566,7 +581,7 @@ modify_environment (const struct passwd *pw, const char *shell)
 /* Become the user and group(s) specified by PW.  */
 
 static void
-init_groups (const struct passwd *pw, gid_t *groups, int num_groups)
+init_groups (const struct passwd *pw, gid_t *groups, size_t num_groups)
 {
   int retval;
 
@@ -670,7 +685,7 @@ usage (int status)
 {
   if (su_mode == RUNUSER_MODE) {
     fputs(USAGE_HEADER, stdout);
-    printf (_(" %s [options] -u <user> <command>\n"), program_invocation_short_name);
+    printf (_(" %s [options] -u <user> [[--] <command>]\n"), program_invocation_short_name);
     printf (_(" %s [options] [-] [<user> [<argument>...]]\n"), program_invocation_short_name);
     fputs (_("\n"
     "Run <command> with the effective user ID and group ID of <user>.  If -u is\n"
@@ -737,6 +752,28 @@ evaluate_uid(void)
   return (uid_t) 0 == ruid && ruid == euid ? 0 : 1;
 }
 
+static gid_t
+add_supp_group(const char *name, gid_t **groups, size_t *ngroups)
+{
+  struct group *gr;
+
+  if (*ngroups >= NGROUPS_MAX)
+    errx(EXIT_FAILURE,
+	P_("specifying more than %d supplemental group is not possible",
+	   "specifying more than %d supplemental groups is not possible",
+	     NGROUPS_MAX - 1), NGROUPS_MAX - 1);
+
+  gr = getgrnam(name);
+  if (!gr)
+    errx(EXIT_FAILURE, _("group %s does not exist"), name);
+
+  *groups = xrealloc(*groups, sizeof(gid_t) * (*ngroups + 1));
+  (*groups)[*ngroups] = gr->gr_gid;
+  (*ngroups)++;
+
+  return gr->gr_gid;
+}
+
 int
 su_main (int argc, char **argv, int mode)
 {
@@ -747,10 +784,12 @@ su_main (int argc, char **argv, int mode)
   char *shell = NULL;
   struct passwd *pw;
   struct passwd pw_copy;
-  struct group *gr;
-  gid_t groups[NGROUPS_MAX];
-  int num_supp_groups = 0;
-  int use_gid = 0;
+
+  gid_t *groups = NULL;
+  size_t ngroups = 0;
+  bool use_supp = false;
+  bool use_gid = false;
+  gid_t gid = 0;
 
   static const struct option longopts[] = {
     {"command", required_argument, NULL, 'c'},
@@ -795,25 +834,13 @@ su_main (int argc, char **argv, int mode)
 	  break;
 
 	case 'g':
-	  gr = getgrnam(optarg);
-	  if (!gr)
-	    errx(EXIT_FAILURE, _("group %s does not exist"), optarg);
-	  use_gid = 1;
-	  groups[0] = gr->gr_gid;
+	  use_gid = true;
+	  gid = add_supp_group(optarg, &groups, &ngroups);
 	  break;
 
 	case 'G':
-	  num_supp_groups++;
-	  if (num_supp_groups >= NGROUPS_MAX)
-	     errx(EXIT_FAILURE,
-		  P_("specifying more than %d supplemental group is not possible",
-		     "specifying more than %d supplemental groups is not possible",
-		     NGROUPS_MAX - 1),
-		  NGROUPS_MAX - 1);
-	  gr = getgrnam(optarg);
-	  if (!gr)
-	    errx(EXIT_FAILURE, _("group %s does not exist"), optarg);
-	  groups[num_supp_groups] = gr->gr_gid;
+	  use_supp = true;
+	  add_supp_group(optarg, &groups, &ngroups);
 	  break;
 
 	case 'l':
@@ -884,7 +911,7 @@ su_main (int argc, char **argv, int mode)
     break;
   }
 
-  if ((num_supp_groups || use_gid) && restricted)
+  if ((use_supp || use_gid) && restricted)
     errx(EXIT_FAILURE, _("only root can specify alternative groups"));
 
   logindefs_load_defaults = load_config;
@@ -910,16 +937,10 @@ su_main (int argc, char **argv, int mode)
 			  : DEFAULT_SHELL);
   endpwent ();
 
-  if (num_supp_groups && !use_gid)
-  {
-    pw->pw_gid = groups[1];
-    memmove (groups, groups + 1, sizeof(gid_t) * num_supp_groups);
-  }
-  else if (use_gid)
-  {
+  if (use_supp && !use_gid)
     pw->pw_gid = groups[0];
-    num_supp_groups++;
-  }
+  else if (use_gid)
+    pw->pw_gid = gid;
 
   authenticate (pw);
 
@@ -944,7 +965,7 @@ su_main (int argc, char **argv, int mode)
     shell = xstrdup (shell ? shell : pw->pw_shell);
   }
 
-  init_groups (pw, groups, num_supp_groups);
+  init_groups (pw, groups, ngroups);
 
   if (!simulate_login || command)
     suppress_pam_info = 1;		/* don't print PAM info messages */

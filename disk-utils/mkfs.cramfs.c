@@ -20,7 +20,7 @@
 
 /*
  * Old version would die on largish filesystems. Change to mmap the
- * files one by one instaed of all simultaneously. - aeb, 2002-11-01
+ * files one by one instead of all simultaneously. - aeb, 2002-11-01
  */
 
 #include <sys/types.h>
@@ -36,15 +36,24 @@
 #include <string.h>
 #include <getopt.h>
 #include <zconf.h>
+
+/* We don't use our include/crc32.h, but crc32 from zlib!
+ *
+ * The zlib implemenation performs pre/post-conditioning. The util-linux
+ * imlemenation requires post-conditioning (xor) in the applications.
+ */
 #include <zlib.h>
 
 #include "c.h"
 #include "cramfs.h"
-#include "closestream.h"
 #include "md5.h"
 #include "nls.h"
 #include "exitcodes.h"
 #include "strutils.h"
+
+#define CLOSE_EXIT_CODE	 MKFS_EX_ERROR
+#include "closestream.h"
+
 #define XALLOC_EXIT_CODE MKFS_EX_ERROR
 #include "xalloc.h"
 
@@ -313,35 +322,25 @@ static unsigned int parse_directory(struct entry *root_entry, const char *name, 
 		if (dirent->d_name[0] == '.') {
 			if (dirent->d_name[1] == '\0')
 				continue;
-			if (dirent->d_name[1] == '.') {
-				if (dirent->d_name[2] == '\0')
-					continue;
-			}
+			if (dirent->d_name[1] == '.' &&
+			    dirent->d_name[2] == '\0')
+				continue;
 		}
 		namelen = strlen(dirent->d_name);
-		if (namelen > MAX_INPUT_NAMELEN)
-			errx(MKFS_EX_ERROR,
-				_("Very long (%zu bytes) filename `%s' found.\n"
-				  " Please increase MAX_INPUT_NAMELEN in "
-				  "mkcramfs.c and recompile.  Exiting."),
-				namelen, dirent->d_name);
+		if (namelen > MAX_INPUT_NAMELEN) {
+			namelen = MAX_INPUT_NAMELEN;
+			warn_namelen = 1;
+		}
+
 		memcpy(endpath, dirent->d_name, namelen + 1);
 
 		if (lstat(path, &st) < 0) {
-			perror(endpath);
+			warn(_("stat of %s failed"), endpath);
 			warn_skip = 1;
 			continue;
 		}
 		entry = xcalloc(1, sizeof(struct entry));
-		entry->name = (unsigned char *)xstrdup(dirent->d_name);
-		if (namelen > 255) {
-			/* Can't happen when reading from ext2fs. */
-
-			/* TODO: we ought to avoid chopping in half
-			   multi-byte UTF8 characters. */
-			entry->name[namelen = 255] = '\0';
-			warn_namelen = 1;
-		}
+		entry->name = (unsigned char *)xstrndup(dirent->d_name, namelen);
 		entry->mode = st.st_mode;
 		entry->size = st.st_size;
 		entry->uid = st.st_uid;
@@ -361,11 +360,9 @@ static unsigned int parse_directory(struct entry *root_entry, const char *name, 
 			entry->size = parse_directory(root_entry, path, &entry->child, fslen_ub);
 		} else if (S_ISREG(st.st_mode)) {
 			entry->path = xstrdup(path);
-			if (entry->size) {
-				if (entry->size >= (1 << CRAMFS_SIZE_WIDTH)) {
-					warn_size = 1;
-					entry->size = (1 << CRAMFS_SIZE_WIDTH) - 1;
-				}
+			if (entry->size && entry->size >= (1 << CRAMFS_SIZE_WIDTH)) {
+				warn_size = 1;
+				entry->size = (1 << CRAMFS_SIZE_WIDTH) - 1;
 			}
 		} else if (S_ISLNK(st.st_mode)) {
 			entry->path = xstrdup(path);
@@ -748,7 +745,7 @@ int main(int argc, char **argv)
 		case 'i':
 			opt_image = optarg;
 			if (lstat(opt_image, &st) < 0)
-				err(MKFS_EX_USAGE, _("stat failed %s"), opt_image);
+				err(MKFS_EX_USAGE, _("stat of %s failed"), opt_image);
 			image_length = st.st_size; /* may be padded later */
 			fslen_ub += (image_length + 3); /* 3 is for padding */
 			break;
@@ -785,7 +782,7 @@ int main(int argc, char **argv)
 		blksize = getpagesize();
 
 	if (stat(dirname, &st) < 0)
-		err(MKFS_EX_USAGE, _("stat failed %s"), dirname);
+		err(MKFS_EX_USAGE, _("stat of %s failed"), dirname);
 	fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0666);
 	if (fd < 0)
 		err(MKFS_EX_USAGE, _("cannot open %s"), outfile);
@@ -891,7 +888,7 @@ int main(int argc, char **argv)
 	if (warn_namelen)
 		/* Can't happen when reading from ext2fs. */
 		/* Bytes, not chars: think UTF8. */
-		warnx(_("warning: filenames truncated to 255 bytes."));
+		warnx(_("warning: filenames truncated to %u bytes."), MAX_INPUT_NAMELEN);
 	if (warn_skip)
 		warnx(_("warning: files were skipped due to errors."));
 	if (warn_size)

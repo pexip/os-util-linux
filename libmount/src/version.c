@@ -25,8 +25,14 @@ static const char *lib_features[] = {
 #ifdef HAVE_SMACK
 	"smack",
 #endif
-#ifdef CONFIG_LIBMOUNT_ASSERT
-	"assert",
+#ifdef HAVE_BTRFS_SUPPORT
+	"btrfs",
+#endif
+#ifdef USE_LIBMOUNT_SUPPORT_MTAB
+	"mtab",
+#endif
+#if !defined(NDEBUG)
+	"assert",	/* libc assert.h stuff */
 #endif
 	"debug",	/* always enabled */
 	NULL
@@ -99,7 +105,7 @@ int mnt_get_library_features(const char ***features)
 }
 
 #ifdef TEST_PROGRAM
-int test_version(struct libmnt_test *ts, int argc, char *argv[])
+static int test_version(struct libmnt_test *ts, int argc, char *argv[])
 {
 	const char *ver;
 	const char **features;
