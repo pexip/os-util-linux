@@ -30,7 +30,7 @@ XSBC-Pexip-Original-Uploaders: Scott James Remnant <scott@ubuntu.com>,
 Standards-Version: 3.9.5
 Vcs-Browser: https://anonscm.debian.org/gitweb/?p=collab-maint/pkg-util-linux.git
 Vcs-Git: git://git.debian.org/git/collab-maint/pkg-util-linux.git
-XS-Pexip-Upstream: http://ftp.debian.org/debian/ jessie
+XS-Pexip-Upstream: http://ftp.debian.org/debian/ stretch
 
 Package: util-linux
 Architecture: any
