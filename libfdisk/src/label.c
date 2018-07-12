@@ -1,9 +1,31 @@
 
 #include "fdiskP.h"
 
-/*
- * Don't use this function derectly, use fdisk_new_context_from_filename()
+
+/**
+ * SECTION: label
+ * @title: Label
+ * @short_description: disk label (PT) specific data and functions
+ *
+ * The fdisk_new_context() initializes all label drivers, and allocate
+ * per-label specific data struct. This concept allows to store label specific
+ * settings to the label driver independently on the currently active label
+ * driver. Note that label struct cannot be deallocated, so there is no
+ * reference counting for fdisk_label objects. All is destroyed by
+ * fdisk_unref_context() only.
+ *
+ * Anyway, all label drives share in-memory first sector. The function
+ * fdisk_create_disklabel() overwrites this in-memory sector. But it's possible that
+ * label driver also uses another buffers, for example GPT reads more sectors
+ * from the device.
+ *
+ * All label operations are in-memory only, except fdisk_write_disklabel().
+ *
+ * All functions that use "struct fdisk_context" rather than "struct
+ * fdisk_label" use the currently active label driver.
  */
+
+
 int fdisk_probe_labels(struct fdisk_context *cxt)
 {
 	size_t i;
@@ -12,7 +34,7 @@ int fdisk_probe_labels(struct fdisk_context *cxt)
 
 	for (i = 0; i < cxt->nlabels; i++) {
 		struct fdisk_label *lb = cxt->labels[i];
-		struct fdisk_label *org = cxt->label;
+		struct fdisk_label *org = fdisk_get_label(cxt, NULL);
 		int rc;
 
 		if (!lb->op->probe)
@@ -33,7 +55,7 @@ int fdisk_probe_labels(struct fdisk_context *cxt)
 			continue;
 		}
 
-		__fdisk_context_switch_label(cxt, lb);
+		__fdisk_switch_label(cxt, lb);
 		return 0;
 	}
 
@@ -41,37 +63,193 @@ int fdisk_probe_labels(struct fdisk_context *cxt)
 	return 1; /* not found */
 }
 
-
 /**
- * fdisk_dev_has_disklabel:
- * @cxt: fdisk context
+ * fdisk_label_get_name:
+ * @lb: label
  *
- * Returns: return 1 if there is label on the device.
+ * Returns: label name
  */
-int fdisk_dev_has_disklabel(struct fdisk_context *cxt)
+const char *fdisk_label_get_name(const struct fdisk_label *lb)
 {
-	return cxt && cxt->label;
+	return lb ? lb->name : NULL;
 }
 
 /**
- * fdisk_dev_is_disklabel:
- * @cxt: fdisk context
- * @l: disklabel type
+ * fdisk_label_is_labeltype:
+ * @lb: label
  *
- * Returns: return 1 if there is @l disklabel on the device.
+ * Returns: FDISK_DISKLABEL_*.
  */
-int fdisk_dev_is_disklabel(struct fdisk_context *cxt, enum fdisk_labeltype l)
+int fdisk_label_get_type(const struct fdisk_label *lb)
 {
-	return cxt && cxt->label && cxt->label->id == l;
+	return lb->id;
+}
+
+/**
+ * fdisk_label_require_geometry:
+ * @lb: label
+ *
+ * Returns: 1 if label requires CHS geometry
+ */
+int fdisk_label_require_geometry(const struct fdisk_label *lb)
+{
+	assert(lb);
+
+	return lb->flags & FDISK_LABEL_FL_REQUIRE_GEOMETRY ? 1 : 0;
+}
+
+/**
+ * fdisk_label_get_fields_ids
+ * @lb: label (or NULL for the current label)
+ * @cxt: context
+ * @ids: returns allocated array with FDISK_FIELD_* IDs
+ * @nids: returns number of items in fields
+ *
+ * This function returns the default fields for the label.
+ *
+ * Note that the set of the default fields depends on fdisk_enable_details()
+ * function. If the details are enabled then this function usually returns more
+ * fields.
+ *
+ * Returns: 0 on success, otherwise, a corresponding error.
+ */
+int fdisk_label_get_fields_ids(
+		const struct fdisk_label *lb,
+		struct fdisk_context *cxt,
+		int **ids, size_t *nids)
+{
+	size_t i, n;
+	int *c;
+
+	if (!cxt || (!lb && !cxt->label))
+		return -EINVAL;
+
+	lb = cxt->label;
+	if (!lb->fields || !lb->nfields)
+		return -ENOSYS;
+	c = calloc(lb->nfields, sizeof(int));
+	if (!c)
+		return -ENOMEM;
+	for (n = 0, i = 0; i < lb->nfields; i++) {
+		int id = lb->fields[i].id;
+
+		if ((fdisk_is_details(cxt) &&
+				(lb->fields[i].flags & FDISK_FIELDFL_EYECANDY))
+		     || (!fdisk_is_details(cxt) &&
+				(lb->fields[i].flags & FDISK_FIELDFL_DETAIL))
+		     || (id == FDISK_FIELD_SECTORS &&
+			         fdisk_use_cylinders(cxt))
+		     || (id == FDISK_FIELD_CYLINDERS &&
+			         !fdisk_use_cylinders(cxt)))
+			continue;
+
+		c[n++] = id;
+	}
+	if (ids)
+		*ids = c;
+	else
+		free(c);
+	if (nids)
+		*nids = n;
+	return 0;
+}
+
+/**
+ * fdisk_label_get_fields_ids_all
+ * @lb: label (or NULL for the current label)
+ * @cxt: context
+ * @ids: returns allocated array with FDISK_FIELD_* IDs
+ * @nids: returns number of items in fields
+ *
+ * This function returns all fields for the label.
+ *
+ * Returns: 0 on success, otherwise, a corresponding error.
+ */
+int fdisk_label_get_fields_ids_all(
+		const struct fdisk_label *lb,
+		struct fdisk_context *cxt,
+		int **ids, size_t *nids)
+{
+	size_t i, n;
+	int *c;
+
+	if (!cxt || (!lb && !cxt->label))
+		return -EINVAL;
+
+	lb = cxt->label;
+	if (!lb->fields || !lb->nfields)
+		return -ENOSYS;
+	c = calloc(lb->nfields, sizeof(int));
+	if (!c)
+		return -ENOMEM;
+	for (n = 0, i = 0; i < lb->nfields; i++)
+		c[n++] = lb->fields[i].id;
+	if (ids)
+		*ids = c;
+	else
+		free(c);
+	if (nids)
+		*nids = n;
+	return 0;
+}
+
+/**
+ * fdisk_label_get_field:
+ * @lb: label
+ * @id: FDISK_FIELD_*
+ *
+ * The field struct describes data stored in struct fdisk_partition. The info
+ * about data is usable for example to generate human readable output (e.g.
+ * fdisk 'p'rint command). See fdisk_partition_to_string() and fdisk code.
+ *
+ * Returns: pointer to static instance of the field.
+ */
+const struct fdisk_field *fdisk_label_get_field(const struct fdisk_label *lb, int id)
+{
+	size_t i;
+
+	assert(lb);
+	assert(id > 0);
+
+	for (i = 0; i < lb->nfields; i++) {
+		if (lb->fields[i].id == id)
+			return &lb->fields[i];
+	}
+
+	return NULL;
+}
+
+/**
+ * fdisk_label_get_field_by_name
+ * @lb: label
+ * @name: field name
+ *
+ * Returns: pointer to static instance of the field.
+ */
+const struct fdisk_field *fdisk_label_get_field_by_name(
+				const struct fdisk_label *lb,
+				const char *name)
+{
+	size_t i;
+
+	assert(lb);
+	assert(name);
+
+	for (i = 0; i < lb->nfields; i++) {
+		if (lb->fields[i].name && strcasecmp(lb->fields[i].name, name) == 0)
+			return &lb->fields[i];
+	}
+
+	return NULL;
 }
 
 /**
  * fdisk_write_disklabel:
  * @cxt: fdisk context
  *
- * Write in-memory changes to disk
+ * Write in-memory changes to disk. Be careful!
  *
- * Returns 0 on success, otherwise, a corresponding error.
+ * Returns: 0 on success, otherwise, a corresponding error.
  */
 int fdisk_write_disklabel(struct fdisk_context *cxt)
 {
@@ -79,101 +257,9 @@ int fdisk_write_disklabel(struct fdisk_context *cxt)
 		return -EINVAL;
 	if (!cxt->label->op->write)
 		return -ENOSYS;
+
+	fdisk_do_wipe(cxt);
 	return cxt->label->op->write(cxt);
-}
-
-int fdisk_require_geometry(struct fdisk_context *cxt)
-{
-	assert(cxt);
-
-	return cxt->label
-	       && cxt->label->flags & FDISK_LABEL_FL_REQUIRE_GEOMETRY ? 1 : 0;
-}
-
-int fdisk_missing_geometry(struct fdisk_context *cxt)
-{
-	int rc;
-
-	assert(cxt);
-
-	rc = (fdisk_require_geometry(cxt) &&
-		    (!cxt->geom.heads || !cxt->geom.sectors
-				      || !cxt->geom.cylinders));
-
-	if (rc && !fdisk_context_listonly(cxt))
-		fdisk_warnx(cxt, _("Incomplete geometry setting."));
-
-	return rc;
-}
-
-/**
- * fdisk_get_columns:
- * @cxt: fdisk context
- * @all: 1 or 0
- * @cols: returns allocated array with FDISK_COL_* IDs
- * @ncols: returns number of items in cols
- *
- * This function returns the default or all columns for the current label.  The
- * library uses the columns for list operations (see fdisk_list_disklabel() and
- * fdisk_list_partitions()). Note that the set of the default columns depends
- * on fdisk_context_enable_details() function. If the details are eanable then
- * this function usually returns more columns.
- *
- * Returns 0 on success, otherwise, a corresponding error.
- */
-int fdisk_get_columns(struct fdisk_context *cxt, int all, int **cols, size_t *ncols)
-{
-	size_t i, n;
-	int *c;
-
-	assert(cxt);
-
-	if (!cxt->label)
-		return -EINVAL;
-	if (!cxt->label->columns || !cxt->label->ncolumns)
-		return -ENOSYS;
-	c = calloc(cxt->label->ncolumns, sizeof(int));
-	if (!c)
-		return -ENOMEM;
-	for (n = 0, i = 0; i < cxt->label->ncolumns; i++) {
-		int id = cxt->label->columns[i].id;
-
-		if (!all &&
-		    ((fdisk_context_display_details(cxt) &&
-				(cxt->label->columns[i].flags & FDISK_COLFL_EYECANDY))
-		     || (!fdisk_context_display_details(cxt) &&
-				(cxt->label->columns[i].flags & FDISK_COLFL_DETAIL))
-		     || (id == FDISK_COL_SECTORS &&
-			         fdisk_context_use_cylinders(cxt))
-		     || (id == FDISK_COL_CYLINDERS &&
-			         !fdisk_context_use_cylinders(cxt))))
-			continue;
-
-		c[n++] = id;
-	}
-	if (cols)
-		*cols = c;
-	else
-		free(c);
-	if (ncols)
-		*ncols = n;
-	return 0;
-}
-
-const struct fdisk_column *fdisk_label_get_column(
-					struct fdisk_label *lb, int id)
-{
-	size_t i;
-
-	assert(lb);
-	assert(id > 0);
-
-	for (i = 0; i < lb->ncolumns; i++) {
-		if (lb->columns[i].id == id)
-			return &lb->columns[i];
-	}
-
-	return NULL;
 }
 
 /**
@@ -196,27 +282,51 @@ int fdisk_verify_disklabel(struct fdisk_context *cxt)
 	return cxt->label->op->verify(cxt);
 }
 
-
-
 /**
  * fdisk_list_disklabel:
  * @cxt: fdisk context
  *
  * Lists details about disklabel, but no partitions.
  *
- * This function uses libfdisk ASK interface to print data. The details about
- * partitions table are printed by FDISK_ASKTYPE_INFO.
+ * This function is based on fdisk_get_disklabel_item() and prints all label
+ * specific information by ASK interface (FDISK_ASKTYPE_INFO, aka fdisk_info()).
+ * The function requires enabled "details" by fdisk_enable_details().
  *
- * Returns 0 on success, otherwise, a corresponding error.
+ * It's recommended to use fdisk_get_disklabel_item() if you need better
+ * control on output and formatting.
+ *
+ * Returns: 0 on success, otherwise, a corresponding error.
  */
 int fdisk_list_disklabel(struct fdisk_context *cxt)
 {
+	int id = 0, rc = 0;
+	struct fdisk_labelitem item = { .id = id };
+
 	if (!cxt || !cxt->label)
 		return -EINVAL;
-	if (!cxt->label->op->list)
-		return -ENOSYS;
 
-	return cxt->label->op->list(cxt);
+	if (!cxt->display_details)
+		return 0;
+
+	/* List all label items */
+	do {
+		/* rc: < 0 error, 0 success, 1 unknown item, 2 out of range */
+		rc = fdisk_get_disklabel_item(cxt, id++, &item);
+		if (rc != 0)
+			continue;
+		switch (item.type) {
+		case 'j':
+			fdisk_info(cxt, "%s: %ju", item.name, item.data.num64);
+			break;
+		case 's':
+			if (item.data.str && item.name)
+				fdisk_info(cxt, "%s: %s", item.name, item.data.str);
+			break;
+		}
+		fdisk_reset_labelitem(&item);
+	} while (rc == 0 || rc == 1);
+
+	return rc < 0 ? rc : 0;
 }
 
 /**
@@ -224,10 +334,14 @@ int fdisk_list_disklabel(struct fdisk_context *cxt)
  * @cxt: fdisk context
  * @name: label name
  *
- * Creates a new disk label of type @name. If @name is NULL, then it
- * will create a default system label type, either SUN or DOS.
+ * Creates a new disk label of type @name. If @name is NULL, then it will
+ * create a default system label type, either SUN or DOS. The function
+ * automatically switches the current label driver to @name. The function
+ * fdisk_get_label() returns the current label driver.
  *
- * Returns 0 on success, otherwise, a corresponding error.
+ * The function modifies in-memory data only.
+ *
+ * Returns: 0 on success, otherwise, a corresponding error.
  */
 int fdisk_create_disklabel(struct fdisk_context *cxt, const char *name)
 {
@@ -250,24 +364,38 @@ int fdisk_create_disklabel(struct fdisk_context *cxt, const char *name)
 		haslabel = 1;
 	}
 
-	lb = fdisk_context_get_label(cxt, name);
+	lb = fdisk_get_label(cxt, name);
 	if (!lb || lb->disabled)
 		return -EINVAL;
 	if (!lb->op->create)
 		return -ENOSYS;
 
-	__fdisk_context_switch_label(cxt, lb);
+	__fdisk_switch_label(cxt, lb);
+	assert(cxt->label == lb);
 
 	if (haslabel && !cxt->parent)
 		fdisk_reset_device_properties(cxt);
 
 	DBG(CXT, ul_debugobj(cxt, "create a new %s label", lb->name));
-	return cxt->label->op->create(cxt);
+	return lb->op->create(cxt);
 }
 
-
+/**
+ * fdisk_locate_disklabel:
+ * @cxt: context
+ * @n: N item
+ * @name: return item name
+ * @offset: return offset where is item
+ * @size: of the item
+ *
+ * Locate disklabel and returns info about @n item of the label. For example
+ * GPT is composed from two items, PMBR and GPT, n=0 return offset to PMBR and n=1
+ * return offset to GPT. For more details see 'D' expert fdisk command.
+ *
+ * Returns: 0 on success, <0 on error, 1 no more items.
+ */
 int fdisk_locate_disklabel(struct fdisk_context *cxt, int n, const char **name,
-			   off_t *offset, size_t *size)
+			   uint64_t *offset, size_t *size)
 {
 	if (!cxt || !cxt->label)
 		return -EINVAL;
@@ -282,26 +410,63 @@ int fdisk_locate_disklabel(struct fdisk_context *cxt, int n, const char **name,
 /**
  * fdisk_get_disklabel_id:
  * @cxt: fdisk context
- * @id: returns pointer to allocated string
+ * @id: returns pointer to allocated string (MBR Id or GPT dirk UUID)
  *
- * Returns 0 on success, otherwise, a corresponding error.
+ * Returns: 0 on success, otherwise, a corresponding error.
  */
 int fdisk_get_disklabel_id(struct fdisk_context *cxt, char **id)
 {
-	if (!cxt || !cxt->label)
+	struct fdisk_labelitem item = FDISK_LABELITEM_INIT;
+	int rc;
+
+	if (!cxt || !cxt->label || !id)
 		return -EINVAL;
-	if (!cxt->label->op->get_id)
-		return -ENOSYS;
 
 	DBG(CXT, ul_debugobj(cxt, "asking for disk %s ID", cxt->label->name));
-	return cxt->label->op->get_id(cxt, id);
+
+	rc = fdisk_get_disklabel_item(cxt, FDISK_LABELITEM_ID, &item);
+	if (rc == 0) {
+		*id = item.data.str;
+		item.data.str = NULL;
+	}
+	fdisk_reset_labelitem(&item);
+	if (rc > 0)
+		rc = 0;
+	return rc;
 }
 
 /**
- * fdisk_get_disklabel_id:
+ * fdisk_get_disklabel_item:
+ * @cxt: fdisk context
+ * @id: item ID (FDISK_LABELITEM_* or {GPT,MBR,...}_LABELITEM_*)
+ * @item: specifies and returns the item
+ *
+ * Note that @id is always in range 0..N. It's fine to use the function in loop
+ * until it returns error or 2, the result in @item should be ignored when
+ * function returns 1. Don't forget to use fdisk_reset_labelitem() or fdisk_unref_labelitem().
+ *
+ * Returns: 0 on success, < 0 on error, 1 on unsupported item, 2 @id out of range
+ */
+int fdisk_get_disklabel_item(struct fdisk_context *cxt, int id, struct fdisk_labelitem *item)
+{
+	if (!cxt || !cxt->label || !item)
+		return -EINVAL;
+
+	fdisk_reset_labelitem(item);
+	item->id = id;
+	DBG(CXT, ul_debugobj(cxt, "asking for disk %s item %d", cxt->label->name, item->id));
+
+	if (!cxt->label->op->get_item)
+		return -ENOSYS;
+
+	return cxt->label->op->get_item(cxt, item);
+}
+
+/**
+ * fdisk_set_disklabel_id:
  * @cxt: fdisk context
  *
- * Returns 0 on success, otherwise, a corresponding error.
+ * Returns: 0 on success, otherwise, a corresponding error.
  */
 int fdisk_set_disklabel_id(struct fdisk_context *cxt)
 {
@@ -320,44 +485,43 @@ int fdisk_set_disklabel_id(struct fdisk_context *cxt)
  * @partnum: partition number
  * @t: new type
  *
- * Returns 0 on success, < 0 on error.
+ * Returns: 0 on success, < 0 on error.
  */
 int fdisk_set_partition_type(struct fdisk_context *cxt,
 			     size_t partnum,
 			     struct fdisk_parttype *t)
 {
-	if (!cxt || !cxt->label)
+	if (!cxt || !cxt->label || !t)
 		return -EINVAL;
-	if (!cxt->label->op->part_set_type)
-		return -ENOSYS;
 
-	DBG(CXT, ul_debugobj(cxt, "partition: %zd: set type", partnum));
-	return cxt->label->op->part_set_type(cxt, partnum, t);
+
+	if (cxt->label->op->set_part) {
+		struct fdisk_partition *pa = fdisk_new_partition();
+		int rc;
+
+		if (!pa)
+			return -ENOMEM;
+		fdisk_partition_set_type(pa, t);
+
+		DBG(CXT, ul_debugobj(cxt, "partition: %zd: set type", partnum));
+		rc = cxt->label->op->set_part(cxt, partnum, pa);
+		fdisk_unref_partition(pa);
+		return rc;
+	}
+
+	return -ENOSYS;
 }
 
-/**
- * fdisk_get_nparttypes:
- * @cxt: fdisk context
- *
- * Returns: number of partition types supported by the current label
- */
-size_t fdisk_get_nparttypes(struct fdisk_context *cxt)
-{
-	if (!cxt || !cxt->label)
-		return 0;
-
-	return cxt->label->nparttypes;
-}
 
 /**
- * fdisk_partition_taggle_flag:
+ * fdisk_toggle_partition_flag:
  * @cxt: fdisk context
  * @partnum: partition number
- * @status: flags
+ * @flag: flag ID
  *
- * Returns 0 on success, otherwise, a corresponding error.
+ * Returns: 0 on success, otherwise, a corresponding error.
  */
-int fdisk_partition_toggle_flag(struct fdisk_context *cxt,
+int fdisk_toggle_partition_flag(struct fdisk_context *cxt,
 			       size_t partnum,
 			       unsigned long flag)
 {
@@ -380,7 +544,7 @@ int fdisk_partition_toggle_flag(struct fdisk_context *cxt,
  *
  * Sort partitions according to the partition start sector.
  *
- * Returns 0 on success, otherwise, a corresponding error.
+ * Returns: 0 on success, 1 reorder unnecessary, otherwise a corresponding error.
  */
 int fdisk_reorder_partitions(struct fdisk_context *cxt)
 {
@@ -404,18 +568,41 @@ void fdisk_deinit_label(struct fdisk_label *lb)
 		lb->op->deinit(lb);
 }
 
+/**
+ * fdisk_label_set_changed:
+ * @lb: label
+ * @changed: 0/1
+ *
+ * Marks in-memory data as changed, to force fdisk_write_disklabel() to write
+ * to device. This should be unnecessary by default, the library keeps track
+ * about changes.
+ */
 void fdisk_label_set_changed(struct fdisk_label *lb, int changed)
 {
 	assert(lb);
 	lb->changed = changed ? 1 : 0;
 }
 
-int fdisk_label_is_changed(struct fdisk_label *lb)
+/**
+ * fdisk_label_is_changed:
+ * @lb: label
+ *
+ * Returns: 1 if in-memory data has been changed.
+ */
+int fdisk_label_is_changed(const struct fdisk_label *lb)
 {
 	assert(lb);
 	return lb ? lb->changed : 0;
 }
 
+/**
+ * fdisk_label_set_disabled:
+ * @lb: label
+ * @disabled: 0 or 1
+ *
+ * Mark label as disabled, then libfdisk is going to ignore the label when
+ * probe device for labels.
+ */
 void fdisk_label_set_disabled(struct fdisk_label *lb, int disabled)
 {
 	assert(lb);
@@ -426,7 +613,13 @@ void fdisk_label_set_disabled(struct fdisk_label *lb, int disabled)
 	lb->disabled = disabled ? 1 : 0;
 }
 
-int fdisk_label_is_disabled(struct fdisk_label *lb)
+/**
+ * fdisk_label_is_disabled:
+ * @lb: label
+ *
+ * Returns: 1 if label driver disabled.
+ */
+int fdisk_label_is_disabled(const struct fdisk_label *lb)
 {
 	assert(lb);
 	return lb ? lb->disabled : 0;

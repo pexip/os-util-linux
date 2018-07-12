@@ -19,7 +19,7 @@ struct menu_entry {
 						   but don't print it in help */
 
 	enum fdisk_labeltype	label;		/* only for this label */
-	enum fdisk_labeltype	exclude;	/* all labels except this */
+	int                     exclude;    /* all labels except these */
 	enum fdisk_labeltype	parent;		/* for nested PT */
 };
 
@@ -28,7 +28,7 @@ struct menu_entry {
 
 struct menu {
 	enum fdisk_labeltype	label;		/* only for this label */
-	enum fdisk_labeltype	exclude;	/* all labels except this */
+	int                     exclude;    /* all labels except these */
 
 	unsigned int		nonested : 1;	/* don't make this menu active in nested PT */
 
@@ -94,11 +94,13 @@ struct menu menu_generic = {
 	.entries	= {
 		MENU_BSEP(N_("Generic")),
 		MENU_ENT  ('d', N_("delete a partition")),
+		MENU_ENT  ('F', N_("list free unpartitioned space")),
 		MENU_ENT  ('l', N_("list known partition types")),
 		MENU_ENT  ('n', N_("add a new partition")),
 		MENU_BENT ('p', N_("print the partition table")),
 		MENU_ENT  ('t', N_("change a partition type")),
 		MENU_BENT_E('v', N_("verify the partition table"), FDISK_DISKLABEL_BSD),
+		MENU_ENT  ('i', N_("print information about a partition")),
 
 		MENU_XENT('d', N_("print the raw data of the first sector from the device")),
 		MENU_XENT('D', N_("print the raw data of the disklabel from the device")),
@@ -108,6 +110,10 @@ struct menu menu_generic = {
 		MENU_BENT ('m', N_("print this menu")),
 		MENU_ENT_E('u', N_("change display/entry units"), FDISK_DISKLABEL_GPT),
 		MENU_ENT_E('x', N_("extra functionality (experts only)"), FDISK_DISKLABEL_BSD),
+
+		MENU_SEP(N_("Script")),
+		MENU_ENT  ('I', N_("load disk layout from sfdisk script file")),
+		MENU_ENT  ('O', N_("dump disk layout to sfdisk script file")),
 
 		MENU_BSEP(N_("Save & Exit")),
 		MENU_ENT_E('w', N_("write table to disk and exit"), FDISK_DISKLABEL_BSD),
@@ -159,6 +165,7 @@ struct menu menu_gpt = {
 		MENU_XENT('i', N_("change disk GUID")),
 		MENU_XENT('n', N_("change partition name")),
 		MENU_XENT('u', N_("change partition UUID")),
+		MENU_XENT('l', N_("change table length")),
 		MENU_XENT('M', N_("enter protective/hybrid MBR")),
 
 		MENU_XSEP(""),
@@ -247,6 +254,17 @@ static const struct menu_entry *next_menu_entry(
 			struct fdisk_context *cxt,
 			struct menu_context *mc)
 {
+	struct fdisk_label *lb = fdisk_get_label(cxt, NULL);
+	struct fdisk_context *parent = fdisk_get_parent(cxt);
+	unsigned int type = 0, pr_type = 0;
+
+	assert(cxt);
+
+	if (lb)
+		type = fdisk_label_get_type(lb);
+	if (parent)
+		pr_type = fdisk_label_get_type(fdisk_get_label(parent, NULL));
+
 	while (mc->menu_idx < ARRAY_SIZE(menus)) {
 		const struct menu *m = menus[mc->menu_idx];
 		const struct menu_entry *e = &(m->entries[mc->entry_idx]);
@@ -258,11 +276,11 @@ static const struct menu_entry *next_menu_entry(
 		/* no more entries */
 		if (e->title == NULL ||
 		/* menu wanted for specified labels only */
-		    (m->label && cxt->label && !(m->label & cxt->label->id)) ||
+		    (m->label && lb && !(m->label & type)) ||
 		/* unwanted for nested PT */
-		    (m->nonested && cxt->parent) ||
+		    (m->nonested && parent) ||
 		/* menu excluded for specified labels */
-		    (m->exclude && cxt->label && (m->exclude & cxt->label->id))) {
+		    (m->exclude && lb && (m->exclude & type))) {
 			mc->menu_idx++;
 			mc->entry_idx = 0;
 			continue;
@@ -273,16 +291,15 @@ static const struct menu_entry *next_menu_entry(
 		 */
 
 		/* excluded for the current label */
-		if ((e->exclude && cxt->label && e->exclude & cxt->label->id) ||
+		if ((e->exclude && lb && e->exclude & type) ||
 		/* entry wanted for specified labels only */
-		    (e->label && cxt->label && !(e->label & cxt->label->id)) ||
+		    (e->label && lb && !(e->label & type)) ||
 		/* exclude non-expert entries in expect mode */
-		    (e->expert == 0 && fdisk_context_display_details(cxt)) ||
+		    (e->expert == 0 && fdisk_is_details(cxt)) ||
 		/* nested only */
-		    (e->parent && (!cxt->parent || cxt->parent->label->id != e->parent)) ||
+		    (e->parent && (!parent || pr_type != e->parent)) ||
 		/* exclude non-normal entries in normal mode */
-		    (e->normal == 0 && !fdisk_context_display_details(cxt))) {
-
+		    (e->normal == 0 && !fdisk_is_details(cxt))) {
 			mc->entry_idx++;
 			continue;
 		}
@@ -325,15 +342,15 @@ static int menu_detect_collisions(struct fdisk_context *cxt)
 
 		r = get_fdisk_menu_entry(cxt, e->key, NULL);
 		if (!r) {
-			DBG(FRONTEND, ul_debug("warning: not found "
+			DBG(MENU, ul_debug("warning: not found "
 					"entry for %c", e->key));
 			return -1;
 		}
 		if (r != e) {
-			DBG(FRONTEND, ul_debug("warning: duplicate key '%c'",
+			DBG(MENU, ul_debug("warning: duplicate key '%c'",
 						e->key));
-			DBG(FRONTEND, ul_debug("       : %s", e->title));
-			DBG(FRONTEND, ul_debug("       : %s", r->title));
+			DBG(MENU, ul_debug("       : %s", e->title));
+			DBG(MENU, ul_debug("       : %s", r->title));
 			abort();
 		}
 	}
@@ -346,9 +363,9 @@ static int print_fdisk_menu(struct fdisk_context *cxt)
 	struct menu_context mc = MENU_CXT_EMPTY;
 	const struct menu_entry *e;
 
-	ON_DBG(FRONTEND, menu_detect_collisions(cxt));
+	ON_DBG(MENU, menu_detect_collisions(cxt));
 
-	if (fdisk_context_display_details(cxt))
+	if (fdisk_is_details(cxt))
 		printf(_("\nHelp (expert commands):\n"));
 	else
 		printf(_("\nHelp:\n"));
@@ -367,11 +384,15 @@ static int print_fdisk_menu(struct fdisk_context *cxt)
 	}
 	fputc('\n', stdout);
 
-	if (cxt->parent)
+	if (fdisk_get_parent(cxt)) {
+		struct fdisk_label *l = fdisk_get_label(cxt, NULL),
+				   *p = fdisk_get_label(fdisk_get_parent(cxt), NULL);
+
 		fdisk_info(cxt, _("You're editing nested '%s' partition table, "
 				  "primary partition table is '%s'."),
-				cxt->label->name,
-				cxt->parent->label->name);
+				fdisk_label_get_name(l),
+				fdisk_label_get_name(p));
+	}
 
 	return 0;
 }
@@ -396,7 +417,7 @@ int process_fdisk_menu(struct fdisk_context **cxt0)
 	const char *prompt;
 	char buf[BUFSIZ];
 
-	if (fdisk_context_display_details(cxt))
+	if (fdisk_is_details(cxt))
 		prompt = _("Expert command (m for help): ");
 	else
 		prompt = _("Command (m for help): ");
@@ -413,19 +434,117 @@ int process_fdisk_menu(struct fdisk_context **cxt0)
 		return -EINVAL;
 	}
 
-	rc = 0;
-	DBG(FRONTEND, ul_debug("selected: key=%c, entry='%s'",
+	DBG(MENU, ul_debug("selected: key=%c, entry='%s'",
 				key, ent->title));
 
 	/* menu has implemented callback, use it */
 	if (menu->callback)
 		rc = menu->callback(cxt0, menu, ent);
 	else {
-		DBG(FRONTEND, ul_debug("no callback for key '%c'", key));
+		DBG(MENU, ul_debug("no callback for key '%c'", key));
 		rc = -EINVAL;
 	}
 
-	DBG(FRONTEND, ul_debug("process menu done [rc=%d]", rc));
+	DBG(MENU, ul_debug("process menu done [rc=%d]", rc));
+	return rc;
+}
+
+static int script_read(struct fdisk_context *cxt)
+{
+	struct fdisk_script *sc = NULL;
+	char *filename = NULL;
+	int rc;
+
+	rc = fdisk_ask_string(cxt, _("Enter script file name"), &filename);
+	if (rc)
+		return rc;
+
+	errno = 0;
+	sc = fdisk_new_script_from_file(cxt, filename);
+	if (!sc && errno)
+		fdisk_warn(cxt, _("Cannot open %s"), filename);
+	else if (!sc)
+		fdisk_warnx(cxt, _("Failed to parse script file %s"), filename);
+	else if (fdisk_apply_script(cxt, sc) != 0)
+		fdisk_warnx(cxt, _("Failed to apply script %s"), filename);
+	else
+		fdisk_info(cxt, _("Script successfully applied."));
+
+	fdisk_unref_script(sc);
+	free(filename);
+	return rc;
+}
+
+static int script_write(struct fdisk_context *cxt)
+{
+	struct fdisk_script *sc = NULL;
+	char *filename = NULL;
+	FILE *f = NULL;
+	int rc;
+
+	rc = fdisk_ask_string(cxt, _("Enter script file name"), &filename);
+	if (rc)
+		return rc;
+
+	sc = fdisk_new_script(cxt);
+	if (!sc) {
+		fdisk_warn(cxt, _("Failed to allocate script handler"));
+		goto done;
+	}
+
+	rc = fdisk_script_read_context(sc, NULL);
+	if (rc) {
+		fdisk_warnx(cxt, _("Failed to transform disk layout into script"));
+		goto done;
+	}
+
+	f = fopen(filename, "w");
+	if (!f) {
+		fdisk_warn(cxt, _("Cannot open %s"), filename);
+		goto done;
+	}
+
+	rc = fdisk_script_write_file(sc, f);
+	if (rc)
+		fdisk_warn(cxt, _("Failed to write script %s"), filename);
+	else
+		fdisk_info(cxt, _("Script successfully saved."));
+done:
+	if (f)
+		fclose(f);
+	fdisk_unref_script(sc);
+	free(filename);
+	return rc;
+}
+
+static int ask_for_wipe(struct fdisk_context *cxt, size_t partno)
+{
+	struct fdisk_partition *tmp = NULL;
+	char *fstype = NULL;
+	int rc, yes = 0;
+
+	rc = fdisk_get_partition(cxt, partno, &tmp);
+	if (rc)
+		goto done;
+
+	rc = fdisk_partition_to_string(tmp, cxt, FDISK_FIELD_FSTYPE, &fstype);
+	if (rc || fstype == NULL)
+		goto done;
+
+	fdisk_warnx(cxt, _("Partition #%zu contains a %s signature."), partno + 1, fstype);
+
+	if (pwipemode == WIPEMODE_AUTO && isatty(STDIN_FILENO))
+		fdisk_ask_yesno(cxt, _("Do you want to remove the signature?"), &yes);
+	else if (pwipemode == WIPEMODE_ALWAYS)
+		yes = 1;
+
+	if (yes) {
+		fdisk_info(cxt, _("The signature will be removed by a write command."));
+		rc = fdisk_wipe_partition(cxt, partno, TRUE);
+	}
+done:
+	fdisk_unref_partition(tmp);
+	free(fstype);
 	return rc;
 }
 
@@ -447,22 +566,22 @@ static int generic_menu_cb(struct fdisk_context **cxt0,
 		list_disklabel(cxt);
 		break;
 	case 'w':
-		if (fdisk_context_is_readonly(cxt)) {
-			fdisk_warnx(cxt, _("Device open in read-only mode."));
+		if (fdisk_is_readonly(cxt)) {
+			fdisk_warnx(cxt, _("Device is open in read-only mode."));
 			break;
 		}
 		rc = fdisk_write_disklabel(cxt);
 		if (rc)
 			err(EXIT_FAILURE, _("failed to write disklabel"));
-		if (cxt->parent)
+		if (fdisk_get_parent(cxt))
 			break; /* nested PT, don't leave */
 		fdisk_info(cxt, _("The partition table has been altered."));
 		rc = fdisk_reread_partition_table(cxt);
 		if (!rc)
-			rc = fdisk_context_deassign_device(cxt, 0);
+			rc = fdisk_deassign_device(cxt, 0);
 		/* fallthrough */
 	case 'q':
-		fdisk_free_context(cxt);
+		fdisk_unref_context(cxt);
 		fputc('\n', stdout);
 		exit(rc == 0 ? EXIT_SUCCESS : EXIT_FAILURE);
 	case 'm':
@@ -470,6 +589,12 @@ static int generic_menu_cb(struct fdisk_context **cxt0,
 		break;
 	case 'v':
 		rc = fdisk_verify_disklabel(cxt);
+		break;
+	case 'i':
+		rc = print_partition_info(cxt);
+		break;
+	case 'F':
+		list_freespace(cxt);
 		break;
 	}
 
@@ -484,9 +609,13 @@ static int generic_menu_cb(struct fdisk_context **cxt0,
 			break;
 		case 'f':
 			rc = fdisk_reorder_partitions(cxt);
+			if (rc)
+				fdisk_warnx(cxt, _("Failed to fix partitions order."));
+			else
+				fdisk_info(cxt, _("Partitions order fixed."));
 			break;
 		case 'r':
-			rc = fdisk_context_enable_details(cxt, 0);
+			rc = fdisk_enable_details(cxt, 0);
 			break;
 		}
 		return rc;
@@ -503,35 +632,45 @@ static int generic_menu_cb(struct fdisk_context **cxt0,
 		else
 			fdisk_info(cxt, _("Partition %zu has been deleted."), n + 1);
 		break;
+	case 'I':
+		script_read(cxt);
+		break;
+	case 'O':
+		script_write(cxt);
+		break;
 	case 'l':
 		list_partition_types(cxt);
 		break;
 	case 'n':
-		rc = fdisk_add_partition(cxt, NULL);
+	{
+		size_t partno;
+		rc = fdisk_add_partition(cxt, NULL, &partno);
+		if (!rc)
+			rc = ask_for_wipe(cxt, partno);
 		break;
+	}
 	case 't':
 		change_partition_type(cxt);
 		break;
 	case 'u':
-		fdisk_context_set_unit(cxt,
-			fdisk_context_use_cylinders(cxt) ? "sectors" :
+		fdisk_set_unit(cxt,
+			fdisk_use_cylinders(cxt) ? "sectors" :
 							   "cylinders");
-		if (fdisk_context_use_cylinders(cxt))
+		if (fdisk_use_cylinders(cxt))
 			fdisk_info(cxt, _("Changing display/entry units to cylinders (DEPRECATED!)."));
 		else
 			fdisk_info(cxt, _("Changing display/entry units to sectors."));
 		break;
 	case 'x':
-		fdisk_context_enable_details(cxt, 1);
+		fdisk_enable_details(cxt, 1);
 		break;
 	case 'r':
 		/* return from nested BSD to DOS */
-		if (cxt->parent) {
-			*cxt0 = cxt->parent;
+		if (fdisk_get_parent(cxt)) {
+			*cxt0 = fdisk_get_parent(cxt);
 
 			fdisk_info(cxt, _("Leaving nested disklabel."));
-			fdisk_free_context(cxt);
-			cxt = *cxt0;
+			fdisk_unref_context(cxt);
 		}
 		break;
 	}
@@ -542,7 +681,7 @@ static int generic_menu_cb(struct fdisk_context **cxt0,
 
 /*
  * This is fdisk frontend for GPT specific libfdisk functions that
- * are not expported by generic libfdisk API.
+ * are not exported by generic libfdisk API.
  */
 static int gpt_menu_cb(struct fdisk_context **cxt0,
 		       const struct menu *menu __attribute__((__unused__)),
@@ -550,27 +689,34 @@ static int gpt_menu_cb(struct fdisk_context **cxt0,
 {
 	struct fdisk_context *cxt = *cxt0;
 	struct fdisk_context *mbr;
+	struct fdisk_partition *pa = NULL;
 	size_t n;
 	int rc = 0;
+	uintmax_t length = 0;
 
 	assert(cxt);
 	assert(ent);
-	assert(fdisk_is_disklabel(cxt, GPT));
+	assert(fdisk_is_label(cxt, GPT));
 
-	DBG(FRONTEND, ul_debug("enter GPT menu"));
+	DBG(MENU, ul_debug("enter GPT menu"));
 
 	if (ent->expert) {
 		switch (ent->key) {
 		case 'i':
 			return fdisk_set_disklabel_id(cxt);
+		case 'l':
+	                rc =  fdisk_ask_number(cxt, 1, fdisk_get_npartitions(cxt),
+	                                ~(uint32_t)0, _("New maximum entries"), &length);
+			if (rc)
+				return rc;
+			return fdisk_gpt_set_npartitions(cxt, (uint32_t) length);
 		case 'M':
 			mbr = fdisk_new_nested_context(cxt, "dos");
 			if (!mbr)
 				return -ENOMEM;
 			*cxt0 = cxt = mbr;
-			fdisk_context_enable_details(cxt, 1);	/* keep us in expert mode */
-			fdisk_sinfo(cxt, FDISK_INFO_SUCCESS,
-					_("Entering protective/hybrid MBR disklabel."));
+			fdisk_enable_details(cxt, 1);	/* keep us in expert mode */
+			fdisk_info(cxt, _("Entering protective/hybrid MBR disklabel."));
 			return 0;
 		}
 
@@ -581,32 +727,57 @@ static int gpt_menu_cb(struct fdisk_context **cxt0,
 
 		switch(ent->key) {
 		case 'u':
-			rc = fdisk_gpt_partition_set_uuid(cxt, n);
+			pa = fdisk_new_partition();	/* new template */
+			if (!pa)
+				rc = -ENOMEM;
+			else {
+				char *str = NULL;
+				rc = fdisk_ask_string(cxt, _("New UUID (in 8-4-4-4-12 format)"), &str);
+				if (!rc)
+					rc = fdisk_partition_set_uuid(pa, str);
+				if (!rc)
+					rc = fdisk_set_partition(cxt, n, pa);
+				free(str);
+				fdisk_unref_partition(pa);
+			}
 			break;
 		case 'n':
-			rc = fdisk_gpt_partition_set_name(cxt, n);
+			pa = fdisk_new_partition();	/* new template */
+			if (!pa)
+				rc = -ENOMEM;
+			else {
+				char *str = NULL;
+				rc = fdisk_ask_string(cxt, _("New name"), &str);
+				if (!rc)
+					rc = fdisk_partition_set_name(pa, str);
+				if (!rc)
+					rc = fdisk_set_partition(cxt, n, pa);
+				free(str);
+				fdisk_unref_partition(pa);
+			}
 			break;
 		case 'A':
-			rc = fdisk_partition_toggle_flag(cxt, n, GPT_FLAG_LEGACYBOOT);
+			rc = fdisk_toggle_partition_flag(cxt, n, GPT_FLAG_LEGACYBOOT);
 			break;
 		case 'B':
-			rc = fdisk_partition_toggle_flag(cxt, n, GPT_FLAG_NOBLOCK);
+			rc = fdisk_toggle_partition_flag(cxt, n, GPT_FLAG_NOBLOCK);
 			break;
 		case 'R':
-			rc = fdisk_partition_toggle_flag(cxt, n, GPT_FLAG_REQUIRED);
+			rc = fdisk_toggle_partition_flag(cxt, n, GPT_FLAG_REQUIRED);
 			break;
 		case 'S':
-			rc = fdisk_partition_toggle_flag(cxt, n, GPT_FLAG_GUIDSPECIFIC);
+			rc = fdisk_toggle_partition_flag(cxt, n, GPT_FLAG_GUIDSPECIFIC);
 			break;
 		}
 	}
+
 	return rc;
 }
 
 
 /*
  * This is fdisk frontend for MBR specific libfdisk functions that
- * are not expported by generic libfdisk API.
+ * are not exported by generic libfdisk API.
  */
 static int dos_menu_cb(struct fdisk_context **cxt0,
 		       const struct menu *menu __attribute__((__unused__)),
@@ -615,7 +786,7 @@ static int dos_menu_cb(struct fdisk_context **cxt0,
 	struct fdisk_context *cxt = *cxt0;
 	int rc = 0;
 
-	DBG(FRONTEND, ul_debug("enter DOS menu"));
+	DBG(MENU, ul_debug("enter DOS menu"));
 
 	if (!ent->expert) {
 		switch (ent->key) {
@@ -624,7 +795,7 @@ static int dos_menu_cb(struct fdisk_context **cxt0,
 			size_t n;
 			rc = fdisk_ask_partnum(cxt, &n, FALSE);
 			if (!rc)
-				rc = fdisk_partition_toggle_flag(cxt, n, DOS_FLAG_ACTIVE);
+				rc = fdisk_toggle_partition_flag(cxt, n, DOS_FLAG_ACTIVE);
 			break;
 		}
 		case 'b':
@@ -633,14 +804,13 @@ static int dos_menu_cb(struct fdisk_context **cxt0,
 					= fdisk_new_nested_context(cxt, "bsd");
 			if (!bsd)
 				return -ENOMEM;
-			if (!fdisk_dev_has_disklabel(bsd))
+			if (!fdisk_has_label(bsd))
 				rc = fdisk_create_disklabel(bsd, "bsd");
 			if (rc)
-				fdisk_free_context(bsd);
+				fdisk_unref_context(bsd);
 			else {
 				*cxt0 = cxt = bsd;
-				fdisk_sinfo(cxt, FDISK_INFO_SUCCESS,
-						_("Entering nested BSD disklabel."));
+				fdisk_info(cxt,	_("Entering nested BSD disklabel."));
 			}
 			break;
 		}
@@ -666,12 +836,11 @@ static int dos_menu_cb(struct fdisk_context **cxt0,
 		break;
 	case 'M':
 		/* return from nested MBR to GPT */
-		if (cxt->parent) {
-			*cxt0 = cxt->parent;
+		if (fdisk_get_parent(cxt)) {
+			*cxt0 = fdisk_get_parent(cxt);
 
 			fdisk_info(cxt, _("Leaving nested disklabel."));
-			fdisk_free_context(cxt);
-			cxt = *cxt0;
+			fdisk_unref_context(cxt);
 		}
 		break;
 	}
@@ -685,13 +854,13 @@ static int sun_menu_cb(struct fdisk_context **cxt0,
 	struct fdisk_context *cxt = *cxt0;
 	int rc = 0;
 
-	DBG(FRONTEND, ul_debug("enter SUN menu"));
+	DBG(MENU, ul_debug("enter SUN menu"));
 
 	assert(cxt);
 	assert(ent);
-	assert(fdisk_is_disklabel(cxt, SUN));
+	assert(fdisk_is_label(cxt, SUN));
 
-	DBG(FRONTEND, ul_debug("enter SUN menu"));
+	DBG(MENU, ul_debug("enter SUN menu"));
 
 	/* normal mode */
 	if (!ent->expert) {
@@ -702,10 +871,10 @@ static int sun_menu_cb(struct fdisk_context **cxt0,
 			return rc;
 		switch (ent->key) {
 		case 'a':
-			rc = fdisk_partition_toggle_flag(cxt, n, SUN_FLAG_RONLY);
+			rc = fdisk_toggle_partition_flag(cxt, n, SUN_FLAG_RONLY);
 			break;
 		case 'c':
-			rc = fdisk_partition_toggle_flag(cxt, n, SUN_FLAG_UNMNT);
+			rc = fdisk_toggle_partition_flag(cxt, n, SUN_FLAG_UNMNT);
 			break;
 		}
 		return rc;
@@ -740,11 +909,11 @@ static int sgi_menu_cb(struct fdisk_context **cxt0,
 	int rc = -EINVAL;
 	size_t n = 0;
 
-	DBG(FRONTEND, ul_debug("enter SGI menu"));
+	DBG(MENU, ul_debug("enter SGI menu"));
 
 	assert(cxt);
 	assert(ent);
-	assert(fdisk_is_disklabel(cxt, SGI));
+	assert(fdisk_is_label(cxt, SGI));
 
 	if (ent->expert)
 		return rc;
@@ -753,7 +922,7 @@ static int sgi_menu_cb(struct fdisk_context **cxt0,
 	case 'a':
 		rc = fdisk_ask_partnum(cxt, &n, FALSE);
 		if (!rc)
-			rc = fdisk_partition_toggle_flag(cxt, n, SGI_FLAG_BOOT);
+			rc = fdisk_toggle_partition_flag(cxt, n, SGI_FLAG_BOOT);
 		break;
 	case 'b':
 		fdisk_sgi_set_bootfile(cxt);
@@ -761,7 +930,7 @@ static int sgi_menu_cb(struct fdisk_context **cxt0,
 	case 'c':
 		rc = fdisk_ask_partnum(cxt, &n, FALSE);
 		if (!rc)
-			rc = fdisk_partition_toggle_flag(cxt, n, SGI_FLAG_SWAP);
+			rc = fdisk_toggle_partition_flag(cxt, n, SGI_FLAG_SWAP);
 		break;
 	case 'i':
 		rc = fdisk_sgi_create_info(cxt);
@@ -773,7 +942,7 @@ static int sgi_menu_cb(struct fdisk_context **cxt0,
 
 /*
  * This is fdisk frontend for BSD specific libfdisk functions that
- * are not expported by generic libfdisk API.
+ * are not exported by generic libfdisk API.
  */
 static int bsd_menu_cb(struct fdisk_context **cxt0,
 		       const struct menu *menu __attribute__((__unused__)),
@@ -784,9 +953,9 @@ static int bsd_menu_cb(struct fdisk_context **cxt0,
 
 	assert(cxt);
 	assert(ent);
-	assert(fdisk_is_disklabel(cxt, BSD));
+	assert(fdisk_is_label(cxt, BSD));
 
-	DBG(FRONTEND, ul_debug("enter BSD menu"));
+	DBG(MENU, ul_debug("enter BSD menu"));
 
 	switch(ent->key) {
 	case 'e':
@@ -796,11 +965,11 @@ static int bsd_menu_cb(struct fdisk_context **cxt0,
 		rc = fdisk_bsd_write_bootstrap(cxt);
 		break;
 	case 's':
-		org = fdisk_context_display_details(cxt);
+		org = fdisk_is_details(cxt);
 
-		fdisk_context_enable_details(cxt, 1);
+		fdisk_enable_details(cxt, 1);
 		list_disklabel(cxt);
-		fdisk_context_enable_details(cxt, org);
+		fdisk_enable_details(cxt, org);
 		break;
 	case 'x':
 		rc = fdisk_bsd_link_partition(cxt);
@@ -818,22 +987,22 @@ static int geo_menu_cb(struct fdisk_context **cxt0,
 	int rc = -EINVAL;
 	uintmax_t c = 0, h = 0, s = 0;
 
-	DBG(FRONTEND, ul_debug("enter GEO menu"));
+	DBG(MENU, ul_debug("enter GEO menu"));
 
 	assert(cxt);
 	assert(ent);
 
 	switch (ent->key) {
 	case 'c':
-		rc =  fdisk_ask_number(cxt, 1, cxt->geom.cylinders,
+		rc =  fdisk_ask_number(cxt, 1, fdisk_get_geom_cylinders(cxt),
 				1048576, _("Number of cylinders"), &c);
 		break;
 	case 'h':
-		rc =  fdisk_ask_number(cxt, 1, cxt->geom.heads,
+		rc =  fdisk_ask_number(cxt, 1, fdisk_get_geom_heads(cxt),
 				256, _("Number of heads"), &h);
 		break;
 	case 's':
-		rc =  fdisk_ask_number(cxt, 1, cxt->geom.sectors,
+		rc =  fdisk_ask_number(cxt, 1, fdisk_get_geom_sectors(cxt),
 				63, _("Number of sectors"), &s);
 		break;
 	}
@@ -850,7 +1019,7 @@ static int createlabel_menu_cb(struct fdisk_context **cxt0,
 	struct fdisk_context *cxt = *cxt0;
 	int rc = -EINVAL;
 
-	DBG(FRONTEND, ul_debug("enter Create label menu"));
+	DBG(MENU, ul_debug("enter Create label menu"));
 
 	assert(cxt);
 	assert(ent);

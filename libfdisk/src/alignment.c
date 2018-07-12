@@ -6,43 +6,80 @@
 
 #include "fdiskP.h"
 
-/*
- * Alignment according to logical granulity (usually 1MiB)
+/**
+ * SECTION: alignment
+ * @title: Alignment
+ * @short_description: functions to align partitions and work with disk topology and geometry
+ *
+ * The libfdisk aligns the end of the partitions to make it possible to align
+ * the next partition to the "grain" (see fdisk_get_grain_size()). The grain is
+ * usually 1MiB (or more for devices where optimal I/O is greater than 1MiB).
+ *
+ * It means that the library does not align strictly to physical sector size
+ * (or minimal or optimal I/O), but it uses greater granularity. It makes
+ * partition tables more portable. If you copy disk layout from 512-sector to
+ * 4K-sector device, all partitions are still aligned to physical sectors.
+ *
+ * This unified concept also makes partition tables more user friendly, all
+ * tables look same, LBA of the first partition is 2048 sectors everywhere, etc.
+ *
+ * It's recommended to not change any alignment or device properties. All is
+ * initialized by default by fdisk_assign_device().
+ *
+ * Note that terminology used by libfdisk is: 
+ *   - device properties: I/O limits (topology), geometry, sector size, ...
+ *   - alignment: first, last LBA, grain, ...
+ *
+ * The alignment setting may be modified by disk label driver.
  */
-static int lba_is_aligned(struct fdisk_context *cxt, sector_t lba)
+
+/*
+ * Alignment according to logical granularity (usually 1MiB)
+ */
+static int lba_is_aligned(struct fdisk_context *cxt, uintmax_t lba)
 {
 	unsigned long granularity = max(cxt->phy_sector_size, cxt->min_io_size);
 	uintmax_t offset;
 
 	if (cxt->grain > granularity)
 		granularity = cxt->grain;
-	offset = (lba * cxt->sector_size) & (granularity - 1);
 
-	return !((granularity + cxt->alignment_offset - offset) & (granularity - 1));
+	offset = (lba * cxt->sector_size) % granularity;
+
+	return !((granularity + cxt->alignment_offset - offset) % granularity);
 }
 
 /*
  * Alignment according to physical device topology (usually minimal i/o size)
  */
-static int lba_is_phy_aligned(struct fdisk_context *cxt, sector_t lba)
+static int lba_is_phy_aligned(struct fdisk_context *cxt, fdisk_sector_t lba)
 {
 	unsigned long granularity = max(cxt->phy_sector_size, cxt->min_io_size);
-	uintmax_t offset = (lba * cxt->sector_size) & (granularity - 1);
+	uintmax_t offset = (lba * cxt->sector_size) % granularity;
 
-	return !((granularity + cxt->alignment_offset - offset) & (granularity - 1));
+	return !((granularity + cxt->alignment_offset - offset) % granularity);
 }
 
-/*
- * Align @lba in @direction FDISK_ALIGN_{UP,DOWN,NEAREST}
+/**
+ * fdisk_align_lba:
+ * @cxt: context
+ * @lba: address to align
+ * @direction: FDISK_ALIGN_{UP,DOWN,NEAREST}
+ *
+ * This function aligns @lba to the "grain" (see fdisk_get_grain_size()). If the
+ * device uses alignment offset then the result is moved according the offset
+ * to be on the physical boundary.
+ *
+ * Returns: alignment LBA.
  */
-sector_t fdisk_align_lba(struct fdisk_context *cxt, sector_t lba, int direction)
+fdisk_sector_t fdisk_align_lba(struct fdisk_context *cxt, fdisk_sector_t lba, int direction)
 {
-	sector_t res;
+	fdisk_sector_t res;
 
 	if (lba_is_aligned(cxt, lba))
 		res = lba;
 	else {
-		sector_t sects_in_phy = cxt->grain / cxt->sector_size;
+		fdisk_sector_t sects_in_phy = cxt->grain / cxt->sector_size;
 
 		if (lba < cxt->first_lba)
 			res = cxt->first_lba;
@@ -75,38 +112,75 @@ sector_t fdisk_align_lba(struct fdisk_context *cxt, sector_t lba, int direction)
 	}
 
 	if (lba != res)
-		DBG(CXT, ul_debugobj(cxt, "LBA %ju -aligned-to-> %ju",
+		DBG(CXT, ul_debugobj(cxt, "LBA %ju -aligned-%s-> %ju [grain=%lus]",
 				(uintmax_t) lba,
+				direction == FDISK_ALIGN_UP ? "up" :
+				direction == FDISK_ALIGN_DOWN ? "down" : "near",
+				(uintmax_t) res,
+				cxt->grain / cxt->sector_size));
+	else
+		DBG(CXT, ul_debugobj(cxt, "LBA %ju -unchanged-", (uintmax_t)lba));
+
+	return res;
+}
+
+/**
+ * fdisk_align_lba_in_range:
+ * @cxt: context
+ * @lba: LBA
+ * @start: range start
+ * @stop: range stop
+ *
+ * Align @lba, the result has to be between @start and @stop
+ *
+ * Returns: aligned LBA
+ */
+fdisk_sector_t fdisk_align_lba_in_range(struct fdisk_context *cxt,
+				  fdisk_sector_t lba, fdisk_sector_t start, fdisk_sector_t stop)
+{
+	fdisk_sector_t res;
+
+	start = fdisk_align_lba(cxt, start, FDISK_ALIGN_UP);
+	stop = fdisk_align_lba(cxt, stop, FDISK_ALIGN_DOWN);
+
+	if (lba > start && lba < stop
+	    && (lba - start) < (cxt->grain / cxt->sector_size)) {
+
+		DBG(CXT, ul_debugobj(cxt, "LBA: area smaller than grain, don't align"));
+		res = lba;
+		goto done;
+	}
+
+	lba = fdisk_align_lba(cxt, lba, FDISK_ALIGN_NEAREST);
+
+	if (lba < start)
+		res = start;
+	else if (lba > stop)
+		res = stop;
+	else
+		res = lba;
+
+done:
+	DBG(CXT, ul_debugobj(cxt, "LBA %ju range:<%ju..%ju>, result: %ju",
+				(uintmax_t) lba,
+				(uintmax_t) start,
+				(uintmax_t) stop,
 				(uintmax_t) res));
 	return res;
 }
 
-/*
- * Align @lba, the result has to be between @start and @stop
+/**
+ * fdisk_lba_is_phy_aligned:
+ * @cxt: context
+ * @lba: LBA to check
+ *
+ * Check if the @lba is aligned to physical sector boundary.
+ *
+ * Returns: 1 if aligned.
  */
-sector_t fdisk_align_lba_in_range(struct fdisk_context *cxt,
-				  sector_t lba, sector_t start, sector_t stop)
+int fdisk_lba_is_phy_aligned(struct fdisk_context *cxt, fdisk_sector_t lba)
 {
-	start = fdisk_align_lba(cxt, start, FDISK_ALIGN_UP);
-	stop = fdisk_align_lba(cxt, stop, FDISK_ALIGN_DOWN);
-	lba = fdisk_align_lba(cxt, lba, FDISK_ALIGN_NEAREST);
-
-	if (lba < start)
-		return start;
-	else if (lba > stop)
-		return stop;
-	return lba;
-}
-
-/*
- * Print warning if the partition @lba (start of the @partition) is not
- * aligned to physical sector boundary.
- */
-void fdisk_warn_alignment(struct fdisk_context *cxt, sector_t lba, int partition)
-{
-	if (!lba_is_phy_aligned(cxt, lba))
-		fdisk_warnx(cxt, _("Partition %i does not start on physical sector boundary.\n"),
-			partition + 1);
+	return lba_is_phy_aligned(cxt, lba);
 }
 
 static unsigned long get_sector_size(int fd)
@@ -136,8 +210,12 @@ static void recount_geometry(struct fdisk_context *cxt)
  * @heads: user specified heads
  * @sectors: user specified sectors
  *
- * Overrides autodiscovery and apply user specified geometry. The function
- * fdisk_reset_device_properties() restores the original setting.
+ * Overrides auto-discovery. The function fdisk_reset_device_properties()
+ * restores the original setting.
+ *
+ * The difference between fdisk_override_geometry() and fdisk_save_user_geometry()
+ * is that saved user geometry is persistent setting and it's applied always
+ * when device is assigned to the context or device properties are reset.
  *
  * Returns: 0 on success, < 0 on error.
  */
@@ -168,6 +246,20 @@ int fdisk_override_geometry(struct fdisk_context *cxt,
 	return 0;
 }
 
+/**
+ * fdisk_save_user_geometry:
+ * @cxt: context
+ * @cylinders: C
+ * @heads: H
+ * @sectors: S
+ *
+ * Save user defined geometry to use it for partitioning.
+ *
+ * The user properties are applied by fdisk_assign_device() or
+ * fdisk_reset_device_properties().
+
+ * Returns: <0 on error, 0 on success.
+ */
 int fdisk_save_user_geometry(struct fdisk_context *cxt,
 			    unsigned int cylinders,
 			    unsigned int heads,
@@ -191,6 +283,19 @@ int fdisk_save_user_geometry(struct fdisk_context *cxt,
 	return 0;
 }
 
+/**
+ * fdisk_save_user_sector_size:
+ * @cxt: context
+ * @phy: physical sector size
+ * @log: logical sector size
+ *
+ * Save user defined sector sizes to use it for partitioning.
+ *
+ * The user properties are applied by fdisk_assign_device() or
+ * fdisk_reset_device_properties().
+ *
+ * Returns: <0 on error, 0 on success.
+ */
 int fdisk_save_user_sector_size(struct fdisk_context *cxt,
 				unsigned int phy,
 				unsigned int log)
@@ -206,6 +311,12 @@ int fdisk_save_user_sector_size(struct fdisk_context *cxt,
 	return 0;
 }
 
+/**
+ * fdisk_has_user_device_properties:
+ * @cxt: context
+ *
+ * Returns: 1 if user specified any properties
+ */
 int fdisk_has_user_device_properties(struct fdisk_context *cxt)
 {
 	return (cxt->user_pyh_sector
@@ -220,13 +331,22 @@ int fdisk_apply_user_device_properties(struct fdisk_context *cxt)
 	if (!cxt)
 		return -EINVAL;
 
-	DBG(CXT, ul_debugobj(cxt, "appling user device properties"));
+	DBG(CXT, ul_debugobj(cxt, "applying user device properties"));
 
 	if (cxt->user_pyh_sector)
 		cxt->phy_sector_size = cxt->user_pyh_sector;
-	if (cxt->user_log_sector)
+	if (cxt->user_log_sector) {
+		uint64_t old_total = cxt->total_sectors;
+		uint64_t old_secsz = cxt->sector_size;
+
 		cxt->sector_size = cxt->min_io_size =
 			cxt->io_size = cxt->user_log_sector;
+
+		if (cxt->sector_size != old_secsz) {
+			cxt->total_sectors = (old_total * (old_secsz/512)) / (cxt->sector_size >> 9);
+			DBG(CXT, ul_debugobj(cxt, "new total sectors: %ju", cxt->total_sectors));
+		}
+	}
 
 	if (cxt->user_geom.heads)
 		cxt->geom.heads = cxt->user_geom.heads;
@@ -271,6 +391,20 @@ void fdisk_zeroize_device_properties(struct fdisk_context *cxt)
 	memset(&cxt->geom, 0, sizeof(struct fdisk_geometry));
 }
 
+/**
+ * fdisk_reset_device_properties:
+ * @cxt: context
+ *
+ * Resets and discovery topology (I/O limits), geometry, re-read the first
+ * rector on the device if necessary and apply user device setting (geometry
+ * and sector size), then initialize alignment according to label driver (see
+ * fdisk_reset_alignment()).
+ *
+ * You don't have to use this function by default, fdisk_assign_device() is
+ * smart enough to initialize all necessary setting.
+ *
+ * Returns: 0 on success, <0 on error.
+ */
 int fdisk_reset_device_properties(struct fdisk_context *cxt)
 {
 	int rc;
@@ -278,7 +412,7 @@ int fdisk_reset_device_properties(struct fdisk_context *cxt)
 	if (!cxt)
 		return -EINVAL;
 
-	DBG(CXT, ul_debugobj(cxt, "*** reseting device properties"));
+	DBG(CXT, ul_debugobj(cxt, "*** resetting device properties"));
 
 	fdisk_zeroize_device_properties(cxt);
 	fdisk_discover_topology(cxt);
@@ -297,7 +431,7 @@ int fdisk_reset_device_properties(struct fdisk_context *cxt)
  */
 int fdisk_discover_geometry(struct fdisk_context *cxt)
 {
-	sector_t nsects;
+	fdisk_sector_t nsects;
 
 	assert(cxt);
 	assert(cxt->geom.heads == 0);
@@ -305,8 +439,12 @@ int fdisk_discover_geometry(struct fdisk_context *cxt)
 	DBG(CXT, ul_debugobj(cxt, "%s: discovering geometry...", cxt->dev_path));
 
 	/* get number of 512-byte sectors, and convert it the real sectors */
-	if (!blkdev_get_sectors(cxt->dev_fd, &nsects))
+	if (!blkdev_get_sectors(cxt->dev_fd, (unsigned long long *) &nsects))
 		cxt->total_sectors = (nsects / (cxt->sector_size >> 9));
+
+	DBG(CXT, ul_debugobj(cxt, "total sectors: %ju (ioctl=%ju)",
+				(uintmax_t) cxt->total_sectors,
+				(uintmax_t) nsects));
 
 	/* what the kernel/bios thinks the geometry is */
 	blkdev_get_geometry(cxt->dev_fd, &cxt->geom.heads, (unsigned int *) &cxt->geom.sectors);
@@ -346,8 +484,17 @@ int fdisk_discover_topology(struct fdisk_context *cxt)
 			/* I/O size used by fdisk */
 			cxt->io_size = cxt->optimal_io_size;
 			if (!cxt->io_size)
-				/* optimal IO is optional, default to minimum IO */
+				/* optimal I/O is optional, default to minimum IO */
 				cxt->io_size = cxt->min_io_size;
+
+			/* ignore optimal I/O if not aligned to phy.sector size */
+			if (cxt->io_size
+			    && cxt->phy_sector_size
+			    && (cxt->io_size % cxt->phy_sector_size) != 0) {
+				DBG(CXT, ul_debugobj(cxt, "ignore misaligned I/O size"));
+				cxt->io_size = cxt->phy_sector_size;
+			}
+
 		}
 	}
 	blkid_free_probe(pr);
@@ -365,7 +512,7 @@ int fdisk_discover_topology(struct fdisk_context *cxt)
 
 	DBG(CXT, ul_debugobj(cxt, "result: log/phy sector size: %ld/%ld",
 			cxt->sector_size, cxt->phy_sector_size));
-	DBG(CXT, ul_debugobj(cxt, "result: fdisk/min/optimal io: %ld/%ld/%ld",
+	DBG(CXT, ul_debugobj(cxt, "result: fdisk/optimal/minimal io: %ld/%ld/%ld",
 		       cxt->io_size, cxt->optimal_io_size, cxt->min_io_size));
 	return 0;
 }
@@ -391,9 +538,9 @@ static int has_topology(struct fdisk_context *cxt)
  *
  * Returns: 0 on error or number of logical sectors.
  */
-sector_t fdisk_topology_get_first_lba(struct fdisk_context *cxt)
+static fdisk_sector_t topology_get_first_lba(struct fdisk_context *cxt)
 {
-	sector_t x = 0, res;
+	fdisk_sector_t x = 0, res;
 
 	if (!cxt)
 		return 0;
@@ -408,7 +555,7 @@ sector_t fdisk_topology_get_first_lba(struct fdisk_context *cxt)
 	 *  a2) alignment offset
 	 *  a1) or physical sector (minimal_io_size, aka "grain")
 	 *
-	 * b) or default to 1MiB (2048 sectrors, Windows Vista default)
+	 * b) or default to 1MiB (2048 sectors, Windows Vista default)
 	 *
 	 * c) or for very small devices use 1 phy.sector
 	 */
@@ -431,13 +578,7 @@ sector_t fdisk_topology_get_first_lba(struct fdisk_context *cxt)
 	return res;
 }
 
-/*
- * The LBA of the first partition is based on the device geometry and topology.
- * This offset is generic generic (and recommended) for all labels.
- *
- * Returns: 0 on error or number of bytes.
- */
-unsigned long fdisk_topology_get_grain(struct fdisk_context *cxt)
+static unsigned long topology_get_grain(struct fdisk_context *cxt)
 {
 	unsigned long res;
 
@@ -464,7 +605,8 @@ unsigned long fdisk_topology_get_grain(struct fdisk_context *cxt)
  * fdisk_reset_alignment:
  * @cxt: fdisk context
  *
- * Resets alignment setting to the default or label specific values.
+ * Resets alignment setting to the default and label specific values. This
+ * function does not change device properties (I/O limits, geometry etc.).
  *
  * Returns: 0 on success, < 0 in case of error.
  */
@@ -475,18 +617,18 @@ int fdisk_reset_alignment(struct fdisk_context *cxt)
 	if (!cxt)
 		return -EINVAL;
 
-	DBG(CXT, ul_debugobj(cxt, "reseting alignment..."));
+	DBG(CXT, ul_debugobj(cxt, "resetting alignment..."));
 
 	/* default */
-	cxt->grain = fdisk_topology_get_grain(cxt);
-	cxt->first_lba = fdisk_topology_get_first_lba(cxt);
+	cxt->grain = topology_get_grain(cxt);
+	cxt->first_lba = topology_get_first_lba(cxt);
 	cxt->last_lba = cxt->total_sectors - 1;
 
 	/* overwrite default by label stuff */
 	if (cxt->label && cxt->label->op->reset_alignment)
 		rc = cxt->label->op->reset_alignment(cxt);
 
-	DBG(CXT, ul_debugobj(cxt, "alignment reseted to: "
+	DBG(CXT, ul_debugobj(cxt, "alignment reset to: "
 			    "first LBA=%ju, last LBA=%ju, grain=%lu [rc=%d]",
 			    (uintmax_t) cxt->first_lba, (uintmax_t) cxt->last_lba,
 			    cxt->grain,	rc));
@@ -494,18 +636,26 @@ int fdisk_reset_alignment(struct fdisk_context *cxt)
 }
 
 
-sector_t fdisk_scround(struct fdisk_context *cxt, sector_t num)
+fdisk_sector_t fdisk_scround(struct fdisk_context *cxt, fdisk_sector_t num)
 {
-	sector_t un = fdisk_context_get_units_per_sector(cxt);
+	fdisk_sector_t un = fdisk_get_units_per_sector(cxt);
 	return (num + un - 1) / un;
 }
 
-sector_t fdisk_cround(struct fdisk_context *cxt, sector_t num)
+fdisk_sector_t fdisk_cround(struct fdisk_context *cxt, fdisk_sector_t num)
 {
-	return fdisk_context_use_cylinders(cxt) ?
-			(num / fdisk_context_get_units_per_sector(cxt)) + 1 : num;
+	return fdisk_use_cylinders(cxt) ?
+			(num / fdisk_get_units_per_sector(cxt)) + 1 : num;
 }
 
+/**
+ * fdisk_reread_partition_table:
+ * @cxt: context
+ *
+ * Force *kernel* to re-read partition table on block devices.
+ *
+ * Returns: 0 on success, < 0 in case of error.
+ */
 int fdisk_reread_partition_table(struct fdisk_context *cxt)
 {
 	int i;
@@ -516,6 +666,7 @@ int fdisk_reread_partition_table(struct fdisk_context *cxt)
 
 	i = fstat(cxt->dev_fd, &statbuf);
 	if (i == 0 && S_ISBLK(statbuf.st_mode)) {
+		DBG(CXT, ul_debugobj(cxt, "calling re-read ioctl"));
 		sync();
 #ifdef BLKRRPART
 		fdisk_info(cxt, _("Calling ioctl() to re-read partition table."));

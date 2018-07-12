@@ -1,1 +1,2 @@
-sbin/blkid
+#!/usr/bin/dh-exec
+./blkid.static => /sbin/blkid

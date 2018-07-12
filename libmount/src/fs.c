@@ -51,25 +51,10 @@ void mnt_free_fs(struct libmnt_fs *fs)
 {
 	if (!fs)
 		return;
-	list_del(&fs->ents);
+
 	DBG(FS, ul_debugobj(fs, "free [refcount=%d]", fs->refcount));
 
-	free(fs->source);
-	free(fs->bindsrc);
-	free(fs->tagname);
-	free(fs->tagval);
-	free(fs->root);
-	free(fs->swaptype);
-	free(fs->target);
-	free(fs->fstype);
-	free(fs->optstr);
-	free(fs->vfs_optstr);
-	free(fs->fs_optstr);
-	free(fs->user_optstr);
-	free(fs->attrs);
-	free(fs->opt_fields);
-	free(fs->comment);
-
+	mnt_reset_fs(fs);
 	free(fs);
 }
 
@@ -87,6 +72,24 @@ void mnt_reset_fs(struct libmnt_fs *fs)
 		return;
 
 	ref = fs->refcount;
+
+	list_del(&fs->ents);
+	free(fs->source);
+	free(fs->bindsrc);
+	free(fs->tagname);
+	free(fs->tagval);
+	free(fs->root);
+	free(fs->swaptype);
+	free(fs->target);
+	free(fs->fstype);
+	free(fs->optstr);
+	free(fs->vfs_optstr);
+	free(fs->fs_optstr);
+	free(fs->user_optstr);
+	free(fs->attrs);
+	free(fs->opt_fields);
+	free(fs->comment);
+
 	memset(fs, 0, sizeof(*fs));
 	INIT_LIST_HEAD(&fs->ents);
 	fs->refcount = ref;
@@ -147,8 +150,8 @@ static inline int update_str(char **dest, const char *src)
 
 static inline int cpy_str_at_offset(void *new, const void *old, size_t offset)
 {
-	char **o = (char **) (old + offset);
-	char **n = (char **) (new + offset);
+	char **o = (char **) ((char *) old + offset);
+	char **n = (char **) ((char *) new + offset);
 
 	if (*n)
 		return 0;	/* already set, don't overwrite */
@@ -294,8 +297,6 @@ err:
  */
 void *mnt_fs_get_userdata(struct libmnt_fs *fs)
 {
-	assert(fs);
-
 	if (!fs)
 		return NULL;
 
@@ -314,7 +315,6 @@ void *mnt_fs_get_userdata(struct libmnt_fs *fs)
  */
 int mnt_fs_set_userdata(struct libmnt_fs *fs, void *data)
 {
-	assert(fs);
 	if (!fs)
 		return -EINVAL;
 
@@ -338,7 +338,6 @@ int mnt_fs_set_userdata(struct libmnt_fs *fs, void *data)
  */
 const char *mnt_fs_get_srcpath(struct libmnt_fs *fs)
 {
-	assert(fs);
 	if (!fs)
 		return NULL;
 
@@ -357,7 +356,6 @@ const char *mnt_fs_get_srcpath(struct libmnt_fs *fs)
  */
 const char *mnt_fs_get_source(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->source : NULL;
 }
 
@@ -404,7 +402,6 @@ int mnt_fs_set_source(struct libmnt_fs *fs, const char *source)
 	char *p = NULL;
 	int rc;
 
-	assert(fs);
 	if (!fs)
 		return -EINVAL;
 
@@ -425,8 +422,9 @@ int mnt_fs_set_source(struct libmnt_fs *fs, const char *source)
  * @fs: fs
  * @path: source path
  *
- * Compares @fs source path with @path. The trailing slash is ignored.
- * See also mnt_fs_match_source().
+ * Compares @fs source path with @path. The redundant slashs are ignored.
+ * This function compares strings and does not cannonicalize the paths.
+ * See also more heavy and generic mnt_fs_match_source().
  *
  * Returns: 1 if @fs source path equal to @path, otherwise 0.
  */
@@ -434,14 +432,13 @@ int mnt_fs_streq_srcpath(struct libmnt_fs *fs, const char *path)
 {
 	const char *p;
 
-	assert(fs);
 	if (!fs)
 		return 0;
 
 	p = mnt_fs_get_srcpath(fs);
 
 	if (!mnt_fs_is_pseudofs(fs))
-		return streq_except_trailing_slash(p, path);
+		return streq_paths(p, path);
 
 	if (!p && !path)
 		return 1;
@@ -454,15 +451,15 @@ int mnt_fs_streq_srcpath(struct libmnt_fs *fs, const char *path)
  * @fs: fs
  * @path: mount point
  *
- * Compares @fs target path with @path. The trailing slash is ignored.
- * See also mnt_fs_match_target().
+ * Compares @fs target path with @path. The redundant slashs are ignored.
+ * This function compares strings and does not cannonicalize the paths.
+ * See also more generic mnt_fs_match_target().
  *
  * Returns: 1 if @fs target path equal to @path, otherwise 0.
  */
 int mnt_fs_streq_target(struct libmnt_fs *fs, const char *path)
 {
-	assert(fs);
-	return fs && streq_except_trailing_slash(mnt_fs_get_target(fs), path);
+	return fs && streq_paths(mnt_fs_get_target(fs), path);
 }
 
 /**
@@ -500,7 +497,6 @@ int mnt_fs_streq_target(struct libmnt_fs *fs, const char *path)
  */
 int mnt_fs_get_tag(struct libmnt_fs *fs, const char **name, const char **value)
 {
-	assert(fs);
 	if (fs == NULL || !fs->tagname)
 		return -EINVAL;
 	if (name)
@@ -518,35 +514,21 @@ int mnt_fs_get_tag(struct libmnt_fs *fs, const char **name, const char **value)
  */
 const char *mnt_fs_get_target(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->target : NULL;
 }
 
 /**
  * mnt_fs_set_target:
  * @fs: fstab/mtab/mountinfo entry
- * @target: mountpoint
+ * @tgt: mountpoint
  *
- * This function creates a private copy (strdup()) of @target.
+ * This function creates a private copy (strdup()) of @tgt.
  *
  * Returns: 0 on success or negative number in case of error.
  */
-int mnt_fs_set_target(struct libmnt_fs *fs, const char *target)
+int mnt_fs_set_target(struct libmnt_fs *fs, const char *tgt)
 {
-	char *p = NULL;
-
-	assert(fs);
-	if (!fs)
-		return -EINVAL;
-	if (target) {
-		p = strdup(target);
-		if (!p)
-			return -ENOMEM;
-	}
-	free(fs->target);
-	fs->target = p;
-
-	return 0;
+	return strdup_to_struct_member(fs, target, tgt);
 }
 
 static int mnt_fs_get_flags(struct libmnt_fs *fs)
@@ -567,7 +549,6 @@ static int mnt_fs_get_flags(struct libmnt_fs *fs)
  */
 int mnt_fs_get_propagation(struct libmnt_fs *fs, unsigned long *flags)
 {
-	assert(fs);
 	if (!fs || !flags)
 		return -EINVAL;
 
@@ -609,7 +590,6 @@ int mnt_fs_is_kernel(struct libmnt_fs *fs)
  */
 int mnt_fs_is_swaparea(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return mnt_fs_get_flags(fs) & MNT_FS_SWAP;
 }
 
@@ -621,7 +601,6 @@ int mnt_fs_is_swaparea(struct libmnt_fs *fs)
  */
 int mnt_fs_is_pseudofs(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return mnt_fs_get_flags(fs) & MNT_FS_PSEUDO;
 }
 
@@ -633,7 +612,6 @@ int mnt_fs_is_pseudofs(struct libmnt_fs *fs)
  */
 int mnt_fs_is_netfs(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return mnt_fs_get_flags(fs) & MNT_FS_NET;
 }
 
@@ -645,7 +623,6 @@ int mnt_fs_is_netfs(struct libmnt_fs *fs)
  */
 const char *mnt_fs_get_fstype(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->fstype : NULL;
 }
 
@@ -687,7 +664,6 @@ int mnt_fs_set_fstype(struct libmnt_fs *fs, const char *fstype)
 {
 	char *p = NULL;
 
-	assert(fs);
 	if (!fs)
 		return -EINVAL;
 	if (fstype) {
@@ -757,7 +733,7 @@ static char *merge_optstr(const char *vfs, const char *fs)
  * @fs: fstab/mtab/mountinfo entry pointer
  *
  * Merges all mount options (VFS, FS and userspace) to one options string
- * and returns the result. This function does not modigy @fs.
+ * and returns the result. This function does not modify @fs.
  *
  * Returns: pointer to string (can be freed by free(3)) or NULL in case of error.
  */
@@ -765,7 +741,9 @@ char *mnt_fs_strdup_options(struct libmnt_fs *fs)
 {
 	char *res;
 
-	assert(fs);
+	if (!fs)
+		return NULL;
+
 	errno = 0;
 	if (fs->optstr)
 		return strdup(fs->optstr);
@@ -773,11 +751,10 @@ char *mnt_fs_strdup_options(struct libmnt_fs *fs)
 	res = merge_optstr(fs->vfs_optstr, fs->fs_optstr);
 	if (!res && errno)
 		return NULL;
-	if (fs->user_optstr) {
-		if (mnt_optstr_append_option(&res, fs->user_optstr, NULL)) {
-			free(res);
-			res = NULL;
-		}
+	if (fs->user_optstr &&
+	    mnt_optstr_append_option(&res, fs->user_optstr, NULL)) {
+		free(res);
+		res = NULL;
 	}
 	return res;
 }
@@ -790,7 +767,6 @@ char *mnt_fs_strdup_options(struct libmnt_fs *fs)
  */
 const char *mnt_fs_get_options(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->optstr : NULL;
 }
 
@@ -803,7 +779,6 @@ const char *mnt_fs_get_options(struct libmnt_fs *fs)
  */
 const char *mnt_fs_get_optional_fields(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->opt_fields : NULL;
 }
 
@@ -821,7 +796,6 @@ int mnt_fs_set_options(struct libmnt_fs *fs, const char *optstr)
 {
 	char *v = NULL, *f = NULL, *u = NULL, *n = NULL;
 
-	assert(fs);
 	if (!fs)
 		return -EINVAL;
 	if (optstr) {
@@ -867,7 +841,6 @@ int mnt_fs_append_options(struct libmnt_fs *fs, const char *optstr)
 	char *v = NULL, *f = NULL, *u = NULL;
 	int rc;
 
-	assert(fs);
 	if (!fs)
 		return -EINVAL;
 	if (!optstr)
@@ -910,7 +883,6 @@ int mnt_fs_prepend_options(struct libmnt_fs *fs, const char *optstr)
 	char *v = NULL, *f = NULL, *u = NULL;
 	int rc;
 
-	assert(fs);
 	if (!fs)
 		return -EINVAL;
 	if (!optstr)
@@ -944,7 +916,6 @@ int mnt_fs_prepend_options(struct libmnt_fs *fs, const char *optstr)
  */
 const char *mnt_fs_get_fs_options(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->fs_optstr : NULL;
 }
 
@@ -956,7 +927,6 @@ const char *mnt_fs_get_fs_options(struct libmnt_fs *fs)
  */
 const char *mnt_fs_get_vfs_options(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->vfs_optstr : NULL;
 }
 
@@ -968,7 +938,6 @@ const char *mnt_fs_get_vfs_options(struct libmnt_fs *fs)
  */
 const char *mnt_fs_get_user_options(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->user_optstr : NULL;
 }
 
@@ -980,7 +949,6 @@ const char *mnt_fs_get_user_options(struct libmnt_fs *fs)
  */
 const char *mnt_fs_get_attributes(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->attrs : NULL;
 }
 
@@ -1001,20 +969,7 @@ const char *mnt_fs_get_attributes(struct libmnt_fs *fs)
  */
 int mnt_fs_set_attributes(struct libmnt_fs *fs, const char *optstr)
 {
-	char *p = NULL;
-
-	assert(fs);
-	if (!fs)
-		return -EINVAL;
-	if (optstr) {
-		p = strdup(optstr);
-		if (!p)
-			return -ENOMEM;
-	}
-	free(fs->attrs);
-	fs->attrs = p;
-
-	return 0;
+	return strdup_to_struct_member(fs, attrs, optstr);
 }
 
 /**
@@ -1046,7 +1001,6 @@ int mnt_fs_append_attributes(struct libmnt_fs *fs, const char *optstr)
  */
 int mnt_fs_prepend_attributes(struct libmnt_fs *fs, const char *optstr)
 {
-	assert(fs);
 	if (!fs)
 		return -EINVAL;
 	if (!optstr)
@@ -1063,7 +1017,6 @@ int mnt_fs_prepend_attributes(struct libmnt_fs *fs, const char *optstr)
  */
 int mnt_fs_get_freq(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->freq : 0;
 }
 
@@ -1076,7 +1029,6 @@ int mnt_fs_get_freq(struct libmnt_fs *fs)
  */
 int mnt_fs_set_freq(struct libmnt_fs *fs, int freq)
 {
-	assert(fs);
 	if (!fs)
 		return -EINVAL;
 	fs->freq = freq;
@@ -1091,7 +1043,6 @@ int mnt_fs_set_freq(struct libmnt_fs *fs, int freq)
  */
 int mnt_fs_get_passno(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->passno: 0;
 }
 
@@ -1104,7 +1055,6 @@ int mnt_fs_get_passno(struct libmnt_fs *fs)
  */
 int mnt_fs_set_passno(struct libmnt_fs *fs, int passno)
 {
-	assert(fs);
 	if (!fs)
 		return -EINVAL;
 	fs->passno = passno;
@@ -1119,32 +1069,19 @@ int mnt_fs_set_passno(struct libmnt_fs *fs, int passno)
  */
 const char *mnt_fs_get_root(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->root : NULL;
 }
 
 /**
  * mnt_fs_set_root:
  * @fs: mountinfo entry
- * @root: path
+ * @path: root path
  *
  * Returns: 0 on success or negative number in case of error.
  */
-int mnt_fs_set_root(struct libmnt_fs *fs, const char *root)
+int mnt_fs_set_root(struct libmnt_fs *fs, const char *path)
 {
-	char *p = NULL;
-
-	assert(fs);
-	if (!fs)
-		return -EINVAL;
-	if (root) {
-		p = strdup(root);
-		if (!p)
-			return -ENOMEM;
-	}
-	free(fs->root);
-	fs->root = p;
-	return 0;
+	return strdup_to_struct_member(fs, root, path);
 }
 
 /**
@@ -1155,7 +1092,6 @@ int mnt_fs_set_root(struct libmnt_fs *fs, const char *root)
  */
 const char *mnt_fs_get_swaptype(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->swaptype : NULL;
 }
 
@@ -1167,7 +1103,6 @@ const char *mnt_fs_get_swaptype(struct libmnt_fs *fs)
  */
 off_t mnt_fs_get_size(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->size : 0;
 }
 
@@ -1179,7 +1114,6 @@ off_t mnt_fs_get_size(struct libmnt_fs *fs)
  */
 off_t mnt_fs_get_usedsize(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->usedsize : 0;
 }
 
@@ -1191,19 +1125,18 @@ off_t mnt_fs_get_usedsize(struct libmnt_fs *fs)
  */
 int mnt_fs_get_priority(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->priority : 0;
 }
 
 /**
  * mnt_fs_set_priority:
  * @fs: /proc/swaps entry
+ * @prio: priority
  *
  * Returns: 0 or -1 in case of error
  */
 int mnt_fs_set_priority(struct libmnt_fs *fs, int prio)
 {
-	assert(fs);
 	if (!fs)
 		return -EINVAL;
 	fs->priority = prio;
@@ -1218,7 +1151,6 @@ int mnt_fs_set_priority(struct libmnt_fs *fs, int prio)
  */
 const char *mnt_fs_get_bindsrc(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->bindsrc : NULL;
 }
 
@@ -1231,19 +1163,7 @@ const char *mnt_fs_get_bindsrc(struct libmnt_fs *fs)
  */
 int mnt_fs_set_bindsrc(struct libmnt_fs *fs, const char *src)
 {
-	char *p = NULL;
-
-	assert(fs);
-	if (!fs)
-		return -EINVAL;
-	if (src) {
-		p = strdup(src);
-		if (!p)
-			return -ENOMEM;
-	}
-	free(fs->bindsrc);
-	fs->bindsrc = p;
-	return 0;
+	return strdup_to_struct_member(fs, bindsrc, src);
 }
 
 /**
@@ -1254,7 +1174,6 @@ int mnt_fs_set_bindsrc(struct libmnt_fs *fs, const char *src)
  */
 int mnt_fs_get_id(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->id : -EINVAL;
 }
 
@@ -1266,7 +1185,6 @@ int mnt_fs_get_id(struct libmnt_fs *fs)
  */
 int mnt_fs_get_parent_id(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->parent : -EINVAL;
 }
 
@@ -1278,7 +1196,6 @@ int mnt_fs_get_parent_id(struct libmnt_fs *fs)
  */
 dev_t mnt_fs_get_devno(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->devno : 0;
 }
 
@@ -1290,7 +1207,6 @@ dev_t mnt_fs_get_devno(struct libmnt_fs *fs)
  */
 pid_t mnt_fs_get_tid(struct libmnt_fs *fs)
 {
-	assert(fs);
 	return fs ? fs->tid : 0;
 }
 
@@ -1308,7 +1224,6 @@ int mnt_fs_get_option(struct libmnt_fs *fs, const char *name,
 {
 	char rc = 1;
 
-	assert(fs);
 	if (!fs)
 		return -EINVAL;
 	if (fs->fs_optstr)
@@ -1334,7 +1249,6 @@ int mnt_fs_get_attribute(struct libmnt_fs *fs, const char *name,
 {
 	char rc = 1;
 
-	assert(fs);
 	if (!fs)
 		return -EINVAL;
 	if (fs->attrs)
@@ -1350,7 +1264,6 @@ int mnt_fs_get_attribute(struct libmnt_fs *fs, const char *name,
  */
 const char *mnt_fs_get_comment(struct libmnt_fs *fs)
 {
-	assert(fs);
 	if (!fs)
 		return NULL;
 	return fs->comment;
@@ -1369,20 +1282,7 @@ const char *mnt_fs_get_comment(struct libmnt_fs *fs)
  */
 int mnt_fs_set_comment(struct libmnt_fs *fs, const char *comm)
 {
-	char *p = NULL;
-
-	assert(fs);
-	if (!fs)
-		return -EINVAL;
-	if (comm) {
-		p = strdup(comm);
-		if (!p)
-			return -ENOMEM;
-	}
-
-	free(fs->comment);
-	fs->comment = p;
-	return 0;
+	return strdup_to_struct_member(fs, comment, comm);
 }
 
 /**
@@ -1396,7 +1296,6 @@ int mnt_fs_set_comment(struct libmnt_fs *fs, const char *comm)
  */
 int mnt_fs_append_comment(struct libmnt_fs *fs, const char *comm)
 {
-	assert(fs);
 	if (!fs)
 		return -EINVAL;
 
@@ -1430,7 +1329,6 @@ int mnt_fs_match_target(struct libmnt_fs *fs, const char *target,
 {
 	int rc = 0;
 
-	assert(fs);
 	if (!fs || !target || !fs->target)
 		return 0;
 
@@ -1475,7 +1373,6 @@ int mnt_fs_match_source(struct libmnt_fs *fs, const char *source,
 	char *cn;
 	const char *src, *t, *v;
 
-	assert(fs);
 	if (!fs)
 		return 0;
 
@@ -1549,7 +1446,6 @@ int mnt_fs_match_source(struct libmnt_fs *fs, const char *source,
  */
 int mnt_fs_match_fstype(struct libmnt_fs *fs, const char *types)
 {
-	assert(fs);
 	return mnt_match_fstype(fs->fstype, types);
 }
 
@@ -1565,7 +1461,6 @@ int mnt_fs_match_fstype(struct libmnt_fs *fs, const char *types)
  */
 int mnt_fs_match_options(struct libmnt_fs *fs, const char *options)
 {
-	assert(fs);
 	return mnt_match_options(mnt_fs_get_options(fs), options);
 }
 
@@ -1664,8 +1559,6 @@ int mnt_fs_to_mntent(struct libmnt_fs *fs, struct mntent **mnt)
 	int rc;
 	struct mntent *m;
 
-	assert(fs);
-	assert(mnt);
 	if (!fs || !mnt)
 		return -EINVAL;
 

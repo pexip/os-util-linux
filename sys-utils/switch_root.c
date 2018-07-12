@@ -90,7 +90,7 @@ static int recursiveRemove(int fd)
 			struct stat sb;
 
 			if (fstatat(dfd, d->d_name, &sb, AT_SYMLINK_NOFOLLOW)) {
-				warn(_("stat failed %s"), d->d_name);
+				warn(_("stat of %s failed"), d->d_name);
 				continue;
 			}
 
@@ -130,7 +130,7 @@ static int switchroot(const char *newroot)
 	struct stat newroot_stat, sb;
 
 	if (stat(newroot, &newroot_stat) != 0) {
-		warn(_("stat failed %s"), newroot);
+		warn(_("stat of %s failed"), newroot);
 		return -1;
 	}
 
@@ -176,22 +176,21 @@ static int switchroot(const char *newroot)
 		return -1;
 	}
 
-	if (cfd >= 0) {
-		pid = fork();
-		if (pid <= 0) {
-			struct statfs stfs;
-			if (fstatfs(cfd, &stfs) == 0 &&
-			    (stfs.f_type == (__SWORD_TYPE)STATFS_RAMFS_MAGIC ||
-			     stfs.f_type == (__SWORD_TYPE)STATFS_TMPFS_MAGIC))
-				recursiveRemove(cfd);
-			else
-				warn(_("old root filesystem is not an initramfs"));
+	pid = fork();
+	if (pid <= 0) {
+		struct statfs stfs;
 
-			if (pid == 0)
-				exit(EXIT_SUCCESS);
-		}
-		close(cfd);
+		if (fstatfs(cfd, &stfs) == 0 &&
+		    (F_TYPE_EQUAL(stfs.f_type, STATFS_RAMFS_MAGIC) ||
+		     F_TYPE_EQUAL(stfs.f_type, STATFS_TMPFS_MAGIC)))
+			recursiveRemove(cfd);
+		else
+			warn(_("old root filesystem is not an initramfs"));
+		if (pid == 0)
+			exit(EXIT_SUCCESS);
 	}
+
+	close(cfd);
 	return 0;
 }
 
@@ -200,6 +199,10 @@ static void __attribute__((__noreturn__)) usage(FILE *output)
 	fputs(USAGE_HEADER, output);
 	fprintf(output, _(" %s [options] <newrootdir> <init> <args to init>\n"),
 		program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, output);
+	fputs(_("Switch to another filesystem as the root of the mount tree.\n"), output);
+
 	fputs(USAGE_OPTIONS, output);
 	fputs(USAGE_HELP, output);
 	fputs(USAGE_VERSION, output);

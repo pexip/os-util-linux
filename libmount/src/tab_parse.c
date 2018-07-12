@@ -15,12 +15,29 @@
 #include <limits.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
-#include "at.h"
+#include "fileutils.h"
 #include "mangle.h"
 #include "mountP.h"
 #include "pathnames.h"
 #include "strutils.h"
+
+struct libmnt_parser {
+	FILE	*f;		/* fstab, mtab, swaps or mountinfo ... */
+	const char *filename;	/* file name or NULL */
+	char	*buf;		/* buffer (the current line content) */
+	size_t	bufsiz;		/* size of the buffer */
+	size_t	line;		/* current line */
+};
+
+static void parser_cleanup(struct libmnt_parser *pa)
+{
+	if (!pa)
+		return;
+	free(pa->buf);
+	memset(pa, 0, sizeof(*pa));
+}
 
 static int next_number(char **s, int *num)
 {
@@ -173,10 +190,10 @@ static int mnt_parse_mountinfo_line(struct libmnt_fs *fs, char *s)
 		/* remove "(deleted)" suffix */
 		sz = strlen(fs->target);
 		if (sz > PATH_DELETED_SUFFIX_SZ) {
-			char *p = fs->target + (sz - PATH_DELETED_SUFFIX_SZ);
+			char *ptr = fs->target + (sz - PATH_DELETED_SUFFIX_SZ);
 
-			if (strcmp(p, PATH_DELETED_SUFFIX) == 0)
-				*p = '\0';
+			if (strcmp(ptr, PATH_DELETED_SUFFIX) == 0)
+				*ptr = '\0';
 		}
 
 		unmangle_string(fs->root);
@@ -378,16 +395,15 @@ static int is_terminated_by_blank(const char *str)
  *         1 if the line is not a comment
  *        <0 on error
  */
-static int next_comment_line(char *buf, size_t bufsz,
-			     FILE *f, char **last, int *nlines)
+static int next_comment_line(struct libmnt_parser *pa, char **last)
 {
-	if (fgets(buf, bufsz, f) == NULL)
-		return feof(f) ? 1 : -EINVAL;
+	if (getline(&pa->buf, &pa->bufsiz, pa->f) < 0)
+		return feof(pa->f) ? 1 : -errno;
 
-	++*nlines;
-	*last = strchr(buf, '\n');
+	pa->line++;
+	*last = strchr(pa->buf, '\n');
 
-	return is_comment_line(buf) ? 0 : 1;
+	return is_comment_line(pa->buf) ? 0 : 1;
 }
 
 static int append_comment(struct libmnt_table *tb,
@@ -420,36 +436,35 @@ static int append_comment(struct libmnt_table *tb,
 /*
  * Read and parse the next line from {fs,m}tab or mountinfo
  */
-static int mnt_table_parse_next(struct libmnt_table *tb, FILE *f,
-				struct libmnt_fs *fs,
-				const char *filename, int *nlines)
+static int mnt_table_parse_next(struct libmnt_parser *pa,
+				struct libmnt_table *tb,
+				struct libmnt_fs *fs)
 {
-	char buf[BUFSIZ];
 	char *s;
 	int rc;
 
 	assert(tb);
-	assert(f);
+	assert(pa);
 	assert(fs);
 
 	/* read the next non-blank non-comment line */
 next_line:
 	do {
-		if (fgets(buf, sizeof(buf), f) == NULL)
+		if (getline(&pa->buf, &pa->bufsiz, pa->f) < 0)
 			return -EINVAL;
-		++*nlines;
-		s = strchr (buf, '\n');
+		pa->line++;
+		s = strchr(pa->buf, '\n');
 		if (!s) {
 			/* Missing final newline?  Otherwise an extremely */
 			/* long line - assume file was corrupted */
-			if (feof(f)) {
+			if (feof(pa->f)) {
 				DBG(TAB, ul_debugobj(tb,
-					"%s: no final newline",	filename));
-				s = strchr (buf, '\0');
+					"%s: no final newline",	pa->filename));
+				s = strchr(pa->buf, '\0');
 			} else {
 				DBG(TAB, ul_debugobj(tb,
-					"%s:%d: missing newline at line",
-					filename, *nlines));
+					"%s:%zu: missing newline at line",
+					pa->filename, pa->line));
 				goto err;
 			}
 		}
@@ -457,16 +472,14 @@ next_line:
 		/* comments parser */
 		if (tb->comms
 		    && (tb->fmt == MNT_FMT_GUESS || tb->fmt == MNT_FMT_FSTAB)
-		    && is_comment_line(buf)) {
+		    && is_comment_line(pa->buf)) {
 			do {
-				rc = append_comment(tb, fs, buf, feof(f));
+				rc = append_comment(tb, fs, pa->buf, feof(pa->f));
 				if (!rc)
-					rc = next_comment_line(buf,
-							sizeof(buf),
-							f, &s, nlines);
+					rc = next_comment_line(pa, &s);
 			} while (rc == 0);
 
-			if (rc == 1 && feof(f))
+			if (rc == 1 && feof(pa->f))
 				rc = append_comment(tb, fs, NULL, 1);
 			if (rc < 0)
 				return rc;
@@ -474,9 +487,9 @@ next_line:
 		}
 
 		*s = '\0';
-		if (--s >= buf && *s == '\r')
+		if (--s >= pa->buf && *s == '\r')
 			*s = '\0';
-		s = (char *) skip_blank(buf);
+		s = (char *) skip_blank(pa->buf);
 	} while (*s == '\0' || *s == '#');
 
 	if (tb->fmt == MNT_FMT_GUESS) {
@@ -508,7 +521,7 @@ next_line:
 	if (rc == 0)
 		return 0;
 err:
-	DBG(TAB, ul_debugobj(tb, "%s:%d: %s parse error", filename, *nlines,
+	DBG(TAB, ul_debugobj(tb, "%s:%zu: %s parse error", pa->filename, pa->line,
 				tb->fmt == MNT_FMT_MOUNTINFO ? "mountinfo" :
 				tb->fmt == MNT_FMT_SWAPS ? "swaps" :
 				tb->fmt == MNT_FMT_FSTAB ? "tab" : "utab"));
@@ -516,7 +529,7 @@ err:
 	/* by default all errors are recoverable, otherwise behavior depends on
 	 * the errcb() function. See mnt_table_set_parser_errcb().
 	 */
-	return tb->errcb ? tb->errcb(tb, filename, *nlines) : 1;
+	return tb->errcb ? tb->errcb(tb, pa->filename, pa->line) : 1;
 }
 
 static pid_t path_to_tid(const char *filename)
@@ -567,19 +580,21 @@ static int kernel_fs_postparse(struct libmnt_table *tb,
 	 * Convert obscure /dev/root to something more usable
 	 */
 	if (src && strcmp(src, "/dev/root") == 0) {
-		char *spec = mnt_get_kernel_cmdline_option("root=");
 		char *real = NULL;
 
-		DBG(TAB, ul_debugobj(tb, "root FS: %s", spec));
-		if (spec)
-			real = mnt_resolve_spec(spec, tb->cache);
-		if (real) {
+		rc = mnt_guess_system_root(fs->devno, tb->cache, &real);
+		if (rc < 0)
+			return rc;
+
+		if (rc == 0 && real) {
 			DBG(TAB, ul_debugobj(tb, "canonical root FS: %s", real));
-			rc = mnt_fs_set_source(fs, real);
-			if (!tb->cache)
-				free(real);
+			rc = __mnt_fs_set_source_ptr(fs, real);
+
+		} else if (rc == 1) {
+			/* mnt_guess_system_root() returns 1 if not able to convert to
+			 * the real devname; ignore this problem */
+			rc = 0;
 		}
-		free(spec);
 	}
 
 	return rc;
@@ -595,10 +610,11 @@ static int kernel_fs_postparse(struct libmnt_table *tb,
  */
 int mnt_table_parse_stream(struct libmnt_table *tb, FILE *f, const char *filename)
 {
-	int nlines = 0;
 	int rc = -1;
 	int flags = 0;
 	pid_t tid = -1;
+	struct libmnt_fs *fs = NULL;
+	struct libmnt_parser pa = { .line = 0 };
 
 	assert(tb);
 	assert(f);
@@ -608,6 +624,9 @@ int mnt_table_parse_stream(struct libmnt_table *tb, FILE *f, const char *filenam
 				filename, mnt_table_get_nents(tb),
 				tb->fltrcb ? "yes" : "not"));
 
+	pa.filename = filename;
+	pa.f = f;
+
 	/* necessary for /proc/mounts only, the /proc/self/mountinfo
 	 * parser sets the flag properly
 	 */
@@ -615,12 +634,13 @@ int mnt_table_parse_stream(struct libmnt_table *tb, FILE *f, const char *filenam
 		flags = MNT_FS_KERNEL;
 
 	while (!feof(f)) {
-		struct libmnt_fs *fs = mnt_new_fs();
+		if (!fs) {
+			fs = mnt_new_fs();
+			if (!fs)
+				goto err;
+		}
 
-		if (!fs)
-			goto err;
-
-		rc = mnt_table_parse_next(tb, f, fs, filename, &nlines);
+		rc = mnt_table_parse_next(&pa, tb, fs);
 
 		if (!rc && tb->fltrcb && tb->fltrcb(fs, tb->fltrcb_data))
 			rc = 1;	/* filtered out by callback... */
@@ -629,25 +649,36 @@ int mnt_table_parse_stream(struct libmnt_table *tb, FILE *f, const char *filenam
 			rc = mnt_table_add_fs(tb, fs);
 			fs->flags |= flags;
 
-			if (rc == 0 && tb->fmt == MNT_FMT_MOUNTINFO)
+			if (rc == 0 && tb->fmt == MNT_FMT_MOUNTINFO) {
 				rc = kernel_fs_postparse(tb, fs, &tid, filename);
+				if (rc)
+					mnt_table_remove_fs(tb, fs);
+			}
 		}
-		mnt_unref_fs(fs);
 
 		if (rc) {
-			if (rc == 1)
-				continue;	/* recoverable error */
+			if (rc > 0) {
+				mnt_reset_fs(fs);
+				assert(fs->refcount == 1);
+				continue;	/* recoverable error, reuse fs*/
+			}
+
+			mnt_unref_fs(fs);
 			if (feof(f))
 				break;
 			goto err;		/* fatal error */
 		}
+		mnt_unref_fs(fs);
+		fs = NULL;
 	}
 
 	DBG(TAB, ul_debugobj(tb, "%s: stop parsing (%d entries)",
 				filename, mnt_table_get_nents(tb)));
+	parser_cleanup(&pa);
 	return 0;
 err:
 	DBG(TAB, ul_debugobj(tb, "%s: parse error (rc=%d)", filename, rc));
+	parser_cleanup(&pa);
 	return rc;
 }
 
@@ -656,7 +687,7 @@ err:
  * @tb: tab pointer
  * @filename: file
  *
- * Parses the whole table (e.g. /etc/mtab) and appends new records to the @tab.
+ * Parses the whole table (e.g. /etc/fstab) and appends new records to the @tab.
  *
  * The libmount parser ignores broken (syntax error) lines, these lines are
  * reported to the caller by the errcb() function (see mnt_table_set_parser_errcb()).
@@ -668,9 +699,6 @@ int mnt_table_parse_file(struct libmnt_table *tb, const char *filename)
 	FILE *f;
 	int rc;
 
-	assert(tb);
-	assert(filename);
-
 	if (!filename || !tb)
 		return -EINVAL;
 
@@ -679,8 +707,9 @@ int mnt_table_parse_file(struct libmnt_table *tb, const char *filename)
 		rc = mnt_table_parse_stream(tb, f, filename);
 		fclose(f);
 	} else
-		return -errno;
+		rc = -errno;
 
+	DBG(TAB, ul_debugobj(tb, "parsing done [filename=%s, rc=%d]", filename, rc));
 	return rc;
 }
 
@@ -730,11 +759,11 @@ static int __mnt_table_parse_dir(struct libmnt_table *tb, const char *dirname)
 		struct stat st;
 		FILE *f;
 
-		if (fstat_at(dd, ".", d->d_name, &st, 0) ||
+		if (fstatat(dd, d->d_name, &st, 0) ||
 		    !S_ISREG(st.st_mode))
 			continue;
 
-		f = fopen_at(dd, ".", d->d_name, O_RDONLY|O_CLOEXEC, "r" UL_CLOEXECSTR);
+		f = fopen_at(dd, d->d_name, O_RDONLY|O_CLOEXEC, "r" UL_CLOEXECSTR);
 		if (f) {
 			mnt_table_parse_stream(tb, f, d->d_name);
 			fclose(f);
@@ -770,11 +799,11 @@ static int __mnt_table_parse_dir(struct libmnt_table *tb, const char *dirname)
 		struct stat st;
 		FILE *f;
 
-		if (fstat_at(dirfd(dir), _PATH_MNTTAB_DIR, d->d_name, &st, 0) ||
+		if (fstatat(dirfd(dir), d->d_name, &st, 0) ||
 		    !S_ISREG(st.st_mode))
 			continue;
 
-		f = fopen_at(dirfd(dir), _PATH_MNTTAB_DIR, d->d_name,
+		f = fopen_at(dirfd(dir), d->d_name,
 				O_RDONLY|O_CLOEXEC, "r" UL_CLOEXECSTR);
 		if (f) {
 			mnt_table_parse_stream(tb, f, d->d_name);
@@ -814,13 +843,13 @@ struct libmnt_table *__mnt_new_table_from_file(const char *filename, int fmt)
 	struct libmnt_table *tb;
 	struct stat st;
 
-	assert(filename);
 	if (!filename)
 		return NULL;
 	if (stat(filename, &st))
 		return NULL;
 	tb = mnt_new_table();
 	if (tb) {
+		DBG(TAB, ul_debugobj(tb, "new tab for file: %s", filename));
 		tb->fmt = fmt;
 		if (mnt_table_parse_file(tb, filename) != 0) {
 			mnt_unref_table(tb);
@@ -843,7 +872,9 @@ struct libmnt_table *__mnt_new_table_from_file(const char *filename, int fmt)
  */
 struct libmnt_table *mnt_new_table_from_file(const char *filename)
 {
-	assert(filename);
+	if (!filename)
+		return NULL;
+
 	return __mnt_new_table_from_file(filename, MNT_FMT_GUESS);
 }
 
@@ -857,7 +888,6 @@ struct libmnt_table *mnt_new_table_from_dir(const char *dirname)
 {
 	struct libmnt_table *tb;
 
-	assert(dirname);
 	if (!dirname)
 		return NULL;
 	tb = mnt_new_table();
@@ -887,7 +917,6 @@ struct libmnt_table *mnt_new_table_from_dir(const char *dirname)
 int mnt_table_set_parser_errcb(struct libmnt_table *tb,
 		int (*cb)(struct libmnt_table *tb, const char *filename, int line))
 {
-	assert(tb);
 	if (!tb)
 		return -EINVAL;
 	tb->errcb = cb;
@@ -902,7 +931,6 @@ int mnt_table_set_parser_fltrcb(struct libmnt_table *tb,
 		int (*cb)(struct libmnt_fs *, void *),
 		void *data)
 {
-	assert(tb);
 	if (!tb)
 		return -EINVAL;
 
@@ -925,8 +953,6 @@ int mnt_table_set_parser_fltrcb(struct libmnt_table *tb,
  */
 int mnt_table_parse_swaps(struct libmnt_table *tb, const char *filename)
 {
-	assert(tb);
-
 	if (!tb)
 		return -EINVAL;
 	if (!filename) {
@@ -957,7 +983,6 @@ int mnt_table_parse_fstab(struct libmnt_table *tb, const char *filename)
 	struct stat st;
 	int rc = 0;
 
-	assert(tb);
 	if (!tb)
 		return -EINVAL;
 	if (!filename)
@@ -993,8 +1018,6 @@ static struct libmnt_fs *mnt_table_merge_user_fs(struct libmnt_table *tb, struct
 	struct libmnt_iter itr;
 	const char *optstr, *src, *target, *root, *attrs;
 
-	assert(tb);
-	assert(uf);
 	if (!tb || !uf)
 		return NULL;
 
@@ -1036,6 +1059,8 @@ static struct libmnt_fs *mnt_table_merge_user_fs(struct libmnt_table *tb, struct
 	return fs;
 }
 
+/* default filename is /proc/self/mountinfo
+ */
 int __mnt_table_parse_mtab(struct libmnt_table *tb, const char *filename,
 			   struct libmnt_table *u_tb)
 {
@@ -1043,27 +1068,50 @@ int __mnt_table_parse_mtab(struct libmnt_table *tb, const char *filename,
 
 	assert(tb);
 
+	if (filename)
+		DBG(TAB, ul_debugobj(tb, "%s requested as mtab", filename));
+
+#ifdef USE_LIBMOUNT_SUPPORT_MTAB
 	if (mnt_has_regular_mtab(&filename, NULL)) {
 
-		DBG(TAB, ul_debugobj(tb, "force %s usage", filename));
+		DBG(TAB, ul_debugobj(tb, "force mtab usage [filename=%s]", filename));
 
 		rc = mnt_table_parse_file(tb, filename);
+
+		/*
+		 * If @filename forces us to read from /proc then also read
+		 * utab file to merge userspace mount options.
+		 */
+		if (rc == 0 && is_mountinfo(tb))
+			goto read_utab;
+
 		if (!rc)
 			return 0;
 		filename = NULL;	/* failed */
-	}
+	} else
+		filename = NULL;	/* mtab useless */
+#endif
 
-	/*
-	 * useless /etc/mtab
-	 * -- read kernel information from /proc/self/mountinfo
-	 */
-	tb->fmt = MNT_FMT_MOUNTINFO;
-	rc = mnt_table_parse_file(tb, _PATH_PROC_MOUNTINFO);
+	if (!filename || strcmp(filename, _PATH_PROC_MOUNTINFO) == 0) {
+		filename = _PATH_PROC_MOUNTINFO;
+		tb->fmt = MNT_FMT_MOUNTINFO;
+		DBG(TAB, ul_debugobj(tb, "mtab parse: #1 read mountinfo"));
+	} else
+		tb->fmt = MNT_FMT_GUESS;
+
+	rc = mnt_table_parse_file(tb, filename);
 	if (rc) {
 		/* hmm, old kernel? ...try /proc/mounts */
 		tb->fmt = MNT_FMT_MTAB;
 		return mnt_table_parse_file(tb, _PATH_PROC_MOUNTS);
 	}
+
+	if (!is_mountinfo(tb))
+		return 0;
+#ifdef USE_LIBMOUNT_SUPPORT_MTAB
+read_utab:
+#endif
+	DBG(TAB, ul_debugobj(tb, "mtab parse: #2 read utab"));
 
 	if (mnt_table_get_nents(tb) == 0)
 		return 0;			/* empty, ignore utab */
@@ -1072,6 +1120,7 @@ int __mnt_table_parse_mtab(struct libmnt_table *tb, const char *filename,
 	 */
 	if (!u_tb) {
 		const char *utab = mnt_get_utab_path();
+
 		if (!utab || is_file_empty(utab))
 			return 0;
 
@@ -1085,6 +1134,8 @@ int __mnt_table_parse_mtab(struct libmnt_table *tb, const char *filename,
 		rc = mnt_table_parse_file(u_tb, utab);
 		priv_utab = 1;
 	}
+
+	DBG(TAB, ul_debugobj(tb, "mtab parse: #3 merge utab"));
 
 	if (rc == 0) {
 		struct libmnt_fs *u_fs;
@@ -1105,10 +1156,16 @@ int __mnt_table_parse_mtab(struct libmnt_table *tb, const char *filename,
 /**
  * mnt_table_parse_mtab:
  * @tb: table
- * @filename: overwrites default (/etc/mtab or $LIBMOUNT_MTAB) or NULL
+ * @filename: overwrites default or NULL
  *
- * This function parses /etc/mtab or /proc/self/mountinfo +
- * /run/mount/utabs or /proc/mounts.
+ * The default filename is /proc/self/mountinfo. If the mount table is a
+ * mountinfo file then /run/mount/utabs is parsed too and both files are merged
+ * to the one libmnt_table.
+ *
+ * If libmount is compiled with classic mtab file support, and the /etc/mtab is
+ * a regular file then this file is parsed.
+ *
+ * It's strongly recommended to use NULL as a @filename to keep code portable.
  *
  * See also mnt_table_set_parser_errcb().
  *

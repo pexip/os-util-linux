@@ -1,31 +1,27 @@
 if BUILD_CAL
 usrbin_exec_PROGRAMS += cal
 dist_man_MANS += misc-utils/cal.1
-cal_SOURCES = \
-	misc-utils/cal.c \
-	lib/mbsalign.c \
-	lib/strutils.c
-
-if !HAVE_LANGINFO
-cal_SOURCES += lib/langinfo.c
-endif
-
+cal_SOURCES = misc-utils/cal.c
 cal_CFLAGS = $(AM_CFLAGS) $(NCURSES_CFLAGS)
-cal_LDADD = $(LDADD) libcommon.la $(NCURSES_LIBS) $(TINFO_LIBS)
-if HAVE_TERMCAP
-cal_LDADD += -ltermcap
-endif
+cal_LDADD = $(LDADD) libcommon.la libtcolors.la $(NCURSES_LIBS)
 endif # BUILD_CAL
 
 
 if BUILD_LOGGER
 usrbin_exec_PROGRAMS += logger
 dist_man_MANS += misc-utils/logger.1
-logger_SOURCES = misc-utils/logger.c lib/strutils.c
+logger_SOURCES = misc-utils/logger.c lib/strutils.c lib/strv.c
+logger_LDADD = $(LDADD)
+logger_CFLAGS = $(AM_CFLAGS)
 if HAVE_SYSTEMD
-logger_LDADD = $(SYSTEMD_LIBS) $(SYSTEMD_JOURNAL_LIBS)
-logger_CFLAGS = $(SYSTEMD_CFLAGS) $(SYSTEMD_JOURNAL_CFLAGS)
+logger_LDADD += $(SYSTEMD_LIBS) $(SYSTEMD_DAEMON_LIBS) $(SYSTEMD_JOURNAL_LIBS)
+logger_CFLAGS += $(SYSTEMD_CFLAGS) $(SYSTEMD_DAEMON_CFLAGS) $(SYSTEMD_JOURNAL_CFLAGS)
 endif
+
+check_PROGRAMS += test_logger
+test_logger_SOURCES = $(logger_SOURCES)
+test_logger_LDADD = $(logger_LDADD)
+test_logger_CFLAGS = -DTEST_LOGGER $(logger_CFLAGS)
 endif # BUILD_LOGGER
 
 
@@ -45,7 +41,7 @@ endif
 if BUILD_NAMEI
 usrbin_exec_PROGRAMS += namei
 dist_man_MANS += misc-utils/namei.1
-namei_SOURCES = misc-utils/namei.c lib/strutils.c
+namei_SOURCES = misc-utils/namei.c lib/strutils.c lib/idcache.c
 endif
 
 if BUILD_WHEREIS
@@ -85,10 +81,10 @@ endif
 if BUILD_UUIDD
 usrsbin_exec_PROGRAMS += uuidd
 dist_man_MANS += misc-utils/uuidd.8
-uuidd_LDADD = $(LDADD) libuuid.la libcommon.la
+uuidd_LDADD = $(LDADD) libuuid.la libcommon.la $(REALTIME_LIBS)
 uuidd_CFLAGS = $(DAEMON_CFLAGS) $(AM_CFLAGS) -I$(ul_libuuid_incdir)
 uuidd_LDFLAGS = $(DAEMON_LDFLAGS) $(AM_LDFLAGS)
-uuidd_SOURCES = misc-utils/uuidd.c
+uuidd_SOURCES = misc-utils/uuidd.c lib/monotonic.c lib/timer.c
 if HAVE_SYSTEMD
 uuidd_LDADD += $(SYSTEMD_LIBS) $(SYSTEMD_DAEMON_LIBS)
 uuidd_CFLAGS += $(SYSTEMD_CFLAGS) $(SYSTEMD_DAEMON_CFLAGS)
@@ -96,6 +92,11 @@ systemdsystemunit_DATA += \
 	misc-utils/uuidd.service \
 	misc-utils/uuidd.socket
 endif
+
+check_PROGRAMS += test_uuidd
+test_uuidd_SOURCES = misc-utils/test_uuidd.c
+test_uuidd_LDADD =  $(LDADD) libcommon.la libuuid.la -lpthread
+test_uuidd_CFLAGS = $(AM_CFLAGS) -I$(ul_libuuid_incdir)
 endif # BUILD_UUIDD
 
 PATHFILES += \
@@ -140,9 +141,17 @@ endif
 if BUILD_FINDMNT
 bin_PROGRAMS += findmnt
 dist_man_MANS += misc-utils/findmnt.8
-findmnt_LDADD = $(LDADD) libmount.la libcommon.la libsmartcols.la
-findmnt_CFLAGS = $(AM_CFLAGS) -I$(ul_libmount_incdir) -I$(ul_libsmartcols_incdir)
-findmnt_SOURCES = misc-utils/findmnt.c
+findmnt_LDADD = $(LDADD) libmount.la \
+		libcommon.la \
+		libsmartcols.la \
+		libblkid.la
+findmnt_CFLAGS = $(AM_CFLAGS) \
+		-I$(ul_libmount_incdir) \
+		-I$(ul_libsmartcols_incdir) \
+		-I$(ul_libblkid_incdir)
+findmnt_SOURCES = misc-utils/findmnt.c \
+		  misc-utils/findmnt-verify.c \
+		  misc-utils/findmnt.h
 if HAVE_UDEV
 findmnt_LDADD += -ludev
 endif

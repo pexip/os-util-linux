@@ -55,7 +55,7 @@
 #include "c.h"
 #include "nls.h"
 
-#if defined(__i386__)
+#if defined(__i386__) || defined(__x86_64__)
 # ifdef HAVE_SYS_IO_H
 #  include <sys/io.h>
 # elif defined(HAVE_ASM_IO_H)
@@ -66,6 +66,7 @@
  * not export that header.
  */
 #undef __i386__
+#undef __x86_64__
 void outb(int a __attribute__ ((__unused__)),
 	  int b __attribute__ ((__unused__)))
 {
@@ -75,12 +76,17 @@ int inb(int c __attribute__ ((__unused__)))
 {
 	return 0;
 }
-#endif				/* __i386__ */
+#endif				/* __i386__ __x86_64__ */
 
 #elif defined(__alpha__)
+# ifdef HAVE_SYS_IO_H
+#  include <sys/io.h>
+# else
 /* <asm/io.h> fails to compile, probably because of u8 etc */
 extern unsigned int inb(unsigned long port);
 extern void outb(unsigned char b, unsigned long port);
+extern int iopl(int level);
+# endif
 #else
 static void outb(int a __attribute__ ((__unused__)),
 	  int b __attribute__ ((__unused__)))
@@ -151,15 +157,15 @@ static int is_in_cpuinfo(char *fmt, char *str)
 
 	sprintf(format, "%s : %s", fmt, "%255s");
 
-	if ((cpuinfo = fopen("/proc/cpuinfo", "r")) != NULL) {
-		while (!feof(cpuinfo)) {
+	cpuinfo = fopen("/proc/cpuinfo", "r");
+	if (cpuinfo) {
+		do {
 			if (fscanf(cpuinfo, format, field) == 1) {
 				if (strncmp(field, str, strlen(str)) == 0)
 					found = 1;
 				break;
 			}
-			fgets(field, 256, cpuinfo);
-		}
+		} while (fgets(field, 256, cpuinfo));
 		fclose(cpuinfo);
 	}
 	return found;
@@ -319,7 +325,7 @@ static inline unsigned long cmos_read(unsigned long reg)
 			       clock_ctl_addr);
 		lseek(dev_port_fd, clock_data_addr, 0);
 		if (read(dev_port_fd, &v, 1) == -1 && debug)
-			warn(_("cmos_read(): read data address %X failed"),
+			warn(_("cmos_read(): read from data address %X failed"),
 			       clock_data_addr);
 		return v;
 	} else {
@@ -336,7 +342,7 @@ static inline unsigned long cmos_read(unsigned long reg)
 		 *  outb (0x0d, 0x70);  // 0x0d: random read-only location
 		 *
 		 * Other docs state that "any write to 0x70 should be
-		 * followed by an action to 0x71 or the RTC wil be left in
+		 * followed by an action to 0x71 or the RTC will be left in
 		 * an unknown state". Most docs say that it doesn't matter at
 		 * all what one does.
 		 */
@@ -603,7 +609,7 @@ static int set_hardware_clock_cmos(const struct tm *new_broken_time)
 	return 0;
 }
 
-#if defined(__i386__) || defined(__alpha__)
+#if defined(__i386__) || defined(__alpha__) || defined(__x86_64__)
 # if defined(HAVE_IOPL)
 static int i386_iopl(const int level)
 {
@@ -663,7 +669,7 @@ static struct clock_ops cmos = {
 struct clock_ops *probe_for_cmos_clock(void)
 {
 	int have_cmos =
-#if defined(__i386__) || defined(__alpha__)
+#if defined(__i386__) || defined(__alpha__) || defined(__x86_64__)
 	    TRUE;
 #else
 	    FALSE;

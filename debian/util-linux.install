@@ -3,9 +3,6 @@ debian/hwclock.rules => /lib/udev/rules.d/85-hwclock.rules
 debian/hwclock-set => /lib/udev/hwclock-set
 # perl gets to do rename, not us.
 debian/tmp/usr/bin/rename => /usr/bin/rename.ul
-# Rename fdisk to ddisk on PowerPC
-[powerpc powerpcspe ppc64 ppc64el] debian/tmp/sbin/fdisk => /sbin/ddisk
-[!powerpc !powerpcspe !ppc64 !ppc64el] sbin/fdisk
 # Rename mkswap to mkswap.linux on non-linux.
 [linux-any] sbin/mkswap
 [!linux-any] debian/tmp/sbin/mkswap => /sbin/mkswap.linux
@@ -13,9 +10,11 @@ debian/tmp/usr/bin/rename => /usr/bin/rename.ul
 [linux-any] lib/systemd/system/fstrim.timer => /usr/share/doc/util-linux/examples/fstrim.timer
 [linux-any] lib/systemd/system/fstrim.service => /usr/share/doc/util-linux/examples/fstrim.service
 bin/more
+bin/mountpoint
 sbin/agetty
 sbin/blkid
 sbin/cfdisk
+sbin/fdisk
 sbin/findfs
 sbin/fsck
 sbin/fsck.cramfs
@@ -26,10 +25,12 @@ sbin/mkfs.bfs
 sbin/mkfs.cramfs
 sbin/mkfs.minix
 sbin/runuser
-sbin/sfdisk                                                     [!sparc]
+sbin/sfdisk
+sbin/sulogin
 sbin/swaplabel
 sbin/wipefs
-usr/bin/chrt
+sbin/zramctl                                                    [linux-any]
+usr/bin/chrt							[!hurd-any]
 usr/bin/flock
 usr/bin/getopt
 usr/bin/i386                                                    [amd64 i386]
@@ -37,8 +38,12 @@ usr/bin/ipcmk
 usr/bin/ipcrm
 usr/bin/ipcs
 usr/bin/isosize sbin/
+usr/bin/last
+usr/bin/lastb
 usr/bin/line
+usr/bin/lsns							[linux-any]
 usr/bin/mcookie
+usr/bin/mesg
 usr/bin/mips                                                    [mips mipsel]
 usr/bin/mips32                                                  [mips mipsel]
 usr/bin/mips64                                                  [mips mipsel]
@@ -74,7 +79,9 @@ usr/bin/ionice                                                  [linux-any]
 usr/bin/linux32                                                 [linux-any]
 usr/bin/linux64                                                 [linux-any]
 usr/bin/lscpu                                                   [linux-any]
+usr/bin/lsipc                                                   [linux-any]
 usr/bin/lslocks                                                 [linux-any]
+usr/bin/lslogins
 usr/bin/nsenter                                                 [linux-any]
 usr/sbin/partx usr/bin/                                         [linux-any]
 usr/bin/prlimit                                                 [linux-any]

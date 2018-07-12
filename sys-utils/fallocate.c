@@ -76,8 +76,11 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
 	      _(" %s [options] <filename>\n"), program_invocation_short_name);
-	fputs(USAGE_OPTIONS, out);
 
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Preallocate space to, or deallocate space from a file.\n"), out);
+
+	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -c, --collapse-range remove a range from the file\n"), out);
 	fputs(_(" -d, --dig-holes      detect zeroes and replace with holes\n"), out);
 	fputs(_(" -l, --length <num>   length for range operations, in bytes\n"), out);
@@ -120,7 +123,7 @@ static void xfallocate(int fd, int mode, off_t offset, off_t length)
 	 */
 	if (error < 0) {
 		if ((mode & FALLOC_FL_KEEP_SIZE) && errno == EOPNOTSUPP)
-			errx(EXIT_FAILURE, _("keep size mode (-n option) unsupported"));
+			errx(EXIT_FAILURE, _("fallocate failed: keep size mode is unsupported"));
 		err(EXIT_FAILURE, _("fallocate failed"));
 	}
 }
@@ -167,7 +170,7 @@ static int is_nul(void *buf, size_t bufsize)
 	while (*cp++ == 0)
 		continue;
 
-	  return cbuf + bufsize < cp;
+	return cbuf + bufsize < cp;
 }
 
 static void dig_holes(int fd, off_t off, off_t len)
@@ -192,7 +195,7 @@ static void dig_holes(int fd, off_t off, off_t len)
 #endif
 
 	if (fstat(fd, &st) != 0)
-		err(EXIT_FAILURE, _("stat failed %s"), filename);
+		err(EXIT_FAILURE, _("stat of %s failed"), filename);
 
 	bufsz = st.st_blksize;
 
@@ -365,7 +368,8 @@ int main(int argc, char **argv)
 
 	/* O_CREAT makes sense only for the default fallocate(2) behavior
 	 * when mode is no specified and new space is allocated */
-	fd = open(filename, O_RDWR | (!dig && !mode ? O_CREAT : 0), 0644);
+	fd = open(filename, O_RDWR | (!dig && !mode ? O_CREAT : 0),
+		  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
 	if (fd < 0)
 		err(EXIT_FAILURE, _("cannot open %s"), filename);
 

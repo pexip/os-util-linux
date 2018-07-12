@@ -6,6 +6,8 @@
 #include <string.h>
 #include <sys/types.h>
 #include <ctype.h>
+#include <stdio.h>
+#include <errno.h>
 
 /* default strtoxx_or_err() exit code */
 #ifndef STRTOXX_EXIT_CODE
@@ -34,7 +36,14 @@ extern unsigned long strtoul_or_err(const char *str, const char *errmesg);
 extern void strtotimeval_or_err(const char *str, struct timeval *tv,
 		const char *errmesg);
 
-extern int isdigit_string(const char *str);
+extern int isdigit_strend(const char *str, const char **end);
+#define isdigit_string(_s)	isdigit_strend(_s, NULL)
+
+extern int isxdigit_strend(const char *str, const char **end);
+#define isxdigit_string(_s)	isxdigit_strend(_s, NULL)
+
+
+extern int parse_switch(const char *arg, const char *errmesg, ...);
 
 #ifndef HAVE_MEMPCPY
 extern void *mempcpy(void *restrict dest, const void *restrict src, size_t n);
@@ -56,26 +65,30 @@ static inline void xstrncpy(char *dest, const char *src, size_t n)
 	dest[n-1] = 0;
 }
 
-static inline char *strdup_to_offset(void *stru, size_t offset, const char *str)
+static inline int strdup_to_offset(void *stru, size_t offset, const char *str)
 {
 	char *n = NULL;
-	char **o = (char **) ((char *) stru + offset);
+	char **o;
 
+	if (!stru)
+		return -EINVAL;
+
+	o = (char **) ((char *) stru + offset);
 	if (str) {
 		n = strdup(str);
 		if (!n)
-			return NULL;
+			return -ENOMEM;
 	}
 
 	free(*o);
 	*o = n;
-	return n;
+	return 0;
 }
 
 #define strdup_to_struct_member(_s, _m, _str) \
 		strdup_to_offset((void *) _s, offsetof(__typeof__(*(_s)), _m), _str)
 
-extern void strmode(mode_t mode, char *str);
+extern void xstrmode(mode_t mode, char *str);
 
 /* Options for size_to_human_string() */
 enum
@@ -90,7 +103,7 @@ extern char *size_to_human_string(int options, uint64_t bytes);
 extern int string_to_idarray(const char *list, int ary[], size_t arysz,
 			   int (name2id)(const char *, size_t));
 extern int string_add_to_idarray(const char *list, int ary[],
-				 size_t arysz, int *ary_pos,
+				 size_t arysz, size_t *ary_pos,
 				 int (name2id)(const char *, size_t));
 
 extern int string_to_bitarray(const char *list, char *ary,
@@ -101,7 +114,7 @@ extern int string_to_bitmask(const char *list,
 			     long (*name2flag)(const char *, size_t));
 extern int parse_range(const char *str, int *lower, int *upper, int def);
 
-extern int streq_except_trailing_slash(const char *s1, const char *s2);
+extern int streq_paths(const char *a, const char *b);
 
 /*
  * Match string beginning.
@@ -160,5 +173,58 @@ static inline const char *skip_blank(const char *p)
 		++p;
 	return p;
 }
+
+
+/* Removes whitespace from the right-hand side of a string (trailing
+ * whitespace).
+ *
+ * Returns size of the new string (without \0).
+ */
+static inline size_t rtrim_whitespace(unsigned char *str)
+{
+	size_t i;
+
+	if (!str)
+		return 0;
+	i = strlen((char *) str);
+	while (i) {
+		i--;
+		if (!isspace(str[i])) {
+			i++;
+			break;
+		}
+	}
+	str[i] = '\0';
+	return i;
+}
+
+/* Removes whitespace from the left-hand side of a string.
+ *
+ * Returns size of the new string (without \0).
+ */
+static inline size_t ltrim_whitespace(unsigned char *str)
+{
+	size_t len;
+	unsigned char *p;
+
+	if (!str)
+		return 0;
+	for (p = str; *p && isspace(*p); p++);
+
+	len = strlen((char *) p);
+
+	if (len && p > str)
+		memmove(str, p, len + 1);
+
+	return len;
+}
+
+extern char *strnappend(const char *s, const char *suffix, size_t b);
+extern char *strappend(const char *s, const char *suffix);
+extern char *strfappend(const char *s, const char *format, ...)
+		 __attribute__ ((__format__ (__printf__, 2, 0)));
+extern const char *split(const char **state, size_t *l, const char *separator, int quoted);
+
+extern int skip_fline(FILE *fp);
 
 #endif

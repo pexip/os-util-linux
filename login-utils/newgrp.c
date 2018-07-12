@@ -6,15 +6,6 @@
  * - added Native Language Support
  */
 
-/*
- * This command is deprecated.  The utility is in maintenance mode,
- * meaning we keep them in source tree for backward compatibility
- * only.  Do not waste time making this command better, unless the
- * fix is about security or other very critical issue.
- *
- * See Documentation/deprecated.txt for more information.
- */
-
 #include <errno.h>
 #include <getopt.h>
 #include <grp.h>
@@ -22,10 +13,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <termios.h>
 #include <unistd.h>
 
 #ifdef HAVE_CRYPT_H
 # include <crypt.h>
+#endif
+
+#ifdef HAVE_GETSGNAM
+# include <gshadow.h>
 #endif
 
 #include "c.h"
@@ -34,9 +30,58 @@
 #include "pathnames.h"
 #include "xalloc.h"
 
-/* try to read password from gshadow */
-static char *get_gshadow_pwd(char *groupname)
+static char *xgetpass(FILE *input, const char *prompt)
 {
+	char *pass = NULL;
+	struct termios saved, no_echo;
+	const int fd = fileno(input);
+	size_t dummy = 0;
+	ssize_t len;
+
+	fputs(prompt, stdout);
+	if (isatty(fd)) {
+		/* disable echo */
+		tcgetattr(fd, &saved);
+		no_echo = saved;
+		no_echo.c_lflag &= ~ECHO;
+		no_echo.c_lflag |= ECHONL;
+		if (tcsetattr(fd, TCSANOW, &no_echo))
+			err(EXIT_FAILURE, _("could not set terminal attributes"));
+	}
+	len = getline(&pass, &dummy, input);
+	if (isatty(fd))
+		/* restore terminal */
+		if (tcsetattr(fd, TCSANOW, &saved))
+			err(EXIT_FAILURE, _("could not set terminal attributes"));
+	if (len < 0)
+		err(EXIT_FAILURE, _("getline() failed"));
+	if (0 < len && *(pass + len - 1) == '\n')
+		*(pass + len - 1) = '\0';
+	return pass;
+}
+
+/* Ensure memory is set to value c without compiler optimization getting
+ * into way that could happen with memset(3). */
+static int xmemset_s(void *v, size_t sz, const int c)
+{
+	volatile unsigned char *p = v;
+
+	if (v == NULL)
+		return EINVAL;
+	while (sz--)
+		*p++ = c;
+	return 0;
+}
+
+/* try to read password from gshadow */
+static char *get_gshadow_pwd(const char *groupname)
+{
+#ifdef HAVE_GETSGNAM
+	struct sgrp *sgrp;
+
+	sgrp = getsgnam(groupname);
+	return sgrp ? xstrdup(sgrp->sg_passwd) : NULL;
+#else
 	char buf[BUFSIZ];
 	char *pwd = NULL;
 	FILE *f;
@@ -69,9 +114,10 @@ static char *get_gshadow_pwd(char *groupname)
 	}
 	fclose(f);
 	return pwd ? xstrdup(pwd) : NULL;
+#endif	/* HAVE_GETSGNAM */
 }
 
-static int allow_setgid(struct passwd *pe, struct group *ge)
+static int allow_setgid(const struct passwd *pe, const struct group *ge)
 {
 	char **look;
 	int notfound = 1;
@@ -99,11 +145,13 @@ static int allow_setgid(struct passwd *pe, struct group *ge)
 	if (!(pwd = get_gshadow_pwd(ge->gr_name)))
 		pwd = ge->gr_passwd;
 
-	if (pwd && *pwd && (xpwd = getpass(_("Password: ")))) {
+	if (pwd && *pwd && (xpwd = xgetpass(stdin, _("Password: ")))) {
 		char *cbuf = crypt(xpwd, pwd);
 
+		xmemset_s(xpwd, strlen(xpwd), 0);
+		free(xpwd);
 		if (!cbuf)
-			warn(_("crypt() failed"));
+			warn(_("crypt failed"));
 		else if (strcmp(pwd, cbuf) == 0)
 			return TRUE;
 	}
@@ -112,10 +160,14 @@ static int allow_setgid(struct passwd *pe, struct group *ge)
 	return FALSE;
 }
 
-static void __attribute__ ((__noreturn__)) usage(FILE * out)
+static void __attribute__((__noreturn__)) usage(FILE *out)
 {
 	fprintf(out, USAGE_HEADER);
 	fprintf(out, _(" %s <group>\n"), program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Log in to a new group.\n"), out);
+
 	fprintf(out, USAGE_OPTIONS);
 	fprintf(out, USAGE_HELP);
 	fprintf(out, USAGE_VERSION);
@@ -128,7 +180,7 @@ int main(int argc, char *argv[])
 	struct passwd *pw_entry;
 	struct group *gr_entry;
 	char *shell;
-	char ch;
+	int ch;
 	static const struct option longopts[] = {
 		{"version", no_argument, NULL, 'V'},
 		{"help", no_argument, NULL, 'h'},
@@ -154,9 +206,6 @@ int main(int argc, char *argv[])
 	if (!(pw_entry = getpwuid(getuid())))
 		err(EXIT_FAILURE, _("who are you?"));
 
-	shell = (pw_entry->pw_shell && *pw_entry->pw_shell ?
-				pw_entry->pw_shell : _PATH_BSHELL);
-
 	if (argc < 2) {
 		if (setgid(pw_entry->pw_gid) < 0)
 			err(EXIT_FAILURE, _("setgid failed"));
@@ -166,22 +215,20 @@ int main(int argc, char *argv[])
 			if (errno)
 				err(EXIT_FAILURE, _("no such group"));
 			else
-				/* No group */
 				errx(EXIT_FAILURE, _("no such group"));
-		} else {
-			if (allow_setgid(pw_entry, gr_entry)) {
-				if (setgid(gr_entry->gr_gid) < 0)
-					err(EXIT_FAILURE, _("setgid failed"));
-			} else
-				errx(EXIT_FAILURE, _("permission denied"));
 		}
+		if (!allow_setgid(pw_entry, gr_entry))
+			errx(EXIT_FAILURE, _("permission denied"));
+		if (setgid(gr_entry->gr_gid) < 0)
+			err(EXIT_FAILURE, _("setgid failed"));
 	}
 
 	if (setuid(getuid()) < 0)
 		err(EXIT_FAILURE, _("setuid failed"));
 
-	fflush(stdout);
-	fflush(stderr);
+	fflush(NULL);
+	shell = (pw_entry->pw_shell && *pw_entry->pw_shell ?
+				pw_entry->pw_shell : _PATH_BSHELL);
 	execl(shell, shell, (char *)0);
 	warn(_("failed to execute %s"), shell);
 	fflush(stderr);

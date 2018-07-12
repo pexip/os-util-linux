@@ -1,20 +1,27 @@
 if BUILD_SCRIPT
 usrbin_exec_PROGRAMS += script
 dist_man_MANS += term-utils/script.1
-script_SOURCES = term-utils/script.c
-script_LDADD = $(LDADD)
+script_SOURCES = term-utils/script.c lib/monotonic.c
+script_CFLAGS = $(AM_CFLAGS) -Wno-format-y2k
+script_LDADD = $(LDADD) libcommon.la $(REALTIME_LIBS)
 if HAVE_UTIL
 script_LDADD += -lutil
 endif
 if HAVE_UTEMPTER
 script_LDADD += -lutempter
 endif
+
+check_PROGRAMS += test_script
+test_script_SOURCES = $(script_SOURCES)
+test_script_LDADD = $(script_LDADD)
+test_script_CFLAGS = -DTEST_SCRIPT $(logger_CFLAGS)
 endif # BUILD_SCRIPT
 
 if BUILD_SCRIPTREPLAY
 usrbin_exec_PROGRAMS += scriptreplay
 dist_man_MANS += term-utils/scriptreplay.1
 scriptreplay_SOURCES = term-utils/scriptreplay.c
+scriptreplay_LDADD = $(LDADD) libcommon.la
 endif # BUILD_SCRIPTREPLAY
 
 
@@ -49,7 +56,6 @@ if BUILD_RESET
 dist_usrbin_exec_SCRIPTS += term-utils/reset
 dist_man_MANS += term-utils/reset.1
 endif
-EXTRA_DIST += term-utils/reset.033c
 
 
 if BUILD_MESG
@@ -87,6 +93,7 @@ dist_man_MANS += term-utils/write.1
 write_SOURCES = term-utils/write.c
 write_CFLAGS = $(SUID_CFLAGS) $(AM_CFLAGS)
 write_LDFLAGS = $(SUID_LDFLAGS) $(AM_LDFLAGS)
+write_LDADD = $(LDADD) libcommon.la
 
 if USE_TTY_GROUP
 if MAKEINSTALL_DO_CHOWN

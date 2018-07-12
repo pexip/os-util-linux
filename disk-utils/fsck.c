@@ -52,11 +52,17 @@
 #include "pathnames.h"
 #include "exitcodes.h"
 #include "c.h"
-#include "closestream.h"
 #include "fileutils.h"
+#include "monotonic.h"
+
+#define STRTOXX_EXIT_CODE	FSCK_EX_ERROR
+#include "strutils.h"
 
 #define XALLOC_EXIT_CODE	FSCK_EX_ERROR
 #include "xalloc.h"
+
+#define CLOSE_EXIT_CODE		FSCK_EX_ERROR
+#include "closestream.h"
 
 #ifndef DEFAULT_FSTYPE
 # define DEFAULT_FSTYPE	"ext2"
@@ -85,7 +91,7 @@ static const char *really_wanted[] = {
 };
 
 /*
- * Internal structure for mount tabel entries.
+ * Internal structure for mount table entries.
  */
 struct fsck_fs_data
 {
@@ -140,6 +146,7 @@ static int progress;
 static int progress_fd;
 static int force_all_parallel;
 static int report_stats;
+static FILE *report_stats_file;
 
 static int num_running;
 static int max_running;
@@ -149,8 +156,9 @@ static int kill_sent;
 static char *fstype;
 static struct fsck_instance *instance_list;
 
-static const char fsck_prefix_path[] = FS_SEARCH_PATH;
+#define FSCK_DEFAULT_PATH "/sbin"
 static char *fsck_path;
+
 
 /* parsed fstab and mtab */
 static struct libmnt_table *fstab, *mtab;
@@ -310,7 +318,7 @@ static int is_irrotational_disk(dev_t disk)
 			"/sys/dev/block/%d:%d/queue/rotational",
 			major(disk), minor(disk));
 
-	if (rc < 0 || (unsigned int) (rc + 1) > sizeof(path))
+	if (rc < 0 || (unsigned int) rc >= sizeof(path))
 		return 0;
 
 	f = fopen(path, "r");
@@ -404,7 +412,6 @@ static void unlock_disk(struct fsck_instance *inst)
 		printf(_("Unlocking %s.\n"), inst->lockpath);
 
 	close(inst->lock);			/* unlock */
-	unlink(inst->lockpath);
 
 	free(inst->lockpath);
 
@@ -450,18 +457,22 @@ static void fs_interpret_type(struct libmnt_fs *fs)
 	device = fs_get_device(fs);
 	if (device) {
 		int ambi = 0;
+		char *tp;
+		struct libmnt_cache *cache = mnt_table_get_cache(fstab);
 
-		type = mnt_get_fstype(device, &ambi, mnt_table_get_cache(fstab));
+		tp = mnt_get_fstype(device, &ambi, cache);
 		if (!ambi)
-			mnt_fs_set_fstype(fs, type);
+			mnt_fs_set_fstype(fs, tp);
+		if (!cache)
+			free(tp);
 	}
 }
 
 static int parser_errcb(struct libmnt_table *tb __attribute__ ((__unused__)),
 			const char *filename, int line)
 {
-	warnx(_("%s: parse error at line %d -- ignore"), filename, line);
-	return 0;
+	warnx(_("%s: parse error at line %d -- ignored"), filename, line);
+	return 1;
 }
 
 /*
@@ -481,7 +492,7 @@ static void load_fs_info(void)
 	errno = 0;
 
 	/*
-	 * Let's follow libmount defauls if $FSTAB_FILE is not specified
+	 * Let's follow libmount defaults if $FSTAB_FILE is not specified
 	 */
 	path = getenv("FSTAB_FILE");
 
@@ -537,14 +548,13 @@ static char *find_fsck(const char *type)
 	const char *tpl;
 	static char prog[256];
 	char *p = xstrdup(fsck_path);
-	struct stat st;
 
 	/* Are we looking for a program or just a type? */
 	tpl = (strncmp(type, "fsck.", 5) ? "%s/fsck.%s" : "%s/%s");
 
 	for(s = strtok(p, ":"); s; s = strtok(NULL, ":")) {
 		sprintf(prog, tpl, s, type);
-		if (stat(prog, &st) == 0)
+		if (access(prog, X_OK) == 0)
 			break;
 	}
 	free(p);
@@ -573,24 +583,35 @@ static int progress_active(void)
  */
 static void print_stats(struct fsck_instance *inst)
 {
-	double time_diff;
+	struct timeval delta;
 
 	if (!inst || !report_stats || noexecute)
 		return;
 
-	time_diff = (inst->end_time.tv_sec  - inst->start_time.tv_sec)
-		  + (inst->end_time.tv_usec - inst->start_time.tv_usec) / 1E6;
+	timersub(&inst->end_time, &inst->start_time, &delta);
 
-	fprintf(stdout, "%s: status %d, rss %ld, "
-			"real %f, user %d.%06d, sys %d.%06d\n",
-		fs_get_device(inst->fs),
-		inst->exit_status,
-		inst->rusage.ru_maxrss,
-		time_diff,
-		(int)inst->rusage.ru_utime.tv_sec,
-		(int)inst->rusage.ru_utime.tv_usec,
-		(int)inst->rusage.ru_stime.tv_sec,
-		(int)inst->rusage.ru_stime.tv_usec);
+	if (report_stats_file)
+		fprintf(report_stats_file, "%s %d %ld "
+					   "%ld.%06ld %ld.%06ld %ld.%06ld\n",
+			fs_get_device(inst->fs),
+			inst->exit_status,
+			inst->rusage.ru_maxrss,
+			(long)delta.tv_sec, (long)delta.tv_usec,
+			(long)inst->rusage.ru_utime.tv_sec,
+			(long)inst->rusage.ru_utime.tv_usec,
+			(long)inst->rusage.ru_stime.tv_sec,
+			(long)inst->rusage.ru_stime.tv_usec);
+	else
+		fprintf(stdout, "%s: status %d, rss %ld, "
+				"real %ld.%06ld, user %ld.%06ld, sys %ld.%06ld\n",
+			fs_get_device(inst->fs),
+			inst->exit_status,
+			inst->rusage.ru_maxrss,
+			(long)delta.tv_sec, (long)delta.tv_usec,
+			(long)inst->rusage.ru_utime.tv_sec,
+			(long)inst->rusage.ru_utime.tv_usec,
+			(long)inst->rusage.ru_stime.tv_sec,
+			(long)inst->rusage.ru_stime.tv_usec);
 }
 
 /*
@@ -613,22 +634,21 @@ static int execute(const char *progname, const char *progpath,
 	for (i=0; i <num_args; i++)
 		argv[argc++] = xstrdup(args[i]);
 
-	if (progress) {
-		if ((strcmp(type, "ext2") == 0) ||
-		    (strcmp(type, "ext3") == 0) ||
-		    (strcmp(type, "ext4") == 0) ||
-		    (strcmp(type, "ext4dev") == 0)) {
-			char tmp[80];
+	if (progress &&
+	       ((strcmp(type, "ext2") == 0) ||
+		(strcmp(type, "ext3") == 0) ||
+		(strcmp(type, "ext4") == 0) ||
+		(strcmp(type, "ext4dev") == 0))) {
 
-			tmp[0] = 0;
-			if (!progress_active()) {
-				snprintf(tmp, 80, "-C%d", progress_fd);
-				inst->flags |= FLAG_PROGRESS;
-			} else if (progress_fd)
-				snprintf(tmp, 80, "-C%d", progress_fd * -1);
-			if (tmp[0])
-				argv[argc++] = xstrdup(tmp);
-		}
+		char tmp[80];
+		tmp[0] = 0;
+		if (!progress_active()) {
+			snprintf(tmp, 80, "-C%d", progress_fd);
+			inst->flags |= FLAG_PROGRESS;
+		} else if (progress_fd)
+			snprintf(tmp, 80, "-C%d", progress_fd * -1);
+		if (tmp[0])
+			argv[argc++] = xstrdup(tmp);
 	}
 
 	argv[argc++] = xstrdup(fs_get_device(fs));
@@ -672,7 +692,7 @@ static int execute(const char *progname, const char *progpath,
 	inst->pid = pid;
 	inst->prog = xstrdup(progname);
 	inst->type = xstrdup(type);
-	gettimeofday(&inst->start_time, NULL);
+	gettime_monotonic(&inst->start_time);
 	inst->next = NULL;
 
 	/*
@@ -785,7 +805,7 @@ static struct fsck_instance *wait_one(int flags)
 
 	inst->exit_status = status;
 	inst->flags |= FLAG_DONE;
-	gettimeofday(&inst->end_time, NULL);
+	gettime_monotonic(&inst->end_time);
 	memcpy(&inst->rusage, &rusage, sizeof(struct rusage));
 
 	if (progress && (inst->flags & FLAG_PROGRESS) &&
@@ -1260,7 +1280,7 @@ static int check_all(void)
 
 	/*
 	 * This is for the bone-headed user who enters the root
-	 * filesystem twice.  Skip root will skep all root entries.
+	 * filesystem twice.  Skip root will skip all root entries.
 	 */
 	if (skip_root) {
 		mnt_reset_iter(itr, MNT_ITER_FORWARD);
@@ -1355,6 +1375,9 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fprintf(out, _(" %s [options] -- [fs-options] [<filesystem> ...]\n"),
 			 program_invocation_short_name);
 
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Check and repair a Linux filesystem.\n"), out);
+
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -A         check all filesystems\n"), out);
 	fputs(_(" -C [<fd>]  display progress bar; file descriptor is for GUIs\n"), out);
@@ -1363,11 +1386,12 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(_(" -N         do not execute, just show what would be done\n"), out);
 	fputs(_(" -P         check filesystems in parallel, including root\n"), out);
 	fputs(_(" -R         skip root filesystem; useful only with '-A'\n"), out);
-	fputs(_(" -r         report statistics for each device checked\n"), out);
+	fputs(_(" -r [<fd>]  report statistics for each device checked;\n"
+		"            file descriptor is for GUIs\n"), out);
 	fputs(_(" -s         serialize the checking operations\n"), out);
 	fputs(_(" -T         do not show the title on startup\n"), out);
 	fputs(_(" -t <type>  specify filesystem types to be checked;\n"
-		"             <type> is allowed to be a comma-separated list\n"), out);
+		"            <type> is allowed to be a comma-separated list\n"), out);
 	fputs(_(" -V         explain what is being done\n"), out);
 	fputs(_(" -?         display this help and exit\n"), out);
 
@@ -1391,6 +1415,7 @@ static void parse_argv(int argc, char *argv[])
 	int	opt = 0;
 	int     opts_for_fsck = 0;
 	struct sigaction	sa;
+	int	report_stats_fd = -1;
 
 	/*
 	 * Set up signal action
@@ -1457,15 +1482,14 @@ static void parse_argv(int argc, char *argv[])
 				break;
 			case 'C':
 				progress = 1;
-				if (arg[j+1]) {
+				if (arg[j+1]) {					/* -C<fd> */
 					progress_fd = string_to_int(arg+j+1);
 					if (progress_fd < 0)
 						progress_fd = 0;
 					else
 						goto next_arg;
-				} else if ((i+1) < argc &&
-					   !strncmp(argv[i+1], "-", 1) == 0) {
-					progress_fd = string_to_int(argv[i]);
+				} else if (i+1 < argc && *argv[i+1] != '-') {	/* -C <fd> */
+					progress_fd = string_to_int(argv[i+1]);
 					if (progress_fd < 0)
 						progress_fd = 0;
 					else {
@@ -1497,6 +1521,14 @@ static void parse_argv(int argc, char *argv[])
 				break;
 			case 'r':
 				report_stats = 1;
+				if (arg[j+1]) {					/* -r<fd> */
+					report_stats_fd = strtou32_or_err(arg+j+1, _("invalid argument of -r"));
+					goto next_arg;
+				} else if (i+1 < argc && *argv[i+1] >= '0' && *argv[i+1] <= '9') {	/* -r <fd> */
+					report_stats_fd = strtou32_or_err(argv[i+1], _("invalid argument of -r"));
+					++i;
+					goto next_arg;
+				}
 				break;
 			case 's':
 				serialize = 1;
@@ -1535,6 +1567,16 @@ static void parse_argv(int argc, char *argv[])
 			opt = 0;
 		}
 	}
+
+	/* Validate the report stats file descriptor to avoid disasters */
+	if (report_stats_fd >= 0) {
+		report_stats_file = fdopen(report_stats_fd, "w");
+		if (!report_stats_file)
+			err(FSCK_EX_ERROR,
+				_("invalid argument of -r: %d"),
+				report_stats_fd);
+	}
+
 	if (getenv("FSCK_FORCE_ALL_PARALLEL"))
 		force_all_parallel++;
 	if ((tmp = getenv("FSCK_MAX_INST")))
@@ -1545,8 +1587,8 @@ int main(int argc, char *argv[])
 {
 	int i, status = 0;
 	int interactive = 0;
-	char *oldpath = getenv("PATH");
 	struct libmnt_fs *fs;
+	const char *path = getenv("PATH");
 
 	setvbuf(stdout, NULL, _IONBF, BUFSIZ);
 	setvbuf(stderr, NULL, _IONBF, BUFSIZ);
@@ -1567,16 +1609,7 @@ int main(int argc, char *argv[])
 
 	load_fs_info();
 
-	/* Update our search path to include uncommon directories. */
-	if (oldpath) {
-		fsck_path = xmalloc (strlen (fsck_prefix_path) + 1 +
-				    strlen (oldpath) + 1);
-		strcpy (fsck_path, fsck_prefix_path);
-		strcat (fsck_path, ":");
-		strcat (fsck_path, oldpath);
-	} else {
-		fsck_path = xstrdup(fsck_prefix_path);
-	}
+	fsck_path = xstrdup(path && *path ? path : FSCK_DEFAULT_PATH);
 
 	if ((num_devices == 1) || (serialize))
 		interactive = 1;

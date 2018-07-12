@@ -23,7 +23,7 @@ static int probe_sun_pt(blkid_probe pr,
 	blkid_parttable tab = NULL;
 	blkid_partlist ls;
 	uint16_t nparts;
-	blkid_loff_t spc;
+	uint64_t spc;
 	int i, use_vtoc;
 
 	l = (struct sun_disklabel *) blkid_probe_get_sector(pr, 0);
@@ -69,13 +69,13 @@ static int probe_sun_pt(blkid_probe pr,
 
 	/*
 	 * So that old Linux-Sun partitions continue to work,
-	 * alow the VTOC to be used under the additional condition ...
+	 * allow the VTOC to be used under the additional condition ...
 	 */
 	use_vtoc = use_vtoc || !(l->vtoc.sanity || l->vtoc.version || l->vtoc.nparts);
 
 	for (i = 0, p = l->partitions; i < nparts; i++, p++) {
 
-		blkid_loff_t start, size;
+		uint64_t start, size;
 		uint16_t type = 0, flags = 0;
 		blkid_partition par;
 

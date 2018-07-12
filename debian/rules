@@ -3,34 +3,43 @@
 include /usr/share/dpkg/architecture.mk
 include /usr/share/dpkg/pkg-info.mk
 
-CONFOPTS = --with-slang
 CONFOPTS += --enable-line
 CONFOPTS += --libdir=/lib/$(DEB_HOST_MULTIARCH)
 CONFOPTS += --libexecdir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH)
+
+# Enable deprecated pg utility again as we're shipping it in the package.
+# Needs closer investigation if it can safely be removed.
+CONFOPTS += --enable-pg
 
 ifeq ($(DEB_HOST_ARCH_OS),linux)
 CONFOPTS += --enable-raw
 CONFOPTS += --with-selinux
 CONFOPTS += --enable-partx
-CONFOPTS += --with-systemd
+ifneq ($(filter stage1,$(DEB_BUILD_PROFILES)),)
+	CONFOPTS += --without-systemd --without-udev
+else
+	CONFOPTS += --with-systemd --with-udev
+endif
 CONFOPTS += --enable-tunelp
 endif
+
+# build static versions of programs used in fdisk-udeb and util-linux-udeb
+CONFOPTS += --enable-static-programs=fdisk,sfdisk,blkid
 
 CONFOPTS += --localstatedir=/run
 CONFOPTS += --disable-silent-rules
 CONFOPTS += --without-python
+
+# never use /etc/mtab, it should be a link to /proc/mounts
+# but in case it isn't - just don't use it, go straight for
+# /proc/self/mountinfo or /proc/mounts.
+CONFOPTS += --enable-libmount-force-mountinfo
 
 # disable utilities shipped by other packages
 # => login
 CONFOPTS += --disable-login
 CONFOPTS += --disable-nologin
 CONFOPTS += --disable-su
-# => sysvinit-utils
-CONFOPTS += --disable-sulogin
-CONFOPTS += --disable-last
-CONFOPTS += --disable-mesg
-# => initscripts
-CONFOPTS += --disable-mountpoint
 # => procps
 CONFOPTS += --disable-kill
 # => eject
@@ -45,7 +54,7 @@ else
 endif
 
 %:
-	dh $@ --with autoreconf,systemd
+	dh $@
 
 override_dh_autoreconf:
 	AM_OPTS=--copy LT_OPTS=--copy dh_autoreconf ./autogen.sh
@@ -58,6 +67,14 @@ override_dh_auto_build:
 
 override_dh_auto_install:
 	dh_auto_install
+ifneq ($(filter stage1,$(DEB_BUILD_PROFILES)),)
+	# Manually generate and install units to avoid missing files when
+        # util-linux.install gets executed in stage1 builds.
+	install -d debian/tmp/lib/systemd/system
+	make PATHFILES=sys-utils/fstrim.service sys-utils/fstrim.service
+	install -m644 sys-utils/fstrim.service debian/tmp/lib/systemd/system/fstrim.service
+	install -m644 sys-utils/fstrim.timer debian/tmp/lib/systemd/system/fstrim.timer
+endif
 	#
 	# the version in bsdmainutils seems newer.
 	rm -f debian/tmp/usr/bin/look debian/tmp/usr/share/man/man1/look.1
@@ -84,9 +101,12 @@ override_dh_install:
 		debian/uuid-runtime.install > \
 		debian/uuid-runtime.install.$(DEB_HOST_ARCH)
 	#
+	install -D -p -m644 debian/fdisk-udeb.lintian-overrides \
+		debian/fdisk-udeb/usr/share/lintian/overrides/fdisk-udeb
 	dh_install \
-		-Nfdisk-udeb -Ncfdisk-udeb -Nlibblkid1-udeb \
-		-Nlibsmartcols1-udeb -Nlibuuid1-udeb -Nutil-linux-udeb
+		-Nfdisk-udeb -Nlibblkid1-udeb \
+		-Nlibfdisk1-udeb -Nlibsmartcols1-udeb -Nlibuuid1-udeb \
+		-Nutil-linux-udeb
 	dh_install --remaining-packages
 	#
 	# Install bash-completions only for binaries we ship
@@ -107,9 +127,6 @@ override_dh_install:
 		fi; \
 	done; \
 	done
-	# Removed these conflicting ones for now, see Bug#755986
-	rm -f debian/util-linux/usr/share/bash-completion/completions/dmesg
-	rm -f debian/bsdutils/usr/share/bash-completion/completions/renice
 	#
 	rm -rf debian/*-udeb/usr/share/doc
 
@@ -117,7 +134,9 @@ override_dh_installman:
 	dh_installman --language=C
 
 override_dh_gencontrol:
+ifeq ($(filter stage1,$(DEB_BUILD_PROFILES)),)
 	dh_gencontrol --package=bsdutils -- -v1:$(DEB_VERSION_UPSTREAM_REVISION)
+endif
 	dh_gencontrol --remaining-packages
 
 override_dh_installinit:
@@ -138,11 +157,17 @@ override_dh_installpam:
 	dh_installpam --package=util-linux --name=runuser-l
 
 override_dh_makeshlibs:
-	dh_makeshlibs -N libsmartcols1 -N libblkid1 -N libuuid1
+	dh_makeshlibs \
+		-N libsmartcols1 -N libblkid1 \
+		-N libfdisk1 -N libmount1 -N libuuid1
 	dh_makeshlibs -plibsmartcols1 -V \
 		--add-udeb=libsmartcols1-udeb
 	dh_makeshlibs -plibblkid1 -V \
 		--add-udeb=libblkid1-udeb
+	dh_makeshlibs -plibfdisk1 -V \
+		--add-udeb=libfdisk1-udeb
+	dh_makeshlibs -plibmount1 -V \
+		--add-udeb=libmount1-udeb
 	dh_makeshlibs -plibuuid1 -V \
 		--add-udeb=libuuid1-udeb
 
@@ -150,5 +175,9 @@ override_dh_fixperms:
 	dh_fixperms -i -s -Xusr/bin/wall -Xbin/mount -Xbin/umount
 
 override_dh_auto_test:
-	TERM=xterm dh_auto_test || true
+ifeq ($(DEB_HOST_ARCH_OS), linux)
+	dh_auto_test --max-parallel=1
+else
+	dh_auto_test --max-parallel=1 || true
+endif
 

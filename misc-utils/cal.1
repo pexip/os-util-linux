@@ -34,16 +34,24 @@
 .\"
 .\"     @(#)cal.1	8.1 (Berkeley) 6/6/93
 .\"
-.TH CAL 1 "June 2011" "util-linux" "User Commands"
+.TH CAL 1 "June 2015" "util-linux" "User Commands"
 .SH NAME
 cal \- display a calendar
 .SH SYNOPSIS
 .B cal
-[\fIoptions\fR] [[[\fIday\fR] \fImonth\fR] \fIyear\fR]
+[options]
+.RI [[[ day ] " month" ] " year" ]
+.br
+.B cal
+[options]
+.RI <timestamp|monthname>
 .SH DESCRIPTION
 .B cal
 displays a simple calendar.  If no arguments are specified, the current
 month is displayed.
+.sp
+The \fImonth\fR may be specified as a number (1-12), as a month name or as an
+abbreviated month name according to the current locales.
 .SH OPTIONS
 .TP
 \fB\-1\fR, \fB\-\-one\fR
@@ -52,6 +60,12 @@ Display single month output.
 .TP
 \fB\-3\fR, \fB\-\-three\fR
 Display three months spanning the date.
+.TP
+\fB\-n , \-\-months\fR \fInumber\fR
+Display \fInumber\fR of months, starting from the month containing the date.
+.TP
+\fB\-S, \fB\-\-span\fR
+Display months spanning the date.
 .TP
 \fB\-s\fR, \fB\-\-sunday\fR
 Display Sunday as the first day of the week.
@@ -65,22 +79,17 @@ Display Julian dates (days one-based, numbered from January 1).
 \fB\-y\fR, \fB\-\-year\fR
 Display a calendar for the whole year.
 .TP
-\fB\-w\fR, \fB\-\-week\fR[\fI=number\fR]
+\fB\-Y, \fB\-\-twelve\fR
+Display a calendar for the next twelve months.
+.TP
+\fB\-w\fR, \fB\-\-week\fR[=\fInumber\fR]
 Display week numbers in the calendar (US or ISO-8601).
 .TP
-\fB\-\-color\fR[\fI=when\fR]
-Colorize output.  The
-.I when
-can be
-.IR never ,
-.IR auto ,
-or
-.IR always .
-Never will turn off colorizing in all situations.  Auto is default, and
-it will make colorizing to be in use if output is done to terminal.
-Always will allow colors to be outputed when
-.B cal
-outputs to pipe, or is called from a script.
+\fB\-\-color\fR[=\fIwhen\fR]
+Colorize the output.  The optional argument \fIwhen\fP
+can be \fBauto\fR, \fBnever\fR or \fBalways\fR.  If the \fIwhen\fR argument is omitted,
+it defaults to \fBauto\fR.  The colors can be disabled; for the current built-in default
+see the \fB\-\-help\fR output.  See also the \fBCOLORS\fR section.
 .TP
 \fB\-V\fR, \fB\-\-version\fR
 Display version information and exit.
@@ -88,18 +97,36 @@ Display version information and exit.
 \fB\-h\fR, \fB\-\-help\fR
 Display help text and exit.
 .SH PARAMETERS
-A single parameter specifies the year to be displayed; note the
-year must be fully specified:
+.TP
+\fBSingle digits-only parameter (e.g. 'cal 2020')\fR
+Specifies the \fIyear\fR to be displayed; note the year must be fully specified:
 .B "cal 89"
 will not display a calendar for 1989.
-.PP
-Two parameters denote the month (1 - 12) and year.
-.PP
-Three parameters denote the day (1-31), month and year, and the day will be
-highlighted if the calendar is displayed on a terminal. If no parameters are
+.TP
+\fBSingle string parameter (e.g. 'cal tomorrow' or 'cal August')\fR
+Specifies \fItimestamp\fR or a \fImonth name\fR (or abbreviated name) according to the current
+locales.
+.sp
+The special placeholders are accepted when parsing timestamp, "now" may be used
+to refer to the current time, "today", "yesterday", "tomorrow" refer to of the
+current day, the day before or the next day, respectively.
+.sp
+The relative date specifications are also accepted, in this case "+" is
+evaluated to the current time plus the specified time span. Correspondingly, a
+time span that is prefixed with "-" is evaluated to the current time minus the
+specified time span, for example '+2days'. Instead of prefixing the time span
+with "+" or "-", it may also be suffixed with a space and the word "left" or
+"ago" (for example '1 week ago').
+.TP
+\fBTwo parameters (e.g. 'cal 11 2020')\fR
+Denote the \fImonth\fR (1 - 12) and \fIyear\fR.
+.TP
+\fBThree parameters (e.g. 'cal 25 11 2020')\fR
+Denote the \fIday\fR (1-31), \fImonth and \fIyear\fR, and the day will be
+highlighted if the calendar is displayed on a terminal.  If no parameters are
 specified, the current month's calendar is displayed.
-.PP
-A year starts on Jan 1. The first day of the week is determined by the
+.SH NOTES
+A year starts on January 1.  The first day of the week is determined by the
 locale.
 .PP
 The week numbering depends on the choice of the first day of the week.  If Sunday
@@ -116,15 +143,16 @@ Implicit coloring can be disabled as follows:
 .br
 
 .RE
-For more details see
-.BR terminal-colors.d (5).
+See
+.BR terminal-colors.d (5)
+for more details about colorization configuration.
 .SH BUGS
 .PP
 The
 .B cal
 program uses the 3rd of September 1752 as the date of the Gregorian calendar
 reformation -- that is when it happened in Great Britain and its colonies
-(including what is now the USA).  Ten days following that date were eliminated
+(including what is now the USA).  Starting at that date, eleven days were eliminated
 by this reformation, so the calendar for that month is rather unusual.
 The actual historical dates at which the calendar reform happened in all the
 different countries (locales) are ignored.

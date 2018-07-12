@@ -1,0 +1,3 @@
+usr/bin/setpriv
+usr/share/bash-completion/completions/setpriv
+usr/share/man/man1/setpriv.1

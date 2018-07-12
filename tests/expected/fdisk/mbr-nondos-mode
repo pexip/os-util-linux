@@ -7,11 +7,9 @@ Create new DOS partition table
 Disk <removed>: 20 MiB, 20971520 bytes, 40960 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: dos
 Disk identifier: <removed>
-
-
 -------------------
 
 Create 1st primary partition
@@ -21,13 +19,12 @@ e21e16b7452d82e2a2810a1de8c3db05 mbr-nondos-mode.img
 Disk <removed>: 20 MiB, 20971520 bytes, 40960 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: dos
 Disk identifier: <removed>
 
 Device     Boot Start   End Sectors Size Id Type
 <removed>1       2048  8191    6144   3M 83 Linux
-
 -------------------
 
 Set primary partition active
@@ -37,13 +34,12 @@ Set primary partition active
 Disk <removed>: 20 MiB, 20971520 bytes, 40960 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: dos
 Disk identifier: <removed>
 
 Device     Boot Start   End Sectors Size Id Type
 <removed>1 *     2048  8191    6144   3M 83 Linux
-
 -------------------
 
 Re-create 1st primary partition
@@ -53,13 +49,12 @@ a5543ee1e3d2cf79913a56bae893a0f0 mbr-nondos-mode.img
 Disk <removed>: 20 MiB, 20971520 bytes, 40960 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: dos
 Disk identifier: <removed>
 
 Device     Boot Start   End Sectors Size Id Type
 <removed>1       2048  8191    6144   3M 83 Linux
-
 -------------------
 
 Create 2nd primary partition
@@ -69,14 +64,13 @@ Create 2nd primary partition
 Disk <removed>: 20 MiB, 20971520 bytes, 40960 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: dos
 Disk identifier: <removed>
 
 Device     Boot Start   End Sectors Size Id Type
 <removed>1       2048  8191    6144   3M 83 Linux
 <removed>2       8192 12287    4096   2M 83 Linux
-
 -------------------
 
 Create extended partition
@@ -86,7 +80,7 @@ Create extended partition
 Disk <removed>: 20 MiB, 20971520 bytes, 40960 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: dos
 Disk identifier: <removed>
 
@@ -94,7 +88,6 @@ Device     Boot Start   End Sectors Size Id Type
 <removed>1       2048  8191    6144   3M 83 Linux
 <removed>2       8192 12287    4096   2M 83 Linux
 <removed>3      12288 40959   28672  14M  5 Extended
-
 -------------------
 
 Create logical partitions
@@ -104,7 +97,7 @@ db4406e7bc0773f234fd1db1b58b5997 mbr-nondos-mode.img
 Disk <removed>: 20 MiB, 20971520 bytes, 40960 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: dos
 Disk identifier: <removed>
 
@@ -116,7 +109,6 @@ Device     Boot Start   End Sectors Size Id Type
 <removed>6      20480 24575    4096   2M 83 Linux
 <removed>7      26624 30719    4096   2M 83 Linux
 <removed>8      32768 36863    4096   2M 83 Linux
-
 -------------------
 
 Delete logical partitions
@@ -126,7 +118,7 @@ de85b8d74f52f307b9467ea4c33438cb mbr-nondos-mode.img
 Disk <removed>: 20 MiB, 20971520 bytes, 40960 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: dos
 Disk identifier: <removed>
 
@@ -135,7 +127,6 @@ Device     Boot Start   End Sectors Size Id Type
 <removed>2       8192 12287    4096   2M 83 Linux
 <removed>3      12288 40959   28672  14M  5 Extended
 <removed>5      26624 30719    4096   2M 83 Linux
-
 -------------------
 
 Create another logical partition
@@ -145,7 +136,7 @@ Create another logical partition
 Disk <removed>: 20 MiB, 20971520 bytes, 40960 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: dos
 Disk identifier: <removed>
 
@@ -166,7 +157,7 @@ Delete primary partition
 Disk <removed>: 20 MiB, 20971520 bytes, 40960 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: dos
 Disk identifier: <removed>
 
@@ -186,7 +177,7 @@ Delete primary partition
 Disk <removed>: 20 MiB, 20971520 bytes, 40960 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: dos
 Disk identifier: <removed>
 
@@ -205,10 +196,8 @@ e1ef48d3d42f4ebcfd5bf4baf5e370e9 mbr-nondos-mode.img
 Disk <removed>: 20 MiB, 20971520 bytes, 40960 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: dos
 Disk identifier: <removed>
-
-
 -------------------
 

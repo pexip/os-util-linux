@@ -1,3 +1,484 @@
+util-linux (2.29.2-1+deb9u1pexip1) UNRELEASED; urgency=medium
+
+  * Migrate to Stretch
+
+ -- Vincent Sanders <vince@pexip.com>  Thu, 12 Jul 2018 13:25:25 +0000
+
+util-linux (2.29.2-1+deb9u1) stretch-security; urgency=high
+
+  * Non-maintainer upload by the Security Team.
+  * bash-completion: (umount) use findmnt, escape a space in paths
+    (CVE-2018-7738) (Closes: #892179)
+
+ -- Salvatore Bonaccorso <carnil@debian.org>  Wed, 07 Mar 2018 19:29:09 +0100
+
+util-linux (2.29.2-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Andreas Henriksson <andreas@fatal.se>  Wed, 22 Mar 2017 10:43:33 +0100
+
+util-linux (2.29.1-1) unstable; urgency=medium
+
+  * Bump versions in shlibs to match recent symbols updates
+  * Drop XC- prefix for Package-Type of libmount1-udeb
+  * New upstream release.
+    - fixes sulogin issues (Closes: #846107, #846112)
+    - fixes chrt default policy (Closes: #846572)
+  * Add more lintian overrides
+
+ -- Andreas Henriksson <andreas@fatal.se>  Fri, 20 Jan 2017 17:33:41 +0100
+
+util-linux (2.29-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Revert "Drop unused and uninstallable libmount1-udeb" (Closes: #835504)
+  * Bump libselinux1 build-dep to >= 2.6-3~
+    - to guarantee that we're building against the version that has the udeb.
+
+ -- Andreas Henriksson <andreas@fatal.se>  Tue, 08 Nov 2016 13:29:50 +0100
+
+util-linux (2.29~rc2-1) experimental; urgency=medium
+
+  * New upstream release candidate.
+    - ionice: clarify documentation of -n,--classdata option (Closes: #826208)
+    - tail'ing a file in a script session hangs (Closes: #820843)
+  * Explicitly (re)enable deprecated pg utility
+  * Extend symbols files with new symbols
+  * Make testsuite run without parallel jobs
+  * Bump to debhelper compat 10
+
+ -- Andreas Henriksson <andreas@fatal.se>  Mon, 24 Oct 2016 14:35:04 +0200
+
+util-linux (2.28.2-1) unstable; urgency=medium
+
+  * debian/gbp.conf: set upstream-vcs-tag for import-orig
+  * New upstream release.
+    - among other things includes fixes for HPPA testsuite failures
+      (Closes: #827225)
+  * Drop d/p/tests-Fix-fdisk-id-and-fdisk-mbr-nondos-mode-on-Sparc.patch
+    - now include in upstream release.
+
+ -- Andreas Henriksson <andreas@fatal.se>  Fri, 09 Sep 2016 14:20:42 +0200
+
+util-linux (2.28.1-1) unstable; urgency=medium
+
+  * New upstream release.
+    - includes fixes for CVE-2016-5011 (Closes: #830802)
+  * Refresh debian/patches
+  * Bump Standards-Version to 3.9.8
+
+ -- Andreas Henriksson <andreas@fatal.se>  Mon, 15 Aug 2016 17:29:14 +0200
+
+util-linux (2.28-6) unstable; urgency=medium
+
+  * Cherry-pick sparc64 testsuite fix from upstream.
+    Thanks to James Clarke
+
+ -- Andreas Henriksson <andreas@fatal.se>  Thu, 14 Jul 2016 12:50:16 +0200
+
+util-linux (2.28-5) unstable; urgency=medium
+
+  [ Andreas Henriksson ]
+  * Fix regression in libmount1 symbols annotations
+
+  [ Samuel Thibault ]
+  * Don't ship chrt on hurd which lacks sched_setscheduler (Closes: #823765)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Sun, 08 May 2016 20:45:49 +0200
+
+util-linux (2.28-4) unstable; urgency=medium
+
+  [ Steven Chamberlain ]
+  * Only try to ship uuidd binary in uuid-runtime on linux-any
+    (Closes: #823684)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Sat, 07 May 2016 19:12:39 +0200
+
+util-linux (2.28-3) unstable; urgency=medium
+
+  * Attempt to work around debootstrap problems for hwclock.sh.
+    Thanks to Helmut Grohne for coming up with ideas on how to handle this.
+    (Closes: #823665)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Sat, 07 May 2016 14:34:20 +0200
+
+util-linux (2.28-2) unstable; urgency=medium
+
+  * Move sysvinit-utils back to Breaks (instead of Depends), see #823569
+
+ -- Andreas Henriksson <andreas@fatal.se>  Fri, 06 May 2016 06:15:37 +0200
+
+util-linux (2.28-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Use cgit url for Vcs-Browser field
+  * mount: Add Breaks/Replaces on older bash-completion
+    - for newly shipped umount/mount completion files. (Closes: #820247)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Tue, 12 Apr 2016 15:55:31 +0200
+
+util-linux (2.28~rc2-1) experimental; urgency=medium
+
+  [ Andreas Henriksson ]
+  * Imported Upstream version 2.28~rc2
+    - among other things includes these fixes:
+      swapon: rewrite control struct usage (Closes: 818252)
+      tests: improve setarch tests, regarding --uname-2.6 issues (See: #806911)
+  * Drop debian/patches/Mark-setarch-testcase-as-known-fail.patch
+    - Now obsoleted by upstream changes.
+  * Ship new lsns utility in util-linux package
+  * Run tests with --parallel=1 to avoid mixing output.
+    Thanks to Ruediger Meier for the suggestion.
+
+  [ Laurent Bigonville ]
+  * Ship setpriv executable in new setpriv package
+    - separate package to avoid making setpriv essential and
+      making dependency libcap-ng pseudo-essential. (Closes: #755885)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Tue, 29 Mar 2016 12:59:12 +0200
+
+util-linux (2.28~rc1-1) experimental; urgency=medium
+
+  * debian/gbp.conf: Set branches to master/upstream
+  * Imported Upstream version 2.28~rc1
+    This includes additional fixes for the following debian bug reports:
+    - "bash-completion: fstrim: use mountpoint, not device" (Closes: #804833)
+    - "logger: always update header when writing stdin line" (Closes: #798239)
+    - "libfdisk: Fix order of C/H/S numbers output" (Closes: #815847)
+  * Drop debian/patches/build-sys-use-PKG_CONFIG.patch, now included upstream.
+  * Document added symbols and bump shlibs for libfdisk1, libmount1
+    and libsmartcols1
+  * Bump Standards-Version to 3.9.7
+  * Update debian/README.source for master/upstream
+  * Upload to experimental.
+
+ -- Andreas Henriksson <andreas@fatal.se>  Sun, 13 Mar 2016 13:06:25 +0100
+
+util-linux (2.27.1-6) unstable; urgency=medium
+
+  * Drop (versioned) init-system-helpers dependency to avoid dep loop.
+    - initscripts is guaranteed to be installed in stable/jessie, the file
+      is additionally a conffile so initscripts will need to be purged to
+      cause a problem for us with i-s-h << 1.29 and purging initscripts is
+      not possible until after the upgrade anyway. (Closes: #817857)
+  * Temporarily move sysvinit-utils back from Breaks to Depends.
+    - again seems to confuse apt and we apparently need a synchronized
+      upload with sysvinit to move things to how it should (and now can be
+      since initscripts dependency was dropped from u-l) be described.
+
+ -- Andreas Henriksson <andreas@fatal.se>  Sat, 12 Mar 2016 16:12:55 +0100
+
+util-linux (2.27.1-5) unstable; urgency=medium
+
+  * Completely drop (versioned) tzdata dependency (Closes: #817371)
+    - the alternative on systemd-sysv causes (pre-)dependency loops which
+      dpkg can't handle (see example in #817780)
+    - the reason for the dependency in the first place seems to have been
+      ensuring /etc/localtime is a real file. Later the use of
+      /etc/localtime seems to have been removed (see #660365).
+      Thanks to Felipe Sateler for digging this information up.
+    - tzdata itself is Priority: required so should always be around in a
+      regular install even without any dependency on it. (i.e. unless it has
+      explicitly been removed.)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Thu, 10 Mar 2016 14:26:52 +0100
+
+util-linux (2.27.1-4) unstable; urgency=medium
+
+  * Drop initscripts dependency now that update-rc.d no longer
+    requires it to process init scripts with LSB header dependencies.
+    - note that it's still likely to be installed (even under systemd)
+      since it's priority is required, it's just that util-linux no longer
+      needs to require it to be around.
+  * Add dependency on init-system-helpers (>= 1.29~) which contains
+    the previously mentioned update-rc.d fix.
+    - this can be dropped once init-system-helpers is always >= 1.29~.
+  * Drop lsb-base dependency
+    - strictly speaking we should have it since hwclock.sh uses
+      lsb-base, but initscripts will pull it in for us anyway under
+      sysvinit(-core) so this dependency makes no practical gain.
+      Dropping it avoids pulling it in when we don't need it (eg. under
+      systemd-sysv where hwclock.sh is masked by the systemd package).
+  * Add systemd-sysv as an alternative to tzdata dependency.
+    - tzdata was according to this changelog added for the benefit of
+      the hwclock.sh init script. (Not sure it's required.)
+      It's among the top size of debootstrap --variant=minbase packages
+      so might be useful to make it uninstallable on minimal containers,
+      which this change should accomplish (under systemd-sysv atleast).
+  * Finally move sysvinit-utils back to Breaks instead of Depends
+    - now that initscript dependency is dropped, the issue with cyclic
+      dependency should be no more and we can properly describe the
+      relation.
+  * Add debian/patches/build-sys-use-PKG_CONFIG.patch
+    - cherry-picked from upstream git, fixes crossbuilding (Closes: #811546)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Thu, 03 Mar 2016 14:30:19 +0100
+
+util-linux (2.27.1-3) unstable; urgency=medium
+
+  * Add debian/patches/Mark-setarch-testcase-as-known-fail.patch
+    (Closes: #812696)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Tue, 26 Jan 2016 15:45:51 +0100
+
+util-linux (2.27.1-2) unstable; urgency=medium
+
+  [ Andreas Henriksson ]
+  * Handle missing directory in obsolete conversion code (Closes: #804167)
+  * hwclock.sh: drop obsolete WARNING referencing non-existing doc
+    (Closes: #795194)
+  * hwclock.sh: use sed instead of head/tail (Closes: #791511)
+  * hwclock.sh: Add Short-Description (Closes: #510086)
+  * Drop obsolete lsb-release build-dependency (Closes: #805491)
+  * bsdutils: drop ancient README.script (Closes: #231347)
+
+  [ Justin B Rye ]
+  * package description tweaks (Closes: #806736)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Sun, 24 Jan 2016 12:08:40 +0100
+
+util-linux (2.27.1-1) unstable; urgency=medium
+
+  * Imported Upstream version 2.27.1
+    - among other things includes these fixes:
+      libmount: fix uid= and gid= translation (Closes: #801527)
+      libmount: (monitor) don't check for regular mtab
+
+ -- Andreas Henriksson <andreas@fatal.se>  Mon, 02 Nov 2015 12:41:58 +0100
+
+util-linux (2.27-3) unstable; urgency=medium
+
+  * Add lintian-overrides for linking fdisk-udeb static
+  * Force installation of fdisk-udeb lintian overrides
+
+ -- Andreas Henriksson <andreas@fatal.se>  Thu, 17 Sep 2015 16:52:10 +0200
+
+util-linux (2.27-2) unstable; urgency=medium
+
+  * Drop Scott from co-maintainers on his request
+  * Build static binaries for fdisk-udeb and util-linux-udeb
+    - this avoids udeb collecting invalid dependencies on non-udebs
+    (Closes: #798347)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Thu, 17 Sep 2015 11:31:48 +0200
+
+util-linux (2.27-1) unstable; urgency=medium
+
+  [ Andreas Henriksson ]
+  * util-linux: only ship lsipc on linux
+  * Make testsuite fatal on linux (only)
+
+  [ Laurent Bigonville ]
+  * Enable libudev support on linux architectures (Closes: #776905)
+
+  [ Andreas Henriksson ]
+  * Ship zramctl in util-linux (Closes: #775371)
+  * Imported Upstream version 2.27
+
+ -- Andreas Henriksson <andreas@fatal.se>  Mon, 07 Sep 2015 12:41:31 +0200
+
+util-linux (2.27~rc2-2) experimental; urgency=medium
+
+  * bsdutils: enable dh-exec --with=install
+  * Add bsdutils to lintian-overides for dh-exec usage
+
+ -- Andreas Henriksson <andreas@fatal.se>  Mon, 24 Aug 2015 17:36:18 +0200
+
+util-linux (2.27~rc2-1) experimental; urgency=medium
+
+  * Explicitly disable zramctl from being built
+  * Add additional bug-closes entries to previous (2.27~rc1-1)
+    changelog entry for tracking / history purpose.
+  * Imported Upstream version 2.27~rc2
+  * bsdutils: Only ship 'script' on linux-any
+
+ -- Andreas Henriksson <andreas@fatal.se>  Mon, 24 Aug 2015 16:29:26 +0200
+
+util-linux (2.27~rc1-1) experimental; urgency=medium
+
+  * Imported Upstream version 2.27~rc1
+    - among other things includes these fixes:
+      mkfs: drop hardcoded search path (Closes: #786759)
+      man: fix nolazytime typo in mount(8) (Closes: #786554)
+      unshare: add --propagation, use MS_PRIVATE by default (Closes: #787763)
+      hwclock: don't allow non-root access (Closes: #786804)
+      sulogin: improve support for locked root account (Closes: #789950)
+      (Please note that --force option is needed for sulogin with locked root!)
+      logger: do not exit when socket errors are not enforced (Closes: #790875)
+      rename: allow full-path renames (Closes: #789240)
+      script: remove io vs signal race (Closes: #305808)
+  * Update patch queue for 2.27
+    - dropped patches (now include in upstream release):
+      0002-lib-fileutils-Add-new-dup_fd_cloexec-function.patch
+      0003-lib-sysfs-Use-dup_fd_cloexec-instead-of-direct-call-.patch
+  * Don't use deprecated gbp commands in debian/README.source
+  * Ship lslogins, lsipc and manpages in util-linux package
+  * Update debian/*.symbols with newly added symbols
+
+ -- Andreas Henriksson <andreas@fatal.se>  Fri, 31 Jul 2015 14:45:54 +0200
+
+util-linux (2.26.2-9) unstable; urgency=medium
+
+  * Add lintian override for hwclock.sh missing service file
+    - systemd itself installs a /dev/null override for the init script
+      since systemd handles the hardware clock internally.
+  * Add lintian overrides for dh-exec features not detected
+  * Drop specialcasing of sfdisk on sparc
+  * Upload to unstable with approval from debian-boot@lists.debian.org
+    for going ahead with cfdisk-udeb removal.
+
+ -- Andreas Henriksson <andreas@fatal.se>  Wed, 29 Jul 2015 16:20:44 +0200
+
+util-linux (2.26.2-8) experimental; urgency=medium
+
+  * Use canonical url in Vcs-Git field
+  * Drop obsolete XC- prefix for Package-Type: udeb
+  * Bump Standards-Version to 3.9.6
+  * Add autopkgtest oversized-chunks.
+    Thanks to RjY for spotting the original issue. (Closes: #785075)
+  * Add stage1 build profile for bootstrapping.
+    Thanks to Helmut Grohne (Closes: #757147)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Fri, 10 Jul 2015 12:13:29 +0200
+
+util-linux (2.26.2-7) experimental; urgency=medium
+
+  * Remove the cfdisk-udeb package
+    - in preparation for switch to ncurses (which has no udeb)
+  * Build with ncurses instead of slang (Closes: #581631)
+  * Drop obsolete patch explicitly mentioning slang in manpage
+    - cfdisk.8-mention-slang-next-to-curses.-Closes-295487.patch
+  * Add debhelper token to util-linux.preinst maint-script
+  * Drop long-obsolete mount.preinst, NFS-related pre-upgrade check
+  * Drop completed handling of doc symlinking removals
+
+ -- Andreas Henriksson <andreas@fatal.se>  Wed, 03 Jun 2015 13:52:26 +0200
+
+util-linux (2.26.2-6) unstable; urgency=medium
+
+  [ Martin Pitt ]
+  * debian/gbp.conf: Update deprecated section names.
+
+  [ Andreas Henriksson ]
+  * Add patches to fix kFreeBSD FTBFS
+    - 0002-lib-fileutils-Add-new-dup_fd_cloexec-function.patch
+    - 0003-lib-sysfs-Use-dup_fd_cloexec-instead-of-direct-call-.patch
+    This is a temporary workaround until glibc gets fixed (see #785796).
+    Thanks to Guillem Jover for patches and Steven Chamberlain for testing.
+    (Closes: #787042)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Sun, 31 May 2015 16:56:45 +0200
+
+util-linux (2.26.2-5) unstable; urgency=medium
+
+  * NMU upload with Andreas' consent / by his request.
+  * Using sysvinit-utils (<< 2.88dsf-59.1~) confuses apt during upgrade, so
+    use Depends: instead. This isn't technically true, but ensures a robust
+    upgrade also from jessie. (Closes: #786469)
+
+ -- Martin Pitt <mpitt@debian.org>  Fri, 22 May 2015 11:44:49 +0200
+
+util-linux (2.26.2-4) unstable; urgency=medium
+
+  [ Andreas Henriksson ]
+  * Drop now obsolete purging of fstrim timer unit helper
+  * Reclaim /sbin/fdisk on PowerPC
+  * Ship mountpoint in util-linux package instead
+    - This suits non-linux archs better, since mount is linux-any.
+
+  [ Martin Pitt ]
+  * Avoid cyclic Breaks in initscripts vs util-linux
+
+ -- Andreas Henriksson <andreas@fatal.se>  Thu, 21 May 2015 14:49:31 +0200
+
+util-linux (2.26.2-3) unstable; urgency=medium
+
+  * The "moving in on sysvinit(-utils) turf" release.
+
+  [ Andreas Henriksson ]
+  * Make Breaks against cloud-utils versioned
+    - cloud-utils 0.27-1 should now be fixed (see Bug#783826)
+  * mount: ship mountpoint utility (Closes: #753779)
+  * util-linux: ship sulogin, last, lastb, mesg utilities (Closes: #784566)
+  * Ship dmesg and renice completions
+
+  [ Pino Toscano ]
+  * Update libmount1.symbols for non-linux archs (Closes: #784728)
+
+  [ Andreas Henriksson ]
+  * Revert mistake in libblkid1 short description (Closes: #784822)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Fri, 15 May 2015 16:35:20 +0200
+
+util-linux (2.26.2-2) unstable; urgency=medium
+
+  * debian/rules: Add special handling for libfdisk1-udeb
+  * Bump libmount1 shlibs to say >= 2.26
+  * Add configure flag to make libmount skip /etc/mtab.
+    Thanks to Martin Pitt for the suggestion and pointers to background info.
+  * Revert "Attempt to avoid dumb term problem in "more: regexp" test"
+    - No longer needed since the test now sets TERM itself.
+  * Upload to unstable.
+
+ -- Andreas Henriksson <andreas@fatal.se>  Mon, 04 May 2015 00:22:30 +0200
+
+util-linux (2.26.2-1) experimental; urgency=medium
+
+  * Update gbp.conf for 2.26 branches
+  * Imported Upstream version 2.26.2
+    - this version includes a complete rewrite of sfdisk
+    A selection of some other notable fixes:
+    - libmount: allow unspecified source on remount (Closes: #772977)
+    - hwclock: regression fix (Closes: #782726)
+    - logger: warn when --file and command line message are combined
+      (Closes: #467244)
+    - logger: add hostname to rfc3164 message (Closes: #705217)
+    - bash-completion: stop being clever when listing block devices
+      (Closes: #764488)
+    - libfdisk: fix partition names on GNU Hurd. (Closes: #769897)
+    - fsck.minix: fix segmentation fault (Closes: #773892)
+    - libblkid: (bcache) fix keys usage (Closes: #775374)
+    - libfdisk: (gpt) check header size before verify CRC (Closes: #780834)
+    - uuidd: Fixed a typo in daemon logging message (Closes: #766064)
+    - docs: mention nice(1) in renice(1) manual page (Closes: #260984)
+    - bash-completion: Invoke actual commands to be completed, not basenames
+      (Closes: #769462)
+  * Rebase debian/patches on top of new upstream release
+    - Drop patches cherry-picked from upstream:
+      unshare-Fix-map-root-user-to-work-on-new-kernels.patch
+      libblkid-care-about-unsafe-chars-in-cache.patch
+    - Drop translation updates which should now be part of upstream:
+      Trivial-unfuzzy.patch
+      Update-Brazilian-Portuguese-translation.patch
+      Update-Chinese-simplified-translation.patch
+      Update-Danish-translation.patch
+      Update-Finnish-translation.patch
+      Update-French-translation.patch
+      Update-German-translation.patch
+      Update-Japanese-translation.patch
+      Update-PO-files.patch
+      Update-POT-file.patch
+      Update-Russian-translation.patch
+      Update-Spanish-translation.patch
+      Update-Ukrainian-translation.patch
+    - Refresh remaining patches:
+      Disable-the-fallback-clause-in-hwclock-when-dev-rtc-.patch
+      Multiarch-support-in-util-linux-build.patch
+      cfdisk.8-mention-slang-next-to-curses.-Closes-295487.patch
+      man-page-tweaks-cleanup-my_dev_t.h-ancient-stuff.patch
+      verbose-tests.patch
+    - Update series file
+  * Add po/stamp-po to debian/clean
+    - to make sure po/*.gmo actually gets rebuilt
+  * Update libmount1.symbols with 11 newly introduced symbols
+  * Add libfdisk1, libfdisk-dev and libfdisk-udeb packages
+  * Add Breaks on cloud-utils since it uses now-removed sfdisk options.
+    - this should be made a versioned breaks once Bug#783826 gets fixed.
+  * Upload to experimental for now.
+
+ -- Andreas Henriksson <andreas@fatal.se>  Thu, 30 Apr 2015 18:09:43 +0200
+
 util-linux (2.25.2-6pexip2) pexip; urgency=low
 
   * debian/util-linux.maintscript: Remove obsolete hwclock config on upgrade

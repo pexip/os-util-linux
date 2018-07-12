@@ -19,6 +19,13 @@
 # define XALLOC_EXIT_CODE EXIT_FAILURE
 #endif
 
+static inline void __err_oom(const char *file, unsigned int line)
+{
+	err(XALLOC_EXIT_CODE, "%s: %u: cannot allocate memory", file, line);
+}
+
+#define err_oom()	__err_oom(__FILE__, __LINE__)
+
 static inline __ul_alloc_size(1)
 void *xmalloc(const size_t size)
 {
@@ -91,7 +98,8 @@ static inline int __attribute__ ((__format__(printf, 2, 3)))
 	return ret;
 }
 
-static inline int xvasprintf(char **strp, const char *fmt, va_list ap)
+static inline int  __attribute__ ((__format__(printf, 2, 0)))
+xvasprintf(char **strp, const char *fmt, va_list ap)
 {
 	int ret = vasprintf(&(*strp), fmt, ap);
 	if (ret < 0)

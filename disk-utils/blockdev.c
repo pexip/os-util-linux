@@ -365,7 +365,7 @@ static void do_commands(int fd, char **argv, int d)
 		}
 
 		if (res == -1) {
-			perror(bdcms[j].iocname);
+			warn(_("ioctl error on %s"), bdcms[j].iocname);
 			if (verbose)
 				printf(_("%s failed.\n"), _(bdcms[j].help));
 			exit(EXIT_FAILURE);
@@ -438,7 +438,6 @@ static void report_device(char *device, int quiet)
 	long ra;
 	unsigned long long bytes;
 	uint64_t start = 0;
-	struct sysfs_cxt cxt;
 	struct stat st;
 
 	fd = open(device, O_RDONLY | O_NONBLOCK);
@@ -450,12 +449,17 @@ static void report_device(char *device, int quiet)
 
 	ro = ssz = bsz = 0;
 	ra = 0;
-	if (fstat(fd, &st) == 0) {
+	if (fstat(fd, &st) == 0 && !sysfs_devno_is_wholedisk(st.st_rdev)) {
+		struct sysfs_cxt cxt;
+
 		if (sysfs_init(&cxt, st.st_rdev, NULL))
 			err(EXIT_FAILURE,
 				_("%s: failed to initialize sysfs handler"),
 				device);
-		sysfs_read_u64(&cxt, "start", &start);
+		if (sysfs_read_u64(&cxt, "start", &start))
+			err(EXIT_FAILURE,
+				_("%s: failed to read partition start from sysfs"),
+				device);
 		sysfs_deinit(&cxt);
 	}
 	if (ioctl(fd, BLKROGET, &ro) == 0 &&

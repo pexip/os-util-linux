@@ -38,21 +38,6 @@
 # define UMOUNT_UNUSED    0x80000000	/* Flag guaranteed to be unused */
 #endif
 
-/*
- * Called by mtab parser to filter out entries, non-zero means that
- * an entry has to be filtered out.
- */
-static int mtab_filter(struct libmnt_fs *fs, void *data)
-{
-	if (!fs || !data)
-		return 0;
-	if (mnt_fs_streq_target(fs, data))
-		return 0;
-	if (mnt_fs_streq_srcpath(fs, data))
-		return 0;
-	return 1;
-}
-
 /**
  * mnt_context_find_umount_fs:
  * @cxt: mount context
@@ -68,8 +53,7 @@ int mnt_context_find_umount_fs(struct libmnt_context *cxt,
 	int rc;
 	struct libmnt_table *mtab = NULL;
 	struct libmnt_fs *fs;
-	struct libmnt_cache *cache = NULL;
-	char *cn_tgt = NULL, *loopdev = NULL;
+	char *loopdev = NULL;
 
 	if (pfs)
 		*pfs = NULL;
@@ -83,34 +67,20 @@ int mnt_context_find_umount_fs(struct libmnt_context *cxt,
 		return 1; /* empty string is not an error */
 
 	/*
-	 * The mtab file may be huge and on systems with utab we have to merge
+	 * The mount table may be huge, and on systems with utab we have to merge
 	 * userspace mount options into /proc/self/mountinfo. This all is
-	 * expensive. The mtab filter allows to filter out entries, then
-	 * mtab and utab are very tiny files.
+	 * expensive. The tab filter allows to filter out entries, then
+	 * a mount table and utab are very tiny files.
 	 *
 	 * *but*... the filter uses mnt_fs_streq_{target,srcpath} functions
 	 * where LABEL, UUID or symlinks are canonicalized. It means that
 	 * it's usable only for canonicalized stuff (e.g. kernel mountinfo).
 	 */
 	if (!mnt_context_mtab_writable(cxt) && *tgt == '/' &&
-	    !mnt_context_is_force(cxt) && !mnt_context_is_lazy(cxt)) {
-
-		struct stat st;
-
-		if (stat(tgt, &st) == 0 && S_ISDIR(st.st_mode)) {
-			cache = mnt_context_get_cache(cxt);
-			cn_tgt = mnt_resolve_path(tgt, cache);
-			if (cn_tgt)
-				mnt_context_set_tabfilter(cxt, mtab_filter, cn_tgt);
-		}
-	}
-	rc = mnt_context_get_mtab(cxt, &mtab);
-
-	if (cn_tgt) {
-		mnt_context_set_tabfilter(cxt, NULL, NULL);
-		if (!cache)
-			free(cn_tgt);
-	}
+	    !mnt_context_is_force(cxt) && !mnt_context_is_lazy(cxt))
+		rc = mnt_context_get_mtab_for_target(cxt, &mtab, tgt);
+	else
+		rc = mnt_context_get_mtab(cxt, &mtab);
 
 	if (rc) {
 		DBG(CXT, ul_debugobj(cxt, "umount: failed to read mtab"));
@@ -159,8 +129,9 @@ try_loopdev:
 		 */
 		struct stat st;
 
-		if (stat(tgt, &st) == 0 && S_ISREG(st.st_mode)) {
+		if (mnt_stat_mountpoint(tgt, &st) == 0 && S_ISREG(st.st_mode)) {
 			int count;
+			struct libmnt_cache *cache = mnt_context_get_cache(cxt);
 			const char *bf = cache ? mnt_resolve_path(tgt, cache) : tgt;
 
 			count = loopdev_count_by_backing_file(bf, &loopdev);
@@ -191,6 +162,10 @@ err:
 
 /* Check if there is something important in the utab file. The parsed utab is
  * stored in context->utab and deallocated by mnt_free_context().
+ *
+ * This function exists to avoid (if possible) /proc/self/mountinfo usage, so
+ * don't use things like mnt_resolve_target(), mnt_context_get_mtab() etc here.
+ * See lookup_umount_fs() for more details.
  */
 static int has_utab_entry(struct libmnt_context *cxt, const char *target)
 {
@@ -198,6 +173,7 @@ static int has_utab_entry(struct libmnt_context *cxt, const char *target)
 	struct libmnt_fs *fs;
 	struct libmnt_iter itr;
 	char *cn = NULL;
+	int rc = 0;
 
 	assert(cxt);
 
@@ -220,10 +196,16 @@ static int has_utab_entry(struct libmnt_context *cxt, const char *target)
 	mnt_reset_iter(&itr, MNT_ITER_BACKWARD);
 
 	while (mnt_table_next_fs(cxt->utab, &itr, &fs) == 0) {
-		if (mnt_fs_streq_target(fs, cn))
-			return 1;
+		if (mnt_fs_streq_target(fs, cn)) {
+			rc = 1;
+			break;
+		}
 	}
-	return 0;
+
+	if (!cache)
+		free(cn);
+
+	return rc;
 }
 
 /* this is umount replacement to mnt_context_apply_fstab(), use
@@ -264,7 +246,7 @@ static int lookup_umount_fs(struct libmnt_context *cxt)
 	    && !mnt_context_is_force(cxt)
 	    && !mnt_context_is_lazy(cxt)
 	    && !mnt_context_is_loopdel(cxt)
-	    && stat(tgt, &st) == 0 && S_ISDIR(st.st_mode)
+	    && mnt_stat_mountpoint(tgt, &st) == 0 && S_ISDIR(st.st_mode)
 	    && !has_utab_entry(cxt, tgt)) {
 
 		const char *type = mnt_fs_get_fstype(cxt->fs);
@@ -346,7 +328,7 @@ static int is_associated_fs(const char *devname, struct libmnt_fs *fs)
 			return 0;
 	}
 
-	return loopdev_is_used(devname, src, offset, flags);
+	return loopdev_is_used(devname, src, offset, 0, flags);
 }
 
 static int prepare_helper_from_options(struct libmnt_context *cxt,
@@ -389,9 +371,6 @@ static int evaluate_permissions(struct libmnt_context *cxt)
 	assert(cxt);
 	assert(cxt->fs);
 	assert((cxt->flags & MNT_FL_MOUNTFLAGS_MERGED));
-
-	if (!cxt || !cxt->fs)
-		return -EINVAL;
 
 	if (!mnt_context_is_restricted(cxt))
 		 return 0;		/* superuser mount */
@@ -532,6 +511,12 @@ static int exec_helper(struct libmnt_context *cxt)
 	assert((cxt->flags & MNT_FL_MOUNTFLAGS_MERGED));
 	assert(cxt->helper_exec_status == 1);
 
+	if (mnt_context_is_fake(cxt)) {
+		DBG(CXT, ul_debugobj(cxt, "fake mode: does not execute helper"));
+		cxt->helper_exec_status = rc = 0;
+		return rc;
+	}
+
 	DBG_FLUSH;
 
 	switch (fork()) {
@@ -635,7 +620,6 @@ int mnt_context_umount_setopt(struct libmnt_context *cxt, int c, char *arg)
 		break;
 	default:
 		return 1;
-		break;
 	}
 
 	return rc;
@@ -765,17 +749,15 @@ int mnt_context_prepare_umount(struct libmnt_context *cxt)
 {
 	int rc;
 
-	assert(cxt);
-	assert(cxt->fs);
-	assert(cxt->helper_exec_status == 1);
-	assert(cxt->syscall_status == 1);
-
 	if (!cxt || !cxt->fs || mnt_fs_is_swaparea(cxt->fs))
 		return -EINVAL;
 	if (!mnt_context_get_source(cxt) && !mnt_context_get_target(cxt))
 		return -EINVAL;
 	if (cxt->flags & MNT_FL_PREPARED)
 		return 0;
+
+	assert(cxt->helper_exec_status == 1);
+	assert(cxt->syscall_status == 1);
 
 	free(cxt->helper);	/* be paranoid */
 	cxt->helper = NULL;
@@ -1009,7 +991,8 @@ int mnt_context_next_umount(struct libmnt_context *cxt,
 		tgt = mnt_fs_get_target(*fs);
 	} while (!tgt);
 
-	DBG(CXT, ul_debugobj(cxt, "next-umount: trying %s", tgt));
+	DBG(CXT, ul_debugobj(cxt, "next-umount: trying %s [fstype: %s, t-pattern: %s, options: %s, O-pattern: %s]", tgt,
+				 mnt_fs_get_fstype(*fs), cxt->fstype_pattern, mnt_fs_get_options(*fs), cxt->optstr_pattern));
 
 	/* ignore filesystems which don't match options patterns */
 	if ((cxt->fstype_pattern && !mnt_fs_match_fstype(*fs,
@@ -1020,12 +1003,8 @@ int mnt_context_next_umount(struct libmnt_context *cxt,
 					cxt->optstr_pattern))) {
 		if (ignored)
 			*ignored = 1;
-		DBG(CXT, ul_debugobj(cxt, "next-umount: not-match "
-				"[fstype: %s, t-pattern: %s, options: %s, O-pattern: %s]",
-				mnt_fs_get_fstype(*fs),
-				cxt->fstype_pattern,
-				mnt_fs_get_options(*fs),
-				cxt->optstr_pattern));
+
+		DBG(CXT, ul_debugobj(cxt, "next-umount: not-match"));
 		return 0;
 	}
 

@@ -3,6 +3,9 @@
 /* Define if building universal (internal helper macro) */
 #undef AC_APPLE_UNIVERSAL_BUILD
 
+/* Enable agetty --reload feature */
+#undef AGETTY_RELOAD
+
 /* Should chfn and chsh require the user to enter the password? */
 #undef CHFN_CHSH_PASSWORD
 
@@ -19,6 +22,9 @@
 /* Define to 1 if you have the <asm/io.h> header file. */
 #undef HAVE_ASM_IO_H
 
+/* Define if btrfs stuff is available */
+#undef HAVE_BTRFS_SUPPORT
+
 /* Define to 1 if you have the <byteswap.h> header file. */
 #undef HAVE_BYTESWAP_H
 
@@ -29,6 +35,9 @@
 /* Define to 1 if you have the Mac OS X function CFPreferencesCopyAppValue in
    the CoreFoundation framework. */
 #undef HAVE_CFPREFERENCESCOPYAPPVALUE
+
+/* Define to 1 if you have the `clock_gettime' function. */
+#undef HAVE_CLOCK_GETTIME
 
 /* Define to 1 if the system has the type `cpu_set_t'. */
 #undef HAVE_CPU_SET_T
@@ -94,6 +103,9 @@
 /* Define to 1 if you have the `fsync' function. */
 #undef HAVE_FSYNC
 
+/* Define to 1 if you have the `futimens' function. */
+#undef HAVE_FUTIMENS
+
 /* Define to 1 if you have the `getdomainname' function. */
 #undef HAVE_GETDOMAINNAME
 
@@ -112,6 +124,9 @@
 /* Define to 1 if you have the `getrlimit' function. */
 #undef HAVE_GETRLIMIT
 
+/* Define to 1 if you have the `getsgnam' function. */
+#undef HAVE_GETSGNAM
+
 /* Define if the GNU gettext() function is already present or preinstalled. */
 #undef HAVE_GETTEXT
 
@@ -121,6 +136,9 @@
 /* Define to 1 if you have the `inotify_init' function. */
 #undef HAVE_INOTIFY_INIT
 
+/* Define to 1 if you have the `inotify_init1' function. */
+#undef HAVE_INOTIFY_INIT1
+
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
@@ -129,6 +147,9 @@
 
 /* Define to 1 if you have the `iopl' function. */
 #undef HAVE_IOPL
+
+/* Define to 1 if you have the `isnan' function. */
+#undef HAVE_ISNAN
 
 /* Define to 1 if you have the `jrand48' function. */
 #undef HAVE_JRAND48
@@ -151,11 +172,20 @@
 /* Do we need -lcrypt? */
 #undef HAVE_LIBCRYPT
 
-/* Define to 1 if you have the `ncurses' library (-lncurses). */
+/* Define if libmount available. */
+#undef HAVE_LIBMOUNT
+
+/* Define if ncurses library available */
 #undef HAVE_LIBNCURSES
 
-/* Define to 1 if you have the `ncursesw' library (-lncursesw). */
+/* Define if ncursesw library available */
 #undef HAVE_LIBNCURSESW
+
+/* Define to 1 if you have the `readline' library (-lreadline). */
+#undef HAVE_LIBREADLINE
+
+/* Define if librtas exists */
+#undef HAVE_LIBRTAS
 
 /* Define if SELinux is available */
 #undef HAVE_LIBSELINUX
@@ -163,8 +193,8 @@
 /* Define if libsystemd is available */
 #undef HAVE_LIBSYSTEMD
 
-/* Define to 1 if you have the `termcap' library (-ltermcap). */
-#undef HAVE_LIBTERMCAP
+/* Define if libtinfo available. */
+#undef HAVE_LIBTINFO
 
 /* Define to 1 if you have the `udev' library (-ludev). */
 #undef HAVE_LIBUDEV
@@ -184,6 +214,9 @@
 /* Define to 1 if you have the <linux/blkpg.h> header file. */
 #undef HAVE_LINUX_BLKPG_H
 
+/* Define to 1 if you have the <linux/btrfs.h> header file. */
+#undef HAVE_LINUX_BTRFS_H
+
 /* Define to 1 if you have the <linux/cdrom.h> header file. */
 #undef HAVE_LINUX_CDROM_H
 
@@ -195,6 +228,9 @@
 
 /* Define to 1 if you have the <linux/fd.h> header file. */
 #undef HAVE_LINUX_FD_H
+
+/* Define to 1 if you have the <linux/gsmmux.h> header file. */
+#undef HAVE_LINUX_GSMMUX_H
 
 /* Define to 1 if you have the <linux/major.h> header file. */
 #undef HAVE_LINUX_MAJOR_H
@@ -238,6 +274,9 @@
 /* Define to 1 if you have the `mempcpy' function. */
 #undef HAVE_MEMPCPY
 
+/* Define to 1 if you have the `mkostemp' function. */
+#undef HAVE_MKOSTEMP
+
 /* Define to 1 if you have the <mntent.h> header file. */
 #undef HAVE_MNTENT_H
 
@@ -261,6 +300,9 @@
 
 /* Define to 1 if you have the <net/if.h> header file. */
 #undef HAVE_NET_IF_H
+
+/* Define to 1 if you have the `ntp_gettime' function. */
+#undef HAVE_NTP_GETTIME
 
 /* Define to 1 if you have the `openat' function. */
 #undef HAVE_OPENAT
@@ -292,6 +334,9 @@
 /* Define to 1 if you have the `qsort_r' function. */
 #undef HAVE_QSORT_R
 
+/* Define to 1 if you have the `reboot' function. */
+#undef HAVE_REBOOT
+
 /* Define if curses library has the resizeterm(). */
 #undef HAVE_RESIZETERM
 
@@ -310,11 +355,23 @@
 /* scanf %ms modifier */
 #undef HAVE_SCANF_MS_MODIFIER
 
+/* Define to 1 if you have the `sched_setattr' function. */
+#undef HAVE_SCHED_SETATTR
+
+/* Define to 1 if you have the `sched_setscheduler' function. */
+#undef HAVE_SCHED_SETSCHEDULER
+
 /* Define to 1 if you have the `secure_getenv' function. */
 #undef HAVE_SECURE_GETENV
 
 /* Define to 1 if you have the `security_get_initial_context' function. */
 #undef HAVE_SECURITY_GET_INITIAL_CONTEXT
+
+/* Define to 1 if you have the <security/openpam.h> header file. */
+#undef HAVE_SECURITY_OPENPAM_H
+
+/* Define to 1 if you have the <security/pam_appl.h> header file. */
+#undef HAVE_SECURITY_PAM_APPL_H
 
 /* Define to 1 if you have the <security/pam_misc.h> header file. */
 #undef HAVE_SECURITY_PAM_MISC_H
@@ -322,11 +379,17 @@
 /* Define to 1 if you have the `setns' function. */
 #undef HAVE_SETNS
 
+/* Define to 1 if you have the `setprogname' function. */
+#undef HAVE_SETPROGNAME
+
 /* Define to 1 if you have the `setresgid' function. */
 #undef HAVE_SETRESGID
 
 /* Define to 1 if you have the `setresuid' function. */
 #undef HAVE_SETRESUID
+
+/* Define to 1 if you have the <shadow.h> header file. */
+#undef HAVE_SHADOW_H
 
 /* Define to 1 if the system has the type `sighandler_t'. */
 #undef HAVE_SIGHANDLER_T
@@ -379,9 +442,6 @@
 /* Define to 1 if have strsignal function prototype */
 #undef HAVE_STRSIGNAL_DECL
 
-/* Define to 1 if you have the `strtoull' function. */
-#undef HAVE_STRTOULL
-
 /* Define to 1 if `st_mtim.tv_nsec' is a member of `struct stat'. */
 #undef HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
 
@@ -418,14 +478,20 @@
 /* Define to 1 if you have the <sys/mkdev.h> header file. */
 #undef HAVE_SYS_MKDEV_H
 
+/* Define to 1 if you have the <sys/mount.h> header file. */
+#undef HAVE_SYS_MOUNT_H
+
+/* Define to 1 if you have the <sys/param.h> header file. */
+#undef HAVE_SYS_PARAM_H
+
 /* Define to 1 if you have the <sys/prctl.h> header file. */
 #undef HAVE_SYS_PRCTL_H
 
-/* Define to 1 if you have the <sys/queue.h> header file. */
-#undef HAVE_SYS_QUEUE_H
-
 /* Define to 1 if you have the <sys/resource.h> header file. */
 #undef HAVE_SYS_RESOURCE_H
+
+/* Define to 1 if you have the <sys/signalfd.h> header file. */
+#undef HAVE_SYS_SIGNALFD_H
 
 /* Define to 1 if you have the <sys/socket.h> header file. */
 #undef HAVE_SYS_SOCKET_H
@@ -442,6 +508,12 @@
 /* Define to 1 if you have the <sys/syscall.h> header file. */
 #undef HAVE_SYS_SYSCALL_H
 
+/* Define to 1 if you have the <sys/sysmacros.h> header file. */
+#undef HAVE_SYS_SYSMACROS_H
+
+/* Define to 1 if you have the <sys/timex.h> header file. */
+#undef HAVE_SYS_TIMEX_H
+
 /* Define to 1 if you have the <sys/time.h> header file. */
 #undef HAVE_SYS_TIME_H
 
@@ -451,8 +523,14 @@
 /* Define to 1 if you have the <sys/types.h> header file. */
 #undef HAVE_SYS_TYPES_H
 
+/* Define to 1 if you have the <sys/ucred.h> header file. */
+#undef HAVE_SYS_UCRED_H
+
 /* Define to 1 if you have the <sys/un.h> header file. */
 #undef HAVE_SYS_UN_H
+
+/* Define to 1 if you have the `timer_create' function. */
+#undef HAVE_TIMER_CREATE
 
 /* Define to 1 if the target supports thread-local storage. */
 #undef HAVE_TLS
@@ -484,6 +562,9 @@
 /* Define to 1 if you have the `utimensat' function. */
 #undef HAVE_UTIMENSAT
 
+/* Define to 1 if you have the <utmp.h> header file. */
+#undef HAVE_UTMP_H
+
 /* Define to 1 if you want to use uuid daemon. */
 #undef HAVE_UUIDD
 
@@ -511,6 +592,9 @@
 /* libblkid version string */
 #undef LIBBLKID_VERSION
 
+/* libfdisk version string */
+#undef LIBFDISK_VERSION
+
 /* libmount version string */
 #undef LIBMOUNT_VERSION
 
@@ -523,12 +607,11 @@
 /* Should login stat() the mailbox? */
 #undef LOGIN_STAT_MAIL
 
-/* Define to the sub-directory in which libtool stores uninstalled libraries.
-   */
+/* Define to the sub-directory where libtool stores uninstalled libraries. */
 #undef LT_OBJDIR
 
-/* Define to 1 if your C compiler doesn't accept -c and -o together. */
-#undef NO_MINUS_C_MINUS_O
+/* Define to 1 if assertions should be disabled. */
+#undef NDEBUG
 
 /* Should chsh allow only shells in /etc/shells? */
 #undef ONLY_LISTED_SHELLS
@@ -581,11 +664,23 @@
 /* Fallback syscall number for sched_getaffinity */
 #undef SYS_sched_getaffinity
 
+/* Fallback syscall number for sched_setattr */
+#undef SYS_sched_setattr
+
 /* Fallback syscall number for setns */
 #undef SYS_setns
 
 /* Fallback syscall number for unshare */
 #undef SYS_unshare
+
+/* Enables colorized output from utils by default */
+#undef USE_COLORS_BY_DEFAULT
+
+/* Define to 1 if want to support mtab. */
+#undef USE_LIBMOUNT_SUPPORT_MTAB
+
+/* Enable plymouth support feature for sulogin and aggety */
+#undef USE_PLYMOUTH_SUPPORT
 
 /* Should sulogin use a emergency mount of /dev and /proc? */
 #undef USE_SULOGIN_EMERGENCY_MOUNT
@@ -615,6 +710,9 @@
 /* Should wall and write be installed setgid tty? */
 #undef USE_TTY_GROUP
 
+/* Define to 1 to remove /bin and /sbin from PATH env.variable */
+#undef USE_USRDIR_PATHS_ONLY
+
 /* Version number of package */
 #undef VERSION
 
@@ -629,6 +727,9 @@
 #  undef WORDS_BIGENDIAN
 # endif
 #endif
+
+/* Enable MAP_ANON in sys/mman.h on Mac OS X */
+#undef _DARWIN_C_SOURCE
 
 /* Enable large inode numbers on Mac OS X 10.5.  */
 #ifndef _DARWIN_USE_64_BIT_INODE

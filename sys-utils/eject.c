@@ -52,6 +52,7 @@
 #include "xalloc.h"
 #include "pathnames.h"
 #include "sysfs.h"
+#include "monotonic.h"
 
 /*
  * sg_io_hdr_t driver_status -- see kernel include/scsi/scsi.h
@@ -70,42 +71,34 @@
  */
 #define TRAY_WAS_ALREADY_OPEN_USECS  200000	/* about 0.2 seconds */
 
-/* eject(1) is able to eject only 'removable' devices (attribute in /sys)
- * _or_ devices connected by hotplug subsystem.
- */
-static const char * const hotplug_subsystems[] = {
-	"usb",
-	"ieee1394",
-	"pcmcia",
-	"mmc",
-	"ccw"
+struct eject_control {
+	struct libmnt_table *mtab;
+	char *device;			/* device or mount point to be ejected */
+	int fd;				/* file descriptor for device */
+	unsigned int 			/* command flags and arguments */
+		a_option:1,
+		c_option:1,
+		d_option:1,
+		F_option:1,
+		f_option:1,
+		i_option:1,
+		M_option:1,
+		m_option:1,
+		n_option:1,
+		p_option:1,
+		q_option:1,
+		r_option:1,
+		s_option:1,
+		T_option:1,
+		t_option:1,
+		v_option:1,
+		X_option:1,
+		x_option:1,
+		a_arg:1,
+		i_arg:1;
+	long int c_arg;			/* changer slot number */
+	long int x_arg;			/* cd speed */
 };
-
-/* Global Variables */
-static int a_option; /* command flags and arguments */
-static int c_option;
-static int d_option;
-static int f_option;
-static int F_option;
-static int n_option;
-static int q_option;
-static int r_option;
-static int s_option;
-static int t_option;
-static int T_option;
-static int X_option;
-static int v_option;
-static int x_option;
-static int p_option;
-static int m_option;
-static int M_option;
-static int i_option;
-static int a_arg;
-static int i_arg;
-static long int c_arg;
-static long int x_arg;
-
-struct libmnt_table *mtab;
 
 static void vinfo(const char *fmt, va_list va)
 {
@@ -114,11 +107,11 @@ static void vinfo(const char *fmt, va_list va)
 	fputc('\n', stdout);
 }
 
-static inline void verbose(const char *fmt, ...)
+static inline void verbose(const struct eject_control *ctl, const char *fmt, ...)
 {
 	va_list va;
 
-	if (!v_option)
+	if (!ctl->v_option)
 		return;
 
 	va_start(va, fmt);
@@ -137,9 +130,11 @@ static inline void info(const char *fmt, ...)
 static void __attribute__ ((__noreturn__)) usage(FILE * out)
 {
 	fputs(USAGE_HEADER, out);
-
 	fprintf(out,
 		_(" %s [options] [<device>|<mountpoint>]\n"), program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Eject removable media.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -a, --auto <on|off>         turn auto-eject feature on or off\n"
@@ -174,7 +169,7 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 
 
 /* Handle command line options. */
-static void parse_args(int argc, char **argv, char **device)
+static void parse_args(struct eject_control *ctl, int argc, char **argv)
 {
 	static const struct option long_opts[] =
 	{
@@ -206,75 +201,67 @@ static void parse_args(int argc, char **argv, char **device)
 				"a:c:i:x:dfFhnqrstTXvVpmM", long_opts, NULL)) != -1) {
 		switch (c) {
 		case 'a':
-			a_option = 1;
-			if (!strcmp(optarg, "0") || !strcmp(optarg, "off"))
-				a_arg = 0;
-			else if (!strcmp(optarg, "1") || !strcmp(optarg, "on"))
-				a_arg = 1;
-			else
-				errx(EXIT_FAILURE, _("invalid argument to --auto/-a option"));
+			ctl->a_option = 1;
+			ctl->a_arg = parse_switch(optarg, _("argument error"),
+						"on", "off",  "1", "0",  NULL);
 			break;
 		case 'c':
-			c_option = 1;
-			c_arg = strtoul_or_err(optarg, _("invalid argument to --changerslot/-c option"));
+			ctl->c_option = 1;
+			ctl->c_arg = strtoul_or_err(optarg, _("invalid argument to --changerslot/-c option"));
 			break;
 		case 'x':
-			x_option = 1;
-			x_arg = strtoul_or_err(optarg, _("invalid argument to --cdspeed/-x option"));
+			ctl->x_option = 1;
+			ctl->x_arg = strtoul_or_err(optarg, _("invalid argument to --cdspeed/-x option"));
 			break;
 		case 'd':
-			d_option = 1;
+			ctl->d_option = 1;
 			break;
 		case 'f':
-			f_option = 1;
+			ctl->f_option = 1;
 			break;
 		case 'F':
-			F_option = 1;
+			ctl->F_option = 1;
 			break;
 		case 'h':
 			usage(stdout);
 			break;
 		case 'i':
-			i_option = 1;
-			if (!strcmp(optarg, "0") || !strcmp(optarg, "off"))
-				i_arg = 0;
-			else if (!strcmp(optarg, "1") || !strcmp(optarg, "on"))
-				i_arg = 1;
-			else
-				errx(EXIT_FAILURE, _("invalid argument to --manualeject/-i option"));
+			ctl->i_option = 1;
+			ctl->i_arg = parse_switch(optarg, _("argument error"),
+						"on", "off",  "1", "0",  NULL);
 			break;
 		case 'm':
-			m_option = 1;
+			ctl->m_option = 1;
 			break;
 		case 'M':
-			M_option = 1;
+			ctl->M_option = 1;
 			break;
 		case 'n':
-			n_option = 1;
+			ctl->n_option = 1;
 			break;
 		case 'p':
-			p_option = 1;
+			ctl->p_option = 1;
 			break;
 		case 'q':
-			q_option = 1;
+			ctl->q_option = 1;
 			break;
 		case 'r':
-			r_option = 1;
+			ctl->r_option = 1;
 			break;
 		case 's':
-			s_option = 1;
+			ctl->s_option = 1;
 			break;
 		case 't':
-			t_option = 1;
+			ctl->t_option = 1;
 			break;
 		case 'T':
-			T_option = 1;
+			ctl->T_option = 1;
 			break;
 		case 'X':
-			X_option = 1;
+			ctl->X_option = 1;
 			break;
 		case 'v':
-			v_option = 1;
+			ctl->v_option = 1;
 			break;
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
@@ -292,7 +279,7 @@ static void parse_args(int argc, char **argv, char **device)
 		errx(EXIT_FAILURE, _("too many arguments"));
 
 	if ((argc - optind) == 1)
-		*device = xstrdup(argv[optind]);
+		ctl->device = xstrdup(argv[optind]);
 }
 
 /*
@@ -323,15 +310,15 @@ static char *find_device(const char *name)
 }
 
 /* Set or clear auto-eject mode. */
-static void auto_eject(int fd, int on)
+static void auto_eject(const struct eject_control *ctl)
 {
 	int status = -1;
 
 #if defined(CDROM_SET_OPTIONS) && defined(CDROM_CLEAR_OPTIONS)
-	if (on)
-		status = ioctl(fd, CDROM_SET_OPTIONS, CDO_AUTO_EJECT);
+	if (ctl->a_arg)
+		status = ioctl(ctl->fd, CDROM_SET_OPTIONS, CDO_AUTO_EJECT);
 	else
-		status = ioctl(fd, CDROM_CLEAR_OPTIONS, CDO_AUTO_EJECT);
+		status = ioctl(ctl->fd, CDROM_CLEAR_OPTIONS, CDO_AUTO_EJECT);
 #else
 	errno = ENOSYS;
 #endif
@@ -340,22 +327,25 @@ static void auto_eject(int fd, int on)
 }
 
 /*
- * Stops CDROM from opening on manual eject pressing the button.
+ * Stops CDROM from opening on manual eject button press.
  * This can be useful when you carry your laptop
  * in your bag while it's on and no CD inserted in it's drive.
  * Implemented as found in Documentation/ioctl/cdrom.txt
- *
- * TODO: Maybe we should check this also:
- * EDRIVE_CANT_DO_THIS   Door lock function not supported.
- * EBUSY                 Attempt to unlock when multiple users
- *                       have the drive open and not CAP_SYS_ADMIN
  */
-static void manual_eject(int fd, int on)
+static void manual_eject(const struct eject_control *ctl)
 {
-	if (ioctl(fd, CDROM_LOCKDOOR, on) < 0)
-		err(EXIT_FAILURE, _("CD-ROM lock door command failed"));
+	if (ioctl(ctl->fd, CDROM_LOCKDOOR, ctl->i_arg) < 0) {
+		switch (errno) {
+		case EDRIVE_CANT_DO_THIS:
+			errx(EXIT_FAILURE, _("CD-ROM door lock is not supported"));
+		case EBUSY:
+			errx(EXIT_FAILURE, _("other users have the drive open and not CAP_SYS_ADMIN"));
+		default:
+			err(EXIT_FAILURE, _("CD-ROM lock door command failed"));
+		}
+	}
 
-	if (on)
+	if (ctl->i_arg)
 		info(_("CD-Drive may NOT be ejected with device button"));
 	else
 		info(_("CD-Drive may be ejected with device button"));
@@ -365,14 +355,14 @@ static void manual_eject(int fd, int on)
  * Changer select. CDROM_SELECT_DISC is preferred, older kernels used
  * CDROMLOADFROMSLOT.
  */
-static void changer_select(int fd, int slot)
+static void changer_select(const struct eject_control *ctl)
 {
 #ifdef CDROM_SELECT_DISC
-	if (ioctl(fd, CDROM_SELECT_DISC, slot) < 0)
+	if (ioctl(ctl->fd, CDROM_SELECT_DISC, ctl->c_arg) < 0)
 		err(EXIT_FAILURE, _("CD-ROM select disc command failed"));
 
 #elif defined CDROMLOADFROMSLOT
-	if (ioctl(fd, CDROMLOADFROMSLOT, slot) != 0)
+	if (ioctl(ctl->fd, CDROMLOADFROMSLOT, ctl->c_arg) != 0)
 		err(EXIT_FAILURE, _("CD-ROM load from slot command failed"));
 #else
 	warnx(_("IDE/ATAPI CD-ROM changer not supported by this kernel\n") );
@@ -430,9 +420,6 @@ static int eject_cdrom(int fd)
  */
 static void toggle_tray(int fd)
 {
-	struct timeval time_start, time_stop;
-	int time_elapsed;
-
 #ifdef CDROM_DRIVE_STATUS
 	/* First ask the CDROM for info, otherwise fall back to manual.  */
 	switch (ioctl(fd, CDROM_DRIVE_STATUS)) {
@@ -454,13 +441,15 @@ static void toggle_tray(int fd)
 	default:
 		abort();
 	}
-#endif
+#else
+	struct timeval time_start, time_stop;
+	int time_elapsed;
 
 	/* Try to open the CDROM tray and measure the time therefor
 	 * needed.  In my experience the function needs less than 0.05
 	 * seconds if the tray was already open, and at least 1.5 seconds
 	 * if it was closed.  */
-	gettimeofday(&time_start, NULL);
+	gettime_monotonic(&time_start);
 
 	/* Send the CDROMEJECT command to the device. */
 	if (!eject_cdrom(fd))
@@ -468,7 +457,7 @@ static void toggle_tray(int fd)
 
 	/* Get the second timestamp, to measure the time needed to open
 	 * the tray.  */
-	gettimeofday(&time_stop, NULL);
+	gettime_monotonic(&time_stop);
 
 	time_elapsed = (time_stop.tv_sec * 1000000 + time_stop.tv_usec) -
 		(time_start.tv_sec * 1000000 + time_start.tv_usec);
@@ -478,6 +467,7 @@ static void toggle_tray(int fd)
 	 * closed before. This would mean that we are done.  */
 	if (time_elapsed < TRAY_WAS_ALREADY_OPEN_USECS)
 		close_tray(fd);
+#endif
 }
 
 /*
@@ -485,10 +475,10 @@ static void toggle_tray(int fd)
  * Thanks to Roland Krivanek (krivanek@fmph.uniba.sk)
  * http://dmpc.dbp.fmph.uniba.sk/~krivanek/cdrom_speed/
  */
-static void select_speed(int fd, int speed)
+static void select_speed(const struct eject_control *ctl)
 {
 #ifdef CDROM_SELECT_SPEED
-	if (ioctl(fd, CDROM_SELECT_SPEED, speed) != 0)
+	if (ioctl(ctl->fd, CDROM_SELECT_SPEED, ctl->x_arg) != 0)
 		err(EXIT_FAILURE, _("CD-ROM select speed command failed"));
 #else
 	warnx(_("CD-ROM select speed command not supported by this kernel"));
@@ -557,22 +547,22 @@ static int read_speed(const char *devname)
 /*
  * List Speed of CD-ROM drive.
  */
-static void list_speeds(const char *name, int fd)
+static void list_speeds(struct eject_control *ctl)
 {
 #ifdef CDROM_SELECT_SPEED
-	int max_speed, curr_speed = 0, prev_speed;
+	int max_speed, curr_speed = 0;
 
-	select_speed(fd, 0);
-	max_speed = read_speed(name);
+	select_speed(ctl);
+	max_speed = read_speed(ctl->device);
 
 	while (curr_speed < max_speed) {
-		prev_speed = curr_speed;
-		select_speed(fd, prev_speed + 1);
-		curr_speed = read_speed(name);
-		if (curr_speed > prev_speed)
+		ctl->x_arg = curr_speed + 1;
+		select_speed(ctl);
+		curr_speed = read_speed(ctl->device);
+		if (ctl->x_arg < curr_speed)
 			printf("%d ", curr_speed);
 		else
-			curr_speed = prev_speed + 1;
+			curr_speed = ctl->x_arg + 1;
 	}
 
 	printf("\n");
@@ -584,7 +574,7 @@ static void list_speeds(const char *name, int fd)
 /*
  * Eject using SCSI SG_IO commands. Return 1 if successful, 0 otherwise.
  */
-static int eject_scsi(int fd)
+static int eject_scsi(const struct eject_control *ctl)
 {
 	int status, k;
 	sg_io_hdr_t io_hdr;
@@ -594,8 +584,8 @@ static int eject_scsi(int fd)
 	unsigned char inqBuff[2];
 	unsigned char sense_buffer[32];
 
-	if ((ioctl(fd, SG_GET_VERSION_NUM, &k) < 0) || (k < 30000)) {
-		verbose(_("not an sg device, or old sg driver"));
+	if ((ioctl(ctl->fd, SG_GET_VERSION_NUM, &k) < 0) || (k < 30000)) {
+		verbose(ctl, _("not an sg device, or old sg driver"));
 		return 0;
 	}
 
@@ -610,12 +600,12 @@ static int eject_scsi(int fd)
 	io_hdr.timeout = 10000;
 
 	io_hdr.cmdp = allowRmBlk;
-	status = ioctl(fd, SG_IO, (void *)&io_hdr);
+	status = ioctl(ctl->fd, SG_IO, (void *)&io_hdr);
 	if (status < 0 || io_hdr.host_status || io_hdr.driver_status)
 		return 0;
 
 	io_hdr.cmdp = startStop1Blk;
-	status = ioctl(fd, SG_IO, (void *)&io_hdr);
+	status = ioctl(ctl->fd, SG_IO, (void *)&io_hdr);
 	if (status < 0 || io_hdr.host_status)
 		return 0;
 
@@ -630,12 +620,12 @@ static int eject_scsi(int fd)
 		return 0;
 
 	io_hdr.cmdp = startStop2Blk;
-	status = ioctl(fd, SG_IO, (void *)&io_hdr);
+	status = ioctl(ctl->fd, SG_IO, (void *)&io_hdr);
 	if (status < 0 || io_hdr.host_status || io_hdr.driver_status)
 		return 0;
 
 	/* force kernel to reread partition table when new disc inserted */
-	ioctl(fd, BLKRRPART);
+	ioctl(ctl->fd, BLKRRPART);
 	return 1;
 }
 
@@ -660,14 +650,14 @@ static int eject_tape(int fd)
 
 
 /* umount a device. */
-static void umount_one(const char *name)
+static void umount_one(const struct eject_control *ctl, const char *name)
 {
 	int status;
 
 	if (!name)
 		return;
 
-	verbose(_("%s: unmounting"), name);
+	verbose(ctl, _("%s: unmounting"), name);
 
 	switch (fork()) {
 	case 0: /* child */
@@ -677,7 +667,7 @@ static void umount_one(const char *name)
 		if (setuid(getuid()) < 0)
 			err(EXIT_FAILURE, _("cannot set user id"));
 
-		if (p_option)
+		if (ctl->p_option)
 			execl("/bin/umount", "/bin/umount", name, "-n", NULL);
 		else
 			execl("/bin/umount", "/bin/umount", name, NULL);
@@ -701,51 +691,49 @@ static void umount_one(const char *name)
 }
 
 /* Open a device file. */
-static int open_device(const char *name)
+static void open_device(struct eject_control *ctl)
 {
-	int fd = open(name, O_RDWR|O_NONBLOCK);
-
-	if (fd < 0)
-		fd = open(name, O_RDONLY|O_NONBLOCK);
-	if (fd == -1)
-		err(EXIT_FAILURE, _("cannot open %s"), name);
-	return fd;
+	ctl->fd = open(ctl->device, O_RDWR | O_NONBLOCK);
+	if (ctl->fd < 0)
+		ctl->fd = open(ctl->device, O_RDONLY | O_NONBLOCK);
+	if (ctl->fd == -1)
+		err(EXIT_FAILURE, _("cannot open %s"), ctl->device);
 }
 
 /*
  * See if device has been mounted by looking in mount table.  If so, set
  * device name and mount point name, and return 1, otherwise return 0.
  */
-static int device_get_mountpoint(char **devname, char **mnt)
+static int device_get_mountpoint(struct eject_control *ctl, char **devname, char **mnt)
 {
 	struct libmnt_fs *fs;
 	int rc;
 
 	*mnt = NULL;
 
-	if (!mtab) {
+	if (!ctl->mtab) {
 		struct libmnt_cache *cache;
 
-		mtab = mnt_new_table();
-		if (!mtab)
+		ctl->mtab = mnt_new_table();
+		if (!ctl->mtab)
 			err(EXIT_FAILURE, _("failed to initialize libmount table"));
 
 		cache = mnt_new_cache();
-		mnt_table_set_cache(mtab, cache);
+		mnt_table_set_cache(ctl->mtab, cache);
 		mnt_unref_cache(cache);
 
-		if (p_option)
-			rc = mnt_table_parse_file(mtab, _PATH_PROC_MOUNTINFO);
+		if (ctl->p_option)
+			rc = mnt_table_parse_file(ctl->mtab, _PATH_PROC_MOUNTINFO);
 		else
-			rc = mnt_table_parse_mtab(mtab, NULL);
+			rc = mnt_table_parse_mtab(ctl->mtab, NULL);
 		if (rc)
 			err(EXIT_FAILURE, _("failed to parse mount table"));
 	}
 
-	fs = mnt_table_find_source(mtab, *devname, MNT_ITER_BACKWARD);
+	fs = mnt_table_find_source(ctl->mtab, *devname, MNT_ITER_BACKWARD);
 	if (!fs) {
 		/* maybe 'devname' is mountpoint rather than a real device */
-		fs = mnt_table_find_target(mtab, *devname, MNT_ITER_BACKWARD);
+		fs = mnt_table_find_target(ctl->mtab, *devname, MNT_ITER_BACKWARD);
 		if (fs) {
 			free(*devname);
 			*devname = xstrdup(mnt_fs_get_source(fs));
@@ -774,7 +762,7 @@ static char *get_disk_devname(const char *device)
 	return st.st_rdev == diskno ? NULL : find_device(diskname);
 }
 
-static int umount_partitions(const char *disk, int checkonly)
+static int umount_partitions(struct eject_control *ctl)
 {
 	struct sysfs_cxt cxt = UL_SYSFSCXT_EMPTY;
 	dev_t devno;
@@ -782,7 +770,7 @@ static int umount_partitions(const char *disk, int checkonly)
 	struct dirent *d;
 	int count = 0;
 
-	devno = sysfs_devname_to_devno(disk, NULL);
+	devno = sysfs_devname_to_devno(ctl->device, NULL);
 	if (sysfs_init(&cxt, devno, NULL) != 0)
 		return 0;
 
@@ -795,14 +783,14 @@ static int umount_partitions(const char *disk, int checkonly)
 		if (!strcmp(d->d_name, ".") || !strcmp(d->d_name, ".."))
 			continue;
 
-		if (sysfs_is_partition_dirent(dir, d, disk)) {
+		if (sysfs_is_partition_dirent(dir, d, ctl->device)) {
 			char *mnt = NULL;
 			char *dev = find_device(d->d_name);
 
-			if (dev && device_get_mountpoint(&dev, &mnt) == 0) {
-				verbose(_("%s: mounted on %s"), dev, mnt);
-				if (!checkonly)
-					umount_one(mnt);
+			if (dev && device_get_mountpoint(ctl, &dev, &mnt) == 0) {
+				verbose(ctl, _("%s: mounted on %s"), dev, mnt);
+				if (!ctl->M_option)
+					umount_one(ctl, mnt);
 				count++;
 			}
 			free(dev);
@@ -818,131 +806,36 @@ done:
 	return count;
 }
 
-static int is_hotpluggable_subsystem(const char *name)
-{
-	size_t i;
-
-	for (i = 0; i < ARRAY_SIZE(hotplug_subsystems); i++)
-		if (strcmp(name, hotplug_subsystems[i]) == 0)
-			return 1;
-
-	return 0;
-}
-
-#define SUBSYSTEM_LINKNAME	"/subsystem"
-
-/*
- * For example:
- *
- * chain: /sys/dev/block/../../devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.2/ \
- *                           1-1.2:1.0/host65/target65:0:0/65:0:0:0/block/sdb
- *
- * The function check if <chain>/subsystem symlink exists, if yes then returns
- * basename of the readlink result, and remove the last subdirectory from the
- * <chain> path.
- */
-static char *get_subsystem(char *chain, char *buf, size_t bufsz)
-{
-	size_t len;
-	char *p;
-
-	if (!chain || !*chain)
-		return NULL;
-
-	len = strlen(chain);
-	if (len + sizeof(SUBSYSTEM_LINKNAME) > PATH_MAX)
-		return NULL;
-
-	do {
-		ssize_t sz;
-
-		/* append "/subsystem" to the path */
-		memcpy(chain + len, SUBSYSTEM_LINKNAME, sizeof(SUBSYSTEM_LINKNAME));
-
-		/* try if subsystem symlink exists */
-		sz = readlink(chain, buf, bufsz - 1);
-
-		/* remove last subsystem from chain */
-		chain[len] = '\0';
-		p = strrchr(chain, '/');
-		if (p) {
-			*p = '\0';
-			len = p - chain;
-		}
-
-		if (sz > 0) {
-			/* we found symlink to subsystem, return basename */
-			buf[sz] = '\0';
-			return basename(buf);
-		}
-
-	} while (p);
-
-	return NULL;
-}
-
-static int is_hotpluggable(const char* device)
+static int is_hotpluggable(const struct eject_control *ctl)
 {
 	struct sysfs_cxt cxt = UL_SYSFSCXT_EMPTY;
-	char devchain[PATH_MAX];
-	char subbuf[PATH_MAX];
 	dev_t devno;
 	int rc = 0;
-	ssize_t sz;
-	char *sub;
 
-	devno = sysfs_devname_to_devno(device, NULL);
+	devno = sysfs_devname_to_devno(ctl->device, NULL);
 	if (sysfs_init(&cxt, devno, NULL) != 0)
 		return 0;
 
-	/* check /sys/dev/block/<maj>:<min>/removable attribute */
-	if (sysfs_read_int(&cxt, "removable", &rc) == 0 && rc == 1) {
-		verbose(_("%s: is removable device"), device);
-		goto done;
-	}
+	rc = sysfs_is_hotpluggable(&cxt);
 
-	/* read /sys/dev/block/<maj>:<min> symlink */
-	sz = sysfs_readlink(&cxt, NULL, devchain, sizeof(devchain));
-	if (sz <= 0 || sz + sizeof(_PATH_SYS_DEVBLOCK "/") > sizeof(devchain))
-		goto done;
-
-	devchain[sz++] = '\0';
-
-	/* create absolute patch from the link */
-	memmove(devchain + sizeof(_PATH_SYS_DEVBLOCK "/") - 1, devchain, sz);
-	memcpy(devchain, _PATH_SYS_DEVBLOCK "/",
-	       sizeof(_PATH_SYS_DEVBLOCK "/") - 1);
-
-	while ((sub = get_subsystem(devchain, subbuf, sizeof(subbuf)))) {
-		rc = is_hotpluggable_subsystem(sub);
-		if (rc) {
-			verbose(_("%s: connected by hotplug subsystem: %s"),
-				device, sub);
-			break;
-		}
-	}
-
-done:
 	sysfs_deinit(&cxt);
 	return rc;
 }
 
 
 /* handle -x option */
-static void set_device_speed(char *name)
+static void set_device_speed(struct eject_control *ctl)
 {
-	int fd;
-
-	if (!x_option)
+	if (!ctl->x_option)
 		return;
 
-	if (x_arg == 0)
-		verbose(_("setting CD-ROM speed to auto"));
+	if (ctl->x_arg == 0)
+		verbose(ctl, _("setting CD-ROM speed to auto"));
 	else
-		verbose(_("setting CD-ROM speed to %ldX"), x_arg);
+		verbose(ctl, _("setting CD-ROM speed to %ldX"), ctl->x_arg);
 
-	fd = open_device(name);
-	select_speed(fd, x_arg);
+	open_device(ctl);
+	select_speed(ctl);
 	exit(EXIT_SUCCESS);
 }
 
@@ -950,11 +843,10 @@ static void set_device_speed(char *name)
 /* main program */
 int main(int argc, char **argv)
 {
-	char *device = NULL;
 	char *disk = NULL;
 	char *mountpoint = NULL;
 	int worked = 0;    /* set to 1 when successfully ejected */
-	int fd;            /* file descriptor for device */
+	struct eject_control ctl = { 0 };
 
 	setlocale(LC_ALL,"");
 	bindtextdomain(PACKAGE, LOCALEDIR);
@@ -962,118 +854,118 @@ int main(int argc, char **argv)
 	atexit(close_stdout);
 
 	/* parse the command line arguments */
-	parse_args(argc, argv, &device);
+	parse_args(&ctl, argc, argv);
 
 	/* handle -d option */
-	if (d_option) {
+	if (ctl.d_option) {
 		info(_("default device: `%s'"), EJECT_DEFAULT_DEVICE);
 		return EXIT_SUCCESS;
 	}
 
-	if (!device) {
-		device = mnt_resolve_path(EJECT_DEFAULT_DEVICE, NULL);
-		verbose(_("using default device `%s'"), device);
+	if (!ctl.device) {
+		ctl.device = mnt_resolve_path(EJECT_DEFAULT_DEVICE, NULL);
+		verbose(&ctl, _("using default device `%s'"), ctl.device);
 	} else {
 		char *p;
 
-		if (device[strlen(device)-1] == '/')
-			device[strlen(device)-1] = '\0';
+		if (ctl.device[strlen(ctl.device) - 1] == '/')
+			ctl.device[strlen(ctl.device) - 1] = '\0';
 
 		/* figure out full device or mount point name */
-		p = find_device(device);
+		p = find_device(ctl.device);
 		if (p)
-			free(device);
+			free(ctl.device);
 		else
-			p = device;
+			p = ctl.device;
 
-		device = mnt_resolve_spec(p, NULL);
+		ctl.device = mnt_resolve_spec(p, NULL);
 		free(p);
 	}
 
-	if (!device)
-		errx(EXIT_FAILURE, _("%s: unable to find device"), device);
+	if (!ctl.device)
+		errx(EXIT_FAILURE, _("%s: unable to find device"), ctl.device);
 
-	verbose(_("device name is `%s'"), device);
+	verbose(&ctl, _("device name is `%s'"), ctl.device);
 
-	device_get_mountpoint(&device, &mountpoint);
+	device_get_mountpoint(&ctl, &ctl.device, &mountpoint);
 	if (mountpoint)
-		verbose(_("%s: mounted on %s"), device, mountpoint);
+		verbose(&ctl, _("%s: mounted on %s"), ctl.device, mountpoint);
 	else
-		verbose(_("%s: not mounted"), device);
+		verbose(&ctl, _("%s: not mounted"), ctl.device);
 
-	disk = get_disk_devname(device);
+	disk = get_disk_devname(ctl.device);
 	if (disk) {
-		verbose(_("%s: disc device: %s (disk device will be used for eject)"), device, disk);
-		free(device);
-		device = disk;
+		verbose(&ctl, _("%s: disc device: %s (disk device will be used for eject)"), ctl.device, disk);
+		free(ctl.device);
+		ctl.device = disk;
 		disk = NULL;
 	} else {
 		struct stat st;
 
-		if (stat(device, &st) != 0 || !S_ISBLK(st.st_mode))
+		if (stat(ctl.device, &st) != 0 || !S_ISBLK(st.st_mode))
 			errx(EXIT_FAILURE, _("%s: not found mountpoint or device "
-					"with the given name"), device);
+					"with the given name"), ctl.device);
 
-		verbose(_("%s: is whole-disk device"), device);
+		verbose(&ctl, _("%s: is whole-disk device"), ctl.device);
 	}
 
-	if (F_option == 0 && is_hotpluggable(device) == 0)
-		errx(EXIT_FAILURE, _("%s: is not hot-pluggable device"), device);
+	if (ctl.F_option == 0 && is_hotpluggable(&ctl) == 0)
+		errx(EXIT_FAILURE, _("%s: is not hot-pluggable device"), ctl.device);
 
 	/* handle -n option */
-	if (n_option) {
-		info(_("device is `%s'"), device);
-		verbose(_("exiting due to -n/--noop option"));
+	if (ctl.n_option) {
+		info(_("device is `%s'"), ctl.device);
+		verbose(&ctl, _("exiting due to -n/--noop option"));
 		return EXIT_SUCCESS;
 	}
 
 	/* handle -i option */
-	if (i_option) {
-		fd = open_device(device);
-		manual_eject(fd, i_arg);
+	if (ctl.i_option) {
+		open_device(&ctl);
+		manual_eject(&ctl);
 		return EXIT_SUCCESS;
 	}
 
 	/* handle -a option */
-	if (a_option) {
-		if (a_arg)
-			verbose(_("%s: enabling auto-eject mode"), device);
+	if (ctl.a_option) {
+		if (ctl.a_arg)
+			verbose(&ctl, _("%s: enabling auto-eject mode"), ctl.device);
 		else
-			verbose(_("%s: disabling auto-eject mode"), device);
-		fd = open_device(device);
-		auto_eject(fd, a_arg);
+			verbose(&ctl, _("%s: disabling auto-eject mode"), ctl.device);
+		open_device(&ctl);
+		auto_eject(&ctl);
 		return EXIT_SUCCESS;
 	}
 
 	/* handle -t option */
-	if (t_option) {
-		verbose(_("%s: closing tray"), device);
-		fd = open_device(device);
-		close_tray(fd);
-		set_device_speed(device);
+	if (ctl.t_option) {
+		verbose(&ctl, _("%s: closing tray"), ctl.device);
+		open_device(&ctl);
+		close_tray(ctl.fd);
+		set_device_speed(&ctl);
 		return EXIT_SUCCESS;
 	}
 
 	/* handle -T option */
-	if (T_option) {
-		verbose(_("%s: toggling tray"), device);
-		fd = open_device(device);
-		toggle_tray(fd);
-		set_device_speed(device);
+	if (ctl.T_option) {
+		verbose(&ctl, _("%s: toggling tray"), ctl.device);
+		open_device(&ctl);
+		toggle_tray(ctl.fd);
+		set_device_speed(&ctl);
 		return EXIT_SUCCESS;
 	}
 
 	/* handle -X option */
-	if (X_option) {
-		verbose(_("%s: listing CD-ROM speed"), device);
-		fd = open_device(device);
-		list_speeds(device, fd);
+	if (ctl.X_option) {
+		verbose(&ctl, _("%s: listing CD-ROM speed"), ctl.device);
+		open_device(&ctl);
+		list_speeds(&ctl);
 		return EXIT_SUCCESS;
 	}
 
 	/* handle -x option only */
-	if (!c_option)
-		set_device_speed(device);
+	if (!ctl.c_option)
+		set_device_speed(&ctl);
 
 
 	/*
@@ -1081,62 +973,62 @@ int main(int argc, char **argv)
 	 * mountpoint if -M is specified, otherwise print error of another
 	 * partition is mounted.
 	 */
-	if (!m_option) {
-		int ct = umount_partitions(device, M_option);
+	if (!ctl.m_option) {
+		int ct = umount_partitions(&ctl);
 
 		if (ct == 0 && mountpoint)
-			umount_one(mountpoint); /* probably whole-device */
+			umount_one(&ctl, mountpoint); /* probably whole-device */
 
-		if (M_option) {
+		if (ctl.M_option) {
 			if (ct == 1 && mountpoint)
-				umount_one(mountpoint);
+				umount_one(&ctl, mountpoint);
 			else if (ct)
-				errx(EXIT_FAILURE, _("error: %s: device in use"), device);
+				errx(EXIT_FAILURE, _("error: %s: device in use"), ctl.device);
 		}
 	}
 
 	/* handle -c option */
-	if (c_option) {
-		verbose(_("%s: selecting CD-ROM disc #%ld"), device, c_arg);
-		fd = open_device(device);
-		changer_select(fd, c_arg);
-		set_device_speed(device);
+	if (ctl.c_option) {
+		verbose(&ctl, _("%s: selecting CD-ROM disc #%ld"), ctl.device, ctl.c_arg);
+		open_device(&ctl);
+		changer_select(&ctl);
+		set_device_speed(&ctl);
 		return EXIT_SUCCESS;
 	}
 
 	/* if user did not specify type of eject, try all four methods */
-	if (r_option + s_option + f_option + q_option == 0)
-		r_option = s_option = f_option = q_option = 1;
+	if (ctl.r_option + ctl.s_option + ctl.f_option + ctl.q_option == 0)
+		ctl.r_option = ctl.s_option = ctl.f_option = ctl.q_option = 1;
 
 	/* open device */
-	fd = open_device(device);
+	open_device(&ctl);
 
 	/* try various methods of ejecting until it works */
-	if (r_option) {
-		verbose(_("%s: trying to eject using CD-ROM eject command"), device);
-		worked = eject_cdrom(fd);
-		verbose(worked ? _("CD-ROM eject command succeeded") :
+	if (ctl.r_option) {
+		verbose(&ctl, _("%s: trying to eject using CD-ROM eject command"), ctl.device);
+		worked = eject_cdrom(ctl.fd);
+		verbose(&ctl, worked ? _("CD-ROM eject command succeeded") :
 				 _("CD-ROM eject command failed"));
 	}
 
-	if (s_option && !worked) {
-		verbose(_("%s: trying to eject using SCSI commands"), device);
-		worked = eject_scsi(fd);
-		verbose(worked ? _("SCSI eject succeeded") :
+	if (ctl.s_option && !worked) {
+		verbose(&ctl, _("%s: trying to eject using SCSI commands"), ctl.device);
+		worked = eject_scsi(&ctl);
+		verbose(&ctl, worked ? _("SCSI eject succeeded") :
 				 _("SCSI eject failed"));
 	}
 
-	if (f_option && !worked) {
-		verbose(_("%s: trying to eject using floppy eject command"), device);
-		worked = eject_floppy(fd);
-		verbose(worked ? _("floppy eject command succeeded") :
+	if (ctl.f_option && !worked) {
+		verbose(&ctl, _("%s: trying to eject using floppy eject command"), ctl.device);
+		worked = eject_floppy(ctl.fd);
+		verbose(&ctl, worked ? _("floppy eject command succeeded") :
 				 _("floppy eject command failed"));
 	}
 
-	if (q_option && !worked) {
-		verbose(_("%s: trying to eject using tape offline command"), device);
-		worked = eject_tape(fd);
-		verbose(worked ? _("tape offline command succeeded") :
+	if (ctl.q_option && !worked) {
+		verbose(&ctl, _("%s: trying to eject using tape offline command"), ctl.device);
+		worked = eject_tape(ctl.fd);
+		verbose(&ctl, worked ? _("tape offline command succeeded") :
 				 _("tape offline command failed"));
 	}
 
@@ -1144,11 +1036,11 @@ int main(int argc, char **argv)
 		errx(EXIT_FAILURE, _("unable to eject"));
 
 	/* cleanup */
-	close(fd);
-	free(device);
+	close(ctl.fd);
+	free(ctl.device);
 	free(mountpoint);
 
-	mnt_unref_table(mtab);
+	mnt_unref_table(ctl.mtab);
 
 	return EXIT_SUCCESS;
 }

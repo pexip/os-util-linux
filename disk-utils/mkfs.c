@@ -13,6 +13,15 @@
  *	
  */
 
+/*
+ * This command is deprecated.  The utility is in maintenance mode,
+ * meaning we keep them in source tree for backward compatibility
+ * only.  Do not waste time making this command better, unless the
+ * fix is about security or other very critical issue.
+ *
+ * See Documentation/deprecated.txt for more information.
+ */
+
 #include <getopt.h>
 #include <limits.h>
 #include <stdio.h>
@@ -29,17 +38,16 @@
 #define DEFAULT_FSTYPE	"ext2"
 #endif
 
-#define SEARCH_PATH	"PATH=" FS_SEARCH_PATH
-#define PROGNAME	"mkfs.%s"
-
-
 static void __attribute__ ((__noreturn__)) usage(FILE * out)
 {
-	fprintf(out, _("Usage:\n"));
+	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options] [-t <type>] [fs-options] <device> [<size>]\n"),
 		     program_invocation_short_name);
 
-	fprintf(out, _("\nOptions:\n"));
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Make a Linux filesystem.\n"), out);
+
+	fputs(USAGE_OPTIONS, out);
 	fprintf(out, _(" -t, --type=<type>  filesystem type; when unspecified, ext2 is used\n"));
 	fprintf(out, _("     fs-options     parameters for the real filesystem builder\n"));
 	fprintf(out, _("     <device>       path to the device to be used\n"));
@@ -50,7 +58,7 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 		       "                      -V as --version must be the only option\n"));
 	fprintf(out, _(" -h, --help         display this help text and exit\n"));
 
-	fprintf(out, _("\nFor more information see mkfs(8).\n"));
+	fprintf(out, USAGE_MAN_TAIL("mkfs(8)"));
 
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
@@ -66,7 +74,6 @@ int main(int argc, char **argv)
 	char *progname;		/* name of executable to be called */
 	char *fstype = NULL;
 	int i, more = 0, verbose = 0;
-	char *oldpath, *newpath;
 
 	enum { VERSION_OPTION = CHAR_MAX + 1 };
 
@@ -114,17 +121,7 @@ int main(int argc, char **argv)
 	if (fstype == NULL)
 		fstype = DEFAULT_FSTYPE;
 
-	/* Set PATH and program name */
-	oldpath = getenv("PATH");
-	if (!oldpath)
-		oldpath = "/bin";
-
-	newpath = xmalloc(strlen(oldpath) + sizeof(SEARCH_PATH) + 3);
-	sprintf(newpath, "%s:%s\n", SEARCH_PATH, oldpath);
-	putenv(newpath);
-
-	progname = xmalloc(sizeof(PROGNAME) + strlen(fstype) + 1);
-	sprintf(progname, PROGNAME, fstype);
+	xasprintf(&progname, "mkfs.%s", fstype);
 	argv[--optind] = progname;
 
 	if (verbose) {
@@ -139,6 +136,5 @@ int main(int argc, char **argv)
 
 	/* Execute the program */
 	execvp(progname, argv + optind);
-	perror(progname);
-	return EXIT_FAILURE;
+	err(EXIT_FAILURE, _("failed to execute %s"), progname);
 }

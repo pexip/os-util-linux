@@ -32,18 +32,6 @@
 # include <stdlib.h>
 #endif
 
-#ifdef HAVE_STRTOULL
-#define STRTOULL strtoull /* defined in stdlib.h if you try hard enough */
-#else
-/* FIXME: need to support real strtoull here */
-#define STRTOULL strtoul
-#endif
-
-#ifdef TEST_PROGRAM
-#define blkid_debug_dump_dev(dev)	(debug_dump_dev(dev))
-static void debug_dump_dev(blkid_dev dev);
-#endif
-
 /*
  * File format:
  *
@@ -252,15 +240,30 @@ static int parse_token(char **name, char **value, char **cp)
 	*value = skip_over_blank(*value + 1);
 
 	if (**value == '"') {
-		end = strchr(*value + 1, '"');
-		if (!end) {
+		char *p = end = *value + 1;
+
+		/* convert 'foo\"bar'  to 'foo"bar' */
+		while (*p) {
+			if (*p == '\\') {
+				p++;
+				*end = *p;
+			} else {
+				*end = *p;
+				if (*p == '"')
+					break;
+			}
+			p++;
+			end++;
+		}
+
+		if (*end != '"') {
 			DBG(READ, ul_debug("unbalanced quotes at: %s", *value));
 			*cp = *value;
 			return -BLKID_ERR_CACHE;
 		}
 		(*value)++;
 		*end = '\0';
-		end++;
+		end = ++p;
 	} else {
 		end = skip_over_word(*value);
 		if (*end) {
@@ -313,20 +316,20 @@ static int parse_tag(blkid_cache cache, blkid_dev dev, char **cp)
 	    (ret = parse_xml(&name, &value, cp)) <= 0 */)
 		return ret;
 
+	DBG(READ, ul_debug("tag: %s=\"%s\"", name, value));
+
 	/* Some tags are stored directly in the device struct */
 	if (!strcmp(name, "DEVNO"))
-		dev->bid_devno = STRTOULL(value, 0, 0);
+		dev->bid_devno = strtoull(value, 0, 0);
 	else if (!strcmp(name, "PRI"))
 		dev->bid_pri = strtol(value, 0, 0);
 	else if (!strcmp(name, "TIME")) {
 		char *end = NULL;
-		dev->bid_time = STRTOULL(value, &end, 0);
+		dev->bid_time = strtoull(value, &end, 0);
 		if (end && *end == '.')
-			dev->bid_utime = STRTOULL(end + 1, 0, 0);
+			dev->bid_utime = strtoull(end + 1, 0, 0);
 	} else
 		ret = blkid_set_tag(dev, name, value, strlen(value));
-
-	DBG(READ, ul_debug("    tag: %s=\"%s\"", name, value));
 
 	return ret < 0 ? ret : 1;
 }
@@ -369,8 +372,6 @@ static int blkid_parse_line(blkid_cache cache, blkid_dev *dev_p, char *cp)
 		goto done;
 	}
 
-	DBG(READ, blkid_debug_dump_dev(dev));
-
 done:
 	return ret;
 }
@@ -386,9 +387,6 @@ void blkid_read_cache(blkid_cache cache)
 	char buf[4096];
 	int fd, lineno = 0;
 	struct stat st;
-
-	if (!cache)
-		return;
 
 	/*
 	 * If the file doesn't exist, then we just return an empty
@@ -447,31 +445,6 @@ errout:
 }
 
 #ifdef TEST_PROGRAM
-static void debug_dump_dev(blkid_dev dev)
-{
-	struct list_head *p;
-
-	if (!dev) {
-		printf("  dev: NULL\n");
-		return;
-	}
-
-	printf("  dev: name = %s\n", dev->bid_name);
-	printf("  dev: DEVNO=\"0x%0llx\"\n", (long long)dev->bid_devno);
-	printf("  dev: TIME=\"%ld.%ld\"\n", (long)dev->bid_time, (long)dev->bid_utime);
-	printf("  dev: PRI=\"%d\"\n", dev->bid_pri);
-	printf("  dev: flags = 0x%08X\n", dev->bid_flags);
-
-	list_for_each(p, &dev->bid_tags) {
-		blkid_tag tag = list_entry(p, struct blkid_struct_tag, bit_tags);
-		if (tag)
-			printf("    tag: %s=\"%s\"\n", tag->bit_name,
-			       tag->bit_val);
-		else
-			printf("    tag: NULL\n");
-	}
-	printf("\n");
-}
 
 int main(int argc, char**argv)
 {

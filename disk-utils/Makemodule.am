@@ -13,6 +13,11 @@ mkfs_minix_SOURCES = \
 	disk-utils/minix_programs.h \
 	disk-utils/mkfs.minix.c
 mkfs_minix_LDADD = $(LDADD) libcommon.la
+
+check_PROGRAMS += test_mkfs_minix
+test_mkfs_minix_SOURCES = $(mkfs_minix_SOURCES)
+test_mkfs_minix_LDADD = $(mkfs_minix_LDADD)
+test_mkfs_minix_CFLAGS = $(AM_CFLAGS) -DTEST_SCRIPT
 endif
 
 
@@ -65,7 +70,10 @@ endif # BUILD_MKSWAP
 if BUILD_SWAPLABEL
 sbin_PROGRAMS += swaplabel
 dist_man_MANS += disk-utils/swaplabel.8
-swaplabel_SOURCES = disk-utils/swaplabel.c
+swaplabel_SOURCES = \
+	disk-utils/swaplabel.c \
+	lib/swapprober.c \
+	include/swapprober.h
 
 swaplabel_CFLAGS = $(AM_CFLAGS) -I$(ul_libblkid_incdir)
 swaplabel_LDADD = $(LDADD) libblkid.la libcommon.la
@@ -80,8 +88,8 @@ endif #BUILD_SWAPLABEL
 if BUILD_FSCK
 sbin_PROGRAMS += fsck
 dist_man_MANS += disk-utils/fsck.8
-fsck_SOURCES = disk-utils/fsck.c
-fsck_LDADD = $(LDADD) libmount.la libblkid.la libcommon.la
+fsck_SOURCES = disk-utils/fsck.c lib/monotonic.c
+fsck_LDADD = $(LDADD) libmount.la libblkid.la libcommon.la $(REALTIME_LIBS)
 fsck_CFLAGS = $(AM_CFLAGS) -I$(ul_libmount_incdir) -I$(ul_libblkid_incdir)
 endif
 
@@ -110,6 +118,7 @@ if BUILD_FDFORMAT
 usrsbin_exec_PROGRAMS += fdformat
 dist_man_MANS += disk-utils/fdformat.8
 fdformat_SOURCES = disk-utils/fdformat.c
+fdformat_LDADD = $(LDADD) libcommon.la
 endif
 
 if BUILD_BLOCKDEV
@@ -126,27 +135,20 @@ dist_man_MANS += disk-utils/fdisk.8
 fdisk_SOURCES = \
 	disk-utils/fdisk.c \
 	disk-utils/fdisk.h \
-	disk-utils/fdisk-menu.c
+	disk-utils/fdisk-menu.c \
+	disk-utils/fdisk-list.c \
+	disk-utils/fdisk-list.h
 
-fdisk_LDADD = $(LDADD) libcommon.la libfdisk.la
-fdisk_CFLAGS = $(AM_CFLAGS) -I$(ul_libfdisk_incdir)
-
-if BUILD_LIBBLKID
-fdisk_CFLAGS += -I$(ul_libblkid_incdir)
-fdisk_LDADD += libblkid.la
-endif
-
-if BUILD_LIBUUID
-fdisk_CFLAGS += -I$(ul_libuuid_incdir)
-fdisk_LDADD += libuuid.la
-endif
+fdisk_LDADD = $(LDADD) libcommon.la libfdisk.la \
+	      libsmartcols.la libtcolors.la $(READLINE_LIBS)
+fdisk_CFLAGS = $(AM_CFLAGS) -I$(ul_libfdisk_incdir) -I$(ul_libsmartcols_incdir)
 
 if HAVE_STATIC_FDISK
 sbin_PROGRAMS += fdisk.static
 fdisk_static_SOURCES = $(fdisk_SOURCES)
 fdisk_static_LDFLAGS = -all-static
 fdisk_static_CFLAGS = $(fdisk_CFLAGS)
-fdisk_static_LDADD = $(fdisk_LDADD)
+fdisk_static_LDADD = $(fdisk_LDADD) $(READLINE_LIBS_STATIC)
 endif
 endif # BUILD_FDISK
 
@@ -154,14 +156,21 @@ endif # BUILD_FDISK
 if BUILD_SFDISK
 sbin_PROGRAMS += sfdisk
 dist_man_MANS += disk-utils/sfdisk.8
-sfdisk_SOURCES = disk-utils/sfdisk.c
-sfdisk_LDADD = $(LDADD) libcommon.la
+sfdisk_SOURCES = \
+	disk-utils/sfdisk.c \
+	disk-utils/fdisk-list.c \
+	disk-utils/fdisk-list.h
+
+sfdisk_LDADD = $(LDADD) libcommon.la libfdisk.la \
+	       libsmartcols.la libtcolors.la $(READLINE_LIBS)
+sfdisk_CFLAGS = $(AM_CFLAGS) -I$(ul_libfdisk_incdir) -I$(ul_libsmartcols_incdir)
 
 if HAVE_STATIC_SFDISK
 sbin_PROGRAMS += sfdisk.static
 sfdisk_static_SOURCES = $(sfdisk_SOURCES)
 sfdisk_static_LDFLAGS = -all-static
-sfdisk_static_LDADD = $(sfdisk_LDADD)
+sfdisk_static_CFLAGS = $(sfdisk_CFLAGS)
+sfdisk_static_LDADD = $(sfdisk_LDADD) $(READLINE_LIBS_STATIC)
 endif
 endif # BUILD_SFDISK
 
@@ -170,22 +179,20 @@ if BUILD_CFDISK
 sbin_PROGRAMS += cfdisk
 dist_man_MANS += disk-utils/cfdisk.8
 cfdisk_SOURCES = disk-utils/cfdisk.c
-cfdisk_LDADD = $(LDADD) libcommon.la libfdisk.la
-cfdisk_CFLAGS = $(AM_CFLAGS) -I$(ul_libfdisk_incdir)
+cfdisk_LDADD = \
+	$(LDADD) \
+	libsmartcols.la \
+	libcommon.la \
+	libfdisk.la \
+	libtcolors.la
+cfdisk_CFLAGS = \
+	$(AM_CFLAGS) \
+	-I$(ul_libfdisk_incdir) \
+	-I$(ul_libsmartcols_incdir)
 
-if BUILD_LIBUUID
-cfdisk_CFLAGS += -I$(ul_libuuid_incdir)
-cfdisk_LDADD += libuuid.la
-endif
-
-if BUILD_LIBBLKID
-cfdisk_CFLAGS += -I$(ul_libblkid_incdir)
-cfdisk_LDADD += libblkid.la
-endif
-
-if BUILD_LIBSMARTCOLS
-cfdisk_CFLAGS += -I$(ul_libsmartcols_incdir)
-cfdisk_LDADD += libsmartcols.la
+if BUILD_LIBMOUNT
+cfdisk_CFLAGS += -I$(ul_libmount_incdir)
+cfdisk_LDADD += libmount.la
 endif
 
 if HAVE_SLANG
@@ -223,7 +230,7 @@ resizepart_LDADD = $(LDADD) libcommon.la
 partx_SOURCES = \
 	disk-utils/partx.c \
 	disk-utils/partx.h
-partx_CFLAGS = -I$(ul_libblkid_incdir) -I$(ul_libsmartcols_incdir)
+partx_CFLAGS = $(AM_CFLAGS) -I$(ul_libblkid_incdir) -I$(ul_libsmartcols_incdir)
 partx_LDADD = $(LDADD) libblkid.la libcommon.la libsmartcols.la
 
 endif # BUILD_PARTX

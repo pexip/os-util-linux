@@ -9,7 +9,7 @@
     <title>libmount Reference Manual</title>
     <releaseinfo>for libmount version &version;</releaseinfo>
     <copyright>
-      <year>2010-2013</year>
+      <year>2010-2015</year>
       <holder>Karel Zak &lt;kzak@redhat.com&gt;</holder>
     </copyright>
   </bookinfo>
@@ -43,6 +43,7 @@ available from ftp://ftp.kernel.org/pub/linux/utils/util-linux/.
     <title>Tables management</title>
     <xi:include href="xml/lock.xml"/>
     <xi:include href="xml/update.xml"/>
+    <xi:include href="xml/monitor.xml"/>
     <xi:include href="xml/tabdiff.xml"/>
   </part>
   <part>
@@ -58,8 +59,12 @@ available from ftp://ftp.kernel.org/pub/linux/utils/util-linux/.
     <xi:include href="xml/utils.xml"/>
     <xi:include href="xml/version-utils.xml"/>
   </part>
-  <index id="api-index-full">
+  <index id="api-index">
     <title>API Index</title>
     <xi:include href="xml/api-index-full.xml"><xi:fallback /></xi:include>
+  </index>
+  <index role="2.28">
+    <title>Index of new symbols in 2.28</title>
+    <xi:include href="xml/api-index-2.28.xml"><xi:fallback /></xi:include>
   </index>
 </book>

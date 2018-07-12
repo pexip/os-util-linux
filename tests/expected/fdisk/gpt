@@ -5,11 +5,9 @@ Create new GPT partition table
 Disk <removed>: 10 MiB, 10485760 bytes, 20480 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: gpt
 Disk identifier: <removed>
-
-
 -------------------
 
 Create partitions
@@ -19,7 +17,7 @@ Change partition type by number
 Disk <removed>: 10 MiB, 10485760 bytes, 20480 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: gpt
 Disk identifier: <removed>
 
@@ -32,7 +30,6 @@ Device             Start   End Sectors Size Type
 <removed>6 12288 14335    2048   1M Linux filesystem
 <removed>7 14336 16383    2048   1M Linux filesystem
 <removed>8 16384 18431    2048   1M Linux filesystem
-
 -------------------
 
 Change partition type by UUID
@@ -41,7 +38,7 @@ Change partition type by UUID
 Disk <removed>: 10 MiB, 10485760 bytes, 20480 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: gpt
 Disk identifier: <removed>
 
@@ -54,7 +51,6 @@ Device             Start   End Sectors Size Type
 <removed>6 12288 14335    2048   1M Linux filesystem
 <removed>7 14336 16383    2048   1M Linux filesystem
 <removed>8 16384 18431    2048   1M Linux filesystem
-
 -------------------
 
 Delete partition
@@ -63,7 +59,7 @@ Delete partition
 Disk <removed>: 10 MiB, 10485760 bytes, 20480 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: gpt
 Disk identifier: <removed>
 
@@ -75,7 +71,6 @@ Device             Start   End Sectors Size Type
 <removed>6 12288 14335    2048   1M Linux filesystem
 <removed>7 14336 16383    2048   1M Linux filesystem
 <removed>8 16384 18431    2048   1M Linux filesystem
-
 -------------------
 
 Create again partition
@@ -84,7 +79,7 @@ Create again partition
 Disk <removed>: 10 MiB, 10485760 bytes, 20480 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: gpt
 Disk identifier: <removed>
 
@@ -97,7 +92,6 @@ Device             Start   End Sectors Size Type
 <removed>6 12288 14335    2048   1M Linux filesystem
 <removed>7 14336 16383    2048   1M Linux filesystem
 <removed>8 16384 18431    2048   1M Linux filesystem
-
 -------------------
 
 Corrupt primary table
@@ -106,7 +100,7 @@ Corrupt primary table
 Disk <removed>: 10 MiB, 10485760 bytes, 20480 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: gpt
 Disk identifier: <removed>
 
@@ -119,7 +113,6 @@ Device             Start   End Sectors Size Type
 <removed>6 12288 14335    2048   1M Linux filesystem
 <removed>7 14336 16383    2048   1M Linux filesystem
 <removed>8 16384 18431    2048   1M Linux filesystem
-
 -------------------
 
 Corrupt backup table
@@ -128,7 +121,7 @@ Corrupt backup table
 Disk <removed>: 10 MiB, 10485760 bytes, 20480 sectors
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / <removed> bytes
 Disklabel type: gpt
 Disk identifier: <removed>
 
@@ -141,6 +134,5 @@ Device             Start   End Sectors Size Type
 <removed>6 12288 14335    2048   1M Linux filesystem
 <removed>7 14336 16383    2048   1M Linux filesystem
 <removed>8 16384 18431    2048   1M Linux filesystem
-
 -------------------
 

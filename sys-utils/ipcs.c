@@ -16,7 +16,6 @@
  */
 
 #include <errno.h>
-#include <features.h>
 #include <getopt.h>
 
 #include "c.h"
@@ -49,21 +48,27 @@ static void print_msg (int id, int unit);
 
 static void __attribute__ ((__noreturn__)) usage(FILE * out)
 {
-	fprintf(out, USAGE_HEADER);
-	fprintf(out, " %s [resource ...] [output-format]\n", program_invocation_short_name);
-	fprintf(out, " %s [resource] -i <id>\n", program_invocation_short_name);
-	fprintf(out, USAGE_OPTIONS);
+	fputs(USAGE_HEADER, out);
+	fprintf(out, _(" %1$s [resource-option...] [output-option]\n"
+		       " %1$s -m|-q|-s -i <id>\n"), program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Show information on IPC facilities.\n"), out);
+
+	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -i, --id <id>  print details on resource identified by <id>\n"), out);
-	fprintf(out, USAGE_HELP);
-	fprintf(out, USAGE_VERSION);
-	fprintf(out, USAGE_SEPARATOR);
+	fputs(USAGE_HELP, out);
+	fputs(USAGE_VERSION, out);
+
+	fputs(USAGE_SEPARATOR, out);
 	fputs(_("Resource options:\n"), out);
 	fputs(_(" -m, --shmems      shared memory segments\n"), out);
 	fputs(_(" -q, --queues      message queues\n"), out);
 	fputs(_(" -s, --semaphores  semaphores\n"), out);
 	fputs(_(" -a, --all         all (default)\n"), out);
-	fprintf(out, USAGE_SEPARATOR);
-	fputs(_("Output format:\n"), out);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Output options:\n"), out);
 	fputs(_(" -t, --time        show attach, detach and change times\n"), out);
 	fputs(_(" -p, --pid         show PIDs of creator and last operator\n"), out);
 	fputs(_(" -c, --creator     show creator and owner\n"), out);
@@ -72,6 +77,7 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fputs(_("     --human       show sizes in human-readable format\n"), out);
 	fputs(_(" -b, --bytes       show sizes in bytes\n"), out);
 	fprintf(out, USAGE_MAN_TAIL("ipcs(1)"));
+
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
 
@@ -193,9 +199,11 @@ static void do_shm (char format, int unit)
 	{
 		struct ipc_limits lim;
 
-		printf (_("------ Shared Memory Limits --------\n"));
-		if (ipc_shm_get_limits(&lim))
+		if (ipc_shm_get_limits(&lim)) {
+			printf (_("unable to fetch shared memory limits\n"));
 			return;
+		}
+		printf (_("------ Shared Memory Limits --------\n"));
 		printf (_("max number of segments = %ju\n"), lim.shmmni);
 		ipc_print_size(unit == IPC_UNIT_DEFAULT ? IPC_UNIT_KB : unit,
 			       _("max seg size"), lim.shmmax, "\n", 0);
@@ -209,9 +217,11 @@ static void do_shm (char format, int unit)
 	case STATUS:
 	{
 		int maxid;
-		struct shm_info shm_info;
+		struct shmid_ds shmbuf;
+		struct shm_info *shm_info;
 
-		maxid = shmctl (0, SHM_INFO, (struct shmid_ds *) &shm_info);
+		maxid = shmctl (0, SHM_INFO, &shmbuf);
+		shm_info =  (struct shm_info *) &shmbuf;
 		if (maxid < 0) {
 			printf (_("kernel not configured for shared memory\n"));
 			return;
@@ -234,11 +244,11 @@ static void do_shm (char format, int unit)
 			  "pages resident  %ld\n"
 			  "pages swapped   %ld\n"
 			  "Swap performance: %ld attempts\t %ld successes\n"),
-			shm_info.used_ids,
-			shm_info.shm_tot,
-			shm_info.shm_rss,
-			shm_info.shm_swp,
-			shm_info.swap_attempts, shm_info.swap_successes);
+			shm_info->used_ids,
+			shm_info->shm_tot,
+			shm_info->shm_rss,
+			shm_info->shm_swp,
+			shm_info->swap_attempts, shm_info->swap_successes);
 		return;
 	}
 
@@ -343,14 +353,16 @@ static void do_sem (char format)
 	{
 		struct ipc_limits lim;
 
-		printf (_("------ Semaphore Limits --------\n"));
-		if (ipc_sem_get_limits(&lim))
+		if (ipc_sem_get_limits(&lim)) {
+			printf (_("unable to fetch semaphore limits\n"));
 			return;
+		}
+		printf (_("------ Semaphore Limits --------\n"));
 		printf (_("max number of arrays = %d\n"), lim.semmni);
 		printf (_("max semaphores per array = %d\n"), lim.semmsl);
 		printf (_("max semaphores system wide = %d\n"), lim.semmns);
 		printf (_("max ops per semop call = %d\n"), lim.semopm);
-		printf (_("semaphore max value = %d\n"), lim.semvmx);
+		printf (_("semaphore max value = %u\n"), lim.semvmx);
 		return;
 	}
 	case STATUS:
@@ -443,8 +455,10 @@ static void do_msg (char format, int unit)
 	{
 		struct ipc_limits lim;
 
-		if (ipc_msg_get_limits(&lim))
+		if (ipc_msg_get_limits(&lim)) {
+			printf (_("unable to fetch message limits\n"));
 			return;
+		}
 		printf (_("------ Messages Limits --------\n"));
 		printf (_("max queues system wide = %d\n"), lim.msgmni);
 		ipc_print_size(unit == IPC_UNIT_DEFAULT ? IPC_UNIT_BYTES : unit,
@@ -563,7 +577,7 @@ static void print_shm(int shmid, int unit)
 
 	printf(_("\nShared memory Segment shmid=%d\n"), shmid);
 	printf(_("uid=%u\tgid=%u\tcuid=%u\tcgid=%u\n"),
-	       shmdata->shm_perm.uid, shmdata->shm_perm.uid,
+	       shmdata->shm_perm.uid, shmdata->shm_perm.gid,
 	       shmdata->shm_perm.cuid, shmdata->shm_perm.cgid);
 	printf(_("mode=%#o\taccess_perms=%#o\n"), shmdata->shm_perm.mode,
 	       shmdata->shm_perm.mode & 0777);
@@ -593,7 +607,7 @@ void print_msg(int msgid, int unit)
 
 	printf(_("\nMessage Queue msqid=%d\n"), msgid);
 	printf(_("uid=%u\tgid=%u\tcuid=%u\tcgid=%u\tmode=%#o\n"),
-	       msgdata->msg_perm.uid, msgdata->msg_perm.uid,
+	       msgdata->msg_perm.uid, msgdata->msg_perm.gid,
 	       msgdata->msg_perm.cuid, msgdata->msg_perm.cgid,
 	       msgdata->msg_perm.mode);
 	ipc_print_size(unit, unit == IPC_UNIT_HUMAN ? _("csize=") : _("cbytes="),
@@ -626,7 +640,7 @@ static void print_sem(int semid)
 
 	printf(_("\nSemaphore Array semid=%d\n"), semid);
 	printf(_("uid=%u\t gid=%u\t cuid=%u\t cgid=%u\n"),
-	       semdata->sem_perm.uid, semdata->sem_perm.uid,
+	       semdata->sem_perm.uid, semdata->sem_perm.gid,
 	       semdata->sem_perm.cuid, semdata->sem_perm.cgid);
 	printf(_("mode=%#o, access_perms=%#o\n"),
 	       semdata->sem_perm.mode, semdata->sem_perm.mode & 0777);
@@ -640,7 +654,7 @@ static void print_sem(int semid)
 
 	for (i = 0; i < semdata->sem_nsems; i++) {
 		struct sem_elem *e = &semdata->elements[i];
-		printf("%-10zd %-10d %-10d %-10d %-10d\n",
+		printf("%-10zu %-10d %-10d %-10d %-10d\n",
 		       i, e->semval, e->ncount, e->zcount, e->pid);
 	}
 	printf("\n");

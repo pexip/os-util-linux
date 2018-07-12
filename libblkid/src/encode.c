@@ -162,7 +162,7 @@ static int replace_whitespace(const char *str, char *to, size_t len)
 
 	/* strip leading whitespace */
 	i = 0;
-	while (isspace(str[i]) && (i < len))
+	while ((i < len) && isspace(str[i]))
 		i++;
 
 	j = 0;
@@ -266,6 +266,12 @@ size_t blkid_encode_to_utf8(int enc, unsigned char *dest, size_t len,
 	}
 	dest[j] = '\0';
 	return j;
+}
+
+unsigned char *blkid_encode_alloc(size_t count, size_t *reslen)
+{
+	*reslen = (count * 3) + 1;
+	return calloc(1, *reslen);
 }
 
 /**

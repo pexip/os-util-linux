@@ -1,37 +1,42 @@
 blkid:  libblkid libuuid 
-cfdisk:  libblkid libncursesw libsmartcols libtinfo libuuid 
-eject:  libblkid libmount libselinux libuuid 
-fdisk:  libblkid libsmartcols libuuid 
+cfdisk:  libblkid libfdisk libmount libncursesw librt libselinux libsmartcols libtinfo libuuid 
+eject:  libblkid libmount librt libselinux libuuid 
+fdisk:  libblkid libfdisk libreadline libsmartcols libtinfo libuuid 
 findfs:  libblkid libuuid 
-findmnt:  libblkid libmount libselinux libsmartcols libudev libuuid 
-fsck:  libblkid libmount libselinux libuuid 
-fstrim:  libblkid libmount libselinux libuuid 
+findmnt:  libblkid libmount librt libselinux libsmartcols libudev libuuid 
+fsck:  libblkid libmount librt libselinux libuuid 
+fstrim:  libblkid libmount librt libselinux libuuid 
 libblkid.so.1.1.0:  libuuid 
-libmount.so.1.1.0:  libblkid libselinux libuuid 
+libfdisk.so.1.1.0:  libblkid libuuid 
+libmount.so.1.1.0:  libblkid librt libselinux libuuid 
 libsmartcols.so.1.1.0:  
 libuuid.so.1.3.0:  
 losetup:  libsmartcols 
-lsblk:  libblkid libmount libselinux libsmartcols libudev libuuid 
+lsblk:  libblkid libmount librt libselinux libsmartcols libudev libuuid 
 lscpu:  libsmartcols 
-lslocks:  libblkid libmount libselinux libsmartcols libuuid 
-lslogins:  libselinux libsmartcols libsystemd-id128 libsystemd-journal 
+lsipc:  libsmartcols 
+lslocks:  libblkid libmount librt libselinux libsmartcols libuuid 
+lslogins:  libselinux libsmartcols libsystemd 
+lsns:  libsmartcols 
 mkswap:  libblkid libselinux libuuid 
-mount:  libblkid libmount libselinux libuuid 
-mountpoint:  libblkid libmount libselinux libuuid 
+mount:  libblkid libmount librt libselinux libuuid 
+mountpoint:  libblkid libmount librt libselinux libuuid 
 partx:  libblkid libsmartcols libuuid 
 prlimit:  libsmartcols 
-pylibmount.so:  libblkid libmount libpython2 libselinux libuuid 
+pylibmount.so:  libblkid libmount libpython2 librt libselinux libuuid 
+sfdisk:  libblkid libfdisk libreadline libsmartcols libtinfo libuuid 
 swaplabel:  libblkid libuuid 
-swapoff:  libblkid libmount libselinux libuuid 
-swapon:  libblkid libmount libselinux libsmartcols libuuid 
-umount:  libblkid libmount libselinux libuuid 
-uuidd:  libsystemd-daemon libuuid 
+swapoff:  libblkid libmount librt libselinux libuuid 
+swapon:  libblkid libmount librt libselinux libsmartcols libuuid 
+umount:  libblkid libmount librt libselinux libuuid 
+uuidd:  librt libsystemd libuuid 
 uuidgen:  libuuid 
 wdctl:  libsmartcols 
 wipefs:  libblkid libuuid 
+zramctl:  libsmartcols 
 addpart:  
 agetty:  
-blkdiscard:  
+blkdiscard:  librt 
 blockdev:  
 cal:  libncursesw libtinfo 
 chcpu:  
@@ -44,15 +49,15 @@ colrm:
 column:  
 ctrlaltdel:  
 delpart:  
-dmesg:  librt 
+dmesg:  librt libtinfo 
 fallocate:  
 fdformat:  
-flock:  
+flock:  librt 
 fsck.cramfs:  libz 
 fsck.minix:  
 fsfreeze:  
 getopt:  
-hexdump:  
+hexdump:  libtinfo 
 hwclock:  
 ionice:  
 ipcmk:  
@@ -62,7 +67,7 @@ isosize:
 kill:  
 last:  librt 
 ldattach:  
-logger:  libsystemd-id128 libsystemd-journal 
+logger:  libsystemd 
 login:  libpam libpam_misc libselinux 
 look:  
 mcookie:  
@@ -74,8 +79,7 @@ mkfs.minix:
 more:  libtinfo 
 namei:  
 nologin:  
-nsenter:  
-pg:  libncursesw libtinfo 
+nsenter:  libselinux 
 pivot_root:  
 raw:  
 readprofile:  
@@ -85,13 +89,12 @@ resizepart:
 rev:  
 rtcwake:  
 runuser:  libpam libpam_misc 
-script:  libutil 
+script:  librt libutil 
 scriptreplay:  
 setarch:  
 setpriv:  ap-ng 
 setsid:  
 setterm:  libtinfo 
-sfdisk:  
 su:  libpam libpam_misc 
 sulogin:  libselinux rypt 
 switch_root:  

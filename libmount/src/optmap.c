@@ -14,7 +14,7 @@
  *
  *	@mountflags: (see MS_* macros in linux/fs.h)
  *
- *	@mountdata: (usully a comma separated string of options)
+ *	@mountdata: (usually a comma separated string of options)
  *
  * The libmount uses options-map(s) to describe mount options.
  *
@@ -113,6 +113,10 @@ static const struct libmnt_optmap linux_flags_map[] =
    { "strictatime", MS_STRICTATIME },         /* Strict atime semantics */
    { "nostrictatime", MS_STRICTATIME, MNT_INVERT }, /* kernel default atime */
 #endif
+#ifdef MS_LAZYTIME
+   { "lazytime", MS_LAZYTIME },               /* Update {a,m,c}time on the in-memory inode only */
+   { "nolazytime", MS_LAZYTIME, MNT_INVERT },
+#endif
 #ifdef MS_PROPAGATION
    { "unbindable",  MS_UNBINDABLE,          MNT_NOHLPS | MNT_NOMTAB }, /* Unbindable */
    { "runbindable", MS_UNBINDABLE | MS_REC, MNT_NOHLPS | MNT_NOMTAB },
@@ -178,7 +182,7 @@ static const struct libmnt_optmap userspace_opts_map[] =
  * MNT_LINUX_MAP - Linux kernel fs-independent mount options
  *                 (usually MS_* flags, see linux/fs.h)
  *
- * MNT_USERSPACE_MAP - userpace mount(8) specific mount options
+ * MNT_USERSPACE_MAP - userspace mount(8) specific mount options
  *                     (e.g user=, _netdev, ...)
  *
  * Returns: static built-in libmount map.

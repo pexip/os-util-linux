@@ -63,6 +63,10 @@ static int mnt_context_append_additional_mount(struct libmnt_context *cxt,
 	return 0;
 }
 
+/*
+ * add additional mount(2) syscall requests when necessary to set propagation flags
+ * after regular mount(2).
+ */
 static int init_propagation(struct libmnt_context *cxt)
 {
 	char *name;
@@ -98,6 +102,41 @@ static int init_propagation(struct libmnt_context *cxt)
 
 		cxt->mountflags &= ~ent->id;
 	}
+
+	return 0;
+}
+
+/*
+ * add additional mount(2) syscall request to implement "ro,bind", the first regular
+ * mount(2) is the "bind" operation, the second is "remount,ro,bind" call.
+ *
+ * Note that we don't remove "ro" from the first syscall (kernel silently
+ * ignores this flags for bind operation) -- maybe one day kernel will support
+ * read-only binds in one step and then all will be done by the first mount(2) and the
+ * second remount will be noop...
+ */
+static int init_robind(struct libmnt_context *cxt)
+{
+	struct libmnt_addmount *ad;
+	int rc;
+
+	assert(cxt);
+	assert(cxt->mountflags & MS_BIND);
+	assert(cxt->mountflags & MS_RDONLY);
+	assert(!(cxt->mountflags & MS_REMOUNT));
+
+	DBG(CXT, ul_debugobj(cxt, "mount: initialize additional ro,bind mount"));
+
+	ad = mnt_new_addmount();
+	if (!ad)
+		return -ENOMEM;
+
+	ad->mountflags = MS_REMOUNT | MS_BIND | MS_RDONLY;
+	if (cxt->mountflags & MS_REC)
+		ad->mountflags |= MS_REC;
+	rc = mnt_context_append_additional_mount(cxt, ad);
+	if (rc)
+		return rc;
 
 	return 0;
 }
@@ -159,11 +198,8 @@ static int fix_optstr(struct libmnt_context *cxt)
 	};
 #endif
 	assert(cxt);
-	assert(cxt->fs);
 	assert((cxt->flags & MNT_FL_MOUNTFLAGS_MERGED));
 
-	if (!cxt)
-		return -EINVAL;
 	if (!cxt->fs || (cxt->flags & MNT_FL_MOUNTOPTS_FIXED))
 		return 0;
 
@@ -214,6 +250,13 @@ static int fix_optstr(struct libmnt_context *cxt)
 	}
 	if (cxt->mountflags & MS_PROPAGATION) {
 		rc = init_propagation(cxt);
+		if (rc)
+			return rc;
+	}
+	if ((cxt->mountflags & MS_BIND)
+	    && (cxt->mountflags & MS_RDONLY)
+	    && !(cxt->mountflags & MS_REMOUNT)) {
+		rc = init_robind(cxt);
 		if (rc)
 			return rc;
 	}
@@ -326,7 +369,8 @@ static int generate_helper_optstr(struct libmnt_context *cxt, char **optstr)
 	if (!*optstr)
 		return -ENOMEM;
 
-	if (cxt->user_mountflags & MNT_MS_USER) {
+	if ((cxt->user_mountflags & MNT_MS_USER) ||
+	    (cxt->user_mountflags & MNT_MS_USERS)) {
 		/*
 		 * This is unnecessary for real user-mounts as mount.<type>
 		 * helpers always have to follow fstab rather than mount
@@ -335,7 +379,7 @@ static int generate_helper_optstr(struct libmnt_context *cxt, char **optstr)
 		 * However, if you call mount.<type> as root, then the helper follows
 		 * the command line. If there is (for example) "user,exec" in fstab,
 		 * then we have to manually append the "exec" back to the options
-		 * string, bacause there is nothing like MS_EXEC (we only have
+		 * string, because there is nothing like MS_EXEC (we only have
 		 * MS_NOEXEC in mount flags and we don't care about the original
 		 * mount string in libmount for VFS options).
 		 */
@@ -390,11 +434,8 @@ static int evaluate_permissions(struct libmnt_context *cxt)
 	unsigned long u_flags = 0;
 
 	assert(cxt);
-	assert(cxt->fs);
 	assert((cxt->flags & MNT_FL_MOUNTFLAGS_MERGED));
 
-	if (!cxt)
-		return -EINVAL;
 	if (!cxt->fs)
 		return 0;
 
@@ -526,7 +567,6 @@ int mnt_context_mount_setopt(struct libmnt_context *cxt, int c, char *arg)
 		break;
 	default:
 		return 1;
-		break;
 	}
 
 	return rc;
@@ -737,7 +777,7 @@ static int do_mount(struct libmnt_context *cxt, const char *try_type)
 							-cxt->syscall_status));
 			return -cxt->syscall_status;
 		}
-		DBG(CXT, ul_debugobj(cxt, "mount(2) success"));
+		DBG(CXT, ul_debugobj(cxt, "  success"));
 		cxt->syscall_status = 0;
 
 		/*
@@ -760,6 +800,53 @@ static int do_mount(struct libmnt_context *cxt, const char *try_type)
 	return rc;
 }
 
+/* try mount(2) for all items in comma separated list of the filesystem @types */
+static int do_mount_by_types(struct libmnt_context *cxt, const char *types)
+{
+	int rc = -EINVAL;
+	char *p, *p0;
+
+	assert(cxt);
+	assert((cxt->flags & MNT_FL_MOUNTFLAGS_MERGED));
+
+	DBG(CXT, ul_debugobj(cxt, "trying to mount by FS list '%s'", types));
+
+	p0 = p = strdup(types);
+	if (!p)
+		return -ENOMEM;
+	do {
+		char *autotype = NULL;
+		char *end = strchr(p, ',');
+
+		if (end)
+			*end = '\0';
+
+		DBG(CXT, ul_debugobj(cxt, "-->trying '%s'", p));
+
+		/* Let's support things like "udf,iso9660,auto" */
+		if (strcmp(p, "auto") == 0) {
+			rc = mnt_context_guess_srcpath_fstype(cxt, &autotype);
+			if (rc) {
+				DBG(CXT, ul_debugobj(cxt, "failed to guess FS type [rc=%d]", rc));
+				free(p0);
+				free(autotype);
+				return rc;
+			}
+			p = autotype;
+			DBG(CXT, ul_debugobj(cxt, "   --> '%s'", p));
+		}
+
+		if (p)
+			rc = do_mount(cxt, p);
+		p = end ? end + 1 : NULL;
+		free(autotype);
+	} while (!mnt_context_get_status(cxt) && p);
+
+	free(p0);
+	return rc;
+}
+
+
 static int do_mount_by_pattern(struct libmnt_context *cxt, const char *pattern)
 {
 	int neg = pattern && strncmp(pattern, "no", 2) == 0;
@@ -769,55 +856,19 @@ static int do_mount_by_pattern(struct libmnt_context *cxt, const char *pattern)
 	assert(cxt);
 	assert((cxt->flags & MNT_FL_MOUNTFLAGS_MERGED));
 
+	/*
+	 * Use the pattern as list of the filesystems
+	 */
 	if (!neg && pattern) {
-		/*
-		 * try all types from the list
-		 */
-		char *p, *p0;
-
-		DBG(CXT, ul_debugobj(cxt, "trying to mount by FS pattern list '%s'", pattern));
-
-		p0 = p = strdup(pattern);
-		if (!p)
-			return -ENOMEM;
-		do {
-			char *autotype = NULL;
-			char *end = strchr(p, ',');
-
-			if (end)
-				*end = '\0';
-
-			DBG(CXT, ul_debugobj(cxt, "-->trying '%s'", p));
-
-			/* Let's support things like "udf,iso9660,auto" */
-			if (strcmp(p, "auto") == 0) {
-				rc = mnt_context_guess_srcpath_fstype(cxt, &autotype);
-				if (rc) {
-					DBG(CXT, ul_debugobj(cxt, "failed to guess FS type"));
-					free(p0);
-					return rc;
-				}
-				p = autotype;
-				DBG(CXT, ul_debugobj(cxt, "   --> '%s'", p));
-			}
-
-			if (p)
-				rc = do_mount(cxt, p);
-			p = end ? end + 1 : NULL;
-			free(autotype);
-		} while (!mnt_context_get_status(cxt) && p);
-
-		free(p0);
-
-		if (mnt_context_get_status(cxt))
-			return rc;
+		DBG(CXT, ul_debugobj(cxt, "use FS pattern as FS list"));
+		return do_mount_by_types(cxt, pattern);
 	}
 
-	/*
-	 * try /etc/filesystems and /proc/filesystems
-	 */
-	DBG(CXT, ul_debugobj(cxt, "trying to mount by filesystems lists"));
+	DBG(CXT, ul_debugobj(cxt, "trying to mount by FS pattern '%s'", pattern));
 
+	/*
+	 * Apply pattern to /etc/filesystems and /proc/filesystems
+	 */
 	rc = mnt_get_filesystems(&filesystems, neg ? pattern : NULL);
 	if (rc)
 		return rc;
@@ -849,17 +900,15 @@ int mnt_context_prepare_mount(struct libmnt_context *cxt)
 {
 	int rc = -EINVAL;
 
-	assert(cxt);
-	assert(cxt->fs);
-	assert(cxt->helper_exec_status == 1);
-	assert(cxt->syscall_status == 1);
-
 	if (!cxt || !cxt->fs || mnt_fs_is_swaparea(cxt->fs))
 		return -EINVAL;
 	if (!mnt_fs_get_source(cxt->fs) && !mnt_fs_get_target(cxt->fs))
 		return -EINVAL;
 	if (cxt->flags & MNT_FL_PREPARED)
 		return 0;
+
+	assert(cxt->helper_exec_status == 1);
+	assert(cxt->syscall_status == 1);
 
 	cxt->action = MNT_ACT_MOUNT;
 
@@ -932,12 +981,13 @@ int mnt_context_do_mount(struct libmnt_context *cxt)
 	if (type) {
 		if (strchr(type, ','))
 			/* this only happens if fstab contains a list of filesystems */
-			res = do_mount_by_pattern(cxt, type);
+			res = do_mount_by_types(cxt, type);
 		else
 			res = do_mount(cxt, NULL);
 	} else
 		res = do_mount_by_pattern(cxt, cxt->fstype_pattern);
 
+#if USE_LIBMOUNT_SUPPORT_MTAB
 	if (mnt_context_get_status(cxt)
 	    && !mnt_context_is_fake(cxt)
 	    && !cxt->helper) {
@@ -967,6 +1017,7 @@ int mnt_context_do_mount(struct libmnt_context *cxt)
 			mnt_context_set_mflags(cxt,
 					cxt->mountflags | MS_RDONLY);
 	}
+#endif
 
 	return res;
 }
