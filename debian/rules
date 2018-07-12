@@ -12,7 +12,7 @@ ifeq ($(DEB_HOST_ARCH_OS),linux)
 CONFOPTS += --enable-raw
 CONFOPTS += --with-selinux
 CONFOPTS += --enable-partx
-#CONFOPTS += --with-systemd
+CONFOPTS += --with-systemd
 CONFOPTS += --enable-tunelp
 endif
 
@@ -45,7 +45,7 @@ else
 endif
 
 %:
-	dh $@ --with autoreconf
+	dh $@ --with autoreconf,systemd
 
 override_dh_autoreconf:
 	AM_OPTS=--copy LT_OPTS=--copy dh_autoreconf ./autogen.sh
@@ -124,10 +124,9 @@ override_dh_installinit:
 	# install /etc/init.d/hwclock.sh
 	# - update-rc.d manually handled in maintainers scripts as there
 	#   is special per-arch considerations.
-	dh_installinit --name=hwclock.sh --noscripts --no-start
-	dh_installinit -putil-linux --name=hwclock-save --noscripts --no-start
+	dh_installinit --name=hwclock.sh --noscripts
 	# install /etc/default/hwclock
-	dh_installinit --name=hwclock --no-start
+	dh_installinit --name=hwclock
 	# install uuidd sysvinit script
 	make misc-utils/uuidd.rc
 	ln -s ../misc-utils/uuidd.rc debian/uuid-runtime.uuidd.init

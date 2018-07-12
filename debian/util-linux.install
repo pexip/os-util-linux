@@ -1,4 +1,5 @@
 #!/usr/bin/dh-exec --with=install
+debian/hwclock.rules => /lib/udev/rules.d/85-hwclock.rules
 debian/hwclock-set => /lib/udev/hwclock-set
 # perl gets to do rename, not us.
 debian/tmp/usr/bin/rename => /usr/bin/rename.ul
@@ -9,8 +10,8 @@ debian/tmp/usr/bin/rename => /usr/bin/rename.ul
 [linux-any] sbin/mkswap
 [!linux-any] debian/tmp/sbin/mkswap => /sbin/mkswap.linux
 # weekly fstrim only available on linux
-#[linux-any] lib/systemd/system/fstrim.timer => /usr/share/doc/util-linux/examples/fstrim.timer
-#[linux-any] lib/systemd/system/fstrim.service => /usr/share/doc/util-linux/examples/fstrim.service
+[linux-any] lib/systemd/system/fstrim.timer => /usr/share/doc/util-linux/examples/fstrim.timer
+[linux-any] lib/systemd/system/fstrim.service => /usr/share/doc/util-linux/examples/fstrim.service
 bin/more
 sbin/agetty
 sbin/blkid
