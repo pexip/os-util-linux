@@ -1,1 +1,4 @@
 rm_conffile /etc/default/hwclock 2.25.2-6pexip1
+rm_conffile /etc/init/hwclock.conf 2.29.2-1+deb9u1pexip1~
+rm_conffile /etc/init/hwclock-save.conf 2.29.2-1+deb9u1pexip1~
+rm_conffile /etc/init/hwclock.sh.conf 2.29.2-1+deb9u1pexip1~

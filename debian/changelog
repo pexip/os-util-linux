@@ -1,4 +1,4 @@
-util-linux (2.29.2-1+deb9u1pexip1) UNRELEASED; urgency=medium
+util-linux (2.29.2-1+deb9u1pexip1) pexip; urgency=medium
 
   * Migrate to Stretch
 
