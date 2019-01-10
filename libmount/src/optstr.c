@@ -1,8 +1,13 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /*
- * Copyright (C) 2008,2009,2012 Karel Zak <kzak@redhat.com>
+ * This file is part of libmount from util-linux project.
  *
- * This file may be redistributed under the terms of the
- * GNU Lesser General Public License.
+ * Copyright (C) 2009-2018 Karel Zak <kzak@redhat.com>
+ *
+ * libmount is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation; either version 2.1 of the License, or
+ * (at your option) any later version.
  */
 
 /**
@@ -20,6 +25,7 @@
 #include <selinux/context.h>
 #endif
 
+#include "strutils.h"
 #include "mountP.h"
 
 /*
@@ -381,7 +387,7 @@ insert_value(char **str, char *pos, const char *substr, char **next)
 	size_t strsz = strlen(*str);
 	size_t possz = strlen(pos);
 	size_t posoff;
-	char *p = NULL;
+	char *p;
 	int sep;
 
 	/* is it necessary to prepend '=' before the substring ? */
@@ -799,14 +805,17 @@ int mnt_optstr_apply_flags(char **optstr, unsigned long flags,
 					if (rc)
 						goto err;
 				}
-				if (!(ent->mask & MNT_INVERT))
+				if (!(ent->mask & MNT_INVERT)) {
 					fl &= ~ent->id;
+					if (ent->id & MS_REC)
+						fl |= MS_REC;
+				}
 			}
 		}
 	}
 
-	/* add missing options */
-	if (fl) {
+	/* add missing options (but ignore fl if contains MS_REC only) */
+	if (fl && fl != MS_REC) {
 		const struct libmnt_optmap *ent;
 		char *p;
 
@@ -1077,6 +1086,92 @@ int mnt_optstr_fix_user(char **optstr)
 
 	free(username);
 	return rc;
+}
+
+/**
+ * mnt_match_options:
+ * @optstr: options string
+ * @pattern: comma delimited list of options
+ *
+ * The "no" could be used for individual items in the @options list. The "no"
+ * prefix does not have a global meaning.
+ *
+ * Unlike fs type matching, nonetdev,user and nonetdev,nouser have
+ * DIFFERENT meanings; each option is matched explicitly as specified.
+ *
+ * The "no" prefix interpretation could be disabled by the "+" prefix, for example
+ * "+noauto" matches if @optstr literally contains the "noauto" string.
+ *
+ * "xxx,yyy,zzz" : "nozzz"	-> False
+ *
+ * "xxx,yyy,zzz" : "xxx,noeee"	-> True
+ *
+ * "bar,zzz"     : "nofoo"      -> True		(does not contain "foo")
+ *
+ * "nofoo,bar"   : "nofoo"      -> True		(does not contain "foo")
+ *
+ * "nofoo,bar"   : "+nofoo"     -> True		(contains "nofoo")
+ *
+ * "bar,zzz"     : "+nofoo"     -> False	(does not contain "nofoo")
+ *
+ *
+ * Returns: 1 if pattern is matching, else 0. This function also returns 0
+ *          if @pattern is NULL and @optstr is non-NULL.
+ */
+int mnt_match_options(const char *optstr, const char *pattern)
+{
+	char *name, *pat = (char *) pattern;
+	char *buf, *patval;
+	size_t namesz = 0, patvalsz = 0;
+	int match = 1;
+
+	if (!pattern && !optstr)
+		return 1;
+	if (!pattern)
+		return 0;
+
+	buf = malloc(strlen(pattern) + 1);
+	if (!buf)
+		return 0;
+
+	/* walk on pattern string
+	 */
+	while (match && !mnt_optstr_next_option(&pat, &name, &namesz,
+						&patval, &patvalsz)) {
+		char *val;
+		size_t sz;
+		int no = 0, rc;
+
+		if (*name == '+')
+			name++, namesz--;
+		else if ((no = (startswith(name, "no") != NULL)))
+			name += 2, namesz -= 2;
+
+		xstrncpy(buf, name, namesz + 1);
+
+		rc = mnt_optstr_get_option(optstr, buf, &val, &sz);
+
+		/* check also value (if the pattern is "foo=value") */
+		if (rc == 0 && patvalsz > 0 &&
+		    (patvalsz != sz || strncmp(patval, val, sz) != 0))
+			rc = 1;
+
+		switch (rc) {
+		case 0:		/* found */
+			match = no == 0 ? 1 : 0;
+			break;
+		case 1:		/* not found */
+			match = no == 1 ? 1 : 0;
+			break;
+		default:	/* parse error */
+			match = 0;
+			break;
+		}
+
+	}
+
+	free(buf);
+	return match;
 }
 
 #ifdef TEST_PROGRAM

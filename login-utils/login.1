@@ -6,17 +6,17 @@ login \- begin session on the system
 .SH SYNOPSIS
 .B login
 [
-.BR \-p
+.B \-p
 ] [
-.BR \-h
-.IR host
+.B \-h
+.I host
 ] [
-.BR \-H
+.B \-H
 ] [
-.BR \-f
-.IR username
+.B \-f
+.I username
 |
-.IR username
+.I username
 ]
 .SH DESCRIPTION
 .B login
@@ -130,8 +130,14 @@ Used by other servers (i.e.,
 to tell
 .B login
 that printing the hostname should be suppressed in the login: prompt.
+See also LOGIN_PLAIN_PROMPT below if your server does not allow to configure
+.B login
+command line.
 .TP
-.B \-V
+\fB\-\-help\fR
+Display help text and exit.
+.TP
+\fB\-V\fR, \fB\-\-version\fR
 Display version information and exit.
 .SH CONFIG FILE ITEMS
 .B login
@@ -155,6 +161,15 @@ is not displayed.  Note that the same functionality is also provided
 by
 .BR pam_motd (8)
 PAM module.
+.RE
+.PP
+.B LOGIN_PLAIN_PROMPT
+(boolean)
+.RS 4
+Tell login that printing the hostname should be suppressed in the login:
+prompt.  This is alternative to the \fB\-H\fR command line option.  The default
+value is
+.IR no .
 .RE
 .PP
 .B LOGIN_TIMEOUT
@@ -184,9 +199,9 @@ login failure.  The default value is
 (string)
 .RS 4
 The terminal permissions.  The default value is
-.IR 0600
+.I 0600
 or
-.IR 0620
+.I 0620
 if tty group is used.
 .RE
 .PP
@@ -233,7 +248,7 @@ item is empty, then all the checks are disabled.
 .B DEFAULT_HOME
 (boolean)
 .RS 4
-Indicate if login is allowed if we can not change directory to the
+Indicate if login is allowed if we cannot change directory to the
 home directory.  If set to
 .IR yes ,
 the user will login in the root (/) directory if it is not possible
@@ -330,6 +345,6 @@ Karel Zak
 .SH AVAILABILITY
 The login command is part of the util-linux package and is
 available from
-.UR ftp:\://ftp.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
+.UR https://\:www.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
 Linux Kernel Archive
 .UE .

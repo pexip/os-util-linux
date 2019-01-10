@@ -97,9 +97,9 @@ static char *boot_uname_r_str(void)
 	return s;
 }
 
-static void __attribute__ ((__noreturn__))
-    usage(FILE * out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options]\n"), program_invocation_short_name);
 
@@ -122,17 +122,16 @@ static void __attribute__ ((__noreturn__))
 	fputs(_(" -r, --reset               reset all the counters (root only)\n"), out);
 	fputs(_(" -n, --no-auto             disable byte order auto-detection\n"), out);
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
-	fprintf(out, USAGE_MAN_TAIL("readprofile(8)"));
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	printf(USAGE_HELP_OPTIONS(27));
+	printf(USAGE_MAN_TAIL("readprofile(8)"));
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char **argv)
 {
 	FILE *map;
 	int proFd;
-	char *mapFile, *proFile, *mult = 0;
+	char *mapFile, *proFile, *mult = NULL;
 	size_t len = 0, indx = 1;
 	unsigned long long add0 = 0;
 	unsigned int step;
@@ -162,7 +161,7 @@ int main(int argc, char **argv)
 		{"no-auto", no_argument, NULL, 'n'},
 		{"version", no_argument, NULL, 'V'},
 		{"help", no_argument, NULL, 'h'},
-		{NULL, 0, 0, 0}
+		{NULL, 0, NULL, 0}
 	};
 
 #define next (current^1)
@@ -211,9 +210,9 @@ int main(int argc, char **argv)
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
@@ -224,7 +223,7 @@ int main(int argc, char **argv)
 		 * write is not sizeof(int), the multiplier is not
 		 * changed. */
 		if (mult) {
-			multiplier = strtoul(mult, 0, 10);
+			multiplier = strtoul(mult, NULL, 10);
 			to_write = sizeof(int);
 		} else {
 			multiplier = 0;

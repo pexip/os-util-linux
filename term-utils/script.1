@@ -54,6 +54,10 @@ saves the dialogue in this
 If no filename is given, the dialogue is saved in the file
 .BR typescript .
 .SH OPTIONS
+Below, the \fIsize\fR argument may be followed by the multiplicative
+suffixes KiB (=1024), MiB (=1024*1024), and so on for GiB, TiB, PiB, EiB, ZiB and YiB
+(the "iB" is optional, e.g. "K" has the same meaning as "KiB"), or the suffixes
+KB (=1000), MB (=1000*1000), and so on for GB, TB, PB, EB, ZB and YB.
 .TP
 \fB\-a\fR, \fB\-\-append\fR
 Append the output to
@@ -71,7 +75,8 @@ tty.
 .TP
 \fB\-e\fR, \fB\-\-return\fR
 Return the exit code of the child process.  Uses the same format as bash
-termination on signal termination exit code is 128+n.
+termination on signal termination exit code is 128+n.  The exit code of
+the child process is always stored in type script file too.
 .TP
 \fB\-f\fR, \fB\-\-flush\fR
 Flush output after each write.  This is nice for telecooperation: one person
@@ -82,11 +87,19 @@ being done using `cat foo'.
 Allow the default output destination, i.e. the typescript file, to be a hard
 or symbolic link.  The command will follow a symbolic link.
 .TP
-\fB\-q\fR, \fB\-\-quiet\fR
-Be quiet (do not write start and done messages to either standard output
-or the typescript file).
+\fB\-o\fR, \fB\-\-output-limit\fR \fIsize\fR
+Limit the size of the typescript and timing files to
+.I size
+and stop the child process after this size is exceeded.  The calculated
+file size does not include the start and done messages that the
+.B script
+command prepends and appends to the child process output.
+Due to buffering, the resulting output file might be larger than the specified value.
 .TP
-\fB\-t\fR, \fB\-\-timing\fR[=\fIfile\fR]
+\fB\-q\fR, \fB\-\-quiet\fR
+Be quiet (do not write start and done messages to standard output).
+.TP
+\fB\-t\fR[\fIfile\fR], \fB\-\-timing\fR[=\fIfile\fR]
 Output timing data to standard error, or to
 .I file
 when given.  This data contains two fields, separated by a space.  The first
@@ -187,6 +200,6 @@ can hang, because the interactive shell within the script session misses EOF and
 has no clue when to close the session.  See the \fBNOTES\fR section for more information.
 .SH AVAILABILITY
 The script command is part of the util-linux package and is available from
-.UR ftp://\:ftp.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
+.UR https://\:www.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
 Linux Kernel Archive
 .UE .

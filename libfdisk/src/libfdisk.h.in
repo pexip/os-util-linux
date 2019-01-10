@@ -28,6 +28,7 @@ extern "C" {
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <sys/types.h>
 
 /**
  * LIBFDISK_VERSION:
@@ -106,12 +107,17 @@ struct fdisk_script;
 /**
  * fdisk_sector_t
  *
- * LBA adresses type
+ * LBA addresses type
  */
 typedef uint64_t fdisk_sector_t;
 
 /**
  * fdisk_labeltype:
+ * @FDISK_DISKLABEL_DOS: MBR label type
+ * @FDISK_DISKLABEL_SUN: SUN label type
+ * @FDISK_DISKLABEL_SGI: SGI label type
+ * @FDISK_DISKLABEL_BSD: BSD label type
+ * @FDISK_DISKLABEL_GPT: UEFI GPT type
  *
  * Supported partition table types (labels)
  */
@@ -124,7 +130,7 @@ enum fdisk_labeltype {
 };
 
 /**
- * fdisk_labelitem
+ * fdisk_labelitem:
  *
  * library handler for label specific information. See
  * generic FDISK_LABELITEM_* and label specific {GPT,MBR,..}_LABELITEM_*.
@@ -133,19 +139,28 @@ struct fdisk_labelitem;
 
 /**
  * fdisk_asktype:
+ * @FDISK_ASKTYPE_NONE: undefined type
+ * @FDISK_ASKTYPE_NUMBER: ask for number
+ * @FDISK_ASKTYPE_OFFSET:  ask for offset
+ * @FDISK_ASKTYPE_WARN:  print warning message and errno
+ * @FDISK_ASKTYPE_WARNX: print warning message
+ * @FDISK_ASKTYPE_INFO: print infor message
+ * @FDISK_ASKTYPE_YESNO: ask Yes/No question
+ * @FDISK_ASKTYPE_STRING: ask for string
+ * @FDISK_ASKTYPE_MENU: ask for menu item
  *
  * Ask API dialog types
  */
 enum fdisk_asktype {
-	FDISK_ASKTYPE_NONE = 0,			/* undefined type */
-	FDISK_ASKTYPE_NUMBER,			/* ask for number */
-	FDISK_ASKTYPE_OFFSET,			/* ask for offset */
-	FDISK_ASKTYPE_WARN,			/* print warning message and errno */
-	FDISK_ASKTYPE_WARNX,			/* print warning message */
-	FDISK_ASKTYPE_INFO,			/* print infor message */
-	FDISK_ASKTYPE_YESNO,			/* ask Yes/No question */
-	FDISK_ASKTYPE_STRING,			/* ask for string */
-	FDISK_ASKTYPE_MENU			/* ask for menu item */
+	FDISK_ASKTYPE_NONE = 0,
+	FDISK_ASKTYPE_NUMBER,
+	FDISK_ASKTYPE_OFFSET,
+	FDISK_ASKTYPE_WARN,
+	FDISK_ASKTYPE_WARNX,
+	FDISK_ASKTYPE_INFO,
+	FDISK_ASKTYPE_YESNO,
+	FDISK_ASKTYPE_STRING,
+	FDISK_ASKTYPE_MENU
 };
 
 /* init.c */
@@ -181,7 +196,14 @@ int fdisk_is_labeltype(struct fdisk_context *cxt, enum fdisk_labeltype id);
 int fdisk_assign_device(struct fdisk_context *cxt,
 			const char *fname, int readonly);
 int fdisk_deassign_device(struct fdisk_context *cxt, int nosync);
+int fdisk_reassign_device(struct fdisk_context *cxt);
+
 int fdisk_is_readonly(struct fdisk_context *cxt);
+int fdisk_is_regfile(struct fdisk_context *cxt);
+int fdisk_device_is_used(struct fdisk_context *cxt);
+
+int fdisk_disable_dialogs(struct fdisk_context *cxt, int disable);
+int fdisk_has_dialogs(struct fdisk_context *cxt);
 
 int fdisk_enable_details(struct fdisk_context *cxt, int enable);
 int fdisk_is_details(struct fdisk_context *cxt);
@@ -192,6 +214,7 @@ int fdisk_is_listonly(struct fdisk_context *cxt);
 int fdisk_enable_wipe(struct fdisk_context *cxt, int enable);
 int fdisk_has_wipe(struct fdisk_context *cxt);
 const char *fdisk_get_collision(struct fdisk_context *cxt);
+int fdisk_is_ptcollision(struct fdisk_context *cxt);
 
 int fdisk_set_unit(struct fdisk_context *cxt, const char *str);
 const char *fdisk_get_unit(struct fdisk_context *cxt, int n);
@@ -209,8 +232,12 @@ fdisk_sector_t fdisk_set_first_lba(struct fdisk_context *cxt, fdisk_sector_t lba
 fdisk_sector_t fdisk_get_last_lba(struct fdisk_context *cxt);
 fdisk_sector_t fdisk_set_last_lba(struct fdisk_context *cxt, fdisk_sector_t lba);
 fdisk_sector_t fdisk_get_nsectors(struct fdisk_context *cxt);
+
 const char *fdisk_get_devname(struct fdisk_context *cxt);
 int fdisk_get_devfd(struct fdisk_context *cxt);
+dev_t fdisk_get_devno(struct fdisk_context *cxt);
+const char *fdisk_get_devmodel(struct fdisk_context *cxt);
+
 
 unsigned int fdisk_get_geom_heads(struct fdisk_context *cxt);
 fdisk_sector_t fdisk_get_geom_sectors(struct fdisk_context *cxt);
@@ -264,7 +291,29 @@ extern int fdisk_field_is_number(const struct fdisk_field *field);
 /* label.c */
 
 /**
- * fdisk_fieldtype
+ * fdisk_fieldtype:
+ * @FDISK_FIELD_NONE: unspecified item
+ * @FDISK_FIELD_DEVICE: partition device name
+ * @FDISK_FIELD_START: start offset of the partition
+ * @FDISK_FIELD_END: end offset of the partition
+ * @FDISK_FIELD_SECTORS: number of sectors
+ * @FDISK_FIELD_CYLINDERS: number of cylinders (deprecated)
+ * @FDISK_FIELD_SIZE: partition size
+ * @FDISK_FIELD_TYPE: partition type
+ * @FDISK_FIELD_TYPEID: partition type ID
+ * @FDISK_FIELD_ATTR: partition attribute (GPT)
+ * @FDISK_FIELD_BOOT: partition boot flag
+ * @FDISK_FIELD_BSIZE: size of the boot area (BSD)
+ * @FDISK_FIELD_CPG: BSD
+ * @FDISK_FIELD_EADDR: End-C/H/S (MBR)
+ * @FDISK_FIELD_FSIZE: BSD
+ * @FDISK_FIELD_NAME: partition label/name
+ * @FDISK_FIELD_SADDR: Start-C/H/S (MBR)
+ * @FDISK_FIELD_UUID: partition UUID (GPT)
+ * @FDISK_FIELD_FSUUID: Filesystem UUID
+ * @FDISK_FIELD_FSLABEL: Filesystem LABEL
+ * @FDISK_FIELD_FSTYPE: Filesystem type
+ * @FDISK_NFIELDS: Don't use, counter.
  *
  * Types of fdisk_field. The fields describe a partition.
  */
@@ -272,25 +321,25 @@ enum fdisk_fieldtype {
 	FDISK_FIELD_NONE = 0,
 
 	/* generic */
-	FDISK_FIELD_DEVICE,		/* partition device name */
-	FDISK_FIELD_START,		/* start offset of the partition */
-	FDISK_FIELD_END,		/* end offset of the partition */
-	FDISK_FIELD_SECTORS,		/* number of sectors */
-	FDISK_FIELD_CYLINDERS,		/* number of cylinders (deprecated) */
-	FDISK_FIELD_SIZE,		/* partition size */
-	FDISK_FIELD_TYPE,		/* partition type */
-	FDISK_FIELD_TYPEID,		/* partition type ID */
+	FDISK_FIELD_DEVICE,
+	FDISK_FIELD_START,
+	FDISK_FIELD_END,
+	FDISK_FIELD_SECTORS,
+	FDISK_FIELD_CYLINDERS,
+	FDISK_FIELD_SIZE,
+	FDISK_FIELD_TYPE,
+	FDISK_FIELD_TYPEID,
 
 	/* label specific */
-	FDISK_FIELD_ATTR,		/* partition attribute (GPT) */
-	FDISK_FIELD_BOOT,		/* partition boot flag */
-	FDISK_FIELD_BSIZE,		/* size of the boot area (BSD) */
-	FDISK_FIELD_CPG,		/* BSD */
-	FDISK_FIELD_EADDR,		/* End-C/H/S (MBR) */
-	FDISK_FIELD_FSIZE,		/* BSD */
-	FDISK_FIELD_NAME,		/* partition label/name (GPT) */
-	FDISK_FIELD_SADDR,		/* Start-C/H/S (MBR) */
-	FDISK_FIELD_UUID,		/* partition UUID (GPT) */
+	FDISK_FIELD_ATTR,
+	FDISK_FIELD_BOOT,
+	FDISK_FIELD_BSIZE,
+	FDISK_FIELD_CPG,
+	FDISK_FIELD_EADDR,
+	FDISK_FIELD_FSIZE,
+	FDISK_FIELD_NAME,
+	FDISK_FIELD_SADDR,
+	FDISK_FIELD_UUID,
 
 	FDISK_FIELD_FSUUID,
 	FDISK_FIELD_FSLABEL,
@@ -313,15 +362,23 @@ extern int fdisk_locate_disklabel(struct fdisk_context *cxt, int n,
 				  uint64_t *offset,
 				  size_t *size);
 
+extern int fdisk_label_get_geomrange_cylinders(const struct fdisk_label *lb,
+			fdisk_sector_t *mi, fdisk_sector_t *ma);
+extern int fdisk_label_get_geomrange_heads(const struct fdisk_label *lb,
+                        unsigned int *mi, unsigned int *ma);
+extern int fdisk_label_get_geomrange_sectors(const struct fdisk_label *lb,
+                        fdisk_sector_t *mi, fdisk_sector_t *ma);
+
 /**
- * fdisk_labelitem_gen
+ * fdisk_labelitem_gen:
+ * @FDISK_LABELITEM_ID: Unique disk identifier
+ * @__FDISK_NLABELITEMS: Specifies reserved range for generic items (0..7)
  *
- * Generic disklabel items
+ * Generic disklabel items.
  */
 enum fdisk_labelitem_gen {
-	FDISK_LABELITEM_ID = 0,		/* Unique disk identifier */
-
-	__FDISK_NLABELITEMS = 8		/* Specifies reserved range for generic items (0..7) */
+	FDISK_LABELITEM_ID = 0,
+	__FDISK_NLABELITEMS = 8
 };
 
 /* item.c */
@@ -386,7 +443,7 @@ extern int fdisk_partition_is_freespace(struct fdisk_partition *pa);
 
 int fdisk_partition_set_start(struct fdisk_partition *pa, uint64_t off);
 int fdisk_partition_unset_start(struct fdisk_partition *pa);
-uint64_t fdisk_partition_get_start(struct fdisk_partition *pa);
+fdisk_sector_t fdisk_partition_get_start(struct fdisk_partition *pa);
 int fdisk_partition_has_start(struct fdisk_partition *pa);
 int fdisk_partition_cmp_start(struct fdisk_partition *a,
 			      struct fdisk_partition *b);
@@ -395,7 +452,7 @@ int fdisk_partition_start_is_default(struct fdisk_partition *pa);
 
 int fdisk_partition_set_size(struct fdisk_partition *pa, uint64_t sz);
 int fdisk_partition_unset_size(struct fdisk_partition *pa);
-uint64_t fdisk_partition_get_size(struct fdisk_partition *pa);
+fdisk_sector_t fdisk_partition_get_size(struct fdisk_partition *pa);
 int fdisk_partition_has_size(struct fdisk_partition *pa);
 int fdisk_partition_size_explicit(struct fdisk_partition *pa, int enable);
 
@@ -438,6 +495,9 @@ extern int fdisk_partition_end_is_default(struct fdisk_partition *pa);
 
 extern int fdisk_reorder_partitions(struct fdisk_context *cxt);
 
+extern int fdisk_partition_has_wipe(struct fdisk_context *cxt, struct fdisk_partition *pa);
+
+
 /* table.c */
 extern struct fdisk_table *fdisk_new_table(void);
 extern int fdisk_reset_table(struct fdisk_table *tb);
@@ -450,6 +510,7 @@ extern int fdisk_table_remove_partition(struct fdisk_table *tb, struct fdisk_par
 
 extern int fdisk_get_partitions(struct fdisk_context *cxt, struct fdisk_table **tb);
 extern int fdisk_get_freespaces(struct fdisk_context *cxt, struct fdisk_table **tb);
+
 
 extern int fdisk_table_wrong_order(struct fdisk_table *tb);
 extern int fdisk_table_sort_partitions(struct fdisk_table *tb,
@@ -491,10 +552,14 @@ int fdisk_save_user_geometry(struct fdisk_context *cxt,
 int fdisk_save_user_sector_size(struct fdisk_context *cxt,
 				unsigned int phy,
 				unsigned int log);
+
+int fdisk_save_user_grain(struct fdisk_context *cxt, unsigned long grain);
+
 int fdisk_has_user_device_properties(struct fdisk_context *cxt);
 int fdisk_reset_alignment(struct fdisk_context *cxt);
 int fdisk_reset_device_properties(struct fdisk_context *cxt);
 int fdisk_reread_partition_table(struct fdisk_context *cxt);
+int fdisk_reread_changes(struct fdisk_context *cxt, struct fdisk_table *org);
 
 /* iter.c */
 enum {
@@ -522,6 +587,18 @@ extern int fdisk_sun_set_ilfact(struct fdisk_context *cxt);
 extern int fdisk_sun_set_rspeed(struct fdisk_context *cxt);
 extern int fdisk_sun_set_pcylcount(struct fdisk_context *cxt);
 
+/**
+ * fdisk_labelitem_sun:
+ * @SUN_LABELITEM_LABELID: Label ID
+ * @SUN_LABELITEM_VTOCID: Volume ID
+ * @SUN_LABELITEM_RPM: Rpm
+ * @SUN_LABELITEM_ACYL: Alternate cylinders
+ * @SUN_LABELITEM_PCYL: Physical cylinders
+ * @SUN_LABELITEM_APC: Extra sects/cyl
+ * @SUN_LABELITEM_INTRLV: Interleave
+ *
+ * SUN specific label items.
+ */
 enum fdisk_labelitem_sun {
 	SUN_LABELITEM_LABELID = __FDISK_NLABELITEMS,
 	SUN_LABELITEM_VTOCID,
@@ -537,6 +614,25 @@ extern int fdisk_bsd_edit_disklabel(struct fdisk_context *cxt);
 extern int fdisk_bsd_write_bootstrap(struct fdisk_context *cxt);
 extern int fdisk_bsd_link_partition(struct fdisk_context *cxt);
 
+/**
+ * fdisk_labelitem_bsd:
+ * @BSD_LABELITEM_TYPE: type
+ * @BSD_LABELITEM_DISK: disk
+ * @BSD_LABELITEM_PACKNAME: packname
+ * @BSD_LABELITEM_FLAGS: flags (removeable, ecc, badsect)
+ * @BSD_LABELITEM_SECSIZE: Bytes/Sector
+ * @BSD_LABELITEM_NTRACKS: Tracks/Cylinder
+ * @BSD_LABELITEM_SECPERCYL: Sectors/Cylinder
+ * @BSD_LABELITEM_CYLINDERS: Cylinders
+ * @BSD_LABELITEM_RPM: rpm
+ * @BSD_LABELITEM_INTERLEAVE: interleave
+ * @BSD_LABELITEM_TRACKSKEW: trackskew
+ * @BSD_LABELITEM_CYLINDERSKEW: cylinderskew
+ * @BSD_LABELITEM_HEADSWITCH: headswitch
+ * @BSD_LABELITEM_TRKSEEK: track-to-track seek
+ *
+ * BSD specific label items.
+ */
 enum fdisk_labelitem_bsd {
 	/* specific */
 	BSD_LABELITEM_TYPE = __FDISK_NLABELITEMS,
@@ -561,6 +657,15 @@ enum fdisk_labelitem_bsd {
 extern int fdisk_sgi_set_bootfile(struct fdisk_context *cxt);
 extern int fdisk_sgi_create_info(struct fdisk_context *cxt);
 
+/**
+ * fdisk_labelitem_sgi:
+ * @SGI_LABELITEM_PCYLCOUNT: Physical cylinders
+ * @SGI_LABELITEM_SPARECYL: Extra sects/cyl
+ * @SGI_LABELITEM_ILFACT: nterleave
+ * @SGI_LABELITEM_BOOTFILE: Bootfile
+ *
+ * SGI specific label items.
+ */
 enum fdisk_labelitem_sgi {
 	SGI_LABELITEM_PCYLCOUNT = __FDISK_NLABELITEMS,
 	SGI_LABELITEM_SPARECYL,
@@ -620,15 +725,26 @@ extern int fdisk_gpt_set_npartitions(struct fdisk_context *cxt, uint32_t entries
 extern int fdisk_gpt_get_partition_attrs(struct fdisk_context *cxt, size_t partnum, uint64_t *attrs);
 extern int fdisk_gpt_set_partition_attrs(struct fdisk_context *cxt, size_t partnum, uint64_t attrs);
 
+/**
+ * fdisk_labelitem_gpt:
+ * @GPT_LABELITEM_ID: GPT disklabel UUID (!= partition UUID)
+ * @GPT_LABELITEM_FIRSTLBA: First Usable LBA
+ * @GPT_LABELITEM_LASTLBA: Usable LBA
+ * @GPT_LABELITEM_ALTLBA: Alternative LBA (backup header LBA)
+ * @GPT_LABELITEM_ENTRIESLBA: Partitions entires array LBA
+ * @GPT_LABELITEM_ENTRIESALLOC: Number of allocated entries in entries array
+ *
+ * GPT specific label items.
+ */
 enum fdisk_labelitem_gpt {
 	/* generic */
-	GPT_LABELITEM_ID = FDISK_LABELITEM_ID,		/* GPT disklabel UUID (!= partition UUID) */
+	GPT_LABELITEM_ID = FDISK_LABELITEM_ID,
 	/* specific */
-	GPT_LABELITEM_FIRSTLBA = __FDISK_NLABELITEMS,	/* First Usable LBA */
-	GPT_LABELITEM_LASTLBA,				/* Last Usable LBA */
-	GPT_LABELITEM_ALTLBA,				/* Alternative LBA (backup header LBA) */
-	GPT_LABELITEM_ENTRIESLBA,			/* Partitions entires array LBA */
-	GPT_LABELITEM_ENTRIESALLOC			/* Number of allocated entries in entries array */
+	GPT_LABELITEM_FIRSTLBA = __FDISK_NLABELITEMS,
+	GPT_LABELITEM_LASTLBA,
+	GPT_LABELITEM_ALTLBA,
+	GPT_LABELITEM_ENTRIESLBA,
+	GPT_LABELITEM_ENTRIESALLOC
 };
 
 /* script.c */
@@ -642,6 +758,7 @@ const char *fdisk_script_get_header(struct fdisk_script *dp, const char *name);
 int fdisk_script_set_header(struct fdisk_script *dp, const char *name, const char *data);
 struct fdisk_table *fdisk_script_get_table(struct fdisk_script *dp);
 int fdisk_script_get_nlines(struct fdisk_script *dp);
+int fdisk_script_has_force_label(struct fdisk_script *dp);
 
 int fdisk_script_set_userdata(struct fdisk_script *dp, void *data);
 void *fdisk_script_get_userdata(struct fdisk_script *dp);
@@ -682,6 +799,7 @@ int fdisk_ask_number_set_result(struct fdisk_ask *ask, uint64_t result);
 uint64_t fdisk_ask_number_get_base(struct fdisk_ask *ask);
 uint64_t fdisk_ask_number_get_unit(struct fdisk_ask *ask);
 int fdisk_ask_number_set_relative(struct fdisk_ask *ask, int relative);
+int fdisk_ask_number_is_wrap_negative(struct fdisk_ask *ask);
 int fdisk_ask_number_inchars(struct fdisk_ask *ask);
 int fdisk_ask_partnum(struct fdisk_context *cxt, size_t *partnum, int wantnew);
 

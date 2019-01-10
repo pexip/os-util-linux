@@ -70,10 +70,12 @@
 #include "ttyutils.h"
 #include "all-io.h"
 #include "monotonic.h"
+#include "timeutils.h"
+#include "strutils.h"
 
 #include "debug.h"
 
-UL_DEBUG_DEFINE_MASK(script);
+static UL_DEBUG_DEFINE_MASK(script);
 UL_DEBUG_DEFINE_MASKNAMES(script) = UL_DEBUG_EMPTY_MASKNAMES;
 
 #define SCRIPT_DEBUG_INIT	(1 << 1)
@@ -103,6 +105,8 @@ struct script_control {
 	FILE *typescriptfp;	/* output file pointer */
 	char *tname;		/* timing file path */
 	FILE *timingfp;		/* timing file pointer */
+	uint64_t outsz;         /* current output file size */
+	uint64_t maxsz;		/* maximum output file size */
 	struct timeval oldtime;	/* previous write or command start time */
 	int master;		/* pseudoterminal master file descriptor */
 	int slave;		/* pseudoterminal slave file descriptor */
@@ -131,7 +135,7 @@ struct script_control {
 
 static void script_init_debug(void)
 {
-	__UL_INIT_DEBUG(script, SCRIPT_DEBUG_, 0, SCRIPT_DEBUG);
+	__UL_INIT_DEBUG_FROM_ENV(script, SCRIPT_DEBUG_, 0, SCRIPT_DEBUG);
 }
 
 /*
@@ -153,8 +157,9 @@ static inline time_t script_time(time_t *t)
 # define script_time(x) time(x)
 #endif
 
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options] [file]\n"), program_invocation_short_name);
 
@@ -162,18 +167,67 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(_("Make a typescript of a terminal session.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
-	fputs(_(" -a, --append            append the output\n"
-		" -c, --command <command> run command rather than interactive shell\n"
-		" -e, --return            return exit code of the child process\n"
-		" -f, --flush             run flush after each write\n"
-		"     --force             use output file even when it is a link\n"
-		" -q, --quiet             be quiet\n"
-		" -t, --timing[=<file>]   output timing data to stderr (or to FILE)\n"
-		" -V, --version           output version information and exit\n"
-		" -h, --help              display this help and exit\n\n"), out);
+	fputs(_(" -a, --append                  append the output\n"
+		" -c, --command <command>       run command rather than interactive shell\n"
+		" -e, --return                  return exit code of the child process\n"
+		" -f, --flush                   run flush after each write\n"
+		"     --force                   use output file even when it is a link\n"
+		" -o, --output-limit <size>     terminate if output files exceed size\n"
+		" -q, --quiet                   be quiet\n"
+		" -t[<file>], --timing[=<file>] output timing data to stderr or to FILE\n"
+		), out);
+	printf(USAGE_HELP_OPTIONS(31));
 
-	fprintf(out, USAGE_MAN_TAIL("script(1)"));
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	printf(USAGE_MAN_TAIL("script(1)"));
+	exit(EXIT_SUCCESS);
+}
+
+static void typescript_message_start(const struct script_control *ctl, time_t *tvec)
+{
+	char buf[FORMAT_TIMESTAMP_MAX];
+	int cols = 0, lines = 0;
+	const char *tty = NULL, *term = NULL;
+
+	if (!ctl->typescriptfp)
+		return;
+
+	strtime_iso(tvec, ISO_TIMESTAMP, buf, sizeof(buf));
+
+	fprintf(ctl->typescriptfp, _("Script started on %s ["), buf);
+
+	if (ctl->isterm) {
+		get_terminal_dimension(&cols, &lines);
+		get_terminal_name(&tty, NULL, NULL);
+		get_terminal_type(&term);
+
+		if (term)
+			fprintf(ctl->typescriptfp, "TERM=\"%s\" ", term);
+		if (tty)
+			fprintf(ctl->typescriptfp, "TTY=\"%s\" ", tty);
+
+		fprintf(ctl->typescriptfp, "COLUMNS=\"%d\" LINES=\"%d\"", cols, lines);
+	} else
+		fprintf(ctl->typescriptfp, _("<not executed on terminal>"));
+
+	fputs("]\n", ctl->typescriptfp);
+}
+
+static void typescript_message_done(const struct script_control *ctl, int status, const char *msg)
+{
+	char buf[FORMAT_TIMESTAMP_MAX];
+	time_t tvec;
+
+	if (!ctl->typescriptfp)
+		return;
+
+	tvec = script_time((time_t *)NULL);
+
+	strtime_iso(&tvec, ISO_TIMESTAMP, buf, sizeof(buf));
+
+	if (msg)
+		fprintf(ctl->typescriptfp, _("\nScript done on %s [<%s>]\n"), buf, msg);
+	else
+		fprintf(ctl->typescriptfp, _("\nScript done on %s [COMMAND_EXIT_CODE=\"%d\"]\n"), buf, status);
 }
 
 static void die_if_link(const struct script_control *ctl)
@@ -189,14 +243,48 @@ static void die_if_link(const struct script_control *ctl)
 		       "Program not started."), ctl->fname);
 }
 
-static void __attribute__((__noreturn__)) done(struct script_control *ctl)
+static void restore_tty(struct script_control *ctl, int mode)
 {
+	struct termios rtt;
+
+	if (!ctl->isterm)
+		return;
+
+	rtt = ctl->attrs;
+	tcsetattr(STDIN_FILENO, mode, &rtt);
+}
+
+static void enable_rawmode_tty(struct script_control *ctl)
+{
+	struct termios rtt;
+
+	if (!ctl->isterm)
+		return;
+
+	rtt = ctl->attrs;
+	cfmakeraw(&rtt);
+	rtt.c_lflag &= ~ECHO;
+	tcsetattr(STDIN_FILENO, TCSANOW, &rtt);
+}
+
+static void __attribute__((__noreturn__)) done_log(struct script_control *ctl, const char *log_msg)
+{
+	int childstatus;
+
 	DBG(MISC, ul_debug("done!"));
 
-	if (ctl->isterm)
-		tcsetattr(STDIN_FILENO, TCSADRAIN, &ctl->attrs);
-	if (!ctl->quiet && ctl->typescriptfp)
-		printf(_("Script done, file is %s\n"), ctl->fname);
+	restore_tty(ctl, TCSADRAIN);
+
+	if (WIFSIGNALED(ctl->childstatus))
+		childstatus = WTERMSIG(ctl->childstatus) + 0x80;
+	else
+		childstatus = WEXITSTATUS(ctl->childstatus);
+
+	if (ctl->typescriptfp) {
+		typescript_message_done(ctl, childstatus, log_msg);
+		if (!ctl->quiet)
+			printf(_("Script done, file is %s\n"), ctl->fname);
+	}
 #ifdef HAVE_LIBUTEMPTER
 	if (ctl->master >= 0)
 		utempter_remove_record(ctl->master);
@@ -208,13 +296,12 @@ static void __attribute__((__noreturn__)) done(struct script_control *ctl)
 	if (ctl->typescriptfp && close_stream(ctl->typescriptfp) != 0)
 		err(EXIT_FAILURE, "write failed: %s", ctl->fname);
 
-	if (ctl->rc_wanted) {
-		if (WIFSIGNALED(ctl->childstatus))
-			exit(WTERMSIG(ctl->childstatus) + 0x80);
-		else
-			exit(WEXITSTATUS(ctl->childstatus));
-	}
-	exit(EXIT_SUCCESS);
+	exit(ctl->rc_wanted ? childstatus : EXIT_SUCCESS);
+}
+
+static void __attribute__((__noreturn__)) done(struct script_control *ctl)
+{
+	done_log(ctl, NULL);
 }
 
 static void __attribute__((__noreturn__)) fail(struct script_control *ctl)
@@ -240,6 +327,8 @@ static void wait_for_child(struct script_control *ctl, int wait)
 static void write_output(struct script_control *ctl, char *obuf,
 			    ssize_t bytes)
 {
+	int timing_bytes = 0;
+
 	DBG(IO, ul_debug(" writing output"));
 
 	if (ctl->timing && ctl->timingfp) {
@@ -249,11 +338,13 @@ static void write_output(struct script_control *ctl, char *obuf,
 
 		gettime_monotonic(&now);
 		timersub(&now, &ctl->oldtime, &delta);
-		fprintf(ctl->timingfp, "%ld.%06ld %zd\n",
+		timing_bytes = fprintf(ctl->timingfp, "%ld.%06ld %zd\n",
 		        (long)delta.tv_sec, (long)delta.tv_usec, bytes);
 		if (ctl->flush)
 			fflush(ctl->timingfp);
 		ctl->oldtime = now;
+		if (timing_bytes < 0)
+			timing_bytes = 0;
 	}
 
 	DBG(IO, ul_debug("  writing to script file"));
@@ -272,6 +363,9 @@ static void write_output(struct script_control *ctl, char *obuf,
 		warn(_("write failed"));
 		fail(ctl);
 	}
+
+	if (ctl->maxsz != 0)
+		ctl->outsz += bytes + timing_bytes;
 
 	DBG(IO, ul_debug("  writing output *done*"));
 }
@@ -324,7 +418,6 @@ static void handle_io(struct script_control *ctl, int fd, int *eof)
 {
 	char buf[BUFSIZ];
 	ssize_t bytes;
-
 	DBG(IO, ul_debug("%d FD active", fd));
 	*eof = 0;
 
@@ -353,10 +446,18 @@ static void handle_io(struct script_control *ctl, int fd, int *eof)
 		 * shell output that looks like double echoing */
 		fdatasync(ctl->master);
 
-	/* from command (master) to stdout */
+	/* from command (master) to stdout and log */
 	} else if (fd == ctl->master) {
 		DBG(IO, ul_debug(" master --> stdout %zd bytes", bytes));
 		write_output(ctl, buf, bytes);
+
+		/* check output limit */
+		if (ctl->maxsz != 0 && ctl->outsz >= ctl->maxsz) {
+			if (!ctl->quiet)
+				printf(_("Script terminated, max output file size %"PRIu64" exceeded.\n"), ctl->maxsz);
+			DBG(IO, ul_debug("output size %"PRIu64", exceeded limit %"PRIu64, ctl->outsz, ctl->maxsz));
+			done_log(ctl, _("max output size exceeded"));
+		}
 	}
 }
 
@@ -376,9 +477,21 @@ static void handle_signal(struct script_control *ctl, int fd)
 
 	switch (info.ssi_signo) {
 	case SIGCHLD:
-		DBG(SIGNAL, ul_debug(" get signal SIGCHLD"));
-		wait_for_child(ctl, 0);
-		ctl->poll_timeout = 10;
+		DBG(SIGNAL, ul_debug(" get signal SIGCHLD [ssi_code=%d, ssi_status=%d]",
+							info.ssi_code, info.ssi_status));
+		if (info.ssi_code == CLD_EXITED
+		    || info.ssi_code == CLD_KILLED
+		    || info.ssi_code == CLD_DUMPED) {
+			wait_for_child(ctl, 0);
+			ctl->poll_timeout = 10;
+
+		/* In case of ssi_code is CLD_TRAPPED, CLD_STOPPED, or CLD_CONTINUED */
+		} else if (info.ssi_status == SIGSTOP && ctl->child) {
+			DBG(SIGNAL, ul_debug(" child stop by SIGSTOP -- stop parent too"));
+			kill(getpid(), SIGSTOP);
+			DBG(SIGNAL, ul_debug(" resume"));
+			kill(ctl->child, SIGCONT);
+		}
 		return;
 	case SIGWINCH:
 		DBG(SIGNAL, ul_debug(" get signal SIGWINCH"));
@@ -400,17 +513,17 @@ static void handle_signal(struct script_control *ctl, int fd)
 	default:
 		abort();
 	}
+	DBG(SIGNAL, ul_debug("signal handle on FD %d done", fd));
 }
 
 static void do_io(struct script_control *ctl)
 {
-	int ret, ignore_stdin = 0, eof = 0;
+	int ret, eof = 0;
 	time_t tvec = script_time((time_t *)NULL);
-	char buf[128];
 	enum {
 		POLLFD_SIGNAL = 0,
 		POLLFD_MASTER,
-		POLLFD_STDIN	/* optional; keep it last, see ignore_stdin */
+		POLLFD_STDIN
 
 	};
 	struct pollfd pfd[] = {
@@ -422,20 +535,25 @@ static void do_io(struct script_control *ctl)
 
 	if ((ctl->typescriptfp =
 	     fopen(ctl->fname, ctl->append ? "a" UL_CLOEXECSTR : "w" UL_CLOEXECSTR)) == NULL) {
+
+		restore_tty(ctl, TCSANOW);
 		warn(_("cannot open %s"), ctl->fname);
 		fail(ctl);
 	}
 	if (ctl->timing) {
-		if (!ctl->tname) {
-			if (!(ctl->timingfp = fopen("/dev/stderr", "w" UL_CLOEXECSTR)))
-				err(EXIT_FAILURE, _("cannot open %s"), "/dev/stderr");
-		} else if (!(ctl->timingfp = fopen(ctl->tname, "w" UL_CLOEXECSTR)))
-			err(EXIT_FAILURE, _("cannot open %s"), ctl->tname);
+		const char *tname = ctl->tname ? ctl->tname : "/dev/stderr";
+
+		if (!(ctl->timingfp = fopen(tname, "w" UL_CLOEXECSTR))) {
+			restore_tty(ctl, TCSANOW);
+			warn(_("cannot open %s"), tname);
+			fail(ctl);
+		}
 	}
 
 
-	strftime(buf, sizeof buf, "%c\n", localtime(&tvec));
-	fprintf(ctl->typescriptfp, _("Script started on %s"), buf);
+	if (ctl->typescriptfp)
+		typescript_message_start(ctl, &tvec);
+
 	gettime_monotonic(&ctl->oldtime);
 
 	while (!ctl->die) {
@@ -445,7 +563,7 @@ static void do_io(struct script_control *ctl)
 		DBG(POLL, ul_debug("calling poll()"));
 
 		/* wait for input or signal */
-		ret = poll(pfd, ARRAY_SIZE(pfd) - ignore_stdin, ctl->poll_timeout);
+		ret = poll(pfd, ARRAY_SIZE(pfd), ctl->poll_timeout);
 		errsv = errno;
 		DBG(POLL, ul_debug("poll() rc=%d", ret));
 
@@ -461,7 +579,7 @@ static void do_io(struct script_control *ctl)
 			break;
 		}
 
-		for (i = 0; i < ARRAY_SIZE(pfd) - ignore_stdin; i++) {
+		for (i = 0; i < ARRAY_SIZE(pfd); i++) {
 			if (pfd[i].revents == 0)
 				continue;
 
@@ -485,10 +603,7 @@ static void do_io(struct script_control *ctl)
 				if ((pfd[i].revents & POLLHUP) || eof) {
 					DBG(POLL, ul_debug(" ignore FD"));
 					pfd[i].fd = -1;
-					/* according to man poll() set FD to -1 can't be used to ignore
-					 * STDIN, so let's remove the FD from pool at all */
 					if (i == POLLFD_STDIN) {
-						ignore_stdin = 1;
 						write_eof_to_shell(ctl);
 						DBG(POLL, ul_debug("  ignore STDIN"));
 					}
@@ -505,11 +620,7 @@ static void do_io(struct script_control *ctl)
 
 	if (!ctl->die)
 		wait_for_child(ctl, 1);
-	if (!ctl->quiet && ctl->typescriptfp) {
-		tvec = script_time((time_t *)NULL);
-		strftime(buf, sizeof buf, "%c\n", localtime(&tvec));
-		fprintf(ctl->typescriptfp, _("\nScript done on %s"), buf);
-	}
+
 	done(ctl);
 }
 
@@ -582,18 +693,6 @@ static void __attribute__((__noreturn__)) do_shell(struct script_control *ctl)
 	fail(ctl);
 }
 
-static void fixtty(struct script_control *ctl)
-{
-	struct termios rtt;
-
-	if (!ctl->isterm)
-		return;
-
-	rtt = ctl->attrs;
-	cfmakeraw(&rtt);
-	rtt.c_lflag &= ~ECHO;
-	tcsetattr(STDIN_FILENO, TCSANOW, &rtt);
-}
 
 static void getmaster(struct script_control *ctl)
 {
@@ -663,8 +762,7 @@ int main(int argc, char **argv)
 		.line = "/dev/ptyXX",
 #endif
 		.master = -1,
-		.poll_timeout = -1,
-		0
+		.poll_timeout = -1
 	};
 	int ch;
 
@@ -676,6 +774,7 @@ int main(int argc, char **argv)
 		{"return", no_argument, NULL, 'e'},
 		{"flush", no_argument, NULL, 'f'},
 		{"force", no_argument, NULL, FORCE_OPTION,},
+		{"output-limit", required_argument, NULL, 'o'},
 		{"quiet", no_argument, NULL, 'q'},
 		{"timing", optional_argument, NULL, 't'},
 		{"version", no_argument, NULL, 'V'},
@@ -698,7 +797,7 @@ int main(int argc, char **argv)
 
 	script_init_debug();
 
-	while ((ch = getopt_long(argc, argv, "ac:efqt::Vh", longopts, NULL)) != -1)
+	while ((ch = getopt_long(argc, argv, "ac:efo:qt::Vh", longopts, NULL)) != -1)
 		switch (ch) {
 		case 'a':
 			ctl.append = 1;
@@ -715,6 +814,9 @@ int main(int argc, char **argv)
 		case FORCE_OPTION:
 			ctl.force = 1;
 			break;
+		case 'o':
+			ctl.maxsz = strtosize_or_err(optarg, _("failed to parse output limit size"));
+			break;
 		case 'q':
 			ctl.quiet = 1;
 			break;
@@ -728,10 +830,10 @@ int main(int argc, char **argv)
 			exit(EXIT_SUCCESS);
 			break;
 		case 'h':
-			usage(stdout);
+			usage();
 			break;
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	argc -= optind;
 	argv += optind;
@@ -750,7 +852,7 @@ int main(int argc, char **argv)
 	getmaster(&ctl);
 	if (!ctl.quiet)
 		printf(_("Script started, file is %s\n"), ctl.fname);
-	fixtty(&ctl);
+	enable_rawmode_tty(&ctl);
 
 #ifdef HAVE_LIBUTEMPTER
 	utempter_add_record(ctl.master, NULL);

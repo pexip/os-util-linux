@@ -57,14 +57,19 @@
 # include "auth.h"
 #endif
 
+#ifdef HAVE_LIBREADLINE
+# define _FUNCTION_DEF
+# include <readline/readline.h>
+#endif
+
 struct sinfo {
 	char *username;
 	char *shell;
 };
 
-
-static void __attribute__((__noreturn__)) usage (FILE *fp)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *fp = stdout;
 	fputs(USAGE_HEADER, fp);
 	fprintf(fp, _(" %s [options] [<username>]\n"), program_invocation_short_name);
 
@@ -75,51 +80,72 @@ static void __attribute__((__noreturn__)) usage (FILE *fp)
 	fputs(_(" -s, --shell <shell>  specify login shell\n"), fp);
 	fputs(_(" -l, --list-shells    print list of shells and exit\n"), fp);
 	fputs(USAGE_SEPARATOR, fp);
-	fputs(_(" -u, --help     display this help and exit\n"), fp);
-	fputs(_(" -v, --version  output version information and exit\n"), fp);
-	fprintf(fp, USAGE_MAN_TAIL("chsh(1)"));
-	exit(fp == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	printf( " -u, --help           %s\n", USAGE_OPTSTR_HELP);
+	printf( " -v, --version        %s\n", USAGE_OPTSTR_VERSION);
+	printf(USAGE_MAN_TAIL("chsh(1)"));
+	exit(EXIT_SUCCESS);
 }
 
 /*
- *  get_shell_list () -- if the given shell appears in /etc/shells,
+ *  is_known_shell() -- if the given shell appears in /etc/shells,
  *	return true.  if not, return false.
- *	if the given shell is NULL, /etc/shells is outputted to stdout.
  */
-static int get_shell_list(const char *shell_name)
+static int is_known_shell(const char *shell_name)
 {
-	FILE *fp;
-	int found = 0;
-	char *buf = NULL;
-	size_t sz = 0;
-	ssize_t len;
+	char *s, ret = 0;
 
-	fp = fopen(_PATH_SHELLS, "r");
-	if (!fp) {
-		if (!shell_name)
-			warnx(_("No known shells."));
+	if (!shell_name)
 		return 0;
+
+	setusershell();
+	while ((s = getusershell())) {
+		if (strcmp(shell_name, s) == 0) {
+			ret = 1;
+			break;
+		}
 	}
-	while ((len = getline(&buf, &sz, fp)) != -1) {
-		/* ignore comments and blank lines */
-		if (*buf == '#' || len < 2)
-			continue;
-		/* strip the ending newline */
-		if (buf[len - 1] == '\n')
-			buf[len - 1] = 0;
-		/* check or output the shell */
-		if (shell_name) {
-			if (!strcmp(shell_name, buf)) {
-				found = 1;
-				break;
-			}
-		} else
-			printf("%s\n", buf);
-	}
-	fclose(fp);
-	free(buf);
-	return found;
+	endusershell();
+	return ret;
 }
+
+/*
+ *  print_shells () -- /etc/shells is outputted to stdout.
+ */
+static void print_shells(void)
+{
+	char *s;
+
+	while ((s = getusershell()))
+		printf("%s\n", s);
+	endusershell();
+}
+
+#ifdef HAVE_LIBREADLINE
+static char *shell_name_generator(const char *text, int state)
+{
+	static size_t len;
+	char *s;
+
+	if (!state) {
+		setusershell();
+		len = strlen(text);
+	}
+
+	while ((s = getusershell())) {
+		if (strncmp(s, text, len) == 0)
+			return xstrdup(s);
+	}
+	return NULL;
+}
+
+static char **shell_name_completion(const char *text,
+				    int start __attribute__((__unused__)),
+				    int end __attribute__((__unused__)))
+{
+	rl_attempted_completion_over = 1;
+	return rl_completion_matches(text, shell_name_generator);
+}
+#endif
 
 /*
  *  parse_argv () --
@@ -129,11 +155,11 @@ static int get_shell_list(const char *shell_name)
 static void parse_argv(int argc, char **argv, struct sinfo *pinfo)
 {
 	static const struct option long_options[] = {
-		{"shell", required_argument, 0, 's'},
-		{"list-shells", no_argument, 0, 'l'},
-		{"help", no_argument, 0, 'h'},
-		{"version", no_argument, 0, 'v'},
-		{NULL, no_argument, 0, '0'},
+		{"shell",       required_argument, NULL, 's'},
+		{"list-shells", no_argument,       NULL, 'l'},
+		{"help",        no_argument,       NULL, 'h'},
+		{"version",     no_argument,       NULL, 'v'},
+		{NULL, 0, NULL, 0},
 	};
 	int c;
 
@@ -144,23 +170,22 @@ static void parse_argv(int argc, char **argv, struct sinfo *pinfo)
 			exit(EXIT_SUCCESS);
 		case 'u': /* deprecated */
 		case 'h':
-			usage(stdout);
+			usage();
 		case 'l':
-			get_shell_list(NULL);
+			print_shells();
 			exit(EXIT_SUCCESS);
 		case 's':
-			if (!optarg)
-				usage(stderr);
 			pinfo->shell = optarg;
 			break;
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 	/* done parsing arguments.  check for a username. */
 	if (optind < argc) {
-		if (optind + 1 < argc)
-			usage(stderr);
+		if (optind + 1 < argc) {
+			errx(EXIT_FAILURE, _("cannot handle multiple usernames"));
+		}
 		pinfo->username = argv[optind];
 	}
 }
@@ -173,14 +198,19 @@ static char *ask_new_shell(char *question, char *oldshell)
 {
 	int len;
 	char *ans = NULL;
+#ifdef HAVE_LIBREADLINE
+	rl_attempted_completion_function = shell_name_completion;
+#else
 	size_t dummy = 0;
-	ssize_t sz;
-
+#endif
 	if (!oldshell)
 		oldshell = "";
-	printf("%s [%s]: ", question, oldshell);
-	sz = getline(&ans, &dummy, stdin);
-	if (sz == -1)
+	printf("%s [%s]\n", question, oldshell);
+#ifdef HAVE_LIBREADLINE
+	if ((ans = readline("> ")) == NULL)
+#else
+	if (getline(&ans, &dummy, stdin) < 0)
+#endif
 		return NULL;
 	/* remove the newline at the end of ans. */
 	ltrim_whitespace((unsigned char *) ans);
@@ -204,7 +234,7 @@ static void check_shell(const char *shell)
 		errx(EXIT_FAILURE, _("\"%s\" is not executable"), shell);
 	if (illegal_passwd_chars(shell))
 		errx(EXIT_FAILURE, _("%s: has illegal characters"), shell);
-	if (!get_shell_list(shell)) {
+	if (!is_known_shell(shell)) {
 #ifdef ONLY_LISTED_SHELLS
 		if (!getuid())
 			warnx(_("Warning: \"%s\" is not listed in %s."), shell,
@@ -227,7 +257,7 @@ int main(int argc, char **argv)
 	char *oldshell;
 	int nullshell = 0;
 	const uid_t uid = getuid();
-	struct sinfo info = { 0 };
+	struct sinfo info = { NULL };
 	struct passwd *pw;
 
 	sanitize_env();
@@ -295,7 +325,7 @@ int main(int argc, char **argv)
 		    _("running UID doesn't match UID of user we're "
 		      "altering, shell change denied"));
 	}
-	if (uid != 0 && !get_shell_list(oldshell)) {
+	if (uid != 0 && !is_known_shell(oldshell)) {
 		errno = EACCES;
 		err(EXIT_FAILURE, _("your shell is not in %s, "
 				    "shell change denied"), _PATH_SHELLS);

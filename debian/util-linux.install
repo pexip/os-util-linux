@@ -7,14 +7,14 @@ debian/tmp/usr/bin/rename => /usr/bin/rename.ul
 [linux-any] sbin/mkswap
 [!linux-any] debian/tmp/sbin/mkswap => /sbin/mkswap.linux
 # weekly fstrim only available on linux
-[linux-any] lib/systemd/system/fstrim.timer => /usr/share/doc/util-linux/examples/fstrim.timer
-[linux-any] lib/systemd/system/fstrim.service => /usr/share/doc/util-linux/examples/fstrim.service
+[linux-any] lib/systemd/system/fstrim.timer
+[linux-any] lib/systemd/system/fstrim.service
+bin/findmnt
 bin/more
 bin/mountpoint
+bin/su
 sbin/agetty
 sbin/blkid
-sbin/cfdisk
-sbin/fdisk
 sbin/findfs
 sbin/fsck
 sbin/fsck.cramfs
@@ -25,11 +25,11 @@ sbin/mkfs.bfs
 sbin/mkfs.cramfs
 sbin/mkfs.minix
 sbin/runuser
-sbin/sfdisk
 sbin/sulogin
 sbin/swaplabel
 sbin/wipefs
 sbin/zramctl                                                    [linux-any]
+usr/bin/choom							[linux-any]
 usr/bin/chrt							[!hurd-any]
 usr/bin/flock
 usr/bin/getopt
@@ -40,7 +40,6 @@ usr/bin/ipcs
 usr/bin/isosize sbin/
 usr/bin/last
 usr/bin/lastb
-usr/bin/line
 usr/bin/lsns							[linux-any]
 usr/bin/mcookie
 usr/bin/mesg
@@ -48,15 +47,14 @@ usr/bin/mips                                                    [mips mipsel]
 usr/bin/mips32                                                  [mips mipsel]
 usr/bin/mips64                                                  [mips mipsel]
 usr/bin/namei
-usr/bin/pg
 usr/bin/ppc                                          [powerpc ppc64 ppc64el]
 usr/bin/ppc32                                        [powerpc ppc64 ppc64el]
 usr/bin/ppc64                                        [powerpc ppc64 ppc64el]
 usr/bin/rev
 usr/bin/s390                                                    [s390x]
 usr/bin/s390x                                                   [s390x]
+usr/bin/setpriv                                                 [linux-any]
 usr/bin/setsid
-usr/bin/tailf bin/
 usr/bin/utmpdump
 usr/bin/whereis
 usr/bin/x86_64                                                  [amd64]
@@ -94,4 +92,7 @@ usr/sbin/fdformat                                               [linux-any]
 usr/sbin/ldattach                                               [linux-any]
 usr/sbin/readprofile                                            [linux-any]
 usr/sbin/rtcwake                                                [linux-any]
-usr/sbin/tunelp                                                 [linux-any]
+usr/bin/lsmem                                                   [linux-any]
+usr/bin/chmem usr/sbin/                                         [linux-any]
+usr/bin/fincore                                                 [linux-any]
+sbin/blkzone                                                    [linux-any]

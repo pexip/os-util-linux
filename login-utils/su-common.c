@@ -1,49 +1,26 @@
-/* su for Linux.  Run a shell with substitute user and group IDs.
-   Copyright (C) 1992-2006 Free Software Foundation, Inc.
-   Copyright (C) 2012 SUSE Linux Products GmbH, Nuernberg
-
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2, or (at your option)
-   any later version.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.  */
-
-/* Run a shell with the real and effective UID and GID and groups
-   of USER, default `root'.
-
-   The shell run is taken from USER's password entry, /bin/sh if
-   none is specified there.  If the account has a password, su
-   prompts for a password unless run by a user with real UID 0.
-
-   Does not change the current directory.
-   Sets `HOME' and `SHELL' from the password entry for USER, and if
-   USER is not root, sets `USER' and `LOGNAME' to USER.
-   The subshell is not a login shell.
-
-   If one or more ARGs are given, they are passed as additional
-   arguments to the subshell.
-
-   Does not handle /bin/sh or other shells specially
-   (setting argv[0] to "-su", passing -c only to certain shells, etc.).
-   I don't see the point in doing that, and it's ugly.
-
-   Based on an implementation by David MacKenzie <djm@gnu.ai.mit.edu>.  */
-
-enum
-{
-  EXIT_CANNOT_INVOKE = 126,
-  EXIT_ENOENT = 127
-};
-
-#include <config.h>
+/*
+ * su(1) for Linux.  Run a shell with substitute user and group IDs.
+ *
+ * Copyright (C) 1992-2006 Free Software Foundation, Inc.
+ * Copyright (C) 2012 SUSE Linux Products GmbH, Nuernberg
+ * Copyright (C) 2016-2017 Karel Zak <kzak@redhat.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 2, or (at your option) any later
+ * version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.  You should have received a copy of the GNU General Public
+ * License along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301,
+ * USA.
+ *
+ *
+ * Based on an implementation by David MacKenzie <djm@gnu.ai.mit.edu>.
+ */
 #include <stdio.h>
 #include <getopt.h>
 #include <sys/types.h>
@@ -58,19 +35,53 @@ enum
 #include <signal.h>
 #include <sys/wait.h>
 #include <syslog.h>
-#include <utmp.h>
+#include <utmpx.h>
+
+#if defined(HAVE_LIBUTIL) && defined(HAVE_PTY_H) && defined(HAVE_SYS_SIGNALFD_H)
+# include <pty.h>
+# include <poll.h>
+# include <sys/signalfd.h>
+# include "all-io.h"
+# define USE_PTY
+#endif
 
 #include "err.h"
 
 #include <stdbool.h>
+
 #include "c.h"
 #include "xalloc.h"
 #include "nls.h"
 #include "pathnames.h"
 #include "env.h"
 #include "closestream.h"
+#include "strv.h"
 #include "strutils.h"
 #include "ttyutils.h"
+#include "pwdutils.h"
+#include "optutils.h"
+
+#include "logindefs.h"
+#include "su-common.h"
+
+#include "debug.h"
+
+UL_DEBUG_DEFINE_MASK(su);
+UL_DEBUG_DEFINE_MASKNAMES(su) = UL_DEBUG_EMPTY_MASKNAMES;
+
+#define SU_DEBUG_INIT		(1 << 1)
+#define SU_DEBUG_PAM		(1 << 2)
+#define SU_DEBUG_PARENT		(1 << 3)
+#define SU_DEBUG_TTY		(1 << 4)
+#define SU_DEBUG_LOG		(1 << 5)
+#define SU_DEBUG_MISC		(1 << 6)
+#define SU_DEBUG_SIG		(1 << 7)
+#define SU_DEBUG_PTY		(1 << 8)
+#define SU_DEBUG_ALL		0xFFFF
+
+#define DBG(m, x)       __UL_DBG(su, SU_DEBUG_, m, x)
+#define ON_DBG(m, x)    __UL_DBG_CALL(su, SU_DEBUG_, m, x)
+
 
 /* name of the pam configuration files. separate configs for su and su -  */
 #define PAM_SRVNAME_SU "su"
@@ -84,9 +95,6 @@ enum
 
 #define is_pam_failure(_rc)	((_rc) != PAM_SUCCESS)
 
-#include "logindefs.h"
-#include "su-common.h"
-
 /* The shell to run if none is given in the user's passwd entry.  */
 #define DEFAULT_SHELL "/bin/sh"
 
@@ -97,900 +105,1416 @@ enum
 extern char **environ;
 #endif
 
-static void run_shell (char const *, char const *, char **, size_t)
-     __attribute__ ((__noreturn__));
+enum {
+	SIGTERM_IDX = 0,
+	SIGINT_IDX,
+	SIGQUIT_IDX,
 
-/* If true, pass the `-f' option to the subshell.  */
-static bool fast_startup;
+	SIGNALS_IDX_COUNT
+};
 
-/* If true, simulate a login instead of just starting a shell.  */
-static bool simulate_login;
+/*
+ * su/runuser control struct
+ */
+struct su_context {
+	pam_handle_t	*pamh;			/* PAM handler */
+	struct pam_conv conv;			/* PAM conversation */
 
-/* If true, change some environment vars to indicate the user su'd to.  */
-static bool change_environment;
+	struct passwd	*pwd;			/* new user info */
+	char		*pwdbuf;		/* pwd strings */
 
-/* If true, then don't call setsid() with a command. */
-static int same_session = 0;
+	const char	*tty_name;		/* tty_path without /dev prefix */
+	const char	*tty_number;		/* end of the tty_path */
 
-/* SU_MODE_{RUNUSER,SU} */
-static int su_mode;
+	char		*new_user;		/* wanted user */
+	char		*old_user;		/* original user */
 
-/* Don't print PAM info messages (Last login, etc.). */
-static int suppress_pam_info;
+	pid_t		child;			/* fork() baby */
+	int		childstatus;		/* wait() status */
 
-static bool _pam_session_opened;
-static bool _pam_cred_established;
+	char		**env_whitelist_names;	/* environment whitelist */
+	char		**env_whitelist_vals;
+
+	struct sigaction oldact[SIGNALS_IDX_COUNT];	/* original sigactions indexed by SIG*_IDX */
+
+#ifdef USE_PTY
+	struct termios	stdin_attrs;		/* stdin and slave terminal runtime attributes */
+	int		pty_master;
+	int		pty_slave;
+	int		pty_sigfd;		/* signalfd() */
+	int		poll_timeout;
+	struct winsize	win;			/* terminal window size */
+	sigset_t	oldsig;			/* original signal mask */
+#endif
+	unsigned int runuser :1,		/* flase=su, true=runuser */
+		     runuser_uopt :1,		/* runuser -u specified */
+		     isterm :1,			/* is stdin terminal? */
+		     fast_startup :1,		/* pass the `-f' option to the subshell. */
+		     simulate_login :1,		/* simulate a login instead of just starting a shell. */
+		     change_environment :1,	/* change some environment vars to indicate the user su'd to.*/
+		     same_session :1,		/* don't call setsid() with a command. */
+		     suppress_pam_info:1,	/* don't print PAM info messages (Last login, etc.). */
+		     pam_has_session :1,	/* PAM session opened */
+		     pam_has_cred :1,		/* PAM cred established */
+		     pty :1,			/* create pseudo-terminal */
+		     restricted :1;		/* false for root user */
+};
+
+
 static sig_atomic_t volatile caught_signal = false;
-static pam_handle_t *pamh = NULL;
 
-static int restricted = 1;	/* zero for root user */
-
-
-static struct passwd *
-current_getpwuid(void)
+/* Signal handler for parent process.  */
+static void
+su_catch_sig(int sig)
 {
-  uid_t ruid;
-
-  /* GNU Hurd implementation has an extension where a process can exist in a
-   * non-conforming environment, and thus be outside the realms of POSIX
-   * process identifiers; on this platform, getuid() fails with a status of
-   * (uid_t)(-1) and sets errno if a program is run from a non-conforming
-   * environment.
-   *
-   * http://austingroupbugs.net/view.php?id=511
-   */
-  errno = 0;
-  ruid = getuid ();
-
-  return errno == 0 ? getpwuid (ruid) : NULL;
+	caught_signal = sig;
 }
+
+static void su_init_debug(void)
+{
+	__UL_INIT_DEBUG_FROM_ENV(su, SU_DEBUG_, 0, SU_DEBUG);
+}
+
+static void init_tty(struct su_context *su)
+{
+	su->isterm = isatty(STDIN_FILENO) ? 1 : 0;
+	DBG(TTY, ul_debug("initialize [is-term=%s]", su->isterm ? "true" : "false"));
+	if (su->isterm)
+		get_terminal_name(NULL, &su->tty_name, &su->tty_number);
+}
+
+/*
+ * Note, this function has to be possible call more than once. If the child is
+ * already dead than it returns saved result from the previous call.
+ */
+static int wait_for_child(struct su_context *su)
+{
+	pid_t pid = (pid_t) -1;;
+	int status = 0;
+
+	if (su->child == (pid_t) -1)
+		return su->childstatus;
+
+	if (su->child != (pid_t) -1) {
+		/*
+		 * The "su" parent process spends all time here in waitpid(),
+		 * but "su --pty" uses pty_proxy_master() and waitpid() is only
+		 * called to pick up child status or to react to SIGSTOP.
+		 */
+		DBG(SIG, ul_debug("waiting for child [%d]...", su->child));
+		for (;;) {
+			pid = waitpid(su->child, &status, WUNTRACED);
+
+			if (pid != (pid_t) - 1 && WIFSTOPPED(status)) {
+				DBG(SIG, ul_debug(" child got SIGSTOP -- stop all session"));
+				kill(getpid(), SIGSTOP);
+				/* once we get here, we must have resumed */
+				kill(pid, SIGCONT);
+				DBG(SIG, ul_debug(" session resumed -- continue"));
+#ifdef USE_PTY
+				/* Let's go back to pty_proxy_master() */
+				if (su->pty_sigfd != -1) {
+					DBG(SIG, ul_debug(" leaving on child SIGSTOP"));
+					return 0;
+				}
+#endif
+			} else
+				break;
+		}
+	}
+	if (pid != (pid_t) -1) {
+		if (WIFSIGNALED(status)) {
+			fprintf(stderr, "%s%s\n",
+				strsignal(WTERMSIG(status)),
+				WCOREDUMP(status) ? _(" (core dumped)")
+				: "");
+			status = WTERMSIG(status) + 128;
+		} else
+			status = WEXITSTATUS(status);
+
+		DBG(SIG, ul_debug("child %d is dead", su->child));
+		su->child = (pid_t) -1;	/* Don't use the PID anymore! */
+		su->childstatus = status;
+	} else if (caught_signal)
+		status = caught_signal + 128;
+	else
+		status = 1;
+
+	DBG(SIG, ul_debug("child status=%d", status));
+	return status;
+}
+
+
+#ifdef USE_PTY
+static void pty_init_slave(struct su_context *su)
+{
+	DBG(PTY, ul_debug("initialize slave"));
+
+	ioctl(su->pty_slave, TIOCSCTTY, 1);
+	close(su->pty_master);
+
+	dup2(su->pty_slave, STDIN_FILENO);
+	dup2(su->pty_slave, STDOUT_FILENO);
+	dup2(su->pty_slave, STDERR_FILENO);
+
+	close(su->pty_slave);
+	close(su->pty_sigfd);
+
+	su->pty_slave = -1;
+	su->pty_master = -1;
+	su->pty_sigfd = -1;
+
+	sigprocmask(SIG_SETMASK, &su->oldsig, NULL);
+
+	DBG(PTY, ul_debug("... initialize slave done"));
+}
+
+static void pty_create(struct su_context *su)
+{
+	struct termios slave_attrs;
+	int rc;
+
+	if (su->isterm) {
+	        DBG(PTY, ul_debug("create for terminal"));
+		struct winsize win;
+
+		/* original setting of the current terminal */
+		if (tcgetattr(STDIN_FILENO, &su->stdin_attrs) != 0)
+			err(EXIT_FAILURE, _("failed to get terminal attributes"));
+
+		/* reuse the current terminal setting for slave */
+		slave_attrs = su->stdin_attrs;
+		cfmakeraw(&slave_attrs);
+
+		ioctl(STDIN_FILENO, TIOCGWINSZ, (char *)&su->win);
+
+		/* create master+slave */
+		rc = openpty(&su->pty_master, &su->pty_slave, NULL, &slave_attrs, &win);
+
+	} else {
+	        DBG(PTY, ul_debug("create for non-terminal"));
+		rc = openpty(&su->pty_master, &su->pty_slave, NULL, NULL, NULL);
+
+		/* set slave attributes */
+		if (!rc) {
+			tcgetattr(su->pty_slave, &slave_attrs);
+			cfmakeraw(&slave_attrs);
+			tcsetattr(su->pty_slave, TCSANOW, &slave_attrs);
+		}
+	}
+
+	if (rc < 0)
+		err(EXIT_FAILURE, _("failed to create pseudo-terminal"));
+
+	DBG(PTY, ul_debug("pty setup done [master=%d, slave=%d]", su->pty_master, su->pty_slave));
+}
+
+static void pty_cleanup(struct su_context *su)
+{
+	if (su->pty_master == -1)
+		return;
+
+	DBG(PTY, ul_debug("cleanup"));
+	if (su->isterm)
+		tcsetattr(STDIN_FILENO, TCSADRAIN, &su->stdin_attrs);
+}
+
+static int write_output(char *obuf, ssize_t bytes)
+{
+	DBG(PTY, ul_debug(" writing output"));
+
+	if (write_all(STDOUT_FILENO, obuf, bytes)) {
+		DBG(PTY, ul_debug("  writing output *failed*"));
+		warn(_("write failed"));
+		return -errno;
+	}
+
+	return 0;
+}
+
+static int write_to_child(struct su_context *su,
+			  char *buf, size_t bufsz)
+{
+	return write_all(su->pty_master, buf, bufsz);
+}
+
+/*
+ * The su(1) is usually faster than shell, so it's a good idea to wait until
+ * the previous message has been already read by shell from slave before we
+ * write to master. This is necessary especially for EOF situation when we can
+ * send EOF to master before shell is fully initialized, to workaround this
+ * problem we wait until slave is empty. For example:
+ *
+ *   echo "date" | su
+ *
+ * Unfortunately, the child (usually shell) can ignore stdin at all, so we
+ * don't wait forever to avoid dead locks...
+ *
+ * Note that su --pty is primarily designed for interactive sessions as it
+ * maintains master+slave tty stuff within the session. Use pipe to write to
+ * su(1) and assume non-interactive (tee-like) behavior is NOT well
+ * supported.
+ */
+static void write_eof_to_child(struct su_context *su)
+{
+	unsigned int tries = 0;
+	struct pollfd fds[] = {
+	           { .fd = su->pty_slave, .events = POLLIN }
+	};
+	char c = DEF_EOF;
+
+	DBG(PTY, ul_debug(" waiting for empty slave"));
+	while (poll(fds, 1, 10) == 1 && tries < 8) {
+		DBG(PTY, ul_debug("   slave is not empty"));
+		xusleep(250000);
+		tries++;
+	}
+	if (tries < 8)
+		DBG(PTY, ul_debug("   slave is empty now"));
+
+	DBG(PTY, ul_debug(" sending EOF to master"));
+	write_to_child(su, &c, sizeof(char));
+}
+
+static int pty_handle_io(struct su_context *su, int fd, int *eof)
+{
+	char buf[BUFSIZ];
+	ssize_t bytes;
+
+	DBG(PTY, ul_debug("%d FD active", fd));
+	*eof = 0;
+
+	/* read from active FD */
+	bytes = read(fd, buf, sizeof(buf));
+	if (bytes < 0) {
+		if (errno == EAGAIN || errno == EINTR)
+			return 0;
+		return -errno;
+	}
+
+	if (bytes == 0) {
+		*eof = 1;
+		return 0;
+	}
+
+	/* from stdin (user) to command */
+	if (fd == STDIN_FILENO) {
+		DBG(PTY, ul_debug(" stdin --> master %zd bytes", bytes));
+
+		if (write_to_child(su, buf, bytes)) {
+			warn(_("write failed"));
+			return -errno;
+		}
+		/* without sync write_output() will write both input &
+		 * shell output that looks like double echoing */
+		fdatasync(su->pty_master);
+
+	/* from command (master) to stdout */
+	} else if (fd == su->pty_master) {
+		DBG(PTY, ul_debug(" master --> stdout %zd bytes", bytes));
+		write_output(buf, bytes);
+	}
+
+	return 0;
+}
+
+static int pty_handle_signal(struct su_context *su, int fd)
+{
+	struct signalfd_siginfo info;
+	ssize_t bytes;
+
+	DBG(SIG, ul_debug("signal FD %d active", fd));
+
+	bytes = read(fd, &info, sizeof(info));
+	if (bytes != sizeof(info)) {
+		if (bytes < 0 && (errno == EAGAIN || errno == EINTR))
+			return 0;
+		return -errno;
+	}
+
+	switch (info.ssi_signo) {
+	case SIGCHLD:
+		DBG(SIG, ul_debug(" get signal SIGCHLD"));
+
+		/* The child terminated or stopped. Note that we ignore SIGCONT
+		 * here, because stop/cont semantic is handled by wait_for_child() */
+		if (info.ssi_code == CLD_EXITED || info.ssi_status == SIGSTOP)
+			wait_for_child(su);
+		/* The child is dead, force poll() timeout. */
+		if (su->child == (pid_t) -1)
+			su->poll_timeout = 10;
+		return 0;
+	case SIGWINCH:
+		DBG(SIG, ul_debug(" get signal SIGWINCH"));
+		if (su->isterm) {
+			ioctl(STDIN_FILENO, TIOCGWINSZ, (char *)&su->win);
+			ioctl(su->pty_slave, TIOCSWINSZ, (char *)&su->win);
+		}
+		break;
+	case SIGTERM:
+		/* fallthrough */
+	case SIGINT:
+		/* fallthrough */
+	case SIGQUIT:
+		DBG(SIG, ul_debug(" get signal SIG{TERM,INT,QUIT}"));
+		caught_signal = info.ssi_signo;
+                /* Child termination is going to generate SIGCHILD (see above) */
+                kill(su->child, SIGTERM);
+		break;
+	default:
+		abort();
+	}
+
+	return 0;
+}
+
+static void pty_proxy_master(struct su_context *su)
+{
+	sigset_t ourset;
+	int rc = 0, ret, eof = 0;
+	enum {
+		POLLFD_SIGNAL = 0,
+		POLLFD_MASTER,
+		POLLFD_STDIN
+
+	};
+	struct pollfd pfd[] = {
+		[POLLFD_SIGNAL] = { .fd = -1,		  .events = POLLIN | POLLERR | POLLHUP },
+		[POLLFD_MASTER] = { .fd = su->pty_master, .events = POLLIN | POLLERR | POLLHUP },
+		[POLLFD_STDIN]	= { .fd = STDIN_FILENO,   .events = POLLIN | POLLERR | POLLHUP }
+	};
+
+	/* for PTY mode we use signalfd
+	 *
+	 * TODO: script(1) initializes this FD before fork, good or bad idea?
+	 */
+	sigfillset(&ourset);
+	if (sigprocmask(SIG_BLOCK, &ourset, NULL)) {
+		warn(_("cannot block signals"));
+		caught_signal = true;
+		return;
+	}
+
+	sigemptyset(&ourset);
+	sigaddset(&ourset, SIGCHLD);
+	sigaddset(&ourset, SIGWINCH);
+	sigaddset(&ourset, SIGALRM);
+	sigaddset(&ourset, SIGTERM);
+	sigaddset(&ourset, SIGINT);
+	sigaddset(&ourset, SIGQUIT);
+
+	if ((su->pty_sigfd = signalfd(-1, &ourset, SFD_CLOEXEC)) < 0) {
+		warn(("cannot create signal file descriptor"));
+		caught_signal = true;
+		return;
+	}
+
+	pfd[POLLFD_SIGNAL].fd = su->pty_sigfd;
+	su->poll_timeout = -1;
+
+	while (!caught_signal) {
+		size_t i;
+		int errsv;
+
+		DBG(PTY, ul_debug("calling poll()"));
+
+		/* wait for input or signal */
+		ret = poll(pfd, ARRAY_SIZE(pfd), su->poll_timeout);
+		errsv = errno;
+		DBG(PTY, ul_debug("poll() rc=%d", ret));
+
+		if (ret < 0) {
+			if (errsv == EAGAIN)
+				continue;
+			warn(_("poll failed"));
+			break;
+		}
+		if (ret == 0) {
+			DBG(PTY, ul_debug("leaving poll() loop [timeout=%d]", su->poll_timeout));
+			break;
+		}
+
+		for (i = 0; i < ARRAY_SIZE(pfd); i++) {
+			rc = 0;
+
+			if (pfd[i].revents == 0)
+				continue;
+
+			DBG(PTY, ul_debug(" active pfd[%s].fd=%d %s %s %s",
+						i == POLLFD_STDIN  ? "stdin" :
+						i == POLLFD_MASTER ? "master" :
+						i == POLLFD_SIGNAL ? "signal" : "???",
+						pfd[i].fd,
+						pfd[i].revents & POLLIN  ? "POLLIN" : "",
+						pfd[i].revents & POLLHUP ? "POLLHUP" : "",
+						pfd[i].revents & POLLERR ? "POLLERR" : ""));
+			switch (i) {
+			case POLLFD_STDIN:
+			case POLLFD_MASTER:
+				/* data */
+				if (pfd[i].revents & POLLIN)
+					rc = pty_handle_io(su, pfd[i].fd, &eof);
+				/* EOF maybe detected by two ways:
+				 *	A) poll() return POLLHUP event after close()
+				 *	B) read() returns 0 (no data) */
+				if ((pfd[i].revents & POLLHUP) || eof) {
+					DBG(PTY, ul_debug(" ignore FD"));
+					pfd[i].fd = -1;
+					if (i == POLLFD_STDIN) {
+						write_eof_to_child(su);
+						DBG(PTY, ul_debug("  ignore STDIN"));
+					}
+				}
+				continue;
+			case POLLFD_SIGNAL:
+				rc = pty_handle_signal(su, pfd[i].fd);
+				break;
+			}
+			if (rc)
+				break;
+		}
+	}
+
+	close(su->pty_sigfd);
+	su->pty_sigfd = -1;
+	DBG(PTY, ul_debug("poll() done [signal=%d, rc=%d]", caught_signal, rc));
+}
+#endif /* USE_PTY */
+
 
 /* Log the fact that someone has run su to the user given by PW;
    if SUCCESSFUL is true, they gave the correct password, etc.  */
 
-static void
-log_syslog(struct passwd const *pw, bool successful)
+static void log_syslog(struct su_context *su, bool successful)
 {
-  const char *new_user, *old_user, *tty;
+	DBG(LOG, ul_debug("syslog logging"));
 
-  new_user = pw->pw_name;
-  /* The utmp entry (via getlogin) is probably the best way to identify
-     the user, especially if someone su's from a su-shell.  */
-  old_user = getlogin ();
-  if (!old_user)
-    {
-      /* getlogin can fail -- usually due to lack of utmp entry.
-	 Resort to getpwuid.  */
-      struct passwd *pwd = current_getpwuid();
-      old_user = pwd ? pwd->pw_name : "";
-    }
-
-  if (get_terminal_name(NULL, &tty, NULL) != 0 || !tty)
-    tty = "none";
-
-  openlog (program_invocation_short_name, 0 , LOG_AUTH);
-  syslog (LOG_NOTICE, "%s(to %s) %s on %s",
-	  successful ? "" :
-	  su_mode == RUNUSER_MODE ? "FAILED RUNUSER " : "FAILED SU ",
-	  new_user, old_user, tty);
-  closelog ();
+	openlog(program_invocation_short_name, 0, LOG_AUTH);
+	syslog(LOG_NOTICE, "%s(to %s) %s on %s",
+	       successful ? "" :
+	       su->runuser ? "FAILED RUNUSER " : "FAILED SU ",
+	       su->new_user, su->old_user ? : "",
+	       su->tty_name ? : "none");
+	closelog();
 }
-
 
 /*
  * Log failed login attempts in _PATH_BTMP if that exists.
  */
-static void log_btmp(struct passwd const *pw)
+static void log_btmp(struct su_context *su)
 {
-	struct utmp ut;
+	struct utmpx ut;
 	struct timeval tv;
-	const char *tty_name, *tty_num;
+
+	DBG(LOG, ul_debug("btmp logging"));
 
 	memset(&ut, 0, sizeof(ut));
-
-	strncpy(ut.ut_user,
-		pw && pw->pw_name ? pw->pw_name : "(unknown)",
+	str2memcpy(ut.ut_user,
+		su->pwd && su->pwd->pw_name ? su->pwd->pw_name : "(unknown)",
 		sizeof(ut.ut_user));
 
-	get_terminal_name(NULL, &tty_name, &tty_num);
-	if (tty_num)
-		xstrncpy(ut.ut_id, tty_num, sizeof(ut.ut_id));
-	if (tty_name)
-		xstrncpy(ut.ut_line, tty_name, sizeof(ut.ut_line));
+	if (su->tty_number)
+		str2memcpy(ut.ut_id, su->tty_number, sizeof(ut.ut_id));
+	if (su->tty_name)
+		str2memcpy(ut.ut_line, su->tty_name, sizeof(ut.ut_line));
 
-#if defined(_HAVE_UT_TV)	/* in <utmpbits.h> included by <utmp.h> */
 	gettimeofday(&tv, NULL);
 	ut.ut_tv.tv_sec = tv.tv_sec;
 	ut.ut_tv.tv_usec = tv.tv_usec;
-#else
-	{
-		time_t t;
-		time(&t);
-		ut.ut_time = t;	/* ut_time is not always a time_t */
-	}
-#endif
 	ut.ut_type = LOGIN_PROCESS;	/* XXX doesn't matter */
 	ut.ut_pid = getpid();
 
-	updwtmp(_PATH_BTMP, &ut);
+	updwtmpx(_PATH_BTMP, &ut);
 }
 
-
-static int su_pam_conv(int num_msg, const struct pam_message **msg,
-                       struct pam_response **resp, void *appdata_ptr)
+static int supam_conv(	int num_msg,
+			const struct pam_message **msg,
+			struct pam_response **resp,
+			void *data)
 {
-	if (suppress_pam_info
+	struct su_context *su = (struct su_context *) data;
+
+	if (su->suppress_pam_info
 	    && num_msg == 1
-	    && msg
-	    && msg[0]->msg_style == PAM_TEXT_INFO)
+	    && msg && msg[0]->msg_style == PAM_TEXT_INFO)
 		return PAM_SUCCESS;
+
 #ifdef HAVE_SECURITY_PAM_MISC_H
-	return misc_conv(num_msg, msg, resp, appdata_ptr);
+	return misc_conv(num_msg, msg, resp, data);
 #elif defined(HAVE_SECURITY_OPENPAM_H)
-	return openpam_ttyconv(num_msg, msg, resp, appdata_ptr);
+	return openpam_ttyconv(num_msg, msg, resp, data);
 #endif
 }
 
-static struct pam_conv conv =
+static void supam_cleanup(struct su_context *su, int retcode)
 {
-	su_pam_conv,
-	NULL
-};
+	const int errsv = errno;
 
-static void
-cleanup_pam (int retcode)
-{
-  int saved_errno = errno;
+	DBG(PAM, ul_debug("cleanup"));
 
-  if (_pam_session_opened)
-    pam_close_session (pamh, 0);
-
-  if (_pam_cred_established)
-    pam_setcred (pamh, PAM_DELETE_CRED | PAM_SILENT);
-
-  pam_end(pamh, retcode);
-
-  errno = saved_errno;
+	if (su->pam_has_session)
+		pam_close_session(su->pamh, 0);
+	if (su->pam_has_cred)
+		pam_setcred(su->pamh, PAM_DELETE_CRED | PAM_SILENT);
+	pam_end(su->pamh, retcode);
+	errno = errsv;
 }
 
-/* Signal handler for parent process.  */
-static void
-su_catch_sig (int sig)
+
+static void supam_export_environment(struct su_context *su)
 {
-  caught_signal = sig;
-}
+	char **env;
 
-/* Export env variables declared by PAM modules.  */
-static void
-export_pamenv (void)
-{
-  char **env;
+	DBG(PAM, ul_debug("init environ[]"));
 
-  /* This is a copy but don't care to free as we exec later anyways.  */
-  env = pam_getenvlist (pamh);
-  while (env && *env)
-    {
-      if (putenv (*env) != 0)
-	err (EXIT_FAILURE, NULL);
-      env++;
-    }
-}
+	/* This is a copy but don't care to free as we exec later anyways.  */
+	env = pam_getenvlist(su->pamh);
 
-static void
-create_watching_parent (void)
-{
-  pid_t child;
-  sigset_t ourset;
-  struct sigaction oldact[3];
-  int status = 0;
-  int retval;
-
-  retval = pam_open_session (pamh, 0);
-  if (is_pam_failure(retval))
-    {
-      cleanup_pam (retval);
-      errx (EXIT_FAILURE, _("cannot open session: %s"),
-	     pam_strerror (pamh, retval));
-    }
-  else
-    _pam_session_opened = 1;
-
-  memset(oldact, 0, sizeof(oldact));
-
-  child = fork ();
-  if (child == (pid_t) -1)
-    {
-      cleanup_pam (PAM_ABORT);
-      err (EXIT_FAILURE, _("cannot create child process"));
-    }
-
-  /* the child proceeds to run the shell */
-  if (child == 0)
-    return;
-
-  /* In the parent watch the child.  */
-
-  /* su without pam support does not have a helper that keeps
-     sitting on any directory so let's go to /.  */
-  if (chdir ("/") != 0)
-    warn (_("cannot change directory to %s"), "/");
-
-  sigfillset (&ourset);
-  if (sigprocmask (SIG_BLOCK, &ourset, NULL))
-    {
-      warn (_("cannot block signals"));
-      caught_signal = true;
-    }
-  if (!caught_signal)
-    {
-      struct sigaction action;
-      action.sa_handler = su_catch_sig;
-      sigemptyset (&action.sa_mask);
-      action.sa_flags = 0;
-      sigemptyset (&ourset);
-    if (!same_session)
-      {
-        if (sigaddset(&ourset, SIGINT) || sigaddset(&ourset, SIGQUIT))
-          {
-            warn (_("cannot set signal handler"));
-            caught_signal = true;
-          }
-      }
-    if (!caught_signal && (sigaddset(&ourset, SIGTERM)
-                    || sigaddset(&ourset, SIGALRM)
-                    || sigaction(SIGTERM, &action, &oldact[0])
-                    || sigprocmask(SIG_UNBLOCK, &ourset, NULL))) {
-	  warn (_("cannot set signal handler"));
-	  caught_signal = true;
+	while (env && *env) {
+		if (putenv(*env) != 0)
+			err(EXIT_FAILURE, _("failed to modify environment"));
+		env++;
 	}
-    if (!caught_signal && !same_session && (sigaction(SIGINT, &action, &oldact[1])
-                                     || sigaction(SIGQUIT, &action, &oldact[2])))
-      {
-        warn (_("cannot set signal handler"));
-        caught_signal = true;
-      }
-    }
-  if (!caught_signal)
-    {
-      pid_t pid;
-      for (;;)
-	{
-	  pid = waitpid (child, &status, WUNTRACED);
+}
 
-	  if (pid != (pid_t)-1 && WIFSTOPPED (status))
-	    {
-	      kill (getpid (), SIGSTOP);
-	      /* once we get here, we must have resumed */
-	      kill (pid, SIGCONT);
-	    }
-	  else
-	    break;
+static void supam_authenticate(struct su_context *su)
+{
+	const char *srvname = NULL;
+	int rc;
+
+	srvname = su->runuser ?
+		   (su->simulate_login ? PAM_SRVNAME_RUNUSER_L : PAM_SRVNAME_RUNUSER) :
+		   (su->simulate_login ? PAM_SRVNAME_SU_L : PAM_SRVNAME_SU);
+
+	DBG(PAM, ul_debug("start [name: %s]", srvname));
+
+	rc = pam_start(srvname, su->pwd->pw_name, &su->conv, &su->pamh);
+	if (is_pam_failure(rc))
+		goto done;
+
+	if (su->tty_name) {
+		rc = pam_set_item(su->pamh, PAM_TTY, su->tty_name);
+		if (is_pam_failure(rc))
+			goto done;
 	}
-      if (pid != (pid_t)-1)
-        {
-          if (WIFSIGNALED (status))
-            {
-              fprintf (stderr, "%s%s\n", strsignal (WTERMSIG (status)),
-                       WCOREDUMP (status) ? _(" (core dumped)") : "");
-              status = WTERMSIG (status) + 128;
-            }
-          else
-            status = WEXITSTATUS (status);
-
-	  /* child is gone, don't use the PID anymore */
-	  child = (pid_t) -1;
-        }
-      else if (caught_signal)
-        status = caught_signal + 128;
-      else
-        status = 1;
-    }
-  else
-    status = 1;
-
-  if (caught_signal && child != (pid_t)-1)
-    {
-      fprintf (stderr, _("\nSession terminated, killing shell..."));
-      kill (child, SIGTERM);
-    }
-
-  cleanup_pam (PAM_SUCCESS);
-
-  if (caught_signal)
-    {
-      if (child != (pid_t)-1)
-	{
-	  sleep (2);
-	  kill (child, SIGKILL);
-	  fprintf (stderr, _(" ...killed.\n"));
+	if (su->old_user) {
+		rc = pam_set_item(su->pamh, PAM_RUSER, (const void *) su->old_user);
+		if (is_pam_failure(rc))
+			goto done;
+	}
+	if (su->runuser) {
+		/*
+		 * This is the only difference between runuser(1) and su(1). The command
+		 * runuser(1) does not required authentication, because user is root.
+		 */
+		if (su->restricted)
+			errx(EXIT_FAILURE, _("may not be used by non-root users"));
+		return;
 	}
 
-      /* Let's terminate itself with the received signal.
-       *
-       * It seems that shells use WIFSIGNALED() rather than our exit status
-       * value to detect situations when is necessary to cleanup (reset)
-       * terminal settings (kzak -- Jun 2013).
-       */
-      switch (caught_signal) {
-        case SIGTERM:
-          sigaction(SIGTERM, &oldact[0], NULL);
-          break;
-        case SIGINT:
-          sigaction(SIGINT, &oldact[1], NULL);
-          break;
-        case SIGQUIT:
-          sigaction(SIGQUIT, &oldact[2], NULL);
-          break;
-        default:
-	  /* just in case that signal stuff initialization failed and
-	   * caught_signal = true */
-          caught_signal = SIGKILL;
-          break;
-      }
-      kill(getpid(), caught_signal);
-    }
-  exit (status);
+	rc = pam_authenticate(su->pamh, 0);
+	if (is_pam_failure(rc))
+		goto done;
+
+	/* Check password expiration and offer option to change it.  */
+	rc = pam_acct_mgmt(su->pamh, 0);
+	if (rc == PAM_NEW_AUTHTOK_REQD)
+		rc = pam_chauthtok(su->pamh, PAM_CHANGE_EXPIRED_AUTHTOK);
+ done:
+	log_syslog(su, !is_pam_failure(rc));
+
+	if (is_pam_failure(rc)) {
+		const char *msg;
+
+		DBG(PAM, ul_debug("authentication failed"));
+		log_btmp(su);
+
+		msg = pam_strerror(su->pamh, rc);
+		pam_end(su->pamh, rc);
+		sleep(getlogindefs_num("FAIL_DELAY", 1));
+		errx(EXIT_FAILURE, "%s", msg ? msg : _("incorrect password"));
+	}
 }
 
-static void
-authenticate (const struct passwd *pw)
+static void supam_open_session(struct su_context *su)
 {
-  const struct passwd *lpw = NULL;
-  const char *cp, *srvname = NULL;
-  int retval;
+	int rc;
 
-  switch (su_mode) {
-  case SU_MODE:
-    srvname = simulate_login ? PAM_SRVNAME_SU_L : PAM_SRVNAME_SU;
-    break;
-  case RUNUSER_MODE:
-    srvname = simulate_login ? PAM_SRVNAME_RUNUSER_L : PAM_SRVNAME_RUNUSER;
-    break;
-  default:
-    abort();
-    break;
-  }
+	DBG(PAM, ul_debug("opening session"));
 
-  retval = pam_start (srvname, pw->pw_name, &conv, &pamh);
-  if (is_pam_failure(retval))
-    goto done;
-
-  if (isatty (0) && (cp = ttyname (0)) != NULL)
-    {
-      const char *tty;
-
-      if (strncmp (cp, "/dev/", 5) == 0)
-	tty = cp + 5;
-      else
-	tty = cp;
-      retval = pam_set_item (pamh, PAM_TTY, tty);
-      if (is_pam_failure(retval))
-	goto done;
-    }
-
-  lpw = current_getpwuid ();
-  if (lpw && lpw->pw_name)
-    {
-      retval = pam_set_item (pamh, PAM_RUSER, (const void *) lpw->pw_name);
-      if (is_pam_failure(retval))
-	goto done;
-    }
-
-  if (su_mode == RUNUSER_MODE)
-    {
-      /*
-       * This is the only difference between runuser(1) and su(1). The command
-       * runuser(1) does not required authentication, because user is root.
-       */
-      if (restricted)
-	errx(EXIT_FAILURE, _("may not be used by non-root users"));
-      return;
-    }
-
-  retval = pam_authenticate (pamh, 0);
-  if (is_pam_failure(retval))
-    goto done;
-
-  retval = pam_acct_mgmt (pamh, 0);
-  if (retval == PAM_NEW_AUTHTOK_REQD)
-    {
-      /* Password has expired.  Offer option to change it.  */
-      retval = pam_chauthtok (pamh, PAM_CHANGE_EXPIRED_AUTHTOK);
-    }
-
-done:
-
-  log_syslog(pw, !is_pam_failure(retval));
-
-  if (is_pam_failure(retval))
-    {
-      const char *msg;
-
-      log_btmp(pw);
-
-      msg  = pam_strerror(pamh, retval);
-      pam_end(pamh, retval);
-      sleep (getlogindefs_num ("FAIL_DELAY", 1));
-      errx (EXIT_FAILURE, "%s", msg?msg:_("incorrect password"));
-    }
+	rc = pam_open_session(su->pamh, 0);
+	if (is_pam_failure(rc)) {
+		supam_cleanup(su, rc);
+		errx(EXIT_FAILURE, _("cannot open session: %s"),
+		     pam_strerror(su->pamh, rc));
+	} else
+		su->pam_has_session = 1;
 }
 
-static void
-set_path(const struct passwd* pw)
+static void parent_setup_signals(struct su_context *su)
 {
-  int r;
-  if (pw->pw_uid)
-    r = logindefs_setenv("PATH", "ENV_PATH", _PATH_DEFPATH);
+	sigset_t ourset;
 
-  else if ((r = logindefs_setenv("PATH", "ENV_ROOTPATH", NULL)) != 0)
-    r = logindefs_setenv("PATH", "ENV_SUPATH", _PATH_DEFPATH_ROOT);
+	/*
+	 * Signals setup
+	 *
+	 * 1) block all signals
+	 */
+	DBG(SIG, ul_debug("initialize signals"));
 
-  if (r != 0)
-    err (EXIT_FAILURE,  _("failed to set the %s environment variable"), "PATH");
+	sigfillset(&ourset);
+	if (sigprocmask(SIG_BLOCK, &ourset, NULL)) {
+		warn(_("cannot block signals"));
+		caught_signal = true;
+	}
+
+	if (!caught_signal) {
+		struct sigaction action;
+		action.sa_handler = su_catch_sig;
+		sigemptyset(&action.sa_mask);
+		action.sa_flags = 0;
+
+		sigemptyset(&ourset);
+
+		/* 2a) add wanted signals to the mask (for session) */
+		if (!su->same_session
+		    && (sigaddset(&ourset, SIGINT)
+		       || sigaddset(&ourset, SIGQUIT))) {
+
+			warn(_("cannot initialize signal mask for session"));
+			caught_signal = true;
+		}
+		/* 2b) add wanted generic signals to the mask */
+		if (!caught_signal
+		    && (sigaddset(&ourset, SIGTERM)
+		       || sigaddset(&ourset, SIGALRM))) {
+
+			warn(_("cannot initialize signal mask"));
+			caught_signal = true;
+		}
+
+		/* 3a) set signal handlers (for session) */
+		if (!caught_signal
+		    && !su->same_session
+		    && (sigaction(SIGINT, &action, &su->oldact[SIGINT_IDX])
+		       || sigaction(SIGQUIT, &action, &su->oldact[SIGQUIT_IDX]))) {
+
+			warn(_("cannot set signal handler for session"));
+			caught_signal = true;
+		}
+
+		/* 3b) set signal handlers */
+		if (!caught_signal
+		     && sigaction(SIGTERM, &action, &su->oldact[SIGTERM_IDX])) {
+
+			warn(_("cannot set signal handler"));
+			caught_signal = true;
+		}
+
+		/* 4) unblock wanted signals */
+		if (!caught_signal
+		    && sigprocmask(SIG_UNBLOCK, &ourset, NULL)) {
+
+			warn(_("cannot set signal mask"));
+			caught_signal = true;
+		}
+	}
 }
 
-/* Update `environ' for the new shell based on PW, with SHELL being
-   the value for the SHELL environment variable.  */
 
-static void
-modify_environment (const struct passwd *pw, const char *shell)
+static void create_watching_parent(struct su_context *su)
 {
-  if (simulate_login)
-    {
-      /* Leave TERM unchanged.  Set HOME, SHELL, USER, LOGNAME, PATH.
-         Unset all other environment variables.  */
-      char *term = getenv ("TERM");
-      if (term)
-	term = xstrdup (term);
-      environ = xmalloc ((6 + !!term) * sizeof (char *));
-      environ[0] = NULL;
-      if (term) {
-	xsetenv ("TERM", term, 1);
-	free(term);
-      }
-      xsetenv ("HOME", pw->pw_dir, 1);
-      if (shell)
-	xsetenv ("SHELL", shell, 1);
-      xsetenv ("USER", pw->pw_name, 1);
-      xsetenv ("LOGNAME", pw->pw_name, 1);
-      set_path(pw);
-    }
-  else
-    {
-      /* Set HOME, SHELL, and (if not becoming a superuser)
-	 USER and LOGNAME.  */
-      if (change_environment)
-        {
-          xsetenv ("HOME", pw->pw_dir, 1);
-	  if (shell)
-            xsetenv ("SHELL", shell, 1);
-	  if (getlogindefs_bool ("ALWAYS_SET_PATH", 0))
-	    set_path(pw);
+	int status;
 
-          if (pw->pw_uid)
-            {
-              xsetenv ("USER", pw->pw_name, 1);
-              xsetenv ("LOGNAME", pw->pw_name, 1);
-            }
-        }
-    }
+	DBG(MISC, ul_debug("forking..."));
+#ifdef USE_PTY
+	/* no-op, just save original signal mask to oldsig */
+	sigprocmask(SIG_BLOCK, NULL, &su->oldsig);
 
-  export_pamenv ();
+	if (su->pty)
+		pty_create(su);
+#endif
+	fflush(stdout);			/* ??? */
+
+	switch ((int) (su->child = fork())) {
+	case -1: /* error */
+		supam_cleanup(su, PAM_ABORT);
+#ifdef USE_PTY
+		if (su->pty)
+			pty_cleanup(su);
+#endif
+		err(EXIT_FAILURE, _("cannot create child process"));
+		break;
+
+	case 0: /* child */
+		return;
+
+	default: /* parent */
+		DBG(MISC, ul_debug("child [pid=%d]", (int) su->child));
+		break;
+	}
+
+	/* free unnecessary stuff */
+	free_getlogindefs_data();
+
+	/* In the parent watch the child.  */
+
+	/* su without pam support does not have a helper that keeps
+	   sitting on any directory so let's go to /.  */
+	if (chdir("/") != 0)
+		warn(_("cannot change directory to %s"), "/");
+#ifdef USE_PTY
+	if (su->pty)
+		pty_proxy_master(su);
+	else
+#endif
+		parent_setup_signals(su);
+
+	/*
+	 * Wait for child
+	 */
+	if (!caught_signal)
+		status = wait_for_child(su);
+	else
+		status = 1;
+
+	DBG(SIG, ul_debug("final child status=%d", status));
+
+	if (caught_signal && su->child != (pid_t)-1) {
+		fprintf(stderr, _("\nSession terminated, killing shell..."));
+		kill(su->child, SIGTERM);
+	}
+
+	supam_cleanup(su, PAM_SUCCESS);
+
+	if (caught_signal) {
+		if (su->child != (pid_t)-1) {
+			DBG(SIG, ul_debug("killing child"));
+			sleep(2);
+			kill(su->child, SIGKILL);
+			fprintf(stderr, _(" ...killed.\n"));
+		}
+
+		/* Let's terminate itself with the received signal.
+		 *
+		 * It seems that shells use WIFSIGNALED() rather than our exit status
+		 * value to detect situations when is necessary to cleanup (reset)
+		 * terminal settings (kzak -- Jun 2013).
+		 */
+		DBG(SIG, ul_debug("restore signals setting"));
+		switch (caught_signal) {
+		case SIGTERM:
+			sigaction(SIGTERM, &su->oldact[SIGTERM_IDX], NULL);
+			break;
+		case SIGINT:
+			sigaction(SIGINT, &su->oldact[SIGINT_IDX], NULL);
+			break;
+		case SIGQUIT:
+			sigaction(SIGQUIT, &su->oldact[SIGQUIT_IDX], NULL);
+			break;
+		default:
+			/* just in case that signal stuff initialization failed and
+			 * caught_signal = true */
+			caught_signal = SIGKILL;
+			break;
+		}
+		DBG(SIG, ul_debug("self-send %d signal", caught_signal));
+		kill(getpid(), caught_signal);
+	}
+
+#ifdef USE_PTY
+	if (su->pty)
+		pty_cleanup(su);
+#endif
+	DBG(MISC, ul_debug("exiting [rc=%d]", status));
+	exit(status);
 }
 
-/* Become the user and group(s) specified by PW.  */
-
-static void
-init_groups (const struct passwd *pw, gid_t *groups, size_t num_groups)
+/* Adds @name from the current environment to the whitelist. If @name is not
+ * set then nothing is added to the whitelist and returns 1.
+ */
+static int env_whitelist_add(struct su_context *su, const char *name)
 {
-  int retval;
+	const char *env = getenv(name);
 
-  errno = 0;
-
-  if (num_groups)
-    retval = setgroups (num_groups, groups);
-  else
-    retval = initgroups (pw->pw_name, pw->pw_gid);
-
-  if (retval == -1)
-    {
-      cleanup_pam (PAM_ABORT);
-      err (EXIT_FAILURE, _("cannot set groups"));
-    }
-  endgrent ();
-
-  retval = pam_setcred (pamh, PAM_ESTABLISH_CRED);
-  if (is_pam_failure(retval))
-    errx (EXIT_FAILURE, "%s", pam_strerror (pamh, retval));
-  else
-    _pam_cred_established = 1;
+	if (!env)
+		return 1;
+	if (strv_extend(&su->env_whitelist_names, name))
+                err_oom();
+	if (strv_extend(&su->env_whitelist_vals, env))
+                err_oom();
+	return 0;
 }
 
-static void
-change_identity (const struct passwd *pw)
+static int env_whitelist_setenv(struct su_context *su, int overwrite)
 {
-  if (setgid (pw->pw_gid))
-    err (EXIT_FAILURE,  _("cannot set group id"));
-  if (setuid (pw->pw_uid))
-    err (EXIT_FAILURE,  _("cannot set user id"));
+	char **one;
+	size_t i = 0;
+	int rc;
+
+	STRV_FOREACH(one, su->env_whitelist_names) {
+		rc = setenv(*one, su->env_whitelist_vals[i], overwrite);
+		if (rc)
+			return rc;
+		i++;
+	}
+
+	return 0;
 }
 
-/* Run SHELL, or DEFAULT_SHELL if SHELL is empty.
-   If COMMAND is nonzero, pass it to the shell with the -c option.
-   Pass ADDITIONAL_ARGS to the shell as more arguments; there
-   are N_ADDITIONAL_ARGS extra arguments.  */
-
-static void
-run_shell (char const *shell, char const *command, char **additional_args,
-	   size_t n_additional_args)
+/* Creates (add to) whitelist from comma delimited string */
+static int env_whitelist_from_string(struct su_context *su, const char *str)
 {
-  size_t n_args = 1 + fast_startup + 2 * !!command + n_additional_args + 1;
-  char const **args = xcalloc (n_args, sizeof *args);
-  size_t argno = 1;
+	char **all = strv_split(str, ",");
+	char **one;
 
-  if (simulate_login)
-    {
-      char *arg0;
-      char *shell_basename;
+	if (!all) {
+		if (errno == ENOMEM)
+			err_oom();
+		return -EINVAL;
+	}
 
-      shell_basename = basename (shell);
-      arg0 = xmalloc (strlen (shell_basename) + 2);
-      arg0[0] = '-';
-      strcpy (arg0 + 1, shell_basename);
-      args[0] = arg0;
-    }
-  else
-    args[0] = basename (shell);
-  if (fast_startup)
-    args[argno++] = "-f";
-  if (command)
-    {
-      args[argno++] = "-c";
-      args[argno++] = command;
-    }
-  memcpy (args + argno, additional_args, n_additional_args * sizeof *args);
-  args[argno + n_additional_args] = NULL;
-  execv (shell, (char **) args);
+	STRV_FOREACH(one, all)
+		env_whitelist_add(su, *one);
+	strv_free(all);
+	return 0;
+}
 
-  {
-    int exit_status = (errno == ENOENT ? EXIT_ENOENT : EXIT_CANNOT_INVOKE);
-    warn (_("failed to execute %s"), shell);
-    exit (exit_status);
-  }
+static void setenv_path(const struct passwd *pw)
+{
+	int rc;
+
+	DBG(MISC, ul_debug("setting PATH"));
+
+	if (pw->pw_uid)
+		rc = logindefs_setenv("PATH", "ENV_PATH", _PATH_DEFPATH);
+
+	else if ((rc = logindefs_setenv("PATH", "ENV_ROOTPATH", NULL)) != 0)
+		rc = logindefs_setenv("PATH", "ENV_SUPATH", _PATH_DEFPATH_ROOT);
+
+	if (rc)
+		err(EXIT_FAILURE, _("failed to set the PATH environment variable"));
+}
+
+static void modify_environment(struct su_context *su, const char *shell)
+{
+	const struct passwd *pw = su->pwd;
+
+
+	DBG(MISC, ul_debug("modify environ[]"));
+
+	/* Leave TERM unchanged.  Set HOME, SHELL, USER, LOGNAME, PATH.
+	 *
+	 * Unset all other environment variables, but follow
+	 * --whitelist-environment if specified.
+	 */
+	if (su->simulate_login) {
+		/* leave TERM unchanged */
+		env_whitelist_add(su, "TERM");
+
+		/* Note that original su(1) has allocated environ[] by malloc
+		 * to the number of expected variables. This seems unnecessary
+		 * optimization as libc later realloc(current_size+2) and for
+		 * empty environ[] the curren_size is zero. It seems better to
+		 * keep all logic around environment in glibc's hands.
+		 *                                           --kzak [Aug 2018]
+		 */
+#ifdef HAVE_CLEARENV
+		clearenv();
+#else
+		environ = NULL;
+#endif
+		/* always reset */
+		if (shell)
+			xsetenv("SHELL", shell, 1);
+
+		setenv_path(pw);
+
+		xsetenv("HOME", pw->pw_dir, 1);
+		xsetenv("USER", pw->pw_name, 1);
+		xsetenv("LOGNAME", pw->pw_name, 1);
+
+		/* apply all from whitelist, but no overwrite */
+		env_whitelist_setenv(su, 0);
+
+	/* Set HOME, SHELL, and (if not becoming a superuser) USER and LOGNAME.
+	 */
+	} else if (su->change_environment) {
+		xsetenv("HOME", pw->pw_dir, 1);
+		if (shell)
+			xsetenv("SHELL", shell, 1);
+
+		if (getlogindefs_bool("ALWAYS_SET_PATH", 0))
+			setenv_path(pw);
+
+		if (pw->pw_uid) {
+			xsetenv("USER", pw->pw_name, 1);
+			xsetenv("LOGNAME", pw->pw_name, 1);
+		}
+	}
+
+	supam_export_environment(su);
+}
+
+static void init_groups(struct su_context *su, gid_t *groups, size_t ngroups)
+{
+	int rc;
+
+	DBG(MISC, ul_debug("initialize groups"));
+
+	errno = 0;
+	if (ngroups)
+		rc = setgroups(ngroups, groups);
+	else
+		rc = initgroups(su->pwd->pw_name, su->pwd->pw_gid);
+
+	if (rc == -1) {
+		supam_cleanup(su, PAM_ABORT);
+		err(EXIT_FAILURE, _("cannot set groups"));
+	}
+	endgrent();
+
+	rc = pam_setcred(su->pamh, PAM_ESTABLISH_CRED);
+	if (is_pam_failure(rc))
+		errx(EXIT_FAILURE, _("failed to user credentials: %s"),
+					pam_strerror(su->pamh, rc));
+	su->pam_has_cred = 1;
+}
+
+static void change_identity(const struct passwd *pw)
+{
+	DBG(MISC, ul_debug("changing identity [GID=%d, UID=%d]", pw->pw_gid, pw->pw_uid));
+
+	if (setgid(pw->pw_gid))
+		err(EXIT_FAILURE, _("cannot set group id"));
+	if (setuid(pw->pw_uid))
+		err(EXIT_FAILURE, _("cannot set user id"));
+}
+
+/* Run SHELL, if COMMAND is nonzero, pass it to the shell with the -c option.
+ * Pass ADDITIONAL_ARGS to the shell as more arguments; there are
+ * N_ADDITIONAL_ARGS extra arguments.
+ */
+static void run_shell(
+		struct su_context *su,
+		char const *shell, char const *command, char **additional_args,
+		size_t n_additional_args)
+{
+	size_t n_args = 1 + su->fast_startup + 2 * ! !command + n_additional_args + 1;
+	const char **args = xcalloc(n_args, sizeof *args);
+	size_t argno = 1;
+
+	DBG(MISC, ul_debug("starting shell [shell=%s, command=\"%s\"%s%s]",
+				shell, command,
+				su->simulate_login ? " login" : "",
+				su->fast_startup ? " fast-start" : ""));
+
+	if (su->simulate_login) {
+		char *arg0;
+		char *shell_basename;
+
+		shell_basename = basename(shell);
+		arg0 = xmalloc(strlen(shell_basename) + 2);
+		arg0[0] = '-';
+		strcpy(arg0 + 1, shell_basename);
+		args[0] = arg0;
+	} else
+		args[0] = basename(shell);
+
+	if (su->fast_startup)
+		args[argno++] = "-f";
+	if (command) {
+		args[argno++] = "-c";
+		args[argno++] = command;
+	}
+
+	memcpy(args + argno, additional_args, n_additional_args * sizeof *args);
+	args[argno + n_additional_args] = NULL;
+	execv(shell, (char **)args);
+	errexec(shell);
 }
 
 /* Return true if SHELL is a restricted shell (one not returned by
-   getusershell), else false, meaning it is a standard shell.  */
-
-static bool
-restricted_shell (const char *shell)
+ * getusershell), else false, meaning it is a standard shell.
+ */
+static bool is_restricted_shell(const char *shell)
 {
-  char *line;
+	char *line;
 
-  setusershell ();
-  while ((line = getusershell ()) != NULL)
-    {
-      if (*line != '#' && !strcmp (line, shell))
-	{
-	  endusershell ();
-	  return false;
+	setusershell();
+	while ((line = getusershell()) != NULL) {
+		if (*line != '#' && !strcmp(line, shell)) {
+			endusershell();
+			return false;
+		}
 	}
-    }
-  endusershell ();
-  return true;
+	endusershell();
+
+	DBG(MISC, ul_debug("%s is restricted shell (not in /etc/shells)", shell));
+	return true;
 }
 
-static void __attribute__((__noreturn__))
-usage (int status)
+static void usage_common(void)
 {
-  if (su_mode == RUNUSER_MODE) {
-    fputs(USAGE_HEADER, stdout);
-    printf (_(" %s [options] -u <user> [[--] <command>]\n"), program_invocation_short_name);
-    printf (_(" %s [options] [-] [<user> [<argument>...]]\n"), program_invocation_short_name);
-    fputs (_("\n"
-    "Run <command> with the effective user ID and group ID of <user>.  If -u is\n"
-    "not given, fall back to su(1)-compatible semantics and execute standard shell.\n"
-    "The options -c, -f, -l, and -s are mutually exclusive with -u.\n"), stdout);
+	fputs(_(" -m, -p, --preserve-environment      do not reset environment variables\n"), stdout);
+	fputs(_(" -w, --whitelist-environment <list>  don't reset specified variables\n"), stdout);
+	fputs(USAGE_SEPARATOR, stdout);
 
-    fputs(USAGE_OPTIONS, stdout);
+	fputs(_(" -g, --group <group>             specify the primary group\n"), stdout);
+	fputs(_(" -G, --supp-group <group>        specify a supplemental group\n"), stdout);
+	fputs(USAGE_SEPARATOR, stdout);
 
-    fputs (_(" -u, --user <user>             username\n"), stdout);
+	fputs(_(" -, -l, --login                  make the shell a login shell\n"), stdout);
+	fputs(_(" -c, --command <command>         pass a single command to the shell with -c\n"), stdout);
+	fputs(_(" --session-command <command>     pass a single command to the shell with -c\n"
+	        "                                   and do not create a new session\n"), stdout);
+	fputs(_(" -f, --fast                      pass -f to the shell (for csh or tcsh)\n"), stdout);
+	fputs(_(" -s, --shell <shell>             run <shell> if /etc/shells allows it\n"), stdout);
+	fputs(_(" -P, --pty                       create a new pseudo-terminal\n"), stdout);
 
-  } else {
-    fputs(USAGE_HEADER, stdout);
-    printf (_(" %s [options] [-] [<user> [<argument>...]]\n"), program_invocation_short_name);
-    fputs (_("\n"
-    "Change the effective user ID and group ID to that of <user>.\n"
-    "A mere - implies -l.  If <user> is not given, root is assumed.\n"), stdout);
-
-    fputs(USAGE_OPTIONS, stdout);
-  }
-
-  fputs (_(" -m, -p, --preserve-environment  do not reset environment variables\n"), stdout);
-  fputs (_(" -g, --group <group>             specify the primary group\n"), stdout);
-  fputs (_(" -G, --supp-group <group>        specify a supplemental group\n\n"), stdout);
-
-  fputs (_(" -, -l, --login                  make the shell a login shell\n"), stdout);
-  fputs (_(" -c, --command <command>         pass a single command to the shell with -c\n"), stdout);
-  fputs (_(" --session-command <command>     pass a single command to the shell with -c\n"
-           "                                   and do not create a new session\n"), stdout);
-  fputs (_(" -f, --fast                      pass -f to the shell (for csh or tcsh)\n"), stdout);
-  fputs (_(" -s, --shell <shell>             run <shell> if /etc/shells allows it\n"), stdout);
-
-  fputs(USAGE_SEPARATOR, stdout);
-  fputs(USAGE_HELP, stdout);
-  fputs(USAGE_VERSION, stdout);
-  printf(USAGE_MAN_TAIL(su_mode == SU_MODE ? "su(1)" : "runuser(1)"));
-  exit (status);
+	fputs(USAGE_SEPARATOR, stdout);
+	printf(USAGE_HELP_OPTIONS(33));
 }
 
-static
-void load_config(void)
+static void usage_runuser(void)
 {
-  switch (su_mode) {
-  case SU_MODE:
-    logindefs_load_file(_PATH_LOGINDEFS_SU);
-    break;
-  case RUNUSER_MODE:
-    logindefs_load_file(_PATH_LOGINDEFS_RUNUSER);
-    break;
-  }
+	fputs(USAGE_HEADER, stdout);
+	fprintf(stdout,
+		_(" %1$s [options] -u <user> [[--] <command>]\n"
+	          " %1$s [options] [-] [<user> [<argument>...]]\n"),
+		program_invocation_short_name);
 
-  logindefs_load_file(_PATH_LOGINDEFS);
+	fputs(USAGE_SEPARATOR, stdout);
+	fputs(_("Run <command> with the effective user ID and group ID of <user>.  If -u is\n"
+	       "not given, fall back to su(1)-compatible semantics and execute standard shell.\n"
+	       "The options -c, -f, -l, and -s are mutually exclusive with -u.\n"), stdout);
+
+	fputs(USAGE_OPTIONS, stdout);
+	fputs(_(" -u, --user <user>               username\n"), stdout);
+	usage_common();
+	fputs(USAGE_SEPARATOR, stdout);
+
+	fprintf(stdout, USAGE_MAN_TAIL("runuser(1)"));
+}
+
+static void usage_su(void)
+{
+	fputs(USAGE_HEADER, stdout);
+	fprintf(stdout,
+		_(" %s [options] [-] [<user> [<argument>...]]\n"),
+		program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, stdout);
+	fputs(_("Change the effective user ID and group ID to that of <user>.\n"
+		"A mere - implies -l.  If <user> is not given, root is assumed.\n"), stdout);
+
+	fputs(USAGE_OPTIONS, stdout);
+	usage_common();
+
+	fprintf(stdout, USAGE_MAN_TAIL("su(1)"));
+}
+
+static void __attribute__((__noreturn__)) usage(int mode)
+{
+	if (mode == SU_MODE)
+		usage_su();
+	else
+		usage_runuser();
+
+	exit(EXIT_SUCCESS);
+}
+
+static void load_config(void *data)
+{
+	struct su_context *su = (struct su_context *) data;
+
+	DBG(MISC, ul_debug("loading logindefs"));
+	logindefs_load_file(su->runuser ? _PATH_LOGINDEFS_RUNUSER : _PATH_LOGINDEFS_SU);
+	logindefs_load_file(_PATH_LOGINDEFS);
 }
 
 /*
  * Returns 1 if the current user is not root
  */
-static int
-evaluate_uid(void)
+static int is_not_root(void)
 {
-  uid_t ruid = getuid();
-  uid_t euid = geteuid();
+	const uid_t ruid = getuid();
+	const uid_t euid = geteuid();
 
-  /* if we're really root and aren't running setuid */
-  return (uid_t) 0 == ruid && ruid == euid ? 0 : 1;
+	/* if we're really root and aren't running setuid */
+	return (uid_t) 0 == ruid && ruid == euid ? 0 : 1;
 }
 
-static gid_t
-add_supp_group(const char *name, gid_t **groups, size_t *ngroups)
+static gid_t add_supp_group(const char *name, gid_t **groups, size_t *ngroups)
 {
-  struct group *gr;
+	struct group *gr;
 
-  if (*ngroups >= NGROUPS_MAX)
-    errx(EXIT_FAILURE,
-	P_("specifying more than %d supplemental group is not possible",
-	   "specifying more than %d supplemental groups is not possible",
-	     NGROUPS_MAX - 1), NGROUPS_MAX - 1);
+	if (*ngroups >= NGROUPS_MAX)
+		errx(EXIT_FAILURE,
+		     P_("specifying more than %d supplemental group is not possible",
+		        "specifying more than %d supplemental groups is not possible",
+			NGROUPS_MAX - 1), NGROUPS_MAX - 1);
 
-  gr = getgrnam(name);
-  if (!gr)
-    errx(EXIT_FAILURE, _("group %s does not exist"), name);
+	gr = getgrnam(name);
+	if (!gr)
+		errx(EXIT_FAILURE, _("group %s does not exist"), name);
 
-  *groups = xrealloc(*groups, sizeof(gid_t) * (*ngroups + 1));
-  (*groups)[*ngroups] = gr->gr_gid;
-  (*ngroups)++;
+	DBG(MISC, ul_debug("add %s group [name=%s, GID=%d]", name, gr->gr_name, (int) gr->gr_gid));
 
-  return gr->gr_gid;
+	*groups = xrealloc(*groups, sizeof(gid_t) * (*ngroups + 1));
+	(*groups)[*ngroups] = gr->gr_gid;
+	(*ngroups)++;
+
+	return gr->gr_gid;
 }
 
-int
-su_main (int argc, char **argv, int mode)
+int su_main(int argc, char **argv, int mode)
 {
-  int optc;
-  const char *new_user = DEFAULT_USER, *runuser_user = NULL;
-  char *command = NULL;
-  int request_same_session = 0;
-  char *shell = NULL;
-  struct passwd *pw;
-  struct passwd pw_copy;
+	struct su_context _su = {
+		.conv			= { supam_conv, NULL },
+		.runuser		= (mode == RUNUSER_MODE ? 1 : 0),
+		.change_environment	= 1,
+		.new_user		= DEFAULT_USER,
+#ifdef USE_PTY
+		.pty_master		= -1,
+		.pty_slave		= -1,
+		.pty_sigfd		= -1,
+#endif
+	}, *su = &_su;
 
-  gid_t *groups = NULL;
-  size_t ngroups = 0;
-  bool use_supp = false;
-  bool use_gid = false;
-  gid_t gid = 0;
+	int optc;
+	char *command = NULL;
+	int request_same_session = 0;
+	char *shell = NULL;
 
-  static const struct option longopts[] = {
-    {"command", required_argument, NULL, 'c'},
-    {"session-command", required_argument, NULL, 'C'},
-    {"fast", no_argument, NULL, 'f'},
-    {"login", no_argument, NULL, 'l'},
-    {"preserve-environment", no_argument, NULL, 'p'},
-    {"shell", required_argument, NULL, 's'},
-    {"group", required_argument, NULL, 'g'},
-    {"supp-group", required_argument, NULL, 'G'},
-    {"user", required_argument, NULL, 'u'},		/* runuser only */
-    {"help", no_argument, 0, 'h'},
-    {"version", no_argument, 0, 'V'},
-    {NULL, 0, NULL, 0}
-  };
+	gid_t *groups = NULL;
+	size_t ngroups = 0;
+	bool use_supp = false;
+	bool use_gid = false;
+	gid_t gid = 0;
 
-  setlocale (LC_ALL, "");
-  bindtextdomain (PACKAGE, LOCALEDIR);
-  textdomain (PACKAGE);
-  atexit(close_stdout);
+	static const struct option longopts[] = {
+		{"command", required_argument, NULL, 'c'},
+		{"session-command", required_argument, NULL, 'C'},
+		{"fast", no_argument, NULL, 'f'},
+		{"login", no_argument, NULL, 'l'},
+		{"preserve-environment", no_argument, NULL, 'p'},
+		{"pty", no_argument, NULL, 'P'},
+		{"shell", required_argument, NULL, 's'},
+		{"group", required_argument, NULL, 'g'},
+		{"supp-group", required_argument, NULL, 'G'},
+		{"user", required_argument, NULL, 'u'},	/* runuser only */
+		{"whitelist-environment", required_argument, NULL, 'w'},
+		{"help", no_argument, 0, 'h'},
+		{"version", no_argument, 0, 'V'},
+		{NULL, 0, NULL, 0}
+	};
+	static const ul_excl_t excl[] = {	/* rows and cols in ASCII order */
+		{ 'm', 'w' },			/* preserve-environment, whitelist-environment */
+		{ 'p', 'w' },			/* preserve-environment, whitelist-environment */
+		{ 0 }
+	};
+	int excl_st[ARRAY_SIZE(excl)] = UL_EXCL_STATUS_INIT;
 
-  su_mode = mode;
-  fast_startup = false;
-  simulate_login = false;
-  change_environment = true;
+	setlocale(LC_ALL, "");
+	bindtextdomain(PACKAGE, LOCALEDIR);
+	textdomain(PACKAGE);
+	atexit(close_stdout);
 
-  while ((optc = getopt_long (argc, argv, "c:fg:G:lmps:u:hV", longopts, NULL)) != -1)
-    {
-      switch (optc)
-	{
-	case 'c':
-	  command = optarg;
-	  break;
+	su_init_debug();
+	su->conv.appdata_ptr = (void *) su;
 
-        case 'C':
-          command = optarg;
-          request_same_session = 1;
-          break;
+	while ((optc =
+		getopt_long(argc, argv, "c:fg:G:lmpPs:u:hVw:", longopts,
+			    NULL)) != -1) {
 
-	case 'f':
-	  fast_startup = true;
-	  break;
+		err_exclusive_options(optc, longopts, excl, excl_st);
 
-	case 'g':
-	  use_gid = true;
-	  gid = add_supp_group(optarg, &groups, &ngroups);
-	  break;
+		switch (optc) {
+		case 'c':
+			command = optarg;
+			break;
 
-	case 'G':
-	  use_supp = true;
-	  add_supp_group(optarg, &groups, &ngroups);
-	  break;
+		case 'C':
+			command = optarg;
+			request_same_session = 1;
+			break;
 
-	case 'l':
-	  simulate_login = true;
-	  break;
+		case 'f':
+			su->fast_startup = true;
+			break;
 
-	case 'm':
-	case 'p':
-	  change_environment = false;
-	  break;
+		case 'g':
+			use_gid = true;
+			gid = add_supp_group(optarg, &groups, &ngroups);
+			break;
 
-	case 's':
-	  shell = optarg;
-	  break;
+		case 'G':
+			use_supp = true;
+			add_supp_group(optarg, &groups, &ngroups);
+			break;
 
-	case 'u':
-	  if (su_mode != RUNUSER_MODE)
-	    usage (EXIT_FAILURE);
-	  runuser_user = optarg;
-	  break;
+		case 'l':
+			su->simulate_login = true;
+			break;
 
-	case 'h':
-	  usage(0);
+		case 'm':
+		case 'p':
+			su->change_environment = false;
+			break;
 
-	case 'V':
-	  printf(UTIL_LINUX_VERSION);
-	  exit(EXIT_SUCCESS);
+		case 'w':
+			env_whitelist_from_string(su, optarg);
+			break;
 
-	default:
-	  usage (EXIT_FAILURE);
+		case 'P':
+#ifdef USE_PTY
+			su->pty = 1;
+#else
+			errx(EXIT_FAILURE, _("--pty is not supported for your system"));
+#endif
+			break;
+
+		case 's':
+			shell = optarg;
+			break;
+
+		case 'u':
+			if (!su->runuser)
+				errtryhelp(EXIT_FAILURE);
+			su->runuser_uopt = 1;
+			su->new_user = optarg;
+			break;
+
+		case 'h':
+			usage(mode);
+
+		case 'V':
+			printf(UTIL_LINUX_VERSION);
+			exit(EXIT_SUCCESS);
+
+		default:
+			errtryhelp(EXIT_FAILURE);
+		}
 	}
-    }
 
-  restricted = evaluate_uid ();
+	su->restricted = is_not_root();
 
-  if (optind < argc && !strcmp (argv[optind], "-"))
-    {
-      simulate_login = true;
-      ++optind;
-    }
+	if (optind < argc && !strcmp(argv[optind], "-")) {
+		su->simulate_login = true;
+		++optind;
+	}
 
-  if (simulate_login && !change_environment) {
-    warnx(_("ignoring --preserve-environment, it's mutually exclusive with --login"));
-    change_environment = true;
-  }
+	if (su->simulate_login && !su->change_environment) {
+		warnx(_
+		      ("ignoring --preserve-environment, it's mutually exclusive with --login"));
+		su->change_environment = true;
+	}
 
-  switch (su_mode) {
-  case RUNUSER_MODE:
-    if (runuser_user) {
-      /* runuser -u <user> <command> */
-      new_user = runuser_user;
-      if (shell || fast_startup || command || simulate_login) {
-        errx(EXIT_FAILURE,
-	   _("options --{shell,fast,command,session-command,login} and "
-	     "--user are mutually exclusive"));
-      }
-      if (optind == argc)
-        errx(EXIT_FAILURE, _("no command was specified"));
+	switch (mode) {
+	case RUNUSER_MODE:
+		/* runuser -u <user> <command>
+		 *
+		 * If -u <user> is not specified, then follow traditional su(1) behavior and
+		 * fallthrough
+		 */
+		if (su->runuser_uopt) {
+			if (shell || su->fast_startup || command || su->simulate_login)
+				errx(EXIT_FAILURE,
+				     _("options --{shell,fast,command,session-command,login} and "
+				      "--user are mutually exclusive"));
+			if (optind == argc)
+				errx(EXIT_FAILURE, _("no command was specified"));
+			break;
+		}
+		/* fallthrough */
+	case SU_MODE:
+		if (optind < argc)
+			su->new_user = argv[optind++];
+		break;
+	}
 
-      break;
-    }
-    /* fallthrough if -u <user> is not specified, then follow
-     * traditional su(1) behavior
-     */
-  case SU_MODE:
-    if (optind < argc)
-      new_user = argv[optind++];
-    break;
-  }
+	if ((use_supp || use_gid) && su->restricted)
+		errx(EXIT_FAILURE,
+		     _("only root can specify alternative groups"));
 
-  if ((use_supp || use_gid) && restricted)
-    errx(EXIT_FAILURE, _("only root can specify alternative groups"));
+	logindefs_set_loader(load_config, (void *) su);
+	init_tty(su);
 
-  logindefs_load_defaults = load_config;
+	su->pwd = xgetpwnam(su->new_user, &su->pwdbuf);
+	if (!su->pwd
+	    || !su->pwd->pw_passwd
+	    || !su->pwd->pw_name || !*su->pwd->pw_name
+	    || !su->pwd->pw_dir  || !*su->pwd->pw_dir)
+		errx(EXIT_FAILURE, _("user %s does not exist"), su->new_user);
 
-  pw = getpwnam (new_user);
-  if (! (pw && pw->pw_name && pw->pw_name[0] && pw->pw_dir && pw->pw_dir[0]
-	 && pw->pw_passwd))
-    errx (EXIT_FAILURE, _("user %s does not exist"), new_user);
+	su->new_user = su->pwd->pw_name;
+	su->old_user = xgetlogin();
 
-  /* Make a copy of the password information and point pw at the local
-     copy instead.  Otherwise, some systems (e.g. Linux) would clobber
-     the static data through the getlogin call from log_su.
-     Also, make sure pw->pw_shell is a nonempty string.
-     It may be NULL when NEW_USER is a username that is retrieved via NIS (YP),
-     but that doesn't have a default shell listed.  */
-  pw_copy = *pw;
-  pw = &pw_copy;
-  pw->pw_name = xstrdup (pw->pw_name);
-  pw->pw_passwd = xstrdup (pw->pw_passwd);
-  pw->pw_dir = xstrdup (pw->pw_dir);
-  pw->pw_shell = xstrdup (pw->pw_shell && pw->pw_shell[0]
-			  ? pw->pw_shell
-			  : DEFAULT_SHELL);
-  endpwent ();
+	if (!su->pwd->pw_shell || !*su->pwd->pw_shell)
+		su->pwd->pw_shell = DEFAULT_SHELL;
 
-  if (use_supp && !use_gid)
-    pw->pw_gid = groups[0];
-  else if (use_gid)
-    pw->pw_gid = gid;
+	if (use_supp && !use_gid)
+		su->pwd->pw_gid = groups[0];
+	else if (use_gid)
+		su->pwd->pw_gid = gid;
 
-  authenticate (pw);
+	supam_authenticate(su);
 
-  if (request_same_session || !command || !pw->pw_uid)
-    same_session = 1;
+	if (request_same_session || !command || !su->pwd->pw_uid)
+		su->same_session = 1;
 
-  /* initialize shell variable only if "-u <user>" not specified */
-  if (runuser_user) {
-    shell = NULL;
-  } else {
-    if (!shell && !change_environment)
-      shell = getenv ("SHELL");
-    if (shell && getuid () != 0 && restricted_shell (pw->pw_shell))
-      {
-	/* The user being su'd to has a nonstandard shell, and so is
-	   probably a uucp account or has restricted access.  Don't
-	   compromise the account by allowing access with a standard
-	   shell.  */
-	warnx (_("using restricted shell %s"), pw->pw_shell);
-	shell = NULL;
-      }
-    shell = xstrdup (shell ? shell : pw->pw_shell);
-  }
+	/* initialize shell variable only if "-u <user>" not specified */
+	if (su->runuser_uopt) {
+		shell = NULL;
+	} else {
+		if (!shell && !su->change_environment)
+			shell = getenv("SHELL");
 
-  init_groups (pw, groups, ngroups);
+		if (shell
+		    && getuid() != 0
+		    && is_restricted_shell(su->pwd->pw_shell)) {
+			/* The user being su'd to has a nonstandard shell, and
+			 * so is probably a uucp account or has restricted
+			 * access.  Don't compromise the account by allowing
+			 * access with a standard shell.
+			 */
+			warnx(_("using restricted shell %s"), su->pwd->pw_shell);
+			shell = NULL;
+		}
+		shell = xstrdup(shell ? shell : su->pwd->pw_shell);
+	}
 
-  if (!simulate_login || command)
-    suppress_pam_info = 1;		/* don't print PAM info messages */
+	init_groups(su, groups, ngroups);
 
-  create_watching_parent ();
-  /* Now we're in the child.  */
+	if (!su->simulate_login || command)
+		su->suppress_pam_info = 1;	/* don't print PAM info messages */
 
-  change_identity (pw);
-  if (!same_session)
-    setsid ();
+	supam_open_session(su);
 
-  /* Set environment after pam_open_session, which may put KRB5CCNAME
-     into the pam_env, etc.  */
+	create_watching_parent(su);
+	/* Now we're in the child.  */
 
-  modify_environment (pw, shell);
+	change_identity(su->pwd);
+	if (!su->same_session || su->pty) {
+		DBG(MISC, ul_debug("call setsid()"));
+		setsid();
+	}
+#ifdef USE_PTY
+	if (su->pty)
+		pty_init_slave(su);
+#endif
+	/* Set environment after pam_open_session, which may put KRB5CCNAME
+	   into the pam_env, etc.  */
 
-  if (simulate_login && chdir (pw->pw_dir) != 0)
-    warn (_("warning: cannot change directory to %s"), pw->pw_dir);
+	modify_environment(su, shell);
 
-  if (shell)
-    run_shell (shell, command, argv + optind, max (0, argc - optind));
-  else {
-    execvp(argv[optind], &argv[optind]);
-    err(EXIT_FAILURE, _("failed to execute %s"), argv[optind]);
-  }
+	if (su->simulate_login && chdir(su->pwd->pw_dir) != 0)
+		warn(_("warning: cannot change directory to %s"), su->pwd->pw_dir);
+
+	if (shell)
+		run_shell(su, shell, command, argv + optind, max(0, argc - optind));
+
+	execvp(argv[optind], &argv[optind]);
+	err(EXIT_FAILURE, _("failed to execute %s"), argv[optind]);
 }
-
-// vim: sw=2 cinoptions=>4,n-2,{2,^-2,\:2,=2,g0,h2,p5,t0,+2,(0,u0,w1,m1

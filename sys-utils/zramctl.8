@@ -39,16 +39,21 @@ Set up a zram device:
 .SH DESCRIPTION
 .B zramctl
 is used to quickly set up zram device parameters, to reset zram devices, and to
-query the status of used zram devices.  If no option is given, all zram devices
-are shown.
-
+query the status of used zram devices.
+.PP
+If no option is given, all non-zero size zram devices are shown.
+.PP
+Note that \fIzramdev\fP node specified on command line has to already exist. The command
+.B zramctl
+creates a new /dev/zram<N> nodes only when \fB\-\-find\fR option specified. It's possible
+(and common) that after system boot /dev/zram<N> nodes are not created yet.
 .SH OPTIONS
 .TP
-.BR \-a , " \-\-algorithm lzo" | lz4
+.BR \-a , " \-\-algorithm lzo" | lz4 | lz4hc | deflate | 842
 Set the compression algorithm to be used for compressing data in the zram device.
 .TP
 .BR \-f , " \-\-find"
-Find the first unused zram device.  If a \fB--size\fR argument is present, then
+Find the first unused zram device.  If a \fB\-\-size\fR argument is present, then
 initialize the device.
 .TP
 .BR \-n , " \-\-noheadings"
@@ -58,6 +63,9 @@ Do not print a header line in status output.
 Define the status output columns to be used.  If no output arrangement is
 specified, then a default set is used.
 Use \fB\-\-help\fP to get a list of all supported columns.
+.TP
+.B \-\-output\-all
+Output all available columns.
 .TP
 .B \-\-raw
 Use the raw format for status output.
@@ -120,4 +128,4 @@ Karel Zak <kzak@redhat.com>
 .fi
 .SH AVAILABILITY
 The zramctl command is part of the util-linux package and is available from
-ftp://ftp.kernel.org/pub/linux/utils/util-linux/.
+https://www.kernel.org/pub/linux/utils/util-linux/.

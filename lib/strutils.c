@@ -17,6 +17,12 @@
 #include "strutils.h"
 #include "bitops.h"
 
+static int STRTOXX_EXIT_CODE = EXIT_FAILURE;
+
+void strutils_set_exitcode(int ex) {
+	STRTOXX_EXIT_CODE = ex;
+}
+
 static int do_scale_by_power (uintmax_t *x, int base, int power)
 {
 	while (power--) {
@@ -56,12 +62,13 @@ static int do_scale_by_power (uintmax_t *x, int base, int power)
  */
 int parse_size(const char *str, uintmax_t *res, int *power)
 {
-	char *p;
+	const char *p;
+	char *end;
 	uintmax_t x, frac = 0;
 	int base = 1024, rc = 0, pwr = 0, frac_zeros = 0;
 
-	static const char *suf  = "KMGTPEYZ";
-	static const char *suf2 = "kmgtpeyz";
+	static const char *suf  = "KMGTPEZY";
+	static const char *suf2 = "kmgtpezy";
 	const char *sp;
 
 	*res = 0;
@@ -77,25 +84,25 @@ int parse_size(const char *str, uintmax_t *res, int *power)
 	 * use lconv->negative_sign. But coreutils use the same solution,
 	 * so it's probably good enough...
 	 */
-	p = (char *) str;
+	p = str;
 	while (isspace((unsigned char) *p))
 		p++;
 	if (*p == '-') {
 		rc = -EINVAL;
 		goto err;
 	}
-	p = NULL;
 
-	errno = 0;
-	x = strtoumax(str, &p, 0);
+	errno = 0, end = NULL;
+	x = strtoumax(str, &end, 0);
 
-	if (p == str ||
+	if (end == str ||
 	    (errno != 0 && (x == UINTMAX_MAX || x == 0))) {
 		rc = errno ? -errno : -EINVAL;
 		goto err;
 	}
-	if (!p || !*p)
+	if (!end || !*end)
 		goto done;			/* without suffix */
+	p = end;
 
 	/*
 	 * Check size suffixes
@@ -107,25 +114,26 @@ check_suffix:
 		base = 1000;			/* XB, 10^N */
 	else if (*(p + 1)) {
 		struct lconv const *l = localeconv();
-		char *dp = l ? l->decimal_point : NULL;
+		const char *dp = l ? l->decimal_point : NULL;
 		size_t dpsz = dp ? strlen(dp) : 0;
 
 		if (frac == 0 && *p && dp && strncmp(dp, p, dpsz) == 0) {
-			char *fstr = p + dpsz;
+			const char *fstr = p + dpsz;
 
-			for (p = fstr; *p && *p == '0'; p++)
+			for (p = fstr; *p == '0'; p++)
 				frac_zeros++;
-			errno = 0, p = NULL;
-			frac = strtoumax(fstr, &p, 0);
-			if (p == fstr ||
+			errno = 0, end = NULL;
+			frac = strtoumax(fstr, &end, 0);
+			if (end == fstr ||
 			    (errno != 0 && (frac == UINTMAX_MAX || frac == 0))) {
 				rc = errno ? -errno : -EINVAL;
 				goto err;
 			}
-			if (frac && (!p  || !*p)) {
+			if (frac && (!end  || !*end)) {
 				rc = -EINVAL;
 				goto err;		/* without suffix, but with frac */
 			}
+			p = end;
 			goto check_suffix;
 		}
 		rc = -EINVAL;
@@ -237,11 +245,11 @@ void *mempcpy(void *restrict dest, const void *restrict src, size_t n)
 #ifndef HAVE_STRNLEN
 size_t strnlen(const char *s, size_t maxlen)
 {
-        int i;
+        size_t i;
 
         for (i = 0; i < maxlen; i++) {
                 if (s[i] == '\0')
-                        return i + 1;
+                        return i;
         }
         return maxlen;
 }
@@ -269,6 +277,9 @@ char *strndup(const char *s, size_t n)
 }
 #endif
 
+static uint32_t _strtou32_or_err(const char *str, const char *errmesg, int base);
+static uint64_t _strtou64_or_err(const char *str, const char *errmesg, int base);
+
 int16_t strtos16_or_err(const char *str, const char *errmesg)
 {
 	int32_t num = strtos32_or_err(str, errmesg);
@@ -280,15 +291,25 @@ int16_t strtos16_or_err(const char *str, const char *errmesg)
 	return num;
 }
 
-uint16_t strtou16_or_err(const char *str, const char *errmesg)
+static uint16_t _strtou16_or_err(const char *str, const char *errmesg, int base)
 {
-	uint32_t num = strtou32_or_err(str, errmesg);
+	uint32_t num = _strtou32_or_err(str, errmesg, base);
 
 	if (num > UINT16_MAX) {
 		errno = ERANGE;
 		err(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
 	}
 	return num;
+}
+
+uint16_t strtou16_or_err(const char *str, const char *errmesg)
+{
+	return _strtou16_or_err(str, errmesg, 10);
+}
+
+uint16_t strtox16_or_err(const char *str, const char *errmesg)
+{
+	return _strtou16_or_err(str, errmesg, 16);
 }
 
 int32_t strtos32_or_err(const char *str, const char *errmesg)
@@ -302,15 +323,25 @@ int32_t strtos32_or_err(const char *str, const char *errmesg)
 	return num;
 }
 
-uint32_t strtou32_or_err(const char *str, const char *errmesg)
+static uint32_t _strtou32_or_err(const char *str, const char *errmesg, int base)
 {
-	uint64_t num = strtou64_or_err(str, errmesg);
+	uint64_t num = _strtou64_or_err(str, errmesg, base);
 
 	if (num > UINT32_MAX) {
 		errno = ERANGE;
 		err(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
 	}
 	return num;
+}
+
+uint32_t strtou32_or_err(const char *str, const char *errmesg)
+{
+	return _strtou32_or_err(str, errmesg, 10);
+}
+
+uint32_t strtox32_or_err(const char *str, const char *errmesg)
+{
+	return _strtou32_or_err(str, errmesg, 16);
 }
 
 int64_t strtos64_or_err(const char *str, const char *errmesg)
@@ -334,7 +365,7 @@ err:
 	errx(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
 }
 
-uint64_t strtou64_or_err(const char *str, const char *errmesg)
+static uint64_t _strtou64_or_err(const char *str, const char *errmesg, int base)
 {
 	uintmax_t num;
 	char *end = NULL;
@@ -342,7 +373,7 @@ uint64_t strtou64_or_err(const char *str, const char *errmesg)
 	errno = 0;
 	if (str == NULL || *str == '\0')
 		goto err;
-	num = strtoumax(str, &end, 10);
+	num = strtoumax(str, &end, base);
 
 	if (errno || str == end || (end && *end))
 		goto err;
@@ -355,6 +386,15 @@ err:
 	errx(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
 }
 
+uint64_t strtou64_or_err(const char *str, const char *errmesg)
+{
+	return _strtou64_or_err(str, errmesg, 10);
+}
+
+uint64_t strtox64_or_err(const char *str, const char *errmesg)
+{
+	return _strtou64_or_err(str, errmesg, 16);
+}
 
 double strtod_or_err(const char *str, const char *errmesg)
 {
@@ -446,7 +486,7 @@ void strtotimeval_or_err(const char *str, struct timeval *tv, const char *errmes
  * Converts stat->st_mode to ls(1)-like mode string. The size of "str" must
  * be 11 bytes.
  */
-void xstrmode(mode_t mode, char *str)
+char *xstrmode(mode_t mode, char *str)
 {
 	unsigned short i = 0;
 
@@ -481,10 +521,12 @@ void xstrmode(mode_t mode, char *str)
 		? (mode & S_IXOTH ? 't' : 'T')
 		: (mode & S_IXOTH ? 'x' : '-'));
 	str[i] = '\0';
+
+	return str;
 }
 
 /*
- * returns exponent (2^x=n) in range KiB..PiB
+ * returns exponent (2^x=n) in range KiB..EiB (2^10..2^60)
  */
 static int get_exp(uint64_t n)
 {
@@ -932,7 +974,7 @@ int skip_fline(FILE *fp)
 	} while (1);
 }
 
-#ifdef TEST_PROGRAM
+#ifdef TEST_PROGRAM_STRUTILS
 
 static int test_strutils_sizes(int argc, char *argv[])
 {
@@ -984,4 +1026,4 @@ int main(int argc, char *argv[])
 
 	return EXIT_FAILURE;
 }
-#endif /* TEST_PROGRAM */
+#endif /* TEST_PROGRAM_STRUTILS */

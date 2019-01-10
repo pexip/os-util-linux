@@ -41,7 +41,7 @@ enum {
 };
 
 struct mcookie_control {
-	struct	MD5Context ctx;
+	struct	UL_MD5Context ctx;
 	char	**files;
 	size_t	nfiles;
 	uint64_t maxsz;
@@ -67,17 +67,18 @@ static uint64_t hash_file(struct mcookie_control *ctl, int fd)
 		r = read_all(fd, (char *) buf, rdsz);
 		if (r < 0)
 			break;
-		MD5Update(&ctl->ctx, buf, r);
+		ul_MD5Update(&ctl->ctx, buf, r);
 		count += r;
 	}
 	/* Separate files with a null byte */
 	buf[0] = '\0';
-	MD5Update(&ctl->ctx, buf, 1);
+	ul_MD5Update(&ctl->ctx, buf, 1);
 	return count;
 }
 
-static void __attribute__ ((__noreturn__)) usage(FILE * out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options]\n"), program_invocation_short_name);
 
@@ -90,11 +91,10 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fputs(_(" -v, --verbose         explain what is being done\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
-	fprintf(out, USAGE_MAN_TAIL("mcookie(1)"));
+	printf(USAGE_HELP_OPTIONS(23));
+	printf(USAGE_MAN_TAIL("mcookie(1)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 static void randomness_from_files(struct mcookie_control *ctl)
@@ -131,7 +131,7 @@ int main(int argc, char **argv)
 {
 	struct mcookie_control ctl = { .verbose = 0 };
 	size_t i;
-	unsigned char digest[MD5LENGTH];
+	unsigned char digest[UL_MD5LENGTH];
 	unsigned char buf[RAND_BYTES];
 	int c;
 
@@ -167,27 +167,28 @@ int main(int argc, char **argv)
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
 	if (ctl.maxsz && ctl.nfiles == 0)
 		warnx(_("--max-size ignored when used without --file"));
 
+	ul_MD5Init(&ctl.ctx);
 	randomness_from_files(&ctl);
 	free(ctl.files);
 
 	random_get_bytes(&buf, RAND_BYTES);
-	MD5Update(&ctl.ctx, buf, RAND_BYTES);
+	ul_MD5Update(&ctl.ctx, buf, RAND_BYTES);
 	if (ctl.verbose)
 		fprintf(stderr, P_("Got %d byte from %s\n",
 				   "Got %d bytes from %s\n", RAND_BYTES),
 				RAND_BYTES, random_tell_source());
 
-	MD5Final(digest, &ctl.ctx);
-	for (i = 0; i < MD5LENGTH; i++)
+	ul_MD5Final(digest, &ctl.ctx);
+	for (i = 0; i < UL_MD5LENGTH; i++)
 		printf("%02x", digest[i]);
 	putchar('\n');
 

@@ -20,7 +20,7 @@
 
 #define SECTOR_SIZE 512
 
-struct floppy_struct param;
+static struct floppy_struct param;
 
 
 static void format_begin(int ctrl)
@@ -65,7 +65,7 @@ static void format_disk(int ctrl, unsigned int track_from, unsigned int track_to
 
 	format_end(ctrl);
 
-	printf(_("done\n"));
+	printf("     \b\b\b\b\b%s", _("done\n"));
 }
 
 static void verify_disk(int ctrl, unsigned int track_from, unsigned int track_to, unsigned int repair)
@@ -138,8 +138,9 @@ static void verify_disk(int ctrl, unsigned int track_from, unsigned int track_to
 	printf(_("done\n"));
 }
 
-static void __attribute__ ((__noreturn__)) usage(FILE * out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options] <device>\n"),
 		program_invocation_short_name);
@@ -155,11 +156,10 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fputs(_(" -n, --no-verify   disable the verification after the format\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
-	fprintf(out, USAGE_MAN_TAIL("fdformat(8)"));
+	printf(USAGE_HELP_OPTIONS(19));
+	printf(USAGE_MAN_TAIL("fdformat(8)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char **argv)
@@ -207,16 +207,18 @@ int main(int argc, char **argv)
 			printf(UTIL_LINUX_VERSION);
 			exit(EXIT_SUCCESS);
 		case 'h':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 
 	argc -= optind;
 	argv += optind;
 
-	if (argc < 1)
-		usage(stderr);
+	if (argc < 1) {
+		warnx(_("no device specified"));
+		errtryhelp(EXIT_FAILURE);
+	}
 	if (stat(argv[0], &st) < 0)
 		err(EXIT_FAILURE, _("stat of %s failed"), argv[0]);
 	if (!S_ISBLK(st.st_mode))

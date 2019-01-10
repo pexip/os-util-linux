@@ -1,7 +1,7 @@
 
 # libfdisk.h is generated, so it's stored in builddir!
 fdiskincdir = $(includedir)/libfdisk
-nodist_fdiskinc_HEADERS = $(top_builddir)/libfdisk/src/libfdisk.h
+nodist_fdiskinc_HEADERS = libfdisk/src/libfdisk.h
 
 usrlib_exec_LTLIBRARIES += libfdisk.la
 libfdisk_la_SOURCES = \
@@ -29,11 +29,7 @@ libfdisk_la_SOURCES = \
 	libfdisk/src/sgi.c \
 	libfdisk/src/dos.c \
 	libfdisk/src/bsd.c \
-	libfdisk/src/gpt.c \
-	$(nodist_fdiskinc_HEADERS)
-
-
-nodist_libfdisk_la_SOURCES = libfdisk/src/fdiskP.h
+	libfdisk/src/gpt.c
 
 libfdisk_la_LIBADD = libcommon.la libuuid.la
 
@@ -44,11 +40,8 @@ libfdisk_la_CFLAGS = \
 	-I$(ul_libfdisk_incdir) \
 	-I$(top_srcdir)/libfdisk/src
 
-libfdisk_la_DEPENDENCIES = \
-	libcommon.la \
-	libuuid.la \
-	libfdisk/src/libfdisk.sym \
-	libfdisk/src/libfdisk.h.in
+EXTRA_libfdisk_la_DEPENDENCIES = \
+	libfdisk/src/libfdisk.sym
 
 libfdisk_la_LDFLAGS = $(SOLIB_LDFLAGS)
 if HAVE_VSCRIPT
@@ -59,13 +52,11 @@ libfdisk_la_LDFLAGS += -version-info $(LIBFDISK_VERSION_INFO)
 
 if BUILD_LIBBLKID
 libfdisk_la_LIBADD += libblkid.la
-libfdisk_la_DEPENDENCIES += libblkid.la
 libfdisk_la_CFLAGS += -I$(ul_libblkid_incdir)
 endif
 
 EXTRA_DIST += \
-	libfdisk/src/libfdisk.sym \
-	libfdisk/src/libfdisk.h.in
+	libfdisk/src/libfdisk.sym
 
 if BUILD_LIBFDISK_TESTS
 check_PROGRAMS += \
@@ -78,7 +69,7 @@ check_PROGRAMS += \
 
 libfdisk_tests_cflags  = -DTEST_PROGRAM $(libfdisk_la_CFLAGS) $(NO_UNUSED_WARN_CFLAGS)
 libfdisk_tests_ldflags = libuuid.la -static
-libfdisk_tests_ldadd   = $(LDADD) libfdisk.la $(UUID_LIBS)
+libfdisk_tests_ldadd   = libfdisk.la $(LDADD)
 
 if BUILD_LIBBLKID
 libfdisk_tests_ldflags += libblkid.la

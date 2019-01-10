@@ -61,6 +61,7 @@ static void check_padding_debug(struct libscols_table *tb)
 struct libscols_table *scols_new_table(void)
 {
 	struct libscols_table *tb;
+	int c, l;
 
 	tb = calloc(1, sizeof(struct libscols_table));
 	if (!tb)
@@ -68,7 +69,10 @@ struct libscols_table *scols_new_table(void)
 
 	tb->refcount = 1;
 	tb->out = stdout;
-	tb->termwidth = get_terminal_width(80);
+
+	get_terminal_dimension(&c, &l);
+	tb->termwidth  = c > 0 ? c : 80;
+	tb->termheight = l > 0 ? l : 24;
 
 	INIT_LIST_HEAD(&tb->tb_lines);
 	INIT_LIST_HEAD(&tb->tb_columns);
@@ -150,7 +154,7 @@ const char *scols_table_get_name(const struct libscols_table *tb)
  * title output alignment on non-tty is hardcoded to 80 output chars. For the
  * regular terminal it's based on terminal width.
  *
- * Returns: Title of the table, or %NULL in case of blank title.
+ * Returns: Title of the table, or NULL in case of blank title.
  *
  * Since: 2.28
  */
@@ -171,25 +175,36 @@ struct libscols_cell *scols_table_get_title(struct libscols_table *tb)
  */
 int scols_table_add_column(struct libscols_table *tb, struct libscols_column *cl)
 {
-	if (!tb || !cl || !list_empty(&tb->tb_lines) || cl->table)
+	struct libscols_iter itr;
+	struct libscols_line *ln;
+	int rc = 0;
+
+	if (!tb || !cl || cl->table)
 		return -EINVAL;
 
 	if (cl->flags & SCOLS_FL_TREE)
 		tb->ntreecols++;
 
-	DBG(TAB, ul_debugobj(tb, "add column %p", cl));
+	DBG(TAB, ul_debugobj(tb, "add column"));
 	list_add_tail(&cl->cl_columns, &tb->tb_columns);
 	cl->seqnum = tb->ncols++;
 	cl->table = tb;
 	scols_ref_column(cl);
 
-	/* TODO:
-	 *
-	 * Currently it's possible to add/remove columns only if the table is
-	 * empty (see list_empty(tb->tb_lines) above). It would be nice to
-	 * enlarge/reduce lines cells[] always when we add/remove a new column.
+	if (list_empty(&tb->tb_lines))
+		return 0;
+
+	scols_reset_iter(&itr, SCOLS_ITER_FORWARD);
+
+	/* Realloc line cell arrays
 	 */
-	return 0;
+	while (scols_table_next_line(tb, &itr, &ln) == 0) {
+		rc = scols_line_alloc_cells(ln, tb->ncols);
+		if (rc)
+			break;
+	}
+
+	return rc;
 }
 
 /**
@@ -210,7 +225,7 @@ int scols_table_remove_column(struct libscols_table *tb,
 	if (cl->flags & SCOLS_FL_TREE)
 		tb->ntreecols--;
 
-	DBG(TAB, ul_debugobj(tb, "remove column %p", cl));
+	DBG(TAB, ul_debugobj(tb, "remove column"));
 	list_del_init(&cl->cl_columns);
 	tb->ncols--;
 	cl->table = NULL;
@@ -241,10 +256,63 @@ int scols_table_remove_columns(struct libscols_table *tb)
 }
 
 /**
+ * scols_table_move_column:
+ * @tb: table
+ * @pre: column before the column
+ * @cl: column to move
+ *
+ * Move the @cl behind @pre. If the @pre is NULL then the @col is the first
+ * column in the table.
+ *
+ * Since: 2.30
+ *
+ * Returns: 0, a negative number in case of an error.
+ */
+int scols_table_move_column(struct libscols_table *tb,
+			    struct libscols_column *pre,
+			    struct libscols_column *cl)
+{
+	struct list_head *head;
+	struct libscols_iter itr;
+	struct libscols_column *p;
+	struct libscols_line *ln;
+	size_t n = 0, oldseq;
+
+	if (!tb || !cl)
+		return -EINVAL;
+
+	if (pre && pre->seqnum + 1 == cl->seqnum)
+		return 0;
+	if (pre == NULL && cl->seqnum == 0)
+		return 0;
+
+	DBG(TAB, ul_debugobj(tb, "move column %zu behind %zu",
+				cl->seqnum, pre? pre->seqnum : 0));
+
+	list_del_init(&cl->cl_columns);		/* remove from old position */
+
+	head = pre ? &pre->cl_columns : &tb->tb_columns;
+	list_add(&cl->cl_columns, head);	/* add to the new place */
+
+	oldseq = cl->seqnum;
+
+	/* fix seq. numbers */
+	scols_reset_iter(&itr, SCOLS_ITER_FORWARD);
+	while (scols_table_next_column(tb, &itr, &p) == 0)
+		p->seqnum = n++;
+
+	/* move data in lines */
+	scols_reset_iter(&itr, SCOLS_ITER_FORWARD);
+	while (scols_table_next_line(tb, &itr, &ln) == 0)
+		scols_line_move_cells(ln, cl->seqnum, oldseq);
+	return 0;
+}
+
+/**
  * scols_table_new_column:
  * @tb: table
  * @name: column header
- * @whint: column width hint (absolute width: N > 1; relative width: N < 1)
+ * @whint: column width hint (absolute width: N > 1; relative width: 0 < N < 1)
  * @flags: flags integer
  *
  * This is shortcut for
@@ -255,14 +323,31 @@ int scols_table_remove_columns(struct libscols_table *tb)
  *
  * The column width is possible to define by:
  *
- *  @whint = 0..1    : relative width, percent of terminal width
+ *  @whint: 0 < N < 1  : relative width, percent of terminal width
  *
- *  @whint = 1..N    : absolute width, empty column will be truncated to
+ *  @whint: N >= 1     : absolute width, empty column will be truncated to
  *                     the column header width if no specified STRICTWIDTH flag
  *
  * Note that if table has disabled "maxout" flag (disabled by default) than
  * relative width is used as a hint only. It's possible that column will be
  * narrow if the specified size is too large for column data.
+ *
+ *
+ * If the width of all columns is greater than terminal width then library
+ * tries to reduce width of the individual columns. It's done in three stages:
+ *
+ * #1 reduce columns with SCOLS_FL_TRUNC flag and with relative width if the
+ *    width is greater than width defined by @whint (@whint * terminal_width)
+ *
+ * #2 reduce all columns with SCOLS_FL_TRUNC flag
+ *
+ * #3 reduce all columns with relative width
+ *
+ * The next stage is always used if the previous stage is unsuccessful. Note
+ * that SCOLS_FL_WRAP is interpreted as SCOLS_FL_TRUNC when calculate column
+ * width (if custom wrap function is not specified), but the final text is not
+ * truncated, but wrapped to multi-line cell.
+ *
  *
  * The column is necessary to address by sequential number. The first defined
  * column has the colnum = 0. For example:
@@ -409,6 +494,10 @@ FILE *scols_table_get_stream(const struct libscols_table *tb)
  * The @reduce must be smaller than terminal width, otherwise it's silently
  * ignored. The reduction is not applied when STDOUT_FILENO is not terminal.
  *
+ * Note that after output initialization (scols_table_print_* calls) the width
+ * will be reduced, this behavior affects subsequenced scols_table_get_termwidth()
+ * calls.
+ *
  * Returns: 0, a negative value in case of an error.
  */
 int scols_table_reduce_termwidth(struct libscols_table *tb, size_t reduce)
@@ -459,7 +548,7 @@ struct libscols_column *scols_table_get_column(struct libscols_table *tb,
  */
 int scols_table_add_line(struct libscols_table *tb, struct libscols_line *ln)
 {
-	if (!tb || !ln || tb->ncols == 0)
+	if (!tb || !ln)
 		return -EINVAL;
 
 	if (tb->ncols > ln->ncells) {
@@ -468,7 +557,7 @@ int scols_table_add_line(struct libscols_table *tb, struct libscols_line *ln)
 			return rc;
 	}
 
-	DBG(TAB, ul_debugobj(tb, "add line %p", ln));
+	DBG(TAB, ul_debugobj(tb, "add line"));
 	list_add_tail(&ln->ln_lines, &tb->tb_lines);
 	ln->seqnum = tb->nlines++;
 	scols_ref_line(ln);
@@ -491,7 +580,7 @@ int scols_table_remove_line(struct libscols_table *tb,
 	if (!tb || !ln)
 		return -EINVAL;
 
-	DBG(TAB, ul_debugobj(tb, "remove line %p", ln));
+	DBG(TAB, ul_debugobj(tb, "remove line"));
 	list_del_init(&ln->ln_lines);
 	tb->nlines--;
 	scols_unref_line(ln);
@@ -568,7 +657,7 @@ struct libscols_line *scols_table_new_line(struct libscols_table *tb,
 {
 	struct libscols_line *ln;
 
-	if (!tb || !tb->ncols)
+	if (!tb)
 		return NULL;
 
 	ln = scols_new_line();
@@ -635,7 +724,7 @@ struct libscols_table *scols_copy_table(struct libscols_table *tb)
 	if (!ret)
 		return NULL;
 
-	DBG(TAB, ul_debugobj(tb, "copy into %p", ret));
+	DBG(TAB, ul_debugobj(tb, "copy"));
 
 	if (tb->symbols)
 		scols_table_set_symbols(ret, tb->symbols);
@@ -737,7 +826,7 @@ int scols_table_set_default_symbols(struct libscols_table *tb)
  * draw tree output. If no symbols are used for the table then library creates
  * default temporary symbols to draw output by scols_table_set_default_symbols().
  *
- * If @sy is NULL then remove reference from the currenly uses symbols.
+ * If @sy is NULL then remove reference from the currently used symbols.
  *
  * Returns: 0, a negative value in case of an error.
  */
@@ -749,14 +838,14 @@ int scols_table_set_symbols(struct libscols_table *tb,
 
 	/* remove old */
 	if (tb->symbols) {
-		DBG(TAB, ul_debugobj(tb, "remove symbols %p refrence", tb->symbols));
+		DBG(TAB, ul_debugobj(tb, "remove symbols reference"));
 		scols_unref_symbols(tb->symbols);
 		tb->symbols = NULL;
 	}
 
 	/* set new */
 	if (sy) {					/* ref user defined */
-		DBG(TAB, ul_debugobj(tb, "set symbols so %p", sy));
+		DBG(TAB, ul_debugobj(tb, "set symbols"));
 		tb->symbols = sy;
 		scols_ref_symbols(sy);
 	}
@@ -784,6 +873,10 @@ struct libscols_symbols *scols_table_get_symbols(const struct libscols_table *tb
  * Enable/disable line separator printing. This is useful if you want to
  * re-printing the same line more than once (e.g. progress bar). Don't use it
  * if you're not sure.
+ *
+ * Note that for the last line in the table the separator is disabled at all.
+ * The library differentiate between table terminator and line terminator
+ * (although for standard output \n byte is used in both cases).
  *
  * Returns: 0 on success, negative number in case of an error.
  */
@@ -944,6 +1037,28 @@ int scols_table_enable_noheadings(struct libscols_table *tb, int enable)
 }
 
 /**
+ * scols_table_enable_header_repeat:
+ * @tb: table
+ * @enable: 1 or 0
+ *
+ * Enable/disable header line repeat. The header line is printed only once by
+ * default.  Note that the flag will be silently ignored and disabled if the
+ * output is not on terminal or output format is JSON, raw, etc.
+ *
+ * Returns: 0 on success, negative number in case of an error.
+ *
+ * Since: 2.31
+ */
+int scols_table_enable_header_repeat(struct libscols_table *tb, int enable)
+{
+	if (!tb)
+		return -EINVAL;
+	DBG(TAB, ul_debugobj(tb, "header-repeat: %s", enable ? "ENABLE" : "DISABLE"));
+	tb->header_repeat = enable ? 1 : 0;
+	return 0;
+}
+
+/**
  * scols_table_enable_maxout:
  * @tb: table
  * @enable: 1 or 0
@@ -996,6 +1111,39 @@ int scols_table_is_nowrap(const struct libscols_table *tb)
 }
 
 /**
+ * scols_table_enable_noencoding:
+ * @tb: table
+ * @enable: 1 or 0
+ *
+ * The library encode non-printable and control chars by \xHEX by default.
+ *
+ * Returns: 0 on success, negative number in case of an error.
+ *
+ * Since: 2.31
+ */
+int scols_table_enable_noencoding(struct libscols_table *tb, int enable)
+{
+	if (!tb)
+		return -EINVAL;
+	DBG(TAB, ul_debugobj(tb, "encoding: %s", enable ? "ENABLE" : "DISABLE"));
+	tb->no_encode = enable ? 1 : 0;
+	return 0;
+}
+
+/**
+ * scols_table_is_noencoding:
+ * @tb: a pointer to a struct libscols_table instance
+ *
+ * Returns: 1 if encoding is disabled.
+ *
+ * Since: 2.31
+ */
+int scols_table_is_noencoding(const struct libscols_table *tb)
+{
+	return tb->no_encode;
+}
+
+/**
  * scols_table_colors_wanted:
  * @tb: table
  *
@@ -1037,6 +1185,19 @@ int scols_table_is_ascii(const struct libscols_table *tb)
 int scols_table_is_noheadings(const struct libscols_table *tb)
 {
 	return tb->no_headings;
+}
+
+/**
+ * scols_table_is_header_repeat
+ * @tb: table
+ *
+ * Returns: 1 if header repeat is enabled.
+ *
+ * Since: 2.31
+ */
+int scols_table_is_header_repeat(const struct libscols_table *tb)
+{
+	return tb->header_repeat;
 }
 
 /**
@@ -1102,7 +1263,6 @@ int scols_table_is_tree(const struct libscols_table *tb)
  * @sep: separator
  *
  * Sets the column separator of @tb to @sep.
- * Please note that @sep should always take up a single cell in the output.
  *
  * Returns: 0, a negative value in case of an error.
  */
@@ -1207,7 +1367,8 @@ static int sort_line_children(struct libscols_line *ln, struct libscols_column *
  * @tb: table
  * @cl: order by this column
  *
- * Orders the table by the column. See also scols_column_set_cmpfunc().
+ * Orders the table by the column. See also scols_column_set_cmpfunc(). If the
+ * tree output is enabled then children in the tree are recursively sorted too.
  *
  * Returns: 0, a negative value in case of an error.
  */
@@ -1230,6 +1391,60 @@ int scols_sort_table(struct libscols_table *tb, struct libscols_column *cl)
 
 	return 0;
 }
+
+static struct libscols_line *move_line_and_children(struct libscols_line *ln, struct libscols_line *pre)
+{
+	if (pre) {
+		list_del_init(&ln->ln_lines);			/* remove from old position */
+	        list_add(&ln->ln_lines, &pre->ln_lines);        /* add to the new place (behind @pre) */
+	}
+	pre = ln;
+
+	if (!list_empty(&ln->ln_branch)) {
+		struct list_head *p;
+
+		list_for_each(p, &ln->ln_branch) {
+			struct libscols_line *chld =
+					list_entry(p, struct libscols_line, ln_children);
+			pre = move_line_and_children(chld, pre);
+		}
+	}
+
+	return pre;
+}
+
+/**
+ * scols_sort_table_by_tree:
+ * @tb: table
+ *
+ * Reorders lines in the table by parent->child relation. Note that order of
+ * the lines in the table is independent on the tree hierarchy.
+ *
+ * Since: 2.30
+ *
+ * Returns: 0, a negative value in case of an error.
+ */
+int scols_sort_table_by_tree(struct libscols_table *tb)
+{
+	struct libscols_line *ln;
+	struct libscols_iter itr;
+
+	if (!tb)
+		return -EINVAL;
+
+	DBG(TAB, ul_debugobj(tb, "sorting table by tree"));
+
+	scols_reset_iter(&itr, SCOLS_ITER_FORWARD);
+	while (scols_table_next_line(tb, &itr, &ln) == 0) {
+		if (ln->parent)
+			continue;
+
+		move_line_and_children(ln, NULL);
+	}
+
+	return 0;
+}
+
 
 /**
  * scols_table_set_termforce:
@@ -1278,6 +1493,7 @@ int scols_table_get_termforce(const struct libscols_table *tb)
  */
 int scols_table_set_termwidth(struct libscols_table *tb, size_t width)
 {
+	DBG(TAB, ul_debugobj(tb, "set terminatl width: %zu", width));
 	tb->termwidth = width;
 	return 0;
 }
@@ -1286,9 +1502,41 @@ int scols_table_set_termwidth(struct libscols_table *tb, size_t width)
  * scols_table_get_termwidth
  * @tb: table
  *
- * Returns: terminal width or a negative value in case of an error.
+ * Returns: terminal width.
  */
 size_t scols_table_get_termwidth(const struct libscols_table *tb)
 {
 	return tb->termwidth;
+}
+
+/**
+ * scols_table_set_termheight
+ * @tb: table
+ * @height: terminal height (number of lines)
+ *
+ * The library automatically detects terminal height or defaults to 24 lines if
+ * detections is unsuccessful. This function override this behaviour.
+ *
+ * Returns: 0, a negative value in case of an error.
+ *
+ * Since: 2.31
+ */
+int scols_table_set_termheight(struct libscols_table *tb, size_t height)
+{
+	DBG(TAB, ul_debugobj(tb, "set terminatl height: %zu", height));
+	tb->termheight = height;
+	return 0;
+}
+
+/**
+ * scols_table_get_termheight
+ * @tb: table
+ *
+ * Returns: terminal height (number of lines).
+ *
+ * Since: 2.31
+ */
+size_t scols_table_get_termheight(const struct libscols_table *tb)
+{
+	return tb->termheight;
 }

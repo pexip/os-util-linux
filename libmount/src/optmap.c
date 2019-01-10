@@ -1,8 +1,13 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /*
- * Copyright (C) 2010 Karel Zak <kzak@redhat.com>
+ * This file is part of libmount from util-linux project.
  *
- * This file may be redistributed under the terms of the
- * GNU Lesser General Public License.
+ * Copyright (C) 2010-2018 Karel Zak <kzak@redhat.com>
+ *
+ * libmount is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation; either version 2.1 of the License, or
+ * (at your option) any later version.
  */
 
 /**
@@ -159,7 +164,9 @@ static const struct libmnt_optmap userspace_opts_map[] =
    { "_netdev", MNT_MS_NETDEV },                           /* Device requires network */
 
    { "comment=", MNT_MS_COMMENT, MNT_NOHLPS | MNT_NOMTAB },/* fstab comment only */
-   { "x-",      MNT_MS_XCOMMENT, MNT_NOHLPS | MNT_NOMTAB | MNT_PREFIX }, /* x- options */
+
+   { "x-",      MNT_MS_XCOMMENT,   MNT_NOHLPS | MNT_PREFIX },              /* persistent comments (utab) */
+   { "X-",      MNT_MS_XFSTABCOMM, MNT_NOHLPS | MNT_NOMTAB | MNT_PREFIX }, /* fstab only comments */
 
    { "loop[=]", MNT_MS_LOOP, MNT_NOHLPS },                             /* use the loop device */
    { "offset=", MNT_MS_OFFSET, MNT_NOHLPS | MNT_NOMTAB },		   /* loop device offset */

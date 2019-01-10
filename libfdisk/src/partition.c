@@ -70,6 +70,8 @@ void fdisk_reset_partition(struct fdisk_partition *pa)
 	free(pa->fstype);
 	free(pa->fsuuid);
 	free(pa->fslabel);
+	free(pa->start_chs);
+	free(pa->end_chs);
 
 	memset(pa, 0, sizeof(*pa));
 	pa->refcount = ref;
@@ -128,8 +130,8 @@ void fdisk_unref_partition(struct fdisk_partition *pa)
 
 	pa->refcount--;
 	if (pa->refcount <= 0) {
-		fdisk_reset_partition(pa);
 		list_del(&pa->parts);
+		fdisk_reset_partition(pa);
 		DBG(PART, ul_debugobj(pa, "free"));
 		free(pa);
 	}
@@ -702,11 +704,14 @@ int fdisk_partition_is_wholedisk(struct fdisk_partition *pa)
  * @cxt: context
  * @n: returns partition number
  *
- * If partno-follow-default (see fdisk_partition_partno_follow_default())
- * enabled then returns next expected partno, otherwise use Ask API to ask user
- * for the next partno.
+ * If @pa specified and partno-follow-default (see fdisk_partition_partno_follow_default())
+ * enabled then returns next expected partno or -ERANGE on error.
  *
- * Returns: 0 on success, <0 on error
+ * If @pa is NULL, or @pa does not specify any semantic for the next partno
+ * then use Ask API to ask user for the next partno. In this case returns 1 if
+ * no free partition available. If fdisk dialogs are disabled then returns -EINVAL.
+ *
+ * Returns: 0 on success, <0 on error, or 1 for non-free partno by Ask API.
  */
 int fdisk_partition_next_partno(
 		struct fdisk_partition *pa,
@@ -733,13 +738,16 @@ int fdisk_partition_next_partno(
 
 		DBG(PART, ul_debugobj(pa, "next partno (specified=%zu)", pa->partno));
 
-		if (pa->partno >= cxt->label->nparts_max)
+		if (pa->partno >= cxt->label->nparts_max ||
+		    fdisk_is_partition_used(cxt, pa->partno))
 			return -ERANGE;
 		*n = pa->partno;
-	} else
+		return 0;
+
+	} else if (fdisk_has_dialogs(cxt))
 		return fdisk_ask_partnum(cxt, n, 1);
 
-	return 0;
+	return -EINVAL;
 }
 
 static int probe_partition_content(struct fdisk_context *cxt, struct fdisk_partition *pa)
@@ -1050,30 +1058,63 @@ static int resize_get_last_possible(
 	fdisk_reset_iter(&itr, FDISK_ITER_FORWARD);
 
 	*maxsz = 0;
+	DBG(TAB, ul_debugobj(tb, "checking last possible for start=%ju", (uintmax_t) start));
+
 
 	while (fdisk_table_next_partition(tb, &itr, &pa) == 0) {
+
+		DBG(TAB, ul_debugobj(tb, " checking entry %p [partno=%zu start=%ju, end=%ju, size=%ju%s%s%s]",
+			pa,
+			fdisk_partition_get_partno(pa),
+			(uintmax_t) fdisk_partition_get_start(pa),
+			(uintmax_t) fdisk_partition_get_end(pa),
+			(uintmax_t) fdisk_partition_get_size(pa),
+			fdisk_partition_is_freespace(pa) ? " freespace" : "",
+			fdisk_partition_is_nested(pa)    ? " nested"    : "",
+			fdisk_partition_is_container(pa) ? " container" : ""));
+
 		if (!fdisk_partition_has_start(pa) ||
 		    !fdisk_partition_has_size(pa) ||
-		    fdisk_partition_is_container(pa))
+		    (fdisk_partition_is_container(pa) && pa != cur)) {
+			DBG(TAB, ul_debugobj(tb, "  ignored (no start/size or container)"));
 			continue;
+		}
 
-		DBG(PART, ul_debugobj(pa, "checking start=%ju, size=%ju",
-		                      (uintmax_t)pa->start, (uintmax_t)pa->size));
+		if (fdisk_partition_is_nested(pa)
+		    && fdisk_partition_is_container(cur)
+		    && pa->parent_partno == cur->partno) {
+			DBG(TAB, ul_debugobj(tb, "  ignore (nested child of the current partition)"));
+			continue;
+		}
+
+		/* The current is nested, free space has to be nested within the same parent */
+		if (fdisk_partition_is_nested(cur)
+		    && pa->parent_partno != cur->parent_partno) {
+			DBG(TAB, ul_debugobj(tb, "  ignore (nested required)"));
+			continue;
+		}
 
 		if (!last) {
 			if (start >= pa->start &&  start < pa->start + pa->size) {
-				if (fdisk_partition_is_freespace(pa) || pa == cur)
+				if (fdisk_partition_is_freespace(pa) || pa == cur) {
+					DBG(TAB, ul_debugobj(tb, "  accepted as last"));
 					last = pa;
-				else
+				} else {
+					DBG(TAB, ul_debugobj(tb, "  failed to set last"));
 					break;
+				}
+
 
 				*maxsz = pa->size - (start - pa->start);
+				DBG(TAB, ul_debugobj(tb, "  new max=%ju", (uintmax_t) *maxsz));
 			}
 		} else if (!fdisk_partition_is_freespace(pa) && pa != cur) {
+			DBG(TAB, ul_debugobj(tb, "  no free space behind current"));
 			break;
 		} else {
 			last = pa;
-			*maxsz += pa->size;
+			*maxsz = pa->size - (start - pa->start);
+			DBG(TAB, ul_debugobj(tb, "  new max=%ju (last updated)", (uintmax_t) *maxsz));
 		}
 	}
 
@@ -1108,6 +1149,11 @@ static int recount_resize(
 		rc = fdisk_get_freespaces(cxt, &tb);
 	if (rc)
 		return rc;
+
+	fdisk_table_sort_partitions(tb, fdisk_partition_cmp_start);
+
+	DBG(PART, ul_debugobj(tpl, "resize partition partno=%zu in table:", partno));
+	ON_DBG(PART, fdisk_debug_print_table(tb));
 
 	cur = fdisk_table_get_partition_by_partno(tb, partno);
 	if (!cur) {
@@ -1242,6 +1288,10 @@ int fdisk_set_partition(struct fdisk_context *cxt, size_t partno,
 
 	if (pa->resize || fdisk_partition_has_start(pa) || fdisk_partition_has_size(pa)) {
 		xpa = __copy_partition(pa);
+		if (!xpa) {
+			rc = -ENOMEM;
+			goto done;
+		}
 		xpa->movestart = 0;
 		xpa->resize = 0;
 		FDISK_INIT_UNDEF(xpa->size);
@@ -1304,6 +1354,21 @@ int fdisk_wipe_partition(struct fdisk_context *cxt, size_t partno, int enable)
 	return rc < 0 ? rc : 0;
 }
 
+/**
+ * fdisk_partition_has_wipe:
+ * @cxt: fdisk context
+ * @pa: partition
+ *
+ * Since: 2.30
+ *
+ * Returns: 1 if the area specified by @pa will be wiped by write command, or 0.
+ */
+int fdisk_partition_has_wipe(struct fdisk_context *cxt, struct fdisk_partition *pa)
+{
+	return fdisk_has_wipe_area(cxt, fdisk_partition_get_start(pa),
+					fdisk_partition_get_size(pa));
+}
+
 
 /**
  * fdisk_add_partition:
@@ -1313,6 +1378,18 @@ int fdisk_wipe_partition(struct fdisk_context *cxt, size_t partno, int enable)
  *
  * If @pa is not specified or any @pa item is missing the libfdisk will ask by
  * fdisk_ask_ API.
+ *
+ * The @pa template is is important for non-interactive partitioning,
+ * especially for MBR where is necessary to differentiate between
+ * primary/logical; this is done by start offset or/and partno.
+ * The rules for MBR:
+ *
+ *   A) template specifies start within extended partition: add logical
+ *   B) template specifies start out of extended partition: add primary
+ *   C) template specifies start (or default), partno < 4: add primary
+ *   D) template specifies default start, partno >= 4: add logical
+ *
+ * otherwise MBR driver uses Ask-API to get missing information.
  *
  * Adds a new partition to disklabel.
  *
@@ -1333,12 +1410,15 @@ int fdisk_add_partition(struct fdisk_context *cxt,
 
 	if (pa) {
 		pa->fs_probed = 0;
-		DBG(CXT, ul_debugobj(cxt, "adding new partition %p (start=%ju, end=%ju, size=%ju, "
-			    "defaults(start=%s, end=%s, partno=%s)",
-			    pa,
-			    (uintmax_t) fdisk_partition_get_start(pa),
-			    (uintmax_t) fdisk_partition_get_end(pa),
-			    (uintmax_t) fdisk_partition_get_size(pa),
+		DBG(CXT, ul_debugobj(cxt, "adding new partition %p", pa));
+		if (fdisk_partition_has_start(pa))
+			DBG(CXT, ul_debugobj(cxt, "     start: %ju", (uintmax_t) fdisk_partition_get_start(pa)));
+		if (fdisk_partition_has_end(pa))
+			DBG(CXT, ul_debugobj(cxt, "       end: %ju", (uintmax_t) fdisk_partition_get_end(pa)));
+		if (fdisk_partition_has_size(pa))
+			DBG(CXT, ul_debugobj(cxt, "      size: %ju", (uintmax_t) fdisk_partition_get_size(pa)));
+
+		DBG(CXT, ul_debugobj(cxt,         "  defaults: start=%s, end=%s, partno=%s",
 			    pa->start_follow_default ? "yes" : "no",
 			    pa->end_follow_default ? "yes" : "no",
 			    pa->partno_follow_default ? "yes" : "no"));
@@ -1406,6 +1486,9 @@ int fdisk_delete_all_partitions(struct fdisk_context *cxt)
  * fdisk_is_partition_used:
  * @cxt: context
  * @n: partition number (0 is the first partition)
+ *
+ * Check if the partition number @n is used by partition table. This function
+ * does not check if the device is used (e.g. mounted) by system!
  *
  * This is faster than fdisk_get_partition() + fdisk_partition_is_used().
  *

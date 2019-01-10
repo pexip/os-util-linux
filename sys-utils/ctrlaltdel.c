@@ -21,24 +21,27 @@
 #define LINUX_REBOOT_CMD_CAD_ON 0x89ABCDEF
 #define LINUX_REBOOT_CMD_CAD_OFF 0x00000000
 
-static void __attribute__ ((__noreturn__)) usage(FILE * out)
+static void __attribute__((__noreturn__)) usage(void)
 {
-	fprintf(out, USAGE_HEADER);
+	FILE *out = stdout;
+	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s hard|soft\n"), program_invocation_short_name);
 
-	fprintf(out, USAGE_SEPARATOR);
+	fputs(USAGE_SEPARATOR, out);
 	fprintf(out, _("Set the function of the Ctrl-Alt-Del combination.\n"));
 
-	fprintf(out, USAGE_OPTIONS);
-	fprintf(out, USAGE_HELP);
-	fprintf(out, USAGE_VERSION);
-	fprintf(out, USAGE_MAN_TAIL("ctrlaltdel(8)"));
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	fputs(USAGE_OPTIONS, out);
+	printf(USAGE_HELP_OPTIONS(16));
+	printf(USAGE_MAN_TAIL("ctrlaltdel(8)"));
+	exit(EXIT_SUCCESS);
 }
 
 static int get_cad(void)
 {
-	uint64_t val = path_read_u64(_PATH_PROC_CTRL_ALT_DEL);
+	uint64_t val;
+
+	if (ul_path_read_u64(NULL, &val, _PATH_PROC_CTRL_ALT_DEL) != 0)
+		err(EXIT_FAILURE, _("cannot read %s"), _PATH_PROC_CTRL_ALT_DEL);
 
 	switch (val) {
 	case 0:
@@ -98,9 +101,9 @@ int main(int argc, char **argv)
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 
 	if (argc < 2)

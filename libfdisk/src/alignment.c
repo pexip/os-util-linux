@@ -26,7 +26,7 @@
  * It's recommended to not change any alignment or device properties. All is
  * initialized by default by fdisk_assign_device().
  *
- * Note that terminology used by libfdisk is: 
+ * Note that terminology used by libfdisk is:
  *   - device properties: I/O limits (topology), geometry, sector size, ...
  *   - alignment: first, last LBA, grain, ...
  *
@@ -112,14 +112,14 @@ fdisk_sector_t fdisk_align_lba(struct fdisk_context *cxt, fdisk_sector_t lba, in
 	}
 
 	if (lba != res)
-		DBG(CXT, ul_debugobj(cxt, "LBA %ju -aligned-%s-> %ju [grain=%lus]",
+		DBG(CXT, ul_debugobj(cxt, "LBA %12ju aligned-%s %12ju [grain=%lus]",
 				(uintmax_t) lba,
-				direction == FDISK_ALIGN_UP ? "up" :
+				direction == FDISK_ALIGN_UP ? "up  " :
 				direction == FDISK_ALIGN_DOWN ? "down" : "near",
 				(uintmax_t) res,
 				cxt->grain / cxt->sector_size));
 	else
-		DBG(CXT, ul_debugobj(cxt, "LBA %ju -unchanged-", (uintmax_t)lba));
+		DBG(CXT, ul_debugobj(cxt, "LBA %12ju already aligned", (uintmax_t)lba));
 
 	return res;
 }
@@ -159,9 +159,8 @@ fdisk_sector_t fdisk_align_lba_in_range(struct fdisk_context *cxt,
 		res = stop;
 	else
 		res = lba;
-
 done:
-	DBG(CXT, ul_debugobj(cxt, "LBA %ju range:<%ju..%ju>, result: %ju",
+	DBG(CXT, ul_debugobj(cxt, "%ju in range <%ju..%ju> aligned to %ju",
 				(uintmax_t) lba,
 				(uintmax_t) start,
 				(uintmax_t) stop,
@@ -183,12 +182,14 @@ int fdisk_lba_is_phy_aligned(struct fdisk_context *cxt, fdisk_sector_t lba)
 	return lba_is_phy_aligned(cxt, lba);
 }
 
-static unsigned long get_sector_size(int fd)
+static unsigned long get_sector_size(struct fdisk_context *cxt)
 {
 	int sect_sz;
 
-	if (!blkdev_get_sector_size(fd, &sect_sz))
+	if (!fdisk_is_regfile(cxt) &&
+	    !blkdev_get_sector_size(cxt->dev_fd, &sect_sz))
 		return (unsigned long) sect_sz;
+
 	return DEFAULT_SECTOR_SIZE;
 }
 
@@ -312,6 +313,37 @@ int fdisk_save_user_sector_size(struct fdisk_context *cxt,
 }
 
 /**
+ * fdisk_save_user_grain:
+ * @cxt: context
+ * @grain: size in bytes (>= 512, multiple of 512)
+ *
+ * Save user define grain size. The size is used to align partitions.
+ *
+ * The default is 1MiB (or optimal I/O size if greater than 1MiB). It's strongly
+ * recommended to use the default.
+ *
+ * The smallest possible granularity for partitioning is physical sector size
+ * (or minimal I/O size; the bigger number win). If the user's @grain size is
+ * too small than the smallest possible granularity is used. It means
+ * fdisk_save_user_grain(cxt, 512) forces libfdisk to use grain as small as
+ * possible.
+ *
+ * The setting is applied by fdisk_assign_device() or
+ * fdisk_reset_device_properties().
+ *
+ * Returns: <0 on error, 0 on success.
+ */
+int fdisk_save_user_grain(struct fdisk_context *cxt, unsigned long grain)
+{
+	if (!cxt || grain % 512)
+		return -EINVAL;
+
+	DBG(CXT, ul_debugobj(cxt, "user grain size: %lu", grain));
+	cxt->user_grain = grain;
+	return 0;
+}
+
+/**
  * fdisk_has_user_device_properties:
  * @cxt: context
  *
@@ -319,11 +351,14 @@ int fdisk_save_user_sector_size(struct fdisk_context *cxt,
  */
 int fdisk_has_user_device_properties(struct fdisk_context *cxt)
 {
-	return (cxt->user_pyh_sector
-		    || cxt->user_log_sector
-		    || cxt->user_geom.heads
-		    || cxt->user_geom.sectors
-		    || cxt->user_geom.cylinders);
+	return (cxt->user_pyh_sector || cxt->user_log_sector ||
+		cxt->user_grain ||
+		fdisk_has_user_device_geometry(cxt));
+}
+
+int fdisk_has_user_device_geometry(struct fdisk_context *cxt)
+{
+	return (cxt->user_geom.heads || cxt->user_geom.sectors || cxt->user_geom.cylinders);
 }
 
 int fdisk_apply_user_device_properties(struct fdisk_context *cxt)
@@ -344,7 +379,7 @@ int fdisk_apply_user_device_properties(struct fdisk_context *cxt)
 
 		if (cxt->sector_size != old_secsz) {
 			cxt->total_sectors = (old_total * (old_secsz/512)) / (cxt->sector_size >> 9);
-			DBG(CXT, ul_debugobj(cxt, "new total sectors: %ju", cxt->total_sectors));
+			DBG(CXT, ul_debugobj(cxt, "new total sectors: %ju", (uintmax_t)cxt->total_sectors));
 		}
 	}
 
@@ -359,6 +394,14 @@ int fdisk_apply_user_device_properties(struct fdisk_context *cxt)
 		recount_geometry(cxt);
 
 	fdisk_reset_alignment(cxt);
+
+	if (cxt->user_grain) {
+		unsigned long granularity = max(cxt->phy_sector_size, cxt->min_io_size);
+
+		cxt->grain = cxt->user_grain < granularity ? granularity : cxt->user_grain;
+		DBG(CXT, ul_debugobj(cxt, "new grain: %lu", cxt->grain));
+	}
+
 	if (cxt->firstsector_bufsz != cxt->sector_size)
 		fdisk_read_firstsector(cxt);
 
@@ -431,23 +474,32 @@ int fdisk_reset_device_properties(struct fdisk_context *cxt)
  */
 int fdisk_discover_geometry(struct fdisk_context *cxt)
 {
-	fdisk_sector_t nsects;
+	fdisk_sector_t nsects = 0;
+	unsigned int h = 0, s = 0;
 
 	assert(cxt);
 	assert(cxt->geom.heads == 0);
 
 	DBG(CXT, ul_debugobj(cxt, "%s: discovering geometry...", cxt->dev_path));
 
-	/* get number of 512-byte sectors, and convert it the real sectors */
-	if (!blkdev_get_sectors(cxt->dev_fd, (unsigned long long *) &nsects))
-		cxt->total_sectors = (nsects / (cxt->sector_size >> 9));
+	if (fdisk_is_regfile(cxt))
+		cxt->total_sectors = cxt->dev_st.st_size / cxt->sector_size;
+	else {
+		/* get number of 512-byte sectors, and convert it the real sectors */
+		if (!blkdev_get_sectors(cxt->dev_fd, (unsigned long long *) &nsects))
+			cxt->total_sectors = (nsects / (cxt->sector_size >> 9));
+
+		/* what the kernel/bios thinks the geometry is */
+		blkdev_get_geometry(cxt->dev_fd, &h, &s);
+	}
 
 	DBG(CXT, ul_debugobj(cxt, "total sectors: %ju (ioctl=%ju)",
 				(uintmax_t) cxt->total_sectors,
 				(uintmax_t) nsects));
 
-	/* what the kernel/bios thinks the geometry is */
-	blkdev_get_geometry(cxt->dev_fd, &cxt->geom.heads, (unsigned int *) &cxt->geom.sectors);
+	cxt->geom.cylinders = 0;
+	cxt->geom.heads = h;
+	cxt->geom.sectors = s;
 
 	/* obtained heads and sectors */
 	recount_geometry(cxt);
@@ -500,7 +552,7 @@ int fdisk_discover_topology(struct fdisk_context *cxt)
 	blkid_free_probe(pr);
 #endif
 
-	cxt->sector_size = get_sector_size(cxt->dev_fd);
+	cxt->sector_size = get_sector_size(cxt);
 	if (!cxt->phy_sector_size) /* could not discover physical size */
 		cxt->phy_sector_size = cxt->sector_size;
 
@@ -601,6 +653,20 @@ static unsigned long topology_get_grain(struct fdisk_context *cxt)
 	return res;
 }
 
+/* apply label alignment setting to the context -- if not sure use
+ * fdisk_reset_alignment()
+ */
+int fdisk_apply_label_device_properties(struct fdisk_context *cxt)
+{
+	int rc = 0;
+
+	if (cxt->label && cxt->label->op->reset_alignment) {
+		DBG(CXT, ul_debugobj(cxt, "appling label device properties..."));
+		rc = cxt->label->op->reset_alignment(cxt);
+	}
+	return rc;
+}
+
 /**
  * fdisk_reset_alignment:
  * @cxt: fdisk context
@@ -625,8 +691,7 @@ int fdisk_reset_alignment(struct fdisk_context *cxt)
 	cxt->last_lba = cxt->total_sectors - 1;
 
 	/* overwrite default by label stuff */
-	if (cxt->label && cxt->label->op->reset_alignment)
-		rc = cxt->label->op->reset_alignment(cxt);
+	rc = fdisk_apply_label_device_properties(cxt);
 
 	DBG(CXT, ul_debugobj(cxt, "alignment reset to: "
 			    "first LBA=%ju, last LBA=%ju, grain=%lu [rc=%d]",
@@ -648,43 +713,3 @@ fdisk_sector_t fdisk_cround(struct fdisk_context *cxt, fdisk_sector_t num)
 			(num / fdisk_get_units_per_sector(cxt)) + 1 : num;
 }
 
-/**
- * fdisk_reread_partition_table:
- * @cxt: context
- *
- * Force *kernel* to re-read partition table on block devices.
- *
- * Returns: 0 on success, < 0 in case of error.
- */
-int fdisk_reread_partition_table(struct fdisk_context *cxt)
-{
-	int i;
-	struct stat statbuf;
-
-	assert(cxt);
-	assert(cxt->dev_fd >= 0);
-
-	i = fstat(cxt->dev_fd, &statbuf);
-	if (i == 0 && S_ISBLK(statbuf.st_mode)) {
-		DBG(CXT, ul_debugobj(cxt, "calling re-read ioctl"));
-		sync();
-#ifdef BLKRRPART
-		fdisk_info(cxt, _("Calling ioctl() to re-read partition table."));
-		i = ioctl(cxt->dev_fd, BLKRRPART);
-#else
-		errno = ENOSYS;
-		i = 1;
-#endif
-	}
-
-	if (i) {
-		fdisk_warn(cxt, _("Re-reading the partition table failed."));
-		fdisk_info(cxt,	_(
-			"The kernel still uses the old table. The "
-			"new table will be used at the next reboot "
-			"or after you run partprobe(8) or kpartx(8)."));
-		return -errno;
-	}
-
-	return 0;
-}

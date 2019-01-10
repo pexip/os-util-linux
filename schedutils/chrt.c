@@ -128,9 +128,9 @@ struct chrt_ctl {
 		     verbose : 1;		/* verbose output */
 };
 
-static void __attribute__((__noreturn__)) show_usage(int rc)
+static void __attribute__((__noreturn__)) usage(void)
 {
-	FILE *out = rc == EXIT_SUCCESS ? stdout : stderr;
+	FILE *out = stdout;
 
 	fputs(_("Show or change the real-time scheduling attributes of a process.\n"), out);
 	fputs(USAGE_SEPARATOR, out);
@@ -165,11 +165,10 @@ static void __attribute__((__noreturn__)) show_usage(int rc)
 	fputs(_(" -v, --verbose        display status information\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
+	printf(USAGE_HELP_OPTIONS(22));
 
-	fprintf(out, USAGE_MAN_TAIL("chrt(1)"));
-	exit(rc);
+	printf(USAGE_MAN_TAIL("chrt(1)"));
+	exit(EXIT_SUCCESS);
 }
 
 static const char *get_policy_name(int policy)
@@ -208,7 +207,7 @@ static const char *get_policy_name(int policy)
 
 static void show_sched_pid_info(struct chrt_ctl *ctl, pid_t pid)
 {
-	int policy, reset_on_fork = 0, prio = 0;
+	int policy = -1, reset_on_fork = 0, prio = 0;
 #ifdef SCHED_DEADLINE
 	uint64_t deadline = 0, runtime = 0, period = 0;
 #endif
@@ -439,8 +438,6 @@ int main(int argc, char **argv)
 
 	while((c = getopt_long(argc, argv, "+abdD:fiphmoP:T:rRvV", longopts, NULL)) != -1)
 	{
-		int ret = EXIT_FAILURE;
-
 		switch (c) {
 		case 'a':
 			ctl->all_tasks = 1;
@@ -496,16 +493,17 @@ int main(int argc, char **argv)
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
-			ret = EXIT_SUCCESS;
-			/* fallthrough */
+			usage();
 		default:
-			show_usage(ret);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
 	if (((ctl->pid > -1) && argc - optind < 1) ||
-	    ((ctl->pid == -1) && argc - optind < 2))
-		show_usage(EXIT_FAILURE);
+	    ((ctl->pid == -1) && argc - optind < 2)) {
+		warnx(_("bad usage"));
+		errtryhelp(EXIT_FAILURE);
+}
 
 	if ((ctl->pid > -1) && (ctl->verbose || argc - optind == 1)) {
 		show_sched_info(ctl);
@@ -555,7 +553,7 @@ int main(int argc, char **argv)
 	if (!ctl->pid) {
 		argv += optind + 1;
 		execvp(argv[0], argv);
-		err(EXIT_FAILURE, _("failed to execute %s"), argv[0]);
+		errexec(argv[0]);
 	}
 
 	return EXIT_SUCCESS;

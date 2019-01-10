@@ -63,32 +63,62 @@ static PyObject *Fs_get_devno(FsObject *self)
 	return PyObjectResultInt(mnt_fs_get_devno(self->fs));
 }
 
+static void _dump_debug_string(const char *lead, const char *s, char quote)
+{
+	/* PySys_WriteStdout() will automatically truncate any '%s' token
+	 * longer than a certain length (documented as 1000 bytes, but we
+	 * give ourselves some margin here just in case).  The only way I
+	 * know to get around this is to print such strings in bite-sized
+	 * chunks.
+	 */
+	static const unsigned int _PY_MAX_LEN = 900;
+	static const char *_PY_MAX_LEN_FMT = "%.900s";
+	unsigned int len;
+
+	if (lead != NULL)
+		PySys_WriteStdout("%s", lead);
+
+	if (quote != 0)
+		PySys_WriteStdout("%c", quote);
+
+	for (len = strlen(s); len > _PY_MAX_LEN; len -= _PY_MAX_LEN, s += _PY_MAX_LEN) 
+		PySys_WriteStdout(_PY_MAX_LEN_FMT, s);
+
+	if (len > 0)
+		PySys_WriteStdout(_PY_MAX_LEN_FMT, s);
+
+	if (quote != 0)
+		PySys_WriteStdout("%c\n", quote);
+	else
+		PySys_WriteStdout("\n");
+}
+
 #define Fs_print_debug_HELP "print_debug()\n\n"
 static PyObject *Fs_print_debug(FsObject *self)
 {
 	PySys_WriteStdout("------ fs: %p\n", self->fs);
-	PySys_WriteStdout("source: %s\n", mnt_fs_get_source(self->fs));
-	PySys_WriteStdout("target: %s\n", mnt_fs_get_target(self->fs));
-	PySys_WriteStdout("fstype: %s\n", mnt_fs_get_fstype(self->fs));
+	_dump_debug_string("source: ", mnt_fs_get_source(self->fs), 0);
+	_dump_debug_string("target: ", mnt_fs_get_target(self->fs), 0);
+	_dump_debug_string("fstype: ", mnt_fs_get_fstype(self->fs), 0);
 
 	if (mnt_fs_get_options(self->fs))
-		PySys_WriteStdout("optstr: %s\n", mnt_fs_get_options(self->fs));
+		_dump_debug_string("optstr: ", mnt_fs_get_options(self->fs), 0);
 	if (mnt_fs_get_vfs_options(self->fs))
-		PySys_WriteStdout("VFS-optstr: %s\n", mnt_fs_get_vfs_options(self->fs));
+		_dump_debug_string("VFS-optstr: ", mnt_fs_get_vfs_options(self->fs), 0);
 	if (mnt_fs_get_fs_options(self->fs))
-		PySys_WriteStdout("FS-opstr: %s\n", mnt_fs_get_fs_options(self->fs));
+		_dump_debug_string("FS-opstr: ", mnt_fs_get_fs_options(self->fs), 0);
 	if (mnt_fs_get_user_options(self->fs))
-		PySys_WriteStdout("user-optstr: %s\n", mnt_fs_get_user_options(self->fs));
+		_dump_debug_string("user-optstr: ", mnt_fs_get_user_options(self->fs), 0);
 	if (mnt_fs_get_optional_fields(self->fs))
-		PySys_WriteStdout("optional-fields: '%s'\n", mnt_fs_get_optional_fields(self->fs));
+		_dump_debug_string("optional-fields: ", mnt_fs_get_optional_fields(self->fs), '\'');
 	if (mnt_fs_get_attributes(self->fs))
-		PySys_WriteStdout("attributes: %s\n", mnt_fs_get_attributes(self->fs));
+		_dump_debug_string("attributes: ", mnt_fs_get_attributes(self->fs), 0);
 
 	if (mnt_fs_get_root(self->fs))
-		PySys_WriteStdout("root:   %s\n", mnt_fs_get_root(self->fs));
+		_dump_debug_string("root:   ", mnt_fs_get_root(self->fs), 0);
 
 	if (mnt_fs_get_swaptype(self->fs))
-		PySys_WriteStdout("swaptype: %s\n", mnt_fs_get_swaptype(self->fs));
+		_dump_debug_string("swaptype: ", mnt_fs_get_swaptype(self->fs), 0);
 	if (mnt_fs_get_size(self->fs))
 		PySys_WriteStdout("size: %jd\n", mnt_fs_get_size(self->fs));
 	if (mnt_fs_get_usedsize(self->fs))
@@ -97,7 +127,7 @@ static PyObject *Fs_print_debug(FsObject *self)
 		PySys_WriteStdout("priority: %d\n", mnt_fs_get_priority(self->fs));
 
 	if (mnt_fs_get_bindsrc(self->fs))
-		PySys_WriteStdout("bindsrc: %s\n", mnt_fs_get_bindsrc(self->fs));
+		_dump_debug_string("bindsrc: ", mnt_fs_get_bindsrc(self->fs), 0);
 	if (mnt_fs_get_freq(self->fs))
 		PySys_WriteStdout("freq:   %d\n", mnt_fs_get_freq(self->fs));
 	if (mnt_fs_get_passno(self->fs))
@@ -112,7 +142,7 @@ static PyObject *Fs_print_debug(FsObject *self)
 	if (mnt_fs_get_tid(self->fs))
 		PySys_WriteStdout("tid:    %d\n", mnt_fs_get_tid(self->fs));
 	if (mnt_fs_get_comment(self->fs))
-		PySys_WriteStdout("comment: '%s'\n", mnt_fs_get_comment(self->fs));
+		_dump_debug_string("comment: ", mnt_fs_get_comment(self->fs), '\'');
 	return UL_IncRef(self);
 }
 /*
@@ -404,16 +434,13 @@ in mountinfo file. The kernel default is MS_PRIVATE, this flag is not stored\n\
 in the mountinfo file.\n\
 \n\
 Returns self or raises an exception in case of an error."
-static PyObject *Fs_get_propagation(FsObject *self, PyObject *args, PyObject *kwds)
+static PyObject *Fs_get_propagation(FsObject *self)
 {
 	unsigned long flags;
-	char *kwlist[] = {"flags", NULL};
+	int rc;
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "k", kwlist, &flags)) {
-		PyErr_SetString(PyExc_TypeError, ARG_ERR);
-		return NULL;
-	}
-	return PyObjectResultInt(mnt_fs_get_propagation(self->fs, &flags));
+	rc =  mnt_fs_get_propagation(self->fs, &flags);
+	return rc ? UL_RaiseExc(-rc) : PyObjectResultInt(flags);
 }
 
 static PyObject *Fs_get_tid(FsObject *self)
@@ -589,7 +616,7 @@ static PyObject *Fs_streq_target(FsObject *self, PyObject *args, PyObject *kwds)
 static PyObject *Fs_copy_fs(FsObject *self, PyObject *args, PyObject *kwds);
 
 static PyMethodDef Fs_methods[] = {
-	{"get_propagation",	(PyCFunction)Fs_get_propagation, METH_VARARGS|METH_KEYWORDS, Fs_get_propagation_HELP},
+	{"get_propagation",	(PyCFunction)Fs_get_propagation, METH_NOARGS, Fs_get_propagation_HELP},
 	{"mnt_fs_append_attributes",	(PyCFunction)Fs_append_attributes, METH_VARARGS|METH_KEYWORDS, Fs_append_attributes_HELP},
 	{"append_options",	(PyCFunction)Fs_append_options, METH_VARARGS|METH_KEYWORDS, Fs_append_options_HELP},
 	{"mnt_fs_prepend_attributes",	(PyCFunction)Fs_prepend_attributes, METH_VARARGS|METH_KEYWORDS, Fs_prepend_attributes_HELP},
@@ -803,38 +830,38 @@ PyTypeObject FsType = {
 	sizeof(FsObject), /*tp_basicsize*/
 	0, /*tp_itemsize*/
 	(destructor)Fs_destructor, /*tp_dealloc*/
-	0, /*tp_print*/
-	0, /*tp_getattr*/
-	0, /*tp_setattr*/
-	0, /*tp_compare*/
+	NULL, /*tp_print*/
+	NULL, /*tp_getattr*/
+	NULL, /*tp_setattr*/
+	NULL, /*tp_compare*/
 	(reprfunc)Fs_repr, /*tp_repr*/
-	0, /*tp_as_number*/
-	0, /*tp_as_sequence*/
-	0, /*tp_as_mapping*/
-	0, /*tp_hash */
-	0, /*tp_call*/
-	0, /*tp_str*/
-	0, /*tp_getattro*/
-	0, /*tp_setattro*/
-	0, /*tp_as_buffer*/
+	NULL, /*tp_as_number*/
+	NULL, /*tp_as_sequence*/
+	NULL, /*tp_as_mapping*/
+	NULL, /*tp_hash */
+	NULL, /*tp_call*/
+	NULL, /*tp_str*/
+	NULL, /*tp_getattro*/
+	NULL, /*tp_setattro*/
+	NULL, /*tp_as_buffer*/
 	Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /*tp_flags*/
 	Fs_HELP, /* tp_doc */
-	0, /* tp_traverse */
-	0, /* tp_clear */
-	0, /* tp_richcompare */
+	NULL, /* tp_traverse */
+	NULL, /* tp_clear */
+	NULL, /* tp_richcompare */
 	0, /* tp_weaklistoffset */
-	0, /* tp_iter */
-	0, /* tp_iternext */
+	NULL, /* tp_iter */
+	NULL, /* tp_iternext */
 	Fs_methods, /* tp_methods */
 	Fs_members, /* tp_members */
 	Fs_getseters, /* tp_getset */
-	0, /* tp_base */
-	0, /* tp_dict */
-	0, /* tp_descr_get */
-	0, /* tp_descr_set */
+	NULL, /* tp_base */
+	NULL, /* tp_dict */
+	NULL, /* tp_descr_get */
+	NULL, /* tp_descr_set */
 	0, /* tp_dictoffset */
 	(initproc)Fs_init, /* tp_init */
-	0, /* tp_alloc */
+	NULL, /* tp_alloc */
 	Fs_new, /* tp_new */
 };
 

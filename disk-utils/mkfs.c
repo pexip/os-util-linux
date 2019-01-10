@@ -38,8 +38,9 @@
 #define DEFAULT_FSTYPE	"ext2"
 #endif
 
-static void __attribute__ ((__noreturn__)) usage(FILE * out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options] [-t <type>] [fs-options] <device> [<size>]\n"),
 		     program_invocation_short_name);
@@ -54,13 +55,10 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fprintf(out, _("     <size>         number of blocks to be used on the device\n"));
 	fprintf(out, _(" -V, --verbose      explain what is being done;\n"
 		       "                      specifying -V more than once will cause a dry-run\n"));
-	fprintf(out, _(" -V, --version      display version information and exit;\n"
-		       "                      -V as --version must be the only option\n"));
-	fprintf(out, _(" -h, --help         display this help text and exit\n"));
+	printf(USAGE_HELP_OPTIONS(20));
 
-	fprintf(out, USAGE_MAN_TAIL("mkfs(8)"));
-
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	printf(USAGE_MAN_TAIL("mkfs(8)"));
+	exit(EXIT_SUCCESS);
 }
 
 static void __attribute__ ((__noreturn__)) print_version(void)
@@ -106,7 +104,7 @@ int main(int argc, char **argv)
 			fstype = optarg;
 			break;
 		case 'h':
-			usage(stdout);
+			usage();
 		case VERSION_OPTION:
 			print_version();
 		default:
@@ -114,8 +112,10 @@ int main(int argc, char **argv)
 			more = 1;
 			break;	/* start of specific arguments */
 		}
-	if (optind == argc)
-		usage(stderr);
+	if (optind == argc) {
+		warnx(_("no device specified"));
+		errtryhelp(EXIT_FAILURE);
+	}
 
 	/* If -t wasn't specified, use the default */
 	if (fstype == NULL)

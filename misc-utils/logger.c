@@ -68,6 +68,7 @@
 #include <syslog.h>
 
 #ifdef HAVE_LIBSYSTEMD
+# define SD_JOURNAL_SUPPRESS_LOCATION
 # include <systemd/sd-daemon.h>
 # include <systemd/sd-journal.h>
 #endif
@@ -115,7 +116,7 @@ struct logger_ctl {
 	int pri;
 	pid_t pid;			/* zero when unwanted */
 	char *hdr;			/* the syslog header (based on protocol) */
-	char *tag;
+	char const *tag;
 	char *msgid;
 	char *unix_socket;		/* -u <path> or default to _PATH_DEVLOG */
 	char *server;
@@ -138,6 +139,9 @@ struct logger_ctl {
 			skip_empty_lines:1,	/* do not send empty lines when processing files */
 			octet_count:1;		/* use RFC6587 octet counting */
 };
+
+#define is_connected(_ctl)	((_ctl)->fd >= 0)
+static void logger_reopen(struct logger_ctl *ctl);
 
 /*
  * For tests we want to be able to control datetime outputs
@@ -266,9 +270,7 @@ static int unix_socket(struct logger_ctl *ctl, const char *path, int *socket_typ
 		if (ctl->unix_socket_errors)
 			err(EXIT_FAILURE, _("socket %s"), path);
 
-		/* openlog(3) compatibility, socket errors are
-		 * not reported, but ignored silently */
-		ctl->noact = 1;
+		/* write_output() will try to reconnect */
 		return -1;
 	}
 
@@ -369,9 +371,9 @@ static int journald_entry(struct logger_ctl *ctl, FILE *fp)
 }
 #endif
 
-static char *xgetlogin(void)
+static char const *xgetlogin(void)
 {
-	char *cp;
+	char const *cp;
 	struct passwd *pw;
 
 	if (!(cp = getlogin()) || !*cp)
@@ -385,12 +387,12 @@ static char *xgetlogin(void)
  * of a leading 0). The function uses a static buffer which is
  * overwritten on the next call (just like ctime() does).
  */
-static const char *rfc3164_current_time(void)
+static char const *rfc3164_current_time(void)
 {
 	static char time[32];
 	struct timeval tv;
 	struct tm *tm;
-	static char *monthnames[] = {
+	static char const * const monthnames[] = {
 		"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug",
 		"Sep", "Oct", "Nov", "Dec"
 	};
@@ -425,11 +427,15 @@ static const char *rfc3164_current_time(void)
  * it is too much for the logger utility. If octet-counting is
  * selected, we use that.
  */
-static void write_output(const struct logger_ctl *ctl, const char *const msg)
+static void write_output(struct logger_ctl *ctl, const char *const msg)
 {
 	struct iovec iov[4];
 	int iovlen = 0;
 	char *octet = NULL;
+
+	/* initial connect failed? */
+	if (!ctl->noact && !is_connected(ctl))
+		logger_reopen(ctl);
 
 	/* 1) octen count */
 	if (ctl->octet_count) {
@@ -443,7 +449,7 @@ static void write_output(const struct logger_ctl *ctl, const char *const msg)
 	/* 3) message */
 	iovec_add_string(iov, iovlen, msg, 0);
 
-	if (!ctl->noact) {
+	if (!ctl->noact && is_connected(ctl)) {
 		struct msghdr message = { 0 };
 #ifdef SCM_CREDENTIALS
 		struct cmsghdr *cmhp;
@@ -482,9 +488,23 @@ static void write_output(const struct logger_ctl *ctl, const char *const msg)
 			cred->pid = ctl->pid;
 		}
 #endif
-
-		if (sendmsg(ctl->fd, &message, 0) < 0)
-			warn(_("send message failed"));
+		/* Note that logger(1) maybe executed for long time (as pipe
+		 * reader) and connection endpoint (syslogd) may be restarted.
+		 *
+		 * The libc syslog() function reconnects on failed send().
+		 * Let's do the same to be robust.    [kzak -- Oct 2017]
+		 *
+		 * MSG_NOSIGNAL is POSIX.1-2008 compatible, but it for example
+		 * not supported by apple-darwin15.6.0.
+		 */
+#ifndef MSG_NOSIGNAL
+# define MSG_NOSIGNAL 0
+#endif
+		if (sendmsg(ctl->fd, &message, MSG_NOSIGNAL) < 0) {
+			logger_reopen(ctl);
+			if (sendmsg(ctl->fd, &message, MSG_NOSIGNAL) < 0)
+				warn(_("send message failed"));
+		}
 	}
 
 	if (ctl->stderr_printout) {
@@ -504,8 +524,6 @@ static void syslog_rfc3164_header(struct logger_ctl *const ctl)
 	char pid[30], *hostname;
 
 	*pid = '\0';
-	if (ctl->fd < 0)
-		return;
 	if (ctl->pid)
 		snprintf(pid, sizeof(pid), "[%d]", ctl->pid);
 
@@ -727,14 +745,11 @@ static void syslog_rfc5424_header(struct logger_ctl *const ctl)
 {
 	char *time;
 	char *hostname;
-	char *const app_name = ctl->tag;
+	char const *app_name = ctl->tag;
 	char *procid;
 	char *const msgid = xstrdup(ctl->msgid ? ctl->msgid : NILVALUE);
 	char *structured = NULL;
 	struct list_head *sd;
-
-	if (ctl->fd < 0)
-		return;
 
 	if (ctl->rfc5424_time) {
 		struct timeval tv;
@@ -862,29 +877,48 @@ static void syslog_local_header(struct logger_ctl *const ctl)
 static void generate_syslog_header(struct logger_ctl *const ctl)
 {
 	free(ctl->hdr);
+	ctl->hdr = NULL;
 	ctl->syslogfp(ctl);
 }
 
-static void logger_open(struct logger_ctl *ctl)
+/* just open, nothing else */
+static void __logger_open(struct logger_ctl *ctl)
 {
 	if (ctl->server) {
 		ctl->fd = inet_socket(ctl->server, ctl->port, &ctl->socket_type);
-		if (!ctl->syslogfp)
-			ctl->syslogfp = syslog_rfc5424_header;
 	} else {
 		if (!ctl->unix_socket)
 			ctl->unix_socket = _PATH_DEVLOG;
 
 		ctl->fd = unix_socket(ctl, ctl->unix_socket, &ctl->socket_type);
-		if (!ctl->syslogfp)
-			ctl->syslogfp = syslog_local_header;
 	}
+}
+
+/* open and initialize relevant @ctl tuff */
+static void logger_open(struct logger_ctl *ctl)
+{
+	__logger_open(ctl);
+
+	if (!ctl->syslogfp)
+		ctl->syslogfp = ctl->server ? syslog_rfc5424_header :
+					      syslog_local_header;
 	if (!ctl->tag)
 		ctl->tag = xgetlogin();
+
 	generate_syslog_header(ctl);
 }
 
-static void logger_command_line(const struct logger_ctl *ctl, char **argv)
+/* re-open; usually after failed connection */
+static void logger_reopen(struct logger_ctl *ctl)
+{
+	if (ctl->fd != -1)
+		close(ctl->fd);
+	ctl->fd = -1;
+
+	__logger_open(ctl);
+}
+
+static void logger_command_line(struct logger_ctl *ctl, char **argv)
 {
 	/* note: we never re-generate the syslog header here, even if we
 	 * generate multiple messages. If so, we think it is the right thing
@@ -979,6 +1013,8 @@ static void logger_stdin(struct logger_ctl *ctl)
 		if (c == '\n')	/* discard line terminator */
 			c = getchar();
 	}
+
+	free(buf);
 }
 
 static void logger_close(const struct logger_ctl *ctl)
@@ -988,8 +1024,9 @@ static void logger_close(const struct logger_ctl *ctl)
 	free(ctl->hdr);
 }
 
-static void __attribute__ ((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options] [<message>]\n"), program_invocation_short_name);
 
@@ -1026,11 +1063,10 @@ static void __attribute__ ((__noreturn__)) usage(FILE *out)
 #endif
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
-	fprintf(out, USAGE_MAN_TAIL("logger(1)"));
+	printf(USAGE_HELP_OPTIONS(26));
+	printf(USAGE_MAN_TAIL("logger(1)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 /*
@@ -1160,7 +1196,7 @@ int main(int argc, char **argv)
 			printf(UTIL_LINUX_VERSION);
 			exit(EXIT_SUCCESS);
 		case 'h':
-			usage(stdout);
+			usage();
 		case OPT_OCTET_COUNT:
 			ctl.octet_count = 1;
 			break;
@@ -1207,9 +1243,8 @@ int main(int argc, char **argv)
 				errx(EXIT_FAILURE, _("invalid structured data parameter: '%s'"), optarg);
 			add_structured_data_param(get_user_structured_data(&ctl), optarg);
 			break;
-		case '?':
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 	argc -= optind;

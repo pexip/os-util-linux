@@ -36,6 +36,9 @@
    the CoreFoundation framework. */
 #undef HAVE_CFPREFERENCESCOPYAPPVALUE
 
+/* Define to 1 if you have the `clearenv' function. */
+#undef HAVE_CLEARENV
+
 /* Define to 1 if you have the `clock_gettime' function. */
 #undef HAVE_CLOCK_GETTIME
 
@@ -57,6 +60,10 @@
    */
 #undef HAVE_DECL_DIRFD
 
+/* Define to 1 if you have the declaration of `tzname', and to 0 if you don't.
+   */
+#undef HAVE_DECL_TZNAME
+
 /* Define to 1 if you have the declaration of `_NL_TIME_WEEK_1STDAY', and to 0
    if you don't. */
 #undef HAVE_DECL__NL_TIME_WEEK_1STDAY
@@ -69,6 +76,9 @@
 
 /* Define to 1 if you have the <dlfcn.h> header file. */
 #undef HAVE_DLFCN_H
+
+/* Define to 1 if you have the `eaccess' function. */
+#undef HAVE_EACCESS
 
 /* Define to 1 if you have the <endian.h> header file. */
 #undef HAVE_ENDIAN_H
@@ -88,11 +98,17 @@
 /* Define to 1 if you have the <err.h> header file. */
 #undef HAVE_ERR_H
 
+/* Define to 1 if you have the `explicit_bzero' function. */
+#undef HAVE_EXPLICIT_BZERO
+
 /* Have valid fallocate() function */
 #undef HAVE_FALLOCATE
 
 /* Define to 1 if you have the <fcntl.h> header file. */
 #undef HAVE_FCNTL_H
+
+/* Define to 1 if you have the `fpurge' function. */
+#undef HAVE_FPURGE
 
 /* Define to 1 if fseeko (and presumably ftello) exists and is declared. */
 #undef HAVE_FSEEKO
@@ -121,6 +137,9 @@
 /* Define to 1 if you have the <getopt.h> header file. */
 #undef HAVE_GETOPT_H
 
+/* Define to 1 if you have the `getrandom' function. */
+#undef HAVE_GETRANDOM
+
 /* Define to 1 if you have the `getrlimit' function. */
 #undef HAVE_GETRLIMIT
 
@@ -129,6 +148,9 @@
 
 /* Define if the GNU gettext() function is already present or preinstalled. */
 #undef HAVE_GETTEXT
+
+/* Define to 1 if you have the `getusershell' function. */
+#undef HAVE_GETUSERSHELL
 
 /* Define if you have the iconv() function and it works. */
 #undef HAVE_ICONV
@@ -154,8 +176,17 @@
 /* Define to 1 if you have the `jrand48' function. */
 #undef HAVE_JRAND48
 
+/* Define if langinfo.h defines ALTMON_x constants */
+#undef HAVE_LANGINFO_ALTMON
+
 /* Define to 1 if you have the <langinfo.h> header file. */
 #undef HAVE_LANGINFO_H
+
+/* Define if langinfo.h defines _NL_ABALTMON_x constants */
+#undef HAVE_LANGINFO_NL_ABALTMON
+
+/* Define to 1 if you have the <lastlog.h> header file. */
+#undef HAVE_LASTLOG_H
 
 /* Define to 1 if you have the `lchown' function. */
 #undef HAVE_LCHOWN
@@ -193,7 +224,7 @@
 /* Define if libsystemd is available */
 #undef HAVE_LIBSYSTEMD
 
-/* Define if libtinfo available. */
+/* Define if libtinfo or libtinfow available. */
 #undef HAVE_LIBTINFO
 
 /* Define to 1 if you have the `udev' library (-ludev). */
@@ -208,11 +239,17 @@
 /* Define to 1 if you have the `util' library (-lutil). */
 #undef HAVE_LIBUTIL
 
+/* Define to 1 if you have the <libutil.h> header file. */
+#undef HAVE_LIBUTIL_H
+
 /* Define to 1 if you have the -luuid. */
 #undef HAVE_LIBUUID
 
 /* Define to 1 if you have the <linux/blkpg.h> header file. */
 #undef HAVE_LINUX_BLKPG_H
+
+/* Define to 1 if you have the <linux/blkzoned.h> header file. */
+#undef HAVE_LINUX_BLKZONED_H
 
 /* Define to 1 if you have the <linux/btrfs.h> header file. */
 #undef HAVE_LINUX_BTRFS_H
@@ -229,11 +266,17 @@
 /* Define to 1 if you have the <linux/fd.h> header file. */
 #undef HAVE_LINUX_FD_H
 
+/* Define to 1 if you have the <linux/fs.h> header file. */
+#undef HAVE_LINUX_FS_H
+
 /* Define to 1 if you have the <linux/gsmmux.h> header file. */
 #undef HAVE_LINUX_GSMMUX_H
 
 /* Define to 1 if you have the <linux/major.h> header file. */
 #undef HAVE_LINUX_MAJOR_H
+
+/* Define to 1 if you have the <linux/net_namespace.h> header file. */
+#undef HAVE_LINUX_NET_NAMESPACE_H
 
 /* Define to 1 if you have the <linux/raw.h> header file. */
 #undef HAVE_LINUX_RAW_H
@@ -286,11 +329,17 @@
 /* Define to 1 if you have the <ncursesw/ncurses.h> header file. */
 #undef HAVE_NCURSESW_NCURSES_H
 
+/* Define to 1 if you have the <ncursesw/term.h> header file. */
+#undef HAVE_NCURSESW_TERM_H
+
 /* Define to 1 if you have the <ncurses.h> header file. */
 #undef HAVE_NCURSES_H
 
 /* Define to 1 if you have the <ncurses/ncurses.h> header file. */
 #undef HAVE_NCURSES_NCURSES_H
+
+/* Define to 1 if you have the <ncurses/term.h> header file. */
+#undef HAVE_NCURSES_TERM_H
 
 /* Define to 1 if you have the <netinet/in.h> header file. */
 #undef HAVE_NETINET_IN_H
@@ -318,6 +367,9 @@
 
 /* Define to 1 if you have the `posix_fadvise' function. */
 #undef HAVE_POSIX_FADVISE
+
+/* Have valid posix_fallocate() function */
+#undef HAVE_POSIX_FALLOCATE
 
 /* Define to 1 if you have the `prctl' function. */
 #undef HAVE_PRCTL
@@ -448,6 +500,15 @@
 /* Define to 1 if `c_line' is a member of `struct termios'. */
 #undef HAVE_STRUCT_TERMIOS_C_LINE
 
+/* Define to 1 if `tm_zone' is a member of `struct tm'. */
+#undef HAVE_STRUCT_TM_TM_ZONE
+
+/* Define to 1 if you have the `swapoff' function. */
+#undef HAVE_SWAPOFF
+
+/* Define to 1 if you have the `swapon' function. */
+#undef HAVE_SWAPON
+
 /* Define to 1 if you have the `sysconf' function. */
 #undef HAVE_SYSCONF
 
@@ -529,6 +590,12 @@
 /* Define to 1 if you have the <sys/un.h> header file. */
 #undef HAVE_SYS_UN_H
 
+/* Define to 1 if you have the <term.h> header file. */
+#undef HAVE_TERM_H
+
+/* Define to 1 if you have the `timegm' function. */
+#undef HAVE_TIMEGM
+
 /* Define to 1 if you have the `timer_create' function. */
 #undef HAVE_TIMER_CREATE
 
@@ -537,6 +604,14 @@
 
 /* Does struct tm have a field tm_gmtoff? */
 #undef HAVE_TM_GMTOFF
+
+/* Define to 1 if your `struct tm' has `tm_zone'. Deprecated, use
+   `HAVE_STRUCT_TM_TM_ZONE' instead. */
+#undef HAVE_TM_ZONE
+
+/* Define to 1 if you don't have `tm_zone' but do have the external array
+   `tzname'. */
+#undef HAVE_TZNAME
 
 /* Define to 1 if the system has the type `union semun'. */
 #undef HAVE_UNION_SEMUN
@@ -550,8 +625,8 @@
 /* Define to 1 if you have the `unshare' function. */
 #undef HAVE_UNSHARE
 
-/* Define to 1 if you have the `updwtmp' function. */
-#undef HAVE_UPDWTMP
+/* Define to 1 if you have the `updwtmpx' function. */
+#undef HAVE_UPDWTMPX
 
 /* Define if curses library has the use_default_colors(). */
 #undef HAVE_USE_DEFAULT_COLORS
@@ -562,11 +637,17 @@
 /* Define to 1 if you have the `utimensat' function. */
 #undef HAVE_UTIMENSAT
 
+/* Define to 1 if you have the <utmpx.h> header file. */
+#undef HAVE_UTMPX_H
+
 /* Define to 1 if you have the <utmp.h> header file. */
 #undef HAVE_UTMP_H
 
 /* Define to 1 if you want to use uuid daemon. */
 #undef HAVE_UUIDD
+
+/* Define to 1 if you have the `vwarnx' function. */
+#undef HAVE_VWARNX
 
 /* Define to 1 if you have the `warn' function. */
 #undef HAVE_WARN
@@ -579,6 +660,9 @@
 
 /* Define to 1 if you have the `__fpending' function. */
 #undef HAVE___FPENDING
+
+/* Define to 1 if you have the `__fpurge' function. */
+#undef HAVE___FPURGE
 
 /* Define if __progname is defined */
 #undef HAVE___PROGNAME
@@ -609,6 +693,9 @@
 
 /* Define to the sub-directory where libtool stores uninstalled libraries. */
 #undef LT_OBJDIR
+
+/* "Multi-arch triplet for whereis library search path" */
+#undef MULTIARCHTRIPLET
 
 /* Define to 1 if assertions should be disabled. */
 #undef NDEBUG
@@ -643,9 +730,6 @@
 /* Define to 1 if you have the ANSI C header files. */
 #undef STDC_HEADERS
 
-/* Is swapon() declared with two parameters? */
-#undef SWAPON_HAS_TWO_ARGS
-
 /* Fallback syscall number for fallocate */
 #undef SYS_fallocate
 
@@ -670,14 +754,26 @@
 /* Fallback syscall number for setns */
 #undef SYS_setns
 
+/* Fallback syscall number for swapoff */
+#undef SYS_swapoff
+
+/* Fallback syscall number for swapon */
+#undef SYS_swapon
+
 /* Fallback syscall number for unshare */
 #undef SYS_unshare
+
+/* Define to 1 if your <sys/time.h> declares `struct tm'. */
+#undef TM_IN_SYS_TIME
 
 /* Enables colorized output from utils by default */
 #undef USE_COLORS_BY_DEFAULT
 
 /* Define to 1 if want to support mtab. */
 #undef USE_LIBMOUNT_SUPPORT_MTAB
+
+/* Define to 1 if want to support namepaces. */
+#undef USE_LIBMOUNT_SUPPORT_NAMESPACES
 
 /* Enable plymouth support feature for sulogin and aggety */
 #undef USE_PLYMOUTH_SUPPORT

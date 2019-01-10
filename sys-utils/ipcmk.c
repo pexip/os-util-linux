@@ -60,8 +60,9 @@ static int create_sem(int nsems, int permission)
 	return semget(key, nsems, permission | IPC_CREAT);
 }
 
-static void __attribute__ ((__noreturn__)) usage(FILE * out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options]\n"), program_invocation_short_name);
 
@@ -75,11 +76,10 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fputs(_(" -p, --mode <mode>        permission for the resource (default is 0644)\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
-	fprintf(out, USAGE_MAN_TAIL("ipcmk(1)"));
+	printf(USAGE_HELP_OPTIONS(26));
+	printf(USAGE_MAN_TAIL("ipcmk(1)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char **argv)
@@ -121,20 +121,20 @@ int main(int argc, char **argv)
 			permission = strtoul(optarg, NULL, 8);
 			break;
 		case 'h':
-			usage(stdout);
+			usage();
 			break;
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		default:
-			ask_shm = ask_msg = ask_sem = 0;
-			break;
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
-	if(!ask_shm && !ask_msg && !ask_sem)
-		usage(stderr);
-
+	if(!ask_shm && !ask_msg && !ask_sem) {
+		warnx(_("bad usage"));
+		errtryhelp(EXIT_FAILURE);
+	}
 	if (ask_shm) {
 		int shmid;
 		if (-1 == (shmid = create_shm(size, permission)))

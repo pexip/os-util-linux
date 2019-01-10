@@ -36,15 +36,15 @@ IMG=$(ts_image_init 5)
 mkfs.ext2 -F "$IMG" &> /dev/null || ts_die "Cannot make extn on $IMG"
 OFFSET=$(stat -c %s "$IMG")
 
-dd if="$IMG" of="$IMG" oflag=append bs=5MiB count=1 conv=notrunc &>/dev/null
+dd if="$IMG" of="$IMG" oflag=append bs=1024k count=5 conv=notrunc &>/dev/null
 
 [ -d "$TS_MOUNTPOINT-1" ] || mkdir -p $TS_MOUNTPOINT-1
 [ -d "$TS_MOUNTPOINT-2" ] || mkdir -p $TS_MOUNTPOINT-2
 
 echo "second should fail" >>$TS_OUTPUT
 $TS_CMD_MOUNT -oloop "$IMG" "$TS_MOUNTPOINT-1" >> $TS_OUTPUT 2>&1
-$TS_CMD_MOUNT -oloop,offset=$OFFSET "$IMG" "$TS_MOUNTPOINT-2" 2>&1 | sed 's/.*://' >>$TS_OUTPUT
-
+$TS_CMD_MOUNT -oloop,offset=$OFFSET "$IMG" "$TS_MOUNTPOINT-2" 2>&1 \
+       | sed 's/:.*:/: <target>/; s/for .*/for <source>/' >> $TS_OUTPUT
 $TS_CMD_UMOUNT "$TS_MOUNTPOINT-1" >> $TS_OUTPUT 2>&1
 
 echo "should succeed" >>$TS_OUTPUT
@@ -54,10 +54,11 @@ $TS_CMD_UMOUNT "$TS_MOUNTPOINT-1" >> $TS_OUTPUT 2>&1
 $TS_CMD_UMOUNT "$TS_MOUNTPOINT-2" >> $TS_OUTPUT 2>&1
 
 echo "both should fail" >>$TS_OUTPUT
-LOOPDEV=$($TS_CMD_LOSETUP --find)
-$TS_CMD_LOSETUP --offset 1 --sizelimit $OFFSET $LOOPDEV "$IMG"
-$TS_CMD_MOUNT -oloop,sizelimit=$OFFSET "$IMG" "$TS_MOUNTPOINT-1" 2>&1 | sed 's/.*://' >>$TS_OUTPUT
-$TS_CMD_MOUNT -oloop,offset=$OFFSET "$IMG" "$TS_MOUNTPOINT-2" 2>&1 | sed 's/.*://' >>$TS_OUTPUT
+LOOPDEV=$($TS_CMD_LOSETUP --show -f --offset 1 --sizelimit $OFFSET "$IMG")
+$TS_CMD_MOUNT -oloop,sizelimit=$OFFSET "$IMG" "$TS_MOUNTPOINT-1" 2>&1 \
+	| sed 's/:.*:/: <target>/; s/for .*/for <source>/' >> $TS_OUTPUT
+$TS_CMD_MOUNT -oloop,offset=$OFFSET "$IMG" "$TS_MOUNTPOINT-2" 2>&1 \
+	| sed 's/:.*:/: <target>/; s/for .*/for <source>/' >> $TS_OUTPUT
 $TS_CMD_LOSETUP --detach $LOOPDEV
 
 ts_log "Success"

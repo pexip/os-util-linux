@@ -82,7 +82,7 @@ struct colinfo {
 };
 
 /* columns descriptions */
-struct colinfo infos[] = {
+static struct colinfo infos[] = {
 	[COL_PARTNO]   = { "NR",    0.25, SCOLS_FL_RIGHT, N_("partition number") },
 	[COL_START]    = { "START",   0.30, SCOLS_FL_RIGHT, N_("start of the partition in sectors") },
 	[COL_END]      = { "END",     0.30, SCOLS_FL_RIGHT, N_("end of the partition in sectors") },
@@ -99,7 +99,7 @@ struct colinfo infos[] = {
 
 /* array with IDs of enabled columns */
 static int columns[NCOLS];
-size_t ncolumns;
+static size_t ncolumns;
 
 static int verbose;
 static int partx_flags;
@@ -177,14 +177,15 @@ static int get_partno_from_device(char *partition, dev_t devno)
 	assert(partition);
 
 	if (devno) {
-		struct sysfs_cxt cxt;
+		struct path_cxt *pc;
 		int rc;
 
-		if (sysfs_init(&cxt, devno, NULL))
+		pc = ul_new_sysfs_path(devno, NULL, NULL);
+		if (!pc)
 			goto err;
 
-		rc = sysfs_read_int(&cxt, "partition", &partno);
-		sysfs_deinit(&cxt);
+		rc = ul_path_read_s32(pc, &partno, "partition");
+		ul_unref_path(pc);
 
 		if (rc == 0)
 			return partno;
@@ -578,7 +579,7 @@ static int add_scols_line(struct libscols_table *table, blkid_partition par)
 
 	line = scols_table_new_line(table, NULL);
 	if (!line) {
-		warn(_("failed to add line to output"));
+		warn(_("failed to allocate output line"));
 		return -ENOMEM;
 	}
 
@@ -641,7 +642,7 @@ static int add_scols_line(struct libscols_table *table, blkid_partition par)
 		else if (str)
 			rc = scols_line_refer_data(line, i, str);
 		if (rc) {
-			warn(_("failed to add data to output table"));
+			warn(_("failed to add output data"));
 			break;
 		}
 	}
@@ -664,7 +665,7 @@ static int show_parts(blkid_partlist ls, int scols_flags, int lower, int upper)
 	scols_init_debug(0);
 	table = scols_new_table();
 	if (!table) {
-		warn(_("failed to initialize output table"));
+		warn(_("failed to allocate output table"));
 		return -1;
 	}
 	scols_table_enable_raw(table, !!(scols_flags & PARTX_RAW));
@@ -675,7 +676,7 @@ static int show_parts(blkid_partlist ls, int scols_flags, int lower, int upper)
 		struct colinfo *col = get_column_info(i);
 
 		if (!scols_table_new_column(table, col->name, col->whint, col->flags)) {
-			warnx(_("failed to initialize output column"));
+			warnx(_("failed to allocate output column"));
 			goto done;
 		}
 	}
@@ -743,8 +744,9 @@ static blkid_partlist get_partlist(blkid_probe pr,
 	return ls;
 }
 
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	size_t i;
 
 	fputs(USAGE_HEADER, out);
@@ -764,23 +766,24 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(_(" -g, --noheadings     don't print headings for --show\n"), out);
 	fputs(_(" -n, --nr <n:m>       specify the range of partitions (e.g. --nr 2:4)\n"), out);
 	fputs(_(" -o, --output <list>  define which output columns to use\n"), out);
+	fputs(_("     --output-all     output all columns\n"), out);
 	fputs(_(" -P, --pairs          use key=\"value\" output format\n"), out);
 	fputs(_(" -r, --raw            use raw output format\n"), out);
-	fputs(_(" -t, --type <type>    specify the partition type (dos, bsd, solaris, etc.)\n"), out);
+	fputs(_(" -S, --sector-size <num>  overwrite sector size\n"), out);
+	fputs(_(" -t, --type <type>    specify the partition type\n"), out);
+	fputs(_("     --list-types     list supported partition types and exit\n"), out);
 	fputs(_(" -v, --verbose        verbose mode\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
+	printf(USAGE_HELP_OPTIONS(22));
 
-	fputs(_("\nAvailable columns (for --show, --raw or --pairs):\n"), out);
-
+	fputs(USAGE_COLUMNS, out);
 	for (i = 0; i < NCOLS; i++)
 		fprintf(out, " %10s  %s\n", infos[i].name, _(infos[i].help));
 
-	fprintf(out, USAGE_MAN_TAIL("partx(8)"));
+	printf(USAGE_MAN_TAIL("partx(8)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char **argv)
@@ -792,7 +795,12 @@ int main(int argc, char **argv)
 	char *wholedisk = NULL; /* allocated, ie: /dev/sda */
 	char *outarg = NULL;
 	dev_t disk_devno = 0, part_devno = 0;
+	unsigned int sector_size = 0;
 
+	enum {
+		OPT_LIST_TYPES = CHAR_MAX + 1,
+		OPT_OUTPUT_ALL
+	};
 	static const struct option long_opts[] = {
 		{ "bytes",	no_argument,       NULL, 'b' },
 		{ "noheadings",	no_argument,       NULL, 'g' },
@@ -803,16 +811,19 @@ int main(int argc, char **argv)
 		{ "delete",	no_argument,	   NULL, 'd' },
 		{ "update",     no_argument,       NULL, 'u' },
 		{ "type",	required_argument, NULL, 't' },
+		{ "list-types", no_argument,       NULL, OPT_LIST_TYPES },
 		{ "nr",		required_argument, NULL, 'n' },
 		{ "output",	required_argument, NULL, 'o' },
+		{ "output-all", no_argument,       NULL, OPT_OUTPUT_ALL },
 		{ "pairs",      no_argument,       NULL, 'P' },
+		{ "sector-size",required_argument, NULL, 'S' },
 		{ "help",	no_argument,       NULL, 'h' },
 		{ "version",    no_argument,       NULL, 'V' },
 		{ "verbose",	no_argument,       NULL, 'v' },
 		{ NULL, 0, NULL, 0 }
 	};
 
-	static const ul_excl_t excl[] = {	/* rows and cols in in ASCII order */
+	static const ul_excl_t excl[] = {	/* rows and cols in ASCII order */
 		{ 'P','a','d','l','r','s','u' },
 		{ 0 }
 	};
@@ -824,7 +835,7 @@ int main(int argc, char **argv)
 	atexit(close_stdout);
 
 	while ((c = getopt_long(argc, argv,
-				"abdglrsuvn:t:o:PhV", long_opts, NULL)) != -1) {
+				"abdglrsuvn:t:o:PS:hV", long_opts, NULL)) != -1) {
 
 		err_exclusive_options(c, long_opts, excl, excl_st);
 
@@ -851,6 +862,10 @@ int main(int argc, char **argv)
 		case 'o':
 			outarg = optarg;
 			break;
+		case OPT_OUTPUT_ALL:
+			for (ncolumns = 0; ncolumns < ARRAY_SIZE(infos); ncolumns++)
+				columns[ncolumns] = ncolumns;
+			break;
 		case 'P':
 			scols_flags |= PARTX_EXPORT;
 			what = ACT_SHOW;
@@ -862,6 +877,9 @@ int main(int argc, char **argv)
 		case 's':
 			what = ACT_SHOW;
 			break;
+		case 'S':
+			sector_size = strtou32_or_err(optarg, _("invalid sector size argument"));
+			break;
 		case 't':
 			type = optarg;
 			break;
@@ -871,14 +889,22 @@ int main(int argc, char **argv)
 		case 'v':
 			verbose = 1;
 			break;
+		case OPT_LIST_TYPES:
+		{
+			size_t idx = 0;
+			const char *name = NULL;
+
+			while (blkid_partitions_get_name(idx++, &name) == 0)
+				puts(name);
+			return EXIT_SUCCESS;
+		}
 		case 'h':
-			usage(stdout);
+			usage();
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
-		case '?':
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
@@ -945,9 +971,10 @@ int main(int argc, char **argv)
 			device = NULL;
 			part_devno = 0;
 		}
-	} else
-		usage(stderr);
-
+	} else {
+		warnx(_("bad usage"));
+		errtryhelp(EXIT_FAILURE);
+	}
 	if (device && (upper || lower))
 		errx(EXIT_FAILURE, _("--nr and <partition> are mutually exclusive"));
 
@@ -1002,8 +1029,12 @@ int main(int argc, char **argv)
 		if (!pr || blkid_probe_set_device(pr, fd, 0, 0))
 			warnx(_("%s: failed to initialize blkid prober"),
 					wholedisk);
-		else
+		else {
+			if (sector_size)
+				blkid_probe_set_sectorsize(pr, sector_size);
+
 			ls = get_partlist(pr, wholedisk, type);
+		}
 
 		if (ls) {
 			switch (what) {
@@ -1024,7 +1055,9 @@ int main(int argc, char **argv)
 			default:
 				abort();
 			}
-		}
+		} else
+			rc = 1;
+
 		blkid_free_probe(pr);
 	}
 

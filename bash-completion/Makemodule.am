@@ -18,6 +18,12 @@ endif
 if BUILD_COLUMN
 dist_bashcompletion_DATA += bash-completion/column
 endif
+if BUILD_FINCORE
+dist_bashcompletion_DATA += bash-completion/fincore
+endif
+if BUILD_FINDFS
+dist_bashcompletion_DATA += bash-completion/findfs
+endif
 if BUILD_FINDMNT
 dist_bashcompletion_DATA += bash-completion/findmnt
 endif
@@ -86,9 +92,6 @@ dist_bashcompletion_DATA += bash-completion/scriptreplay
 endif
 if BUILD_SETSID
 dist_bashcompletion_DATA += bash-completion/setsid
-endif
-if BUILD_TAILF
-dist_bashcompletion_DATA += bash-completion/tailf
 endif
 if BUILD_WHEREIS
 dist_bashcompletion_DATA += bash-completion/whereis
@@ -180,6 +183,9 @@ endif
 if BUILD_LIBUUID
 dist_bashcompletion_DATA += bash-completion/uuidgen
 endif
+if BUILD_UUIDPARSE
+dist_bashcompletion_DATA += bash-completion/uuidparse
+endif
 if BUILD_UUIDD
 dist_bashcompletion_DATA += bash-completion/uuidd
 endif
@@ -205,6 +211,9 @@ endif
 if BUILD_CHCPU
 dist_bashcompletion_DATA += bash-completion/chcpu
 endif
+if BUILD_CHMEM
+dist_bashcompletion_DATA += bash-completion/chmem
+endif
 if BUILD_EJECT
 dist_bashcompletion_DATA += bash-completion/eject
 endif
@@ -219,6 +228,9 @@ dist_bashcompletion_DATA += bash-completion/tunelp
 endif
 if BUILD_LSCPU
 dist_bashcompletion_DATA += bash-completion/lscpu
+endif
+if BUILD_LSMEM
+dist_bashcompletion_DATA += bash-completion/lsmem
 endif
 if BUILD_LOSETUP
 dist_bashcompletion_DATA += bash-completion/losetup
@@ -252,6 +264,9 @@ endif
 if BUILD_BLKDISCARD
 dist_bashcompletion_DATA += bash-completion/blkdiscard
 endif
+if BUILD_BLKZONE
+dist_bashcompletion_DATA += bash-completion/blkzone
+endif
 if BUILD_CTRLALTDEL
 dist_bashcompletion_DATA += bash-completion/ctrlaltdel
 endif
@@ -266,6 +281,9 @@ dist_bashcompletion_DATA += bash-completion/fstrim
 endif
 if BUILD_LDATTACH
 dist_bashcompletion_DATA += bash-completion/ldattach
+endif
+if BUILD_RFKILL
+dist_bashcompletion_DATA += bash-completion/rfkill
 endif
 if BUILD_RTCWAKE
 dist_bashcompletion_DATA += bash-completion/rtcwake

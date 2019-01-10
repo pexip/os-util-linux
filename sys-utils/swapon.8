@@ -35,7 +35,7 @@
 .SH NAME
 swapon, swapoff \- enable/disable devices and files for paging and swapping
 .SH SYNOPSIS
-.BR swapon
+.B swapon
 [options]
 .RI [ specialfile ...]
 .br
@@ -83,10 +83,10 @@ Enable swap discards, if the swap backing device supports the discard or
 trim operation.  This may improve performance on some Solid State Devices,
 but often it does not.  The option allows one to select between two
 available swap discard policies:
-.BI \-\-discard=once
+.B \-\-discard=once
 to perform a single-time discard operation for the whole swap area at swapon;
 or
-.BI \-\-discard=pages
+.B \-\-discard=pages
 to asynchronously discard freed swap pages before they are available for reuse.
 If no policy is selected, the default behavior is to enable both discard types.
 The
@@ -152,13 +152,16 @@ When no priority is defined, it defaults to \-1.
 .TP
 .BR \-s , " \-\-summary"
 Display swap usage summary by device.  Equivalent to "cat /proc/swaps".
-Not available before Linux 2.1.25.  This output format is DEPRECATED in favour
+This output format is DEPRECATED in favour
 of \fB\-\-show\fR that provides better control on output data.
 .TP
 .BR \-\-show [ =\fIcolumn\fR ...]
 Display a definable table of swap areas.  See the
 .B \-\-help
 output for a list of available columns.
+.TP
+.B \-\-output\-all
+Output all available columns.
 .TP
 .B \-\-noheadings
 Do not print headings when displaying
@@ -219,7 +222,7 @@ Swap over \fBNFS\fR may not work.
 .PP
 .B swapon
 automatically detects and rewrites a swap space signature with old software
-suspend data (e.g S1SUSPEND, S2SUSPEND, ...). The problem is that if we don't
+suspend data (e.g. S1SUSPEND, S2SUSPEND, ...). The problem is that if we don't
 do it, then we get data corruption the next time an attempt at unsuspending is
 made.
 
@@ -250,4 +253,4 @@ The
 command appeared in 4.0BSD.
 .SH AVAILABILITY
 The swapon command is part of the util-linux package and is available from
-ftp://ftp.kernel.org/pub/linux/utils/util-linux/.
+https://www.kernel.org/pub/linux/utils/util-linux/.

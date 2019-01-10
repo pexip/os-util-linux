@@ -1,6 +1,7 @@
 [Unit]
-Description=Discard unused blocks
+Description=Discard unused blocks on filesystems from /etc/fstab
+Documentation=man:fstrim(8)
 
 [Service]
 Type=oneshot
-ExecStart=@sbindir@/fstrim -av
+ExecStart=@sbindir@/fstrim -Av

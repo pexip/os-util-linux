@@ -25,13 +25,15 @@
 #define FDISKPROG_DEBUG_ALL	0xFFFF
 
 extern int pwipemode;
+extern struct fdisk_table *original_layout;
+extern int device_is_used;
+extern int is_interactive;
 
 UL_DEBUG_DECLARE_MASK(fdisk);
 #define DBG(m, x)       __UL_DBG(fdisk, FDISKPROG_DEBUG_, m, x)
 #define ON_DBG(m, x)    __UL_DBG_CALL(fdisk, FDISKPROG_DEBUG_, m, x)
 
-extern int get_user_reply(struct fdisk_context *cxt,
-			  const char *prompt,
+extern int get_user_reply(const char *prompt,
 			  char *buf, size_t bufsz);
 extern int process_fdisk_menu(struct fdisk_context **cxt);
 
@@ -48,5 +50,7 @@ extern void list_partition_types(struct fdisk_context *cxt);
 extern void change_partition_type(struct fdisk_context *cxt);
 
 extern void toggle_dos_compatibility_flag(struct fdisk_context *cxt);
+
+extern void follow_wipe_mode(struct fdisk_context *cxt);
 
 #endif /* UTIL_LINUX_FDISK_H */

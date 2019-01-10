@@ -9,11 +9,8 @@
 #include <stdio.h>
 #include <errno.h>
 
-/* default strtoxx_or_err() exit code */
-#ifndef STRTOXX_EXIT_CODE
-# define STRTOXX_EXIT_CODE EXIT_FAILURE
-#endif
-
+/* initialize a custom exit code for all *_or_err functions */
+extern void strutils_set_exitcode(int exit_code);
 
 extern int parse_size(const char *str, uintmax_t *res, int *power);
 extern int strtosize(const char *str, uintmax_t *res);
@@ -21,12 +18,15 @@ extern uintmax_t strtosize_or_err(const char *str, const char *errmesg);
 
 extern int16_t strtos16_or_err(const char *str, const char *errmesg);
 extern uint16_t strtou16_or_err(const char *str, const char *errmesg);
+extern uint16_t strtox16_or_err(const char *str, const char *errmesg);
 
 extern int32_t strtos32_or_err(const char *str, const char *errmesg);
 extern uint32_t strtou32_or_err(const char *str, const char *errmesg);
+extern uint32_t strtox32_or_err(const char *str, const char *errmesg);
 
 extern int64_t strtos64_or_err(const char *str, const char *errmesg);
 extern uint64_t strtou64_or_err(const char *str, const char *errmesg);
+extern uint64_t strtox64_or_err(const char *str, const char *errmesg);
 
 extern double strtod_or_err(const char *str, const char *errmesg);
 
@@ -65,6 +65,34 @@ static inline void xstrncpy(char *dest, const char *src, size_t n)
 	dest[n-1] = 0;
 }
 
+/* This is like strncpy(), but based on memcpy(), so compilers and static
+ * analyzers do not complain when sizeof(destination) is the same as 'n' and
+ * result is not terminated by zero.
+ *
+ * Use this function to copy string to logs with fixed sizes (wtmp/utmp. ...)
+ * where string terminator is optional.
+ */
+static inline void *str2memcpy(void *dest, const char *src, size_t n)
+{
+	size_t bytes = strlen(src) + 1;
+
+	if (bytes > n)
+		bytes = n;
+
+	memcpy(dest, src, bytes);
+	return dest;
+}
+
+static inline char *mem2strcpy(char *dest, const void *src, size_t n, size_t nmax)
+{
+	if (n + 1 > nmax)
+		n = nmax - 1;
+
+	memcpy(dest, src, n);
+	dest[nmax-1] = '\0';
+	return dest;
+}
+
 static inline int strdup_to_offset(void *stru, size_t offset, const char *str)
 {
 	char *n = NULL;
@@ -88,7 +116,7 @@ static inline int strdup_to_offset(void *stru, size_t offset, const char *str)
 #define strdup_to_struct_member(_s, _m, _str) \
 		strdup_to_offset((void *) _s, offsetof(__typeof__(*(_s)), _m), _str)
 
-extern void xstrmode(mode_t mode, char *str);
+extern char *xstrmode(mode_t mode, char *str);
 
 /* Options for size_to_human_string() */
 enum
@@ -149,12 +177,12 @@ static inline const char *endswith(const char *s, const char *postfix)
 	size_t pl = postfix ? strlen(postfix) : 0;
 
 	if (pl == 0)
-		return (char *)s + sl;
+		return s + sl;
 	if (sl < pl)
 		return NULL;
 	if (memcmp(s + sl - pl, postfix, pl) != 0)
 		return NULL;
-	return (char *)s + sl - pl;
+	return s + sl - pl;
 }
 
 /*
@@ -213,7 +241,7 @@ static inline size_t ltrim_whitespace(unsigned char *str)
 
 	len = strlen((char *) p);
 
-	if (len && p > str)
+	if (p > str)
 		memmove(str, p, len + 1);
 
 	return len;

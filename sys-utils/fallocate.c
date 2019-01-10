@@ -40,7 +40,8 @@
 
 #if defined(HAVE_LINUX_FALLOC_H) && \
     (!defined(FALLOC_FL_KEEP_SIZE) || !defined(FALLOC_FL_PUNCH_HOLE) || \
-     !defined(FALLOC_FL_COLLAPSE_RANGE) || !defined(FALLOC_FL_ZERO_RANGE))
+     !defined(FALLOC_FL_COLLAPSE_RANGE) || !defined(FALLOC_FL_ZERO_RANGE) || \
+     !defined(FALLOC_FL_INSERT_RANGE))
 # include <linux/falloc.h>	/* non-libc fallback for FALLOC_FL_* flags */
 #endif
 
@@ -61,6 +62,10 @@
 # define FALLOC_FL_ZERO_RANGE		0x10
 #endif
 
+#ifndef FALLOC_FL_INSERT_RANGE
+# define FALLOC_FL_INSERT_RANGE		0x20
+#endif
+
 #include "nls.h"
 #include "strutils.h"
 #include "c.h"
@@ -71,8 +76,9 @@
 static int verbose;
 static char *filename;
 
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
 	      _(" %s [options] <filename>\n"), program_invocation_short_name);
@@ -83,20 +89,23 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -c, --collapse-range remove a range from the file\n"), out);
 	fputs(_(" -d, --dig-holes      detect zeroes and replace with holes\n"), out);
+	fputs(_(" -i, --insert-range   insert a hole at range, shifting existing data\n"), out);
 	fputs(_(" -l, --length <num>   length for range operations, in bytes\n"), out);
 	fputs(_(" -n, --keep-size      maintain the apparent size of the file\n"), out);
 	fputs(_(" -o, --offset <num>   offset for range operations, in bytes\n"), out);
 	fputs(_(" -p, --punch-hole     replace a range with a hole (implies -n)\n"), out);
 	fputs(_(" -z, --zero-range     zero and ensure allocation of a range\n"), out);
+#ifdef HAVE_POSIX_FALLOCATE
+	fputs(_(" -x, --posix          use posix_fallocate(3) instead of fallocate(2)\n"), out);
+#endif
 	fputs(_(" -v, --verbose        verbose mode\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
+	printf(USAGE_HELP_OPTIONS(22));
 
-	fprintf(out, USAGE_MAN_TAIL("fallocate(1)"));
+	printf(USAGE_MAN_TAIL("fallocate(1)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 static loff_t cvtnum(char *s)
@@ -112,6 +121,7 @@ static loff_t cvtnum(char *s)
 static void xfallocate(int fd, int mode, off_t offset, off_t length)
 {
 	int error;
+
 #ifdef HAVE_FALLOCATE
 	error = fallocate(fd, mode, offset, length);
 #else
@@ -128,25 +138,15 @@ static void xfallocate(int fd, int mode, off_t offset, off_t length)
 	}
 }
 
-
-static int skip_hole(int fd, off_t *off)
+#ifdef HAVE_POSIX_FALLOCATE
+static void xposix_fallocate(int fd, off_t offset, off_t length)
 {
-	off_t newoff;
-
-	errno = 0;
-	newoff	= lseek(fd, *off, SEEK_DATA);
-
-	/* ENXIO means that there is no more data -- probably sparse hole at
-	 * the end of the file */
-	if (newoff < 0 && errno == ENXIO)
-		return 1;
-
-	if (newoff > *off) {
-		*off = newoff;
-		return 0;	/* success */
+	int error = posix_fallocate(fd, offset, length);
+	if (error < 0) {
+		err(EXIT_FAILURE, _("fallocate failed"));
 	}
-	return -1;		/* no hole */
 }
+#endif
 
 /* The real buffer size has to be bufsize + sizeof(uintptr_t) */
 static int is_nul(void *buf, size_t bufsize)
@@ -173,16 +173,16 @@ static int is_nul(void *buf, size_t bufsize)
 	return cbuf + bufsize < cp;
 }
 
-static void dig_holes(int fd, off_t off, off_t len)
+static void dig_holes(int fd, off_t file_off, off_t len)
 {
-	off_t end = len ? off + len : 0;
+	off_t file_end = len ? file_off + len : 0;
 	off_t hole_start = 0, hole_sz = 0;
 	uintmax_t ct = 0;
 	size_t  bufsz;
 	char *buf;
 	struct stat st;
 #if defined(POSIX_FADV_SEQUENTIAL) && defined(HAVE_POSIX_FADVISE)
-	off_t cache_start = off;
+	off_t cache_start = file_off;
 	/*
 	 * We don't want to call POSIX_FADV_DONTNEED to discard cached
 	 * data in PAGE_SIZE steps. IMHO it's overkill (too many syscalls).
@@ -199,60 +199,70 @@ static void dig_holes(int fd, off_t off, off_t len)
 
 	bufsz = st.st_blksize;
 
-	if (lseek(fd, off, SEEK_SET) < 0)
+	if (lseek(fd, file_off, SEEK_SET) < 0)
 		err(EXIT_FAILURE, _("seek on %s failed"), filename);
 
 	/* buffer + extra space for is_nul() sentinel */
 	buf = xmalloc(bufsz + sizeof(uintptr_t));
-#if defined(POSIX_FADV_SEQUENTIAL) && defined(HAVE_POSIX_FADVISE)
-	posix_fadvise(fd, off, 0, POSIX_FADV_SEQUENTIAL);
-#endif
+	while (file_end == 0 || file_off < file_end) {
+		/*
+		 * Detect data area (skip holes)
+		 */
+		off_t end, off;
 
-	while (end == 0 || off < end) {
-		ssize_t rsz;
-
-		rsz = pread(fd, buf, bufsz, off);
-		if (rsz < 0 && errno)
-			err(EXIT_FAILURE, _("%s: read failed"), filename);
-		if (end && rsz > 0 && off > end - rsz)
-			rsz = end - off;
-		if (rsz <= 0)
+		off = lseek(fd, file_off, SEEK_DATA);
+		if ((off == -1 && errno == ENXIO) ||
+		    (file_end && off >= file_end))
 			break;
 
-		if (is_nul(buf, rsz)) {
-			if (!hole_sz) {				/* new hole detected */
-				int rc = skip_hole(fd, &off);
-				if (rc == 0)
-					continue;	/* hole skipped */
-				else if (rc == 1)
-					break;		/* end of file */
-				hole_start = off;
+		end = lseek(fd, off, SEEK_HOLE);
+		if (file_end && end > file_end)
+			end = file_end;
+
+#if defined(POSIX_FADV_SEQUENTIAL) && defined(HAVE_POSIX_FADVISE)
+		posix_fadvise(fd, off, end, POSIX_FADV_SEQUENTIAL);
+#endif
+		/*
+		 * Dig holes in the area
+		 */
+		while (off < end) {
+			ssize_t rsz = pread(fd, buf, bufsz, off);
+			if (rsz < 0 && errno)
+				err(EXIT_FAILURE, _("%s: read failed"), filename);
+			if (end && rsz > 0 && off > end - rsz)
+				rsz = end - off;
+			if (rsz <= 0)
+				break;
+
+			if (is_nul(buf, rsz)) {
+				if (!hole_sz)				/* new hole detected */
+					hole_start = off;
+				hole_sz += rsz;
+			 } else if (hole_sz) {
+				xfallocate(fd, FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,
+					   hole_start, hole_sz);
+				ct += hole_sz;
+				hole_sz = hole_start = 0;
 			}
-			hole_sz += rsz;
-		 } else if (hole_sz) {
-			xfallocate(fd, FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,
-				   hole_start, hole_sz);
-			ct += hole_sz;
-			hole_sz = hole_start = 0;
-		}
 
 #if defined(POSIX_FADV_DONTNEED) && defined(HAVE_POSIX_FADVISE)
-		/* discard cached data */
-		if (off - cache_start > (off_t) cachesz) {
-			size_t clen = off - cache_start;
+			/* discard cached data */
+			if (off - cache_start > (off_t) cachesz) {
+				size_t clen = off - cache_start;
 
-			clen = (clen / cachesz) * cachesz;
-			posix_fadvise(fd, cache_start, clen, POSIX_FADV_DONTNEED);
-			cache_start = cache_start + clen;
-		}
+				clen = (clen / cachesz) * cachesz;
+				posix_fadvise(fd, cache_start, clen, POSIX_FADV_DONTNEED);
+				cache_start = cache_start + clen;
+			}
 #endif
-		off += rsz;
-	}
-
-	if (hole_sz) {
-		xfallocate(fd, FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,
-				hole_start, hole_sz);
-		ct += hole_sz;
+			off += rsz;
+		}
+		if (hole_sz) {
+			xfallocate(fd, FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,
+					hole_start, hole_sz);
+			ct += hole_sz;
+		}
+		file_off = off;
 	}
 
 	free(buf);
@@ -271,26 +281,30 @@ int main(int argc, char **argv)
 	int	fd;
 	int	mode = 0;
 	int	dig = 0;
+	int posix = 0;
 	loff_t	length = -2LL;
 	loff_t	offset = 0;
 
 	static const struct option longopts[] = {
-	    { "help",           0, 0, 'h' },
-	    { "version",        0, 0, 'V' },
-	    { "keep-size",      0, 0, 'n' },
-	    { "punch-hole",     0, 0, 'p' },
-	    { "collapse-range", 0, 0, 'c' },
-	    { "dig-holes",      0, 0, 'd' },
-	    { "zero-range",     0, 0, 'z' },
-	    { "offset",         1, 0, 'o' },
-	    { "length",         1, 0, 'l' },
-	    { "verbose",        0, 0, 'v' },
-	    { NULL,             0, 0, 0 }
+	    { "help",           no_argument,       NULL, 'h' },
+	    { "version",        no_argument,       NULL, 'V' },
+	    { "keep-size",      no_argument,       NULL, 'n' },
+	    { "punch-hole",     no_argument,       NULL, 'p' },
+	    { "collapse-range", no_argument,       NULL, 'c' },
+	    { "dig-holes",      no_argument,       NULL, 'd' },
+	    { "insert-range",   no_argument,       NULL, 'i' },
+	    { "zero-range",     no_argument,       NULL, 'z' },
+	    { "offset",         required_argument, NULL, 'o' },
+	    { "length",         required_argument, NULL, 'l' },
+	    { "posix",          no_argument,       NULL, 'x' },
+	    { "verbose",        no_argument,       NULL, 'v' },
+	    { NULL, 0, NULL, 0 }
 	};
 
-	static const ul_excl_t excl[] = {	/* rows and cols in in ASCII order */
+	static const ul_excl_t excl[] = {	/* rows and cols in ASCII order */
 		{ 'c', 'd', 'p', 'z' },
 		{ 'c', 'n' },
+		{ 'x', 'c', 'd', 'i', 'n', 'p', 'z'},
 		{ 0 }
 	};
 	int excl_st[ARRAY_SIZE(excl)] = UL_EXCL_STATUS_INIT;
@@ -300,20 +314,23 @@ int main(int argc, char **argv)
 	textdomain(PACKAGE);
 	atexit(close_stdout);
 
-	while ((c = getopt_long(argc, argv, "hvVncpdzl:o:", longopts, NULL))
+	while ((c = getopt_long(argc, argv, "hvVncpdizxl:o:", longopts, NULL))
 			!= -1) {
 
 		err_exclusive_options(c, longopts, excl, excl_st);
 
 		switch(c) {
 		case 'h':
-			usage(stdout);
+			usage();
 			break;
 		case 'c':
 			mode |= FALLOC_FL_COLLAPSE_RANGE;
 			break;
 		case 'd':
 			dig = 1;
+			break;
+		case 'i':
+			mode |= FALLOC_FL_INSERT_RANGE;
 			break;
 		case 'l':
 			length = cvtnum(optarg);
@@ -330,6 +347,13 @@ int main(int argc, char **argv)
 		case 'z':
 			mode |= FALLOC_FL_ZERO_RANGE;
 			break;
+		case 'x':
+#ifdef HAVE_POSIX_FALLOCATE
+			posix = 1;
+			break;
+#else
+			errx(EXIT_FAILURE, _("posix_fallocate support is not compiled"));
+#endif
 		case 'v':
 			verbose++;
 			break;
@@ -337,8 +361,7 @@ int main(int argc, char **argv)
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		default:
-			usage(stderr);
-			break;
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
@@ -375,6 +398,10 @@ int main(int argc, char **argv)
 
 	if (dig)
 		dig_holes(fd, offset, length);
+#ifdef HAVE_POSIX_FALLOCATE
+	else if (posix)
+		xposix_fallocate(fd, offset, length);
+#endif
 	else
 		xfallocate(fd, mode, offset, length);
 

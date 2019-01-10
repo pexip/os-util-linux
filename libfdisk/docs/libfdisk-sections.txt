@@ -39,6 +39,7 @@ fdisk_ask_number_get_range
 fdisk_ask_number_get_result
 fdisk_ask_number_get_unit
 fdisk_ask_number_inchars
+fdisk_ask_number_is_wrap_negative
 fdisk_ask_number_set_relative
 fdisk_ask_number_set_result
 fdisk_ask_partnum
@@ -66,10 +67,10 @@ fdisk_align_lba_in_range
 fdisk_has_user_device_properties
 fdisk_lba_is_phy_aligned
 fdisk_override_geometry
-fdisk_reread_partition_table
 fdisk_reset_alignment
 fdisk_reset_device_properties
 fdisk_save_user_geometry
+fdisk_save_user_grain
 fdisk_save_user_sector_size
 </SECTION>
 
@@ -97,6 +98,9 @@ fdisk_label_get_field
 fdisk_label_get_field_by_name
 fdisk_label_get_fields_ids
 fdisk_label_get_fields_ids_all
+fdisk_label_get_geomrange_cylinders
+fdisk_label_get_geomrange_heads
+fdisk_label_get_geomrange_sectors
 fdisk_label_get_name
 fdisk_label_get_nparttypes
 fdisk_label_get_parttype
@@ -129,6 +133,7 @@ fdisk_script_enable_json
 fdisk_script_get_header
 fdisk_script_get_nlines
 fdisk_script_get_table
+fdisk_script_has_force_label
 fdisk_script_read_context
 fdisk_script_read_file
 fdisk_script_read_line
@@ -176,6 +181,7 @@ fdisk_partition_has_end
 fdisk_partition_has_partno
 fdisk_partition_has_size
 fdisk_partition_has_start
+fdisk_partition_has_wipe
 fdisk_partition_is_bootable
 fdisk_partition_is_container
 fdisk_partition_is_freespace
@@ -285,14 +291,20 @@ fdisk_unref_table
 fdisk_context
 fdisk_assign_device
 fdisk_deassign_device
+fdisk_reassign_device
+fdisk_device_is_used
 fdisk_enable_bootbits_protection
 fdisk_enable_details
 fdisk_enable_listonly
 fdisk_enable_wipe
+fdisk_disable_dialogs
 fdisk_get_alignment_offset
 fdisk_get_collision
 fdisk_get_devfd
+fdisk_get_devmodel
 fdisk_get_devname
+fdisk_get_devno
+fdisk_get_disklabel_item
 fdisk_get_first_lba
 fdisk_get_geom_cylinders
 fdisk_get_geom_heads
@@ -308,17 +320,22 @@ fdisk_get_sector_size
 fdisk_get_size_unit
 fdisk_get_unit
 fdisk_get_units_per_sector
+fdisk_has_dialogs
 fdisk_has_label
 fdisk_has_protected_bootbits
 fdisk_has_wipe
 fdisk_is_details
 fdisk_is_labeltype
 fdisk_is_listonly
+fdisk_is_ptcollision
 fdisk_is_readonly
+fdisk_is_regfile
 fdisk_new_context
 fdisk_new_nested_context
 FDISK_PLURAL
 fdisk_ref_context
+fdisk_reread_changes
+fdisk_reread_partition_table
 fdisk_set_first_lba
 fdisk_set_last_lba
 fdisk_set_size_unit
@@ -354,6 +371,12 @@ fdisk_labelitem_get_data_u64
 fdisk_labelitem_get_data_string
 fdisk_labelitem_is_string
 fdisk_labelitem_is_number
+fdisk_labelitem
+fdisk_labelitem_bsd
+fdisk_labelitem_gen
+fdisk_labelitem_gpt
+fdisk_labelitem_sgi
+fdisk_labelitem_sun
 </SECTION>
 
 <SECTION>

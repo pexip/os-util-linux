@@ -60,6 +60,7 @@ static char *xgetpass(FILE *input, const char *prompt)
 	return pass;
 }
 
+#ifndef HAVE_EXPLICIT_BZERO
 /* Ensure memory is set to value c without compiler optimization getting
  * into way that could happen with memset(3). */
 static int xmemset_s(void *v, size_t sz, const int c)
@@ -72,6 +73,7 @@ static int xmemset_s(void *v, size_t sz, const int c)
 		*p++ = c;
 	return 0;
 }
+#endif
 
 /* try to read password from gshadow */
 static char *get_gshadow_pwd(const char *groupname)
@@ -148,7 +150,11 @@ static int allow_setgid(const struct passwd *pe, const struct group *ge)
 	if (pwd && *pwd && (xpwd = xgetpass(stdin, _("Password: ")))) {
 		char *cbuf = crypt(xpwd, pwd);
 
+#ifdef HAVE_EXPLICIT_BZERO
+		explicit_bzero(xpwd, strlen(xpwd));
+#else
 		xmemset_s(xpwd, strlen(xpwd), 0);
+#endif
 		free(xpwd);
 		if (!cbuf)
 			warn(_("crypt failed"));
@@ -160,19 +166,19 @@ static int allow_setgid(const struct passwd *pe, const struct group *ge)
 	return FALSE;
 }
 
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
-	fprintf(out, USAGE_HEADER);
+	FILE *out = stdout;
+	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s <group>\n"), program_invocation_short_name);
 
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_("Log in to a new group.\n"), out);
 
-	fprintf(out, USAGE_OPTIONS);
-	fprintf(out, USAGE_HELP);
-	fprintf(out, USAGE_VERSION);
-	fprintf(out, USAGE_MAN_TAIL("newgrp(1)"));
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	fputs(USAGE_OPTIONS, out);
+	printf(USAGE_HELP_OPTIONS(16));
+	printf(USAGE_MAN_TAIL("newgrp(1)"));
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char *argv[])
@@ -198,9 +204,9 @@ int main(int argc, char *argv[])
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 
 	if (!(pw_entry = getpwuid(getuid())))
@@ -230,8 +236,5 @@ int main(int argc, char *argv[])
 	shell = (pw_entry->pw_shell && *pw_entry->pw_shell ?
 				pw_entry->pw_shell : _PATH_BSHELL);
 	execl(shell, shell, (char *)0);
-	warn(_("failed to execute %s"), shell);
-	fflush(stderr);
-
-	return EXIT_FAILURE;
+	errexec(shell);
 }

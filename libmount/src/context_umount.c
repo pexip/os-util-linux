@@ -1,8 +1,13 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /*
- * Copyright (C) 2010 Karel Zak <kzak@redhat.com>
+ * This file is part of libmount from util-linux project.
  *
- * This file may be redistributed under the terms of the
- * GNU Lesser General Public License.
+ * Copyright (C) 2010-2018 Karel Zak <kzak@redhat.com>
+ *
+ * libmount is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation; either version 2.1 of the License, or
+ * (at your option) any later version.
  */
 
 /**
@@ -51,6 +56,7 @@ int mnt_context_find_umount_fs(struct libmnt_context *cxt,
 			       struct libmnt_fs **pfs)
 {
 	int rc;
+	struct libmnt_ns *ns_old;
 	struct libmnt_table *mtab = NULL;
 	struct libmnt_fs *fs;
 	char *loopdev = NULL;
@@ -67,17 +73,25 @@ int mnt_context_find_umount_fs(struct libmnt_context *cxt,
 		return 1; /* empty string is not an error */
 
 	/*
-	 * The mount table may be huge, and on systems with utab we have to merge
-	 * userspace mount options into /proc/self/mountinfo. This all is
-	 * expensive. The tab filter allows to filter out entries, then
-	 * a mount table and utab are very tiny files.
+	 * The mount table may be huge, and on systems with utab we have to
+	 * merge userspace mount options into /proc/self/mountinfo. This all is
+	 * expensive. The tab filter allows to filter out entries, then a mount
+	 * table and utab are very tiny files.
 	 *
-	 * *but*... the filter uses mnt_fs_streq_{target,srcpath} functions
-	 * where LABEL, UUID or symlinks are canonicalized. It means that
-	 * it's usable only for canonicalized stuff (e.g. kernel mountinfo).
+	 * The filter uses mnt_fs_streq_{target,srcpath} function where all
+	 * paths should be absolute and canonicalized. This is done within
+	 * mnt_context_get_mtab_for_target() where LABEL, UUID or symlinks are
+	 * canonicalized. If --no-canonicalize is enabled than the target path
+	 * is expected already canonical.
+	 *
+	 * Anyway it's better to read huge mount table than canonicalize target
+	 * paths. It means we use the filter only if --no-canonicalize enabled.
+	 *
+	 * It also means that we have to read mount table from kernel
+	 * (non-writable mtab).
 	 */
-	if (!mnt_context_mtab_writable(cxt) && *tgt == '/' &&
-	    !mnt_context_is_force(cxt) && !mnt_context_is_lazy(cxt))
+	if (mnt_context_is_nocanonicalize(cxt) &&
+	    !mnt_context_mtab_writable(cxt) && *tgt == '/')
 		rc = mnt_context_get_mtab_for_target(cxt, &mtab, tgt);
 	else
 		rc = mnt_context_get_mtab(cxt, &mtab);
@@ -91,6 +105,10 @@ int mnt_context_find_umount_fs(struct libmnt_context *cxt,
 		DBG(CXT, ul_debugobj(cxt, "umount: mtab empty"));
 		return 1;
 	}
+
+	ns_old = mnt_context_switch_target_ns(cxt);
+	if (!ns_old)
+		return -MNT_ERR_NAMESPACE;
 
 try_loopdev:
 	fs = mnt_table_find_target(mtab, tgt, MNT_ITER_BACKWARD);
@@ -151,12 +169,16 @@ try_loopdev:
 	if (pfs)
 		*pfs = fs;
 	free(loopdev);
+	if (!mnt_context_switch_ns(cxt, ns_old))
+		return -MNT_ERR_NAMESPACE;
 
 	DBG(CXT, ul_debugobj(cxt, "umount fs: %s", fs ? mnt_fs_get_target(fs) :
 							"<not found>"));
 	return fs ? 0 : 1;
 err:
 	free(loopdev);
+	if (!mnt_context_switch_ns(cxt, ns_old))
+		return -MNT_ERR_NAMESPACE;
 	return rc;
 }
 
@@ -245,11 +267,14 @@ static int lookup_umount_fs(struct libmnt_context *cxt)
 	    && !mnt_context_mtab_writable(cxt)
 	    && !mnt_context_is_force(cxt)
 	    && !mnt_context_is_lazy(cxt)
+	    && !mnt_context_is_nocanonicalize(cxt)
 	    && !mnt_context_is_loopdel(cxt)
 	    && mnt_stat_mountpoint(tgt, &st) == 0 && S_ISDIR(st.st_mode)
 	    && !has_utab_entry(cxt, tgt)) {
 
 		const char *type = mnt_fs_get_fstype(cxt->fs);
+
+		DBG(CXT, ul_debugobj(cxt, "umount: disable mtab"));
 
 		/* !mnt_context_mtab_writable(cxt) && has_utab_entry() verified that there
 		 * is no stuff in utab, so disable all mtab/utab related actions */
@@ -257,6 +282,8 @@ static int lookup_umount_fs(struct libmnt_context *cxt)
 
 		if (!type) {
 			struct statfs vfs;
+
+			DBG(CXT, ul_debugobj(cxt, "umount: trying statfs()"));
 			if (statfs(tgt, &vfs) == 0)
 				type = mnt_statfs_get_fstype(&vfs);
 			if (type) {
@@ -304,8 +331,8 @@ static int lookup_umount_fs(struct libmnt_context *cxt)
 static int is_associated_fs(const char *devname, struct libmnt_fs *fs)
 {
 	uintmax_t offset = 0;
-	const char *src;
-	char *val, *optstr;
+	const char *src, *optstr;
+	char *val;
 	size_t valsz;
 	int flags = 0;
 
@@ -318,7 +345,7 @@ static int is_associated_fs(const char *devname, struct libmnt_fs *fs)
 		return 0;
 
 	/* check for the offset option in @fs */
-	optstr = (char *) mnt_fs_get_user_options(fs);
+	optstr = mnt_fs_get_user_options(fs);
 
 	if (optstr &&
 	    mnt_optstr_get_option(optstr, "offset", &val, &valsz) == 0) {
@@ -337,6 +364,7 @@ static int prepare_helper_from_options(struct libmnt_context *cxt,
 	char *suffix = NULL;
 	const char *opts;
 	size_t valsz;
+	int rc;
 
 	if (mnt_context_is_nohelpers(cxt))
 		return 0;
@@ -354,7 +382,10 @@ static int prepare_helper_from_options(struct libmnt_context *cxt,
 
 	DBG(CXT, ul_debugobj(cxt, "umount: umount.%s %s requested", suffix, name));
 
-	return mnt_context_prepare_helper(cxt, "umount", suffix);
+	rc = mnt_context_prepare_helper(cxt, "umount", suffix);
+	free(suffix);
+
+	return rc;
 }
 
 /*
@@ -468,14 +499,22 @@ static int evaluate_permissions(struct libmnt_context *cxt)
 	 */
 	if (u_flags & (MNT_MS_USER | MNT_MS_OWNER | MNT_MS_GROUP)) {
 
-		char *curr_user = NULL;
+		char *curr_user;
 		char *mtab_user = NULL;
 		size_t sz;
+		struct libmnt_ns *ns_old;
 
 		DBG(CXT, ul_debugobj(cxt,
 				"umount: checking user=<username> from mtab"));
 
+		ns_old = mnt_context_switch_origin_ns(cxt);
+		if (!ns_old)
+			return -MNT_ERR_NAMESPACE;
+
 		curr_user = mnt_get_username(getuid());
+
+		if (!mnt_context_switch_ns(cxt, ns_old))
+			return -MNT_ERR_NAMESPACE;
 
 		if (!curr_user) {
 			DBG(CXT, ul_debugobj(cxt, "umount %s: cannot "
@@ -503,7 +542,10 @@ eperm:
 
 static int exec_helper(struct libmnt_context *cxt)
 {
+	char *namespace = NULL;
+	struct libmnt_ns *ns_tgt = mnt_context_get_target_ns(cxt);
 	int rc;
+	pid_t pid;
 
 	assert(cxt);
 	assert(cxt->fs);
@@ -517,19 +559,29 @@ static int exec_helper(struct libmnt_context *cxt)
 		return rc;
 	}
 
+	if (ns_tgt->fd != -1
+	    && asprintf(&namespace, "/proc/%i/fd/%i",
+			getpid(), ns_tgt->fd) == -1) {
+		return -ENOMEM;
+	}
+
 	DBG_FLUSH;
 
-	switch (fork()) {
+	pid = fork();
+	switch (pid) {
 	case 0:
 	{
-		const char *args[10], *type;
+		const char *args[12], *type;
 		int i = 0;
 
 		if (setgid(getgid()) < 0)
-			exit(EXIT_FAILURE);
+			_exit(EXIT_FAILURE);
 
 		if (setuid(getuid()) < 0)
-			exit(EXIT_FAILURE);
+			_exit(EXIT_FAILURE);
+
+		if (!mnt_context_switch_origin_ns(cxt))
+			_exit(EXIT_FAILURE);
 
 		type = mnt_fs_get_fstype(cxt->fs);
 
@@ -550,26 +602,36 @@ static int exec_helper(struct libmnt_context *cxt)
 		    && strchr(type, '.')
 		    && !endswith(cxt->helper, type)) {
 			args[i++] = "-t";			/* 8 */
-			args[i++] = (char *) type;		/* 9 */
+			args[i++] = type;			/* 9 */
+		}
+		if (namespace) {
+			args[i++] = "-N";			/* 10 */
+			args[i++] = namespace;			/* 11 */
 		}
 
-		args[i] = NULL;					/* 10 */
+		args[i] = NULL;					/* 12 */
 		for (i = 0; args[i]; i++)
 			DBG(CXT, ul_debugobj(cxt, "argv[%d] = \"%s\"",
 							i, args[i]));
 		DBG_FLUSH;
 		execv(cxt->helper, (char * const *) args);
-		exit(EXIT_FAILURE);
+		_exit(EXIT_FAILURE);
 	}
 	default:
 	{
 		int st;
-		wait(&st);
-		cxt->helper_status = WIFEXITED(st) ? WEXITSTATUS(st) : -1;
 
-		DBG(CXT, ul_debugobj(cxt, "%s executed [status=%d]",
-					cxt->helper, cxt->helper_status));
-		cxt->helper_exec_status = rc = 0;
+		if (waitpid(pid, &st, 0) == (pid_t) -1) {
+			cxt->helper_status = -1;
+			rc = -errno;
+		} else {
+			cxt->helper_status = WIFEXITED(st) ? WEXITSTATUS(st) : -1;
+			cxt->helper_exec_status = rc = 0;
+		}
+		DBG(CXT, ul_debugobj(cxt, "%s executed [status=%d, rc=%d%s]",
+				cxt->helper,
+				cxt->helper_status, rc,
+				rc ? " waitpid failed" : ""));
 		break;
 	}
 
@@ -617,6 +679,10 @@ int mnt_context_umount_setopt(struct libmnt_context *cxt, int c, char *arg)
 	case 't':
 		if (arg)
 			rc = mnt_context_set_fstype(cxt, arg);
+		break;
+	case 'N':
+		if (arg)
+			rc = mnt_context_set_target_ns(cxt, arg);
 		break;
 	default:
 		return 1;
@@ -679,7 +745,7 @@ static int do_umount(struct libmnt_context *cxt)
 	if (mnt_context_is_lazy(cxt))
 		flags |= MNT_DETACH;
 
-	else if (mnt_context_is_force(cxt))
+	if (mnt_context_is_force(cxt))
 		flags |= MNT_FORCE;
 
 	DBG(CXT, ul_debugobj(cxt, "umount(2) [target='%s', flags=0x%08x]%s",
@@ -712,7 +778,7 @@ static int do_umount(struct libmnt_context *cxt)
 			-cxt->syscall_status));
 
 		rc = mount(src, mnt_fs_get_target(cxt->fs), NULL,
-			    MS_MGC_VAL | MS_REMOUNT | MS_RDONLY, NULL);
+			    MS_REMOUNT | MS_RDONLY, NULL);
 		if (rc < 0) {
 			cxt->syscall_status = -errno;
 			DBG(CXT, ul_debugobj(cxt,
@@ -748,6 +814,7 @@ static int do_umount(struct libmnt_context *cxt)
 int mnt_context_prepare_umount(struct libmnt_context *cxt)
 {
 	int rc;
+	struct libmnt_ns *ns_old;
 
 	if (!cxt || !cxt->fs || mnt_fs_is_swaparea(cxt->fs))
 		return -EINVAL;
@@ -762,6 +829,10 @@ int mnt_context_prepare_umount(struct libmnt_context *cxt)
 	free(cxt->helper);	/* be paranoid */
 	cxt->helper = NULL;
 	cxt->action = MNT_ACT_UMOUNT;
+
+	ns_old = mnt_context_switch_target_ns(cxt);
+	if (!ns_old)
+		return -MNT_ERR_NAMESPACE;
 
 	rc = lookup_umount_fs(cxt);
 	if (!rc)
@@ -796,6 +867,10 @@ int mnt_context_prepare_umount(struct libmnt_context *cxt)
 		return rc;
 	}
 	cxt->flags |= MNT_FL_PREPARED;
+
+	if (!mnt_context_switch_ns(cxt, ns_old))
+		return -MNT_ERR_NAMESPACE;
+
 	return rc;
 }
 
@@ -820,6 +895,7 @@ int mnt_context_prepare_umount(struct libmnt_context *cxt)
 int mnt_context_do_umount(struct libmnt_context *cxt)
 {
 	int rc;
+	struct libmnt_ns *ns_old;
 
 	assert(cxt);
 	assert(cxt->fs);
@@ -829,9 +905,13 @@ int mnt_context_do_umount(struct libmnt_context *cxt)
 	assert((cxt->action == MNT_ACT_UMOUNT));
 	assert((cxt->flags & MNT_FL_MOUNTFLAGS_MERGED));
 
+	ns_old = mnt_context_switch_target_ns(cxt);
+	if (!ns_old)
+		return -MNT_ERR_NAMESPACE;
+
 	rc = do_umount(cxt);
 	if (rc)
-		return rc;
+		goto end;
 
 	if (mnt_context_get_status(cxt) && !mnt_context_is_fake(cxt)) {
 		/*
@@ -856,6 +936,10 @@ int mnt_context_do_umount(struct libmnt_context *cxt)
 						       cxt->mountflags, NULL, cxt->fs);
 		}
 	}
+end:
+	if (!mnt_context_switch_ns(cxt, ns_old))
+		return -MNT_ERR_NAMESPACE;
+
 	return rc;
 }
 
@@ -879,7 +963,7 @@ int mnt_context_finalize_umount(struct libmnt_context *cxt)
 
 	rc = mnt_context_prepare_update(cxt);
 	if (!rc)
-		rc = mnt_context_update_tabs(cxt);;
+		rc = mnt_context_update_tabs(cxt);
 	return rc;
 }
 
@@ -910,6 +994,7 @@ int mnt_context_finalize_umount(struct libmnt_context *cxt)
 int mnt_context_umount(struct libmnt_context *cxt)
 {
 	int rc;
+	struct libmnt_ns *ns_old;
 
 	assert(cxt);
 	assert(cxt->fs);
@@ -918,6 +1003,10 @@ int mnt_context_umount(struct libmnt_context *cxt)
 
 	DBG(CXT, ul_debugobj(cxt, "umount: %s", mnt_context_get_target(cxt)));
 
+	ns_old = mnt_context_switch_target_ns(cxt);
+	if (!ns_old)
+		return -MNT_ERR_NAMESPACE;
+
 	rc = mnt_context_prepare_umount(cxt);
 	if (!rc)
 		rc = mnt_context_prepare_update(cxt);
@@ -925,6 +1014,10 @@ int mnt_context_umount(struct libmnt_context *cxt)
 		rc = mnt_context_do_umount(cxt);
 	if (!rc)
 		rc = mnt_context_update_tabs(cxt);
+
+	if (!mnt_context_switch_ns(cxt, ns_old))
+		return -MNT_ERR_NAMESPACE;
+
 	return rc;
 }
 
@@ -978,10 +1071,11 @@ int mnt_context_next_umount(struct libmnt_context *cxt,
 	rc = mnt_context_get_mtab(cxt, &mtab);
 	cxt->mtab = NULL;		/* do not reset mtab */
 	mnt_reset_context(cxt);
-	cxt->mtab = mtab;
 
 	if (rc)
 		return rc;
+
+	cxt->mtab = mtab;
 
 	do {
 		rc = mnt_table_next_fs(mtab, itr, fs);
@@ -1015,4 +1109,101 @@ int mnt_context_next_umount(struct libmnt_context *cxt,
 	if (mntrc)
 		*mntrc = rc;
 	return 0;
+}
+
+
+int mnt_context_get_umount_excode(
+			struct libmnt_context *cxt,
+			int rc,
+			char *buf,
+			size_t bufsz)
+{
+	if (mnt_context_helper_executed(cxt))
+		/*
+		 * /sbin/umount.<type> called, return status
+		 */
+		return mnt_context_get_helper_status(cxt);
+
+	if (rc == 0 && mnt_context_get_status(cxt) == 1)
+		/*
+		 * Libmount success && syscall success.
+		 */
+		return MNT_EX_SUCCESS;
+
+	if (!mnt_context_syscall_called(cxt)) {
+		/*
+		 * libmount errors (extra library checks)
+		 */
+		if (rc == -EPERM && !mnt_context_tab_applied(cxt)) {
+			/* failed to evaluate permissions because not found
+			 * relevant entry in mtab */
+			if (buf)
+				snprintf(buf, bufsz, _("not mounted"));
+			return MNT_EX_USAGE;
+		} else if (rc == -MNT_ERR_LOCK) {
+			if (buf)
+				snprintf(buf, bufsz, _("locking failed"));
+			return MNT_EX_FILEIO;
+		} else if (rc == -MNT_ERR_NAMESPACE) {
+			if (buf)
+				snprintf(buf, bufsz, _("failed to switch namespace"));
+			return MNT_EX_SYSERR;
+		}
+		return mnt_context_get_generic_excode(rc, buf, bufsz,
+					_("umount failed: %m"));
+
+	} else if (mnt_context_get_syscall_errno(cxt) == 0) {
+		/*
+		 * umount(2) syscall success, but something else failed
+		 * (probably error in mtab processing).
+		 */
+		if (rc == -MNT_ERR_LOCK) {
+			if (buf)
+				snprintf(buf, bufsz, _("filesystem was unmounted, but failed to update userspace mount table"));
+			return MNT_EX_FILEIO;
+		} else if (rc == -MNT_ERR_NAMESPACE) {
+			if (buf)
+				snprintf(buf, bufsz, _("filesystem was unmounted, but failed to switch namespace back"));
+			return MNT_EX_SYSERR;
+
+		} else if (rc < 0)
+			return mnt_context_get_generic_excode(rc, buf, bufsz,
+				_("filesystem was unmounted, but any subsequent operation failed: %m"));
+
+		return MNT_EX_SOFTWARE;	/* internal error */
+	}
+
+	/*
+	 * umount(2) errors
+	 */
+	if (buf) {
+		int syserr = mnt_context_get_syscall_errno(cxt);
+
+		switch (syserr) {
+		case ENXIO:
+			snprintf(buf, bufsz, _("invalid block device"));	/* ??? */
+			break;
+		case EINVAL:
+			snprintf(buf, bufsz, _("not mounted"));
+			break;
+		case EIO:
+			snprintf(buf, bufsz, _("can't write superblock"));
+			break;
+		case EBUSY:
+			snprintf(buf, bufsz, _("target is busy"));
+			break;
+		case ENOENT:
+			snprintf(buf, bufsz, _("no mount point specified"));
+			break;
+		case EPERM:
+			snprintf(buf, bufsz, _("must be superuser to unmount"));
+			break;
+		case EACCES:
+			snprintf(buf, bufsz, _("block devices are not permitted on filesystem"));
+			break;
+		default:
+			return mnt_context_get_generic_excode(syserr, buf, bufsz,_("umount(2) system call failed: %m"));
+		}
+	}
+	return MNT_EX_FAIL;
 }

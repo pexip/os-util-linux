@@ -16,7 +16,6 @@
 #include <errno.h>
 #include <sys/param.h>
 
-#include "nls.h"
 #include "blkdev.h"
 #include "fdiskP.h"
 #include "pt-mbr.h"
@@ -43,7 +42,7 @@ static const char *bsd_dktypenames[] = {
 	"HP-FL",
 	"type 9",
 	"floppy",
-	0
+	NULL
 };
 #define BSD_DKMAXTYPES	(ARRAY_SIZE(bsd_dktypenames) - 1)
 
@@ -289,12 +288,12 @@ static int bsd_add_partition(struct fdisk_context *cxt,
 		fdisk_ask_set_type(ask, FDISK_ASKTYPE_OFFSET);
 
 		if (fdisk_use_cylinders(cxt)) {
-			fdisk_ask_set_query(ask, _("Last cylinder, +cylinders or +size{K,M,G,T,P}"));
+			fdisk_ask_set_query(ask, _("Last cylinder, +/-cylinders or +/-size{K,M,G,T,P}"));
 			fdisk_ask_number_set_unit(ask,
 				     cxt->sector_size *
 				     fdisk_get_units_per_sector(cxt));
 		} else {
-			fdisk_ask_set_query(ask, _("Last sector, +sectors or +size{K,M,G,T,P}"));
+			fdisk_ask_set_query(ask, _("Last sector, +/-sectors or +/-size{K,M,G,T,P}"));
 			fdisk_ask_number_set_unit(ask,cxt->sector_size);
 		}
 
@@ -302,6 +301,7 @@ static int bsd_add_partition(struct fdisk_context *cxt,
 		fdisk_ask_number_set_default(ask, fdisk_cround(cxt, end));
 		fdisk_ask_number_set_high(ask, fdisk_cround(cxt, end));
 		fdisk_ask_number_set_base(ask, fdisk_cround(cxt, begin));
+		fdisk_ask_number_set_wrap_negative(ask, 1); /* wrap negative around high */
 
 		rc = fdisk_do_ask(cxt, ask);
 		end = fdisk_ask_number_get_result(ask);
@@ -859,6 +859,9 @@ static int bsd_readlabel(struct fdisk_context *cxt)
 	cxt->geom.heads = d->d_ntracks;
 	cxt->geom.cylinders = d->d_ncylinders;
 
+	if (fdisk_has_user_device_geometry(cxt))
+		fdisk_apply_user_device_properties(cxt);
+
 	cxt->label->nparts_cur = d->d_npartitions;
 	cxt->label->nparts_max = BSD_MAXPARTITIONS;
 	DBG(LABEL, ul_debug("read BSD label"));
@@ -1026,12 +1029,10 @@ static const struct fdisk_field bsd_fields[] =
 /*
  * allocates BSD label driver
  */
-struct fdisk_label *fdisk_new_bsd_label(struct fdisk_context *cxt)
+struct fdisk_label *fdisk_new_bsd_label(struct fdisk_context *cxt __attribute__ ((__unused__)))
 {
 	struct fdisk_label *lb;
 	struct fdisk_bsd_label *bsd;
-
-	assert(cxt);
 
 	bsd = calloc(1, sizeof(*bsd));
 	if (!bsd)

@@ -72,7 +72,7 @@ struct colinfo {
 static struct colinfo infos[] = {
 	[COL_SRC]  = { "COMMAND",15, 0, N_("command of the process holding the lock") },
 	[COL_PID]  = { "PID",     5, SCOLS_FL_RIGHT, N_("PID of the process holding the lock") },
-	[COL_TYPE] = { "TYPE",    5, SCOLS_FL_RIGHT, N_("kind of lock: FL_FLOCK or FL_POSIX.") },
+	[COL_TYPE] = { "TYPE",    5, SCOLS_FL_RIGHT, N_("kind of lock") },
 	[COL_SIZE] = { "SIZE",    4, SCOLS_FL_RIGHT, N_("size of the lock") },
 	[COL_MODE] = { "MODE",    5, 0, N_("lock access mode") },
 	[COL_M]    = { "M",       1, 0, N_("mandatory state of the lock: 0 (none), 1 (set)")},
@@ -94,6 +94,7 @@ static int no_headings;
 static int no_inaccessible;
 static int raw;
 static int json;
+static int bytes;
 
 struct lock {
 	struct list_head locks;
@@ -107,7 +108,7 @@ struct lock {
 	off_t end;
 	unsigned int mandatory :1,
 		     blocked   :1;
-	char *size;
+	uint64_t size;
 	int id;
 };
 
@@ -117,7 +118,6 @@ static void rem_lock(struct lock *lock)
 		return;
 
 	free(lock->path);
-	free(lock->size);
 	free(lock->mode);
 	free(lock->cmdname);
 	free(lock->type);
@@ -276,12 +276,15 @@ static int get_local_locks(struct list_head *locks)
 			case 4: /* PID */
 				/*
 				 * If user passed a pid we filter it later when adding
-				 * to the list, no need to worry now.
+				 * to the list, no need to worry now. OFD locks use -1 PID.
 				 */
 				l->pid = strtos32_or_err(tok, _("failed to parse pid"));
-				l->cmdname = proc_get_command_name(l->pid);
-				if (!l->cmdname)
-					l->cmdname = xstrdup(_("(unknown)"));
+				if (l->pid > 0) {
+					l->cmdname = proc_get_command_name(l->pid);
+					if (!l->cmdname)
+						l->cmdname = xstrdup(_("(unknown)"));
+				} else
+					l->cmdname = xstrdup(_("(undefined)"));
 				break;
 
 			case 5: /* device major:minor and inode number */
@@ -315,10 +318,9 @@ static int get_local_locks(struct list_head *locks)
 		if (!l->path) {
 			/* probably no permission to peek into l->pid's path */
 			l->path = get_fallback_filename(dev);
-			l->size = xstrdup("");
+			l->size = 0;
 		} else
-			/* avoid leaking */
-			l->size = size_to_human_string(SIZE_SUFFIX_1LETTER, sz);
+			l->size = sz;
 
 		list_add(&l->locks, locks);
 	}
@@ -387,10 +389,8 @@ static void add_scols_line(struct libscols_table *table, struct lock *l, struct 
 	assert(table);
 
 	line = scols_table_new_line(table, NULL);
-	if (!line) {
-		warn(_("failed to add line to output"));
-		return;
-	}
+	if (!line)
+		err(EXIT_FAILURE, _("failed to allocate output line"));
 
 	for (i = 0; i < ncolumns; i++) {
 		char *str = NULL;
@@ -406,7 +406,12 @@ static void add_scols_line(struct libscols_table *table, struct lock *l, struct 
 			xasprintf(&str, "%s", l->type);
 			break;
 		case COL_SIZE:
-			xasprintf(&str, "%s", l->size);
+			if (!l->size)
+				break;
+			if (bytes)
+				xasprintf(&str, "%ju", l->size);
+			else
+				str = size_to_human_string(SIZE_SUFFIX_1LETTER, l->size);
 			break;
 		case COL_MODE:
 			xasprintf(&str, "%s%s", l->mode, l->blocked ? "*" : "");
@@ -434,8 +439,8 @@ static void add_scols_line(struct libscols_table *table, struct lock *l, struct 
 			break;
 		}
 
-		if (str)
-			scols_line_set_data(line, i, str);
+		if (str && scols_line_refer_data(line, i, str))
+			err(EXIT_FAILURE, _("failed to add output data"));
 	}
 }
 
@@ -447,10 +452,9 @@ static int show_locks(struct list_head *locks)
 	struct libscols_table *table;
 
 	table = scols_new_table();
-	if (!table) {
-		warn(_("failed to initialize output table"));
-		return -1;
-	}
+	if (!table)
+		err(EXIT_FAILURE, _("failed to allocate output table"));
+
 	scols_table_enable_raw(table, raw);
 	scols_table_enable_json(table, json);
 	scols_table_enable_noheadings(table, no_headings);
@@ -459,13 +463,36 @@ static int show_locks(struct list_head *locks)
 		scols_table_set_name(table, "locks");
 
 	for (i = 0; i < ncolumns; i++) {
+		struct libscols_column *cl;
 		struct colinfo *col = get_column_info(i);
 
-		if (!scols_table_new_column(table, col->name, col->whint, col->flags)) {
-			warnx(_("failed to initialize output column"));
-			rc = -1;
-			goto done;
+		cl = scols_table_new_column(table, col->name, col->whint, col->flags);
+		if (!cl)
+			err(EXIT_FAILURE, _("failed to allocate output column"));
+
+		if (json) {
+			int id = get_column_id(i);
+
+			switch (id) {
+			case COL_SIZE:
+				if (!bytes)
+					break;
+				/* fallthrough */
+			case COL_PID:
+			case COL_START:
+			case COL_END:
+			case COL_BLOCKER:
+				scols_column_set_json_type(cl, SCOLS_JSON_NUMBER);
+				break;
+			case COL_M:
+				scols_column_set_json_type(cl, SCOLS_JSON_BOOLEAN);
+				break;
+			default:
+				scols_column_set_json_type(cl, SCOLS_JSON_STRING);
+				break;
+			}
 		}
+
 	}
 
 	/* prepare data for output */
@@ -485,14 +512,14 @@ static int show_locks(struct list_head *locks)
 	}
 
 	scols_print_table(table);
-done:
 	scols_unref_table(table);
 	return rc;
 }
 
 
-static void __attribute__ ((__noreturn__)) usage(FILE * out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	size_t i;
 
 	fputs(USAGE_HEADER, out);
@@ -504,26 +531,27 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fputs(_("List local system locks.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
+	fputs(_(" -b, --bytes            print SIZE in bytes rather than in human readable format\n"), out);
 	fputs(_(" -J, --json             use JSON output format\n"), out);
 	fputs(_(" -i, --noinaccessible   ignore locks without read permissions\n"), out);
 	fputs(_(" -n, --noheadings       don't print headings\n"), out);
 	fputs(_(" -o, --output <list>    define which output columns to use\n"), out);
+	fputs(_("     --output-all       output all columns\n"), out);
 	fputs(_(" -p, --pid <pid>        display only locks held by this process\n"), out);
 	fputs(_(" -r, --raw              use the raw output format\n"), out);
 	fputs(_(" -u, --notruncate       don't truncate text in columns\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
+	printf(USAGE_HELP_OPTIONS(24));
 
-	fputs(_("\nAvailable columns (for --output):\n"), out);
+	fputs(USAGE_COLUMNS, out);
 
 	for (i = 0; i < ARRAY_SIZE(infos); i++)
 		fprintf(out, " %11s  %s\n", infos[i].name, _(infos[i].help));
 
-	fprintf(out, USAGE_MAN_TAIL("lslocks(8)"));
+	printf(USAGE_MAN_TAIL("lslocks(8)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char *argv[])
@@ -531,11 +559,16 @@ int main(int argc, char *argv[])
 	int c, rc = 0;
 	struct list_head locks;
 	char *outarg = NULL;
+	enum {
+		OPT_OUTPUT_ALL = CHAR_MAX + 1
+	};
 	static const struct option long_opts[] = {
+		{ "bytes",      no_argument,       NULL, 'b' },
 		{ "json",       no_argument,       NULL, 'J' },
 		{ "pid",	required_argument, NULL, 'p' },
 		{ "help",	no_argument,       NULL, 'h' },
 		{ "output",     required_argument, NULL, 'o' },
+		{ "output-all",	no_argument,       NULL, OPT_OUTPUT_ALL },
 		{ "notruncate", no_argument,       NULL, 'u' },
 		{ "version",    no_argument,       NULL, 'V' },
 		{ "noheadings", no_argument,       NULL, 'n' },
@@ -555,11 +588,14 @@ int main(int argc, char *argv[])
 	atexit(close_stdout);
 
 	while ((c = getopt_long(argc, argv,
-				"iJp:o:nruhV", long_opts, NULL)) != -1) {
+				"biJp:o:nruhV", long_opts, NULL)) != -1) {
 
 		err_exclusive_options(c, long_opts, excl, excl_st);
 
 		switch(c) {
+		case 'b':
+			bytes = 1;
+			break;
 		case 'i':
 			no_inaccessible = 1;
 			break;
@@ -572,11 +608,15 @@ int main(int argc, char *argv[])
 		case 'o':
 			outarg = optarg;
 			break;
+		case OPT_OUTPUT_ALL:
+			for (ncolumns = 0; ncolumns < ARRAY_SIZE(infos); ncolumns++)
+				columns[ncolumns] = ncolumns;
+			break;
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
-			usage(stdout);
+			usage();
 		case 'n':
 			no_headings = 1;
 			break;
@@ -586,9 +626,8 @@ int main(int argc, char *argv[])
 		case 'u':
 			disable_columns_truncate();
 			break;
-		case '?':
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 

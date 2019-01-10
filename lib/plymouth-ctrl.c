@@ -60,7 +60,8 @@ static int can_read(int fd, const long timeout)
 
 static int open_un_socket_and_connect(void)
 {
-	struct sockaddr_un su = {		/* The abstract UNIX socket of plymouth */
+	/* The abstract UNIX socket of plymouth */
+	struct sockaddr_un su = {
 		.sun_family = AF_UNIX,
 		.sun_path = PLYMOUTH_SOCKET_PATH,
 	};
@@ -69,26 +70,24 @@ static int open_un_socket_and_connect(void)
 
 	fd = socket(PF_UNIX, SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK, 0);
 	if (fd < 0) {
-		warnx(_("can not open UNIX socket"));
+		warnx(_("cannot open UNIX socket"));
 		goto err;
 	}
 
-	ret = setsockopt(fd, SOL_SOCKET, SO_PASSCRED, &one, (socklen_t)sizeof(one));
+	ret = setsockopt(fd, SOL_SOCKET, SO_PASSCRED, &one, sizeof(one));
 	if (ret < 0) {
-		warnx(_("can not set option for UNIX socket"));
+		warnx(_("cannot set option for UNIX socket"));
 		close(fd);
 		fd = -1;
 		goto err;
 	}
 
-	/*
-	 * Please note that the PLYMOUTH_SOCKET_PATH has a
-	 * leading NULL byte to mark it as an abstract socket
-	 */
-	ret = connect(fd, &su, offsetof(struct sockaddr_un, sun_path) + 1 + strlen(su.sun_path+1));
+	/* Note, the abstract PLYMOUTH_SOCKET_PATH has a leading NULL byte */
+	ret = connect(fd, (struct sockaddr *) &su,
+		offsetof(struct sockaddr_un, sun_path) + 1 + strlen(su.sun_path+1));
 	if (ret < 0) {
 		if (errno != ECONNREFUSED)
-			warnx(_("can not connect on UNIX socket"));
+			warnx(_("cannot connect on UNIX socket"));
 		close(fd);
 		fd = -1;
 		goto err;
@@ -108,9 +107,7 @@ int plymouth_command(int cmd, ...)
 	sp.sa_flags = SA_RESTART;
 	sigaction(SIGPIPE, &sp, &op);
 
-	/*
-	 * The plymouthd does read at least two bytes.
-	 */
+	/* The plymouthd does read at least two bytes. */
 	command[1] = '\0';
 	switch (cmd) {
 	case MAGIC_PING:

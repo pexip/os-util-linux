@@ -1,19 +1,19 @@
 
 # libmount.h is generated, so it's store in builddir!
 mountincdir = $(includedir)/libmount
-nodist_mountinc_HEADERS = $(top_builddir)/libmount/src/libmount.h
+nodist_mountinc_HEADERS = libmount/src/libmount.h
 
 usrlib_exec_LTLIBRARIES += libmount.la
 libmount_la_SOURCES = \
 	include/list.h \
 	lib/monotonic.c \
 	\
+	libmount/src/mountP.h \
 	libmount/src/cache.c \
 	libmount/src/fs.c \
 	libmount/src/init.c \
 	libmount/src/iter.c \
 	libmount/src/lock.c \
-	libmount/src/mountP.h \
 	libmount/src/optmap.c \
 	libmount/src/optstr.c \
 	libmount/src/tab.c \
@@ -22,8 +22,7 @@ libmount_la_SOURCES = \
 	libmount/src/tab_update.c \
 	libmount/src/test.c \
 	libmount/src/utils.c \
-	libmount/src/version.c \
-	$(nodist_mountinc_HEADERS)
+	libmount/src/version.c
 
 if LINUX
 libmount_la_SOURCES += \
@@ -39,7 +38,6 @@ endif
 
 endif # LINUX
 
-nodist_libmount_la_SOURCES = libmount/src/mountP.h
 
 libmount_la_LIBADD = \
 	libcommon.la \
@@ -54,11 +52,8 @@ libmount_la_CFLAGS = \
 	-I$(ul_libmount_incdir) \
 	-I$(top_srcdir)/libmount/src
 
-libmount_la_DEPENDENCIES = \
-	libcommon.la \
-	libblkid.la \
-	libmount/src/libmount.sym \
-	libmount/src/libmount.h.in
+EXTRA_libmount_la_DEPENDENCIES = \
+	libmount/src/libmount.sym
 
 libmount_la_LDFLAGS = $(SOLIB_LDFLAGS)
 if HAVE_VSCRIPT
@@ -68,8 +63,7 @@ libmount_la_LDFLAGS += -version-info $(LIBMOUNT_VERSION_INFO)
 
 
 EXTRA_DIST += \
-	libmount/src/libmount.sym \
-	libmount/src/libmount.h.in
+	libmount/src/libmount.sym
 
 if BUILD_LIBMOUNT_TESTS
 check_PROGRAMS += \
@@ -89,7 +83,7 @@ endif
 
 libmount_tests_cflags  = -DTEST_PROGRAM $(libmount_la_CFLAGS) $(NO_UNUSED_WARN_CFLAGS)
 libmount_tests_ldflags = libblkid.la -static
-libmount_tests_ldadd   = $(LDADD) libmount.la $(UUID_LIBS) $(REALTIME_LIBS)
+libmount_tests_ldadd   = libmount.la $(LDADD) $(REALTIME_LIBS)
 
 if HAVE_SELINUX
 libmount_tests_ldadd += $(SELINUX_LIBS)

@@ -274,3 +274,32 @@ FDISK_2.29 {
 	fdisk_labelitem_is_number;
 	fdisk_gpt_set_npartitions;
 } FDISK_2.28;
+
+
+FDISK_2.30 {
+	fdisk_script_has_force_label;
+	fdisk_is_regfile;
+	fdisk_is_ptcollision;
+	fdisk_partition_has_wipe;
+} FDISK_2.29;
+
+FDISK_2.31 {
+	fdisk_reassign_device;
+	fdisk_device_is_used;
+	fdisk_reread_changes;
+	fdisk_disable_dialogs;
+	fdisk_has_dialogs;
+	fdisk_save_user_grain;
+} FDISK_2.30;
+
+FDISK_2.32 {
+	fdisk_label_get_geomrange_sectors;
+	fdisk_label_get_geomrange_heads;
+	fdisk_label_get_geomrange_cylinders;
+} FDISK_2.31;
+
+FDISK_2.33 {
+	fdisk_ask_number_is_wrap_negative;
+	fdisk_get_devmodel;
+	fdisk_get_devno;
+} FDISK_2.32;

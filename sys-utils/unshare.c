@@ -28,6 +28,7 @@
 #include <sys/mount.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/prctl.h>
 
 /* we only need some defines missing in sys/mount.h, no libmount linkage */
 #include <libmount.h>
@@ -40,6 +41,7 @@
 #include "xalloc.h"
 #include "pathnames.h"
 #include "all-io.h"
+#include "signames.h"
 
 /* synchronize parent and child by pipe */
 #define PIPE_SYNC_BYTE	0x06
@@ -238,12 +240,12 @@ static void bind_ns_files_from_child(pid_t *child, int fds[2])
 	}
 }
 
-static void usage(int status)
+static void __attribute__((__noreturn__)) usage(void)
 {
-	FILE *out = status == EXIT_SUCCESS ? stdout : stderr;
+	FILE *out = stdout;
 
 	fputs(USAGE_HEADER, out);
-	fprintf(out, _(" %s [options] <program> [<argument>...]\n"),
+	fprintf(out, _(" %s [options] [<program> [<argument>...]]\n"),
 		program_invocation_short_name);
 
 	fputs(USAGE_SEPARATOR, out);
@@ -257,19 +259,22 @@ static void usage(int status)
 	fputs(_(" -p, --pid[=<file>]        unshare pid namespace\n"), out);
 	fputs(_(" -U, --user[=<file>]       unshare user namespace\n"), out);
 	fputs(_(" -C, --cgroup[=<file>]     unshare cgroup namespace\n"), out);
+	fputs(USAGE_SEPARATOR, out);
 	fputs(_(" -f, --fork                fork before launching <program>\n"), out);
-	fputs(_("     --mount-proc[=<dir>]  mount proc filesystem first (implies --mount)\n"), out);
 	fputs(_(" -r, --map-root-user       map current user to root (implies --user)\n"), out);
-	fputs(_("     --propagation slave|shared|private|unchanged\n"
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_(" --kill-child[=<signame>]  when dying, kill the forked child (implies --fork)\n"
+		"                             defaults to SIGKILL\n"), out);
+	fputs(_(" --mount-proc[=<dir>]      mount proc filesystem first (implies --mount)\n"), out);
+	fputs(_(" --propagation slave|shared|private|unchanged\n"
 	        "                           modify mount propagation in mount namespace\n"), out);
-	fputs(_(" -s, --setgroups allow|deny  control the setgroups syscall in user namespaces\n"), out);
+	fputs(_(" --setgroups allow|deny    control the setgroups syscall in user namespaces\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
-	fprintf(out, USAGE_MAN_TAIL("unshare(1)"));
+	printf(USAGE_HELP_OPTIONS(27));
+	printf(USAGE_MAN_TAIL("unshare(1)"));
 
-	exit(status);
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char *argv[])
@@ -277,38 +282,41 @@ int main(int argc, char *argv[])
 	enum {
 		OPT_MOUNTPROC = CHAR_MAX + 1,
 		OPT_PROPAGATION,
-		OPT_SETGROUPS
+		OPT_SETGROUPS,
+		OPT_KILLCHILD
 	};
 	static const struct option longopts[] = {
-		{ "help", no_argument, 0, 'h' },
-		{ "version", no_argument, 0, 'V'},
+		{ "help",          no_argument,       NULL, 'h'             },
+		{ "version",       no_argument,       NULL, 'V'             },
 
-		{ "mount",  optional_argument, 0, 'm' },
-		{ "uts",    optional_argument, 0, 'u' },
-		{ "ipc",    optional_argument, 0, 'i' },
-		{ "net",    optional_argument, 0, 'n' },
-		{ "pid",    optional_argument, 0, 'p' },
-		{ "user",   optional_argument, 0, 'U' },
-		{ "cgroup", optional_argument, 0, 'C' },
+		{ "mount",         optional_argument, NULL, 'm'             },
+		{ "uts",           optional_argument, NULL, 'u'             },
+		{ "ipc",           optional_argument, NULL, 'i'             },
+		{ "net",           optional_argument, NULL, 'n'             },
+		{ "pid",           optional_argument, NULL, 'p'             },
+		{ "user",          optional_argument, NULL, 'U'             },
+		{ "cgroup",        optional_argument, NULL, 'C'             },
 
-		{ "fork", no_argument, 0, 'f' },
-		{ "mount-proc", optional_argument, 0, OPT_MOUNTPROC },
-		{ "map-root-user", no_argument, 0, 'r' },
-		{ "propagation", required_argument, 0, OPT_PROPAGATION },
-		{ "setgroups", required_argument, 0, OPT_SETGROUPS },
-		{ NULL, 0, 0, 0 }
+		{ "fork",          no_argument,       NULL, 'f'             },
+		{ "kill-child",    optional_argument, NULL, OPT_KILLCHILD   },
+		{ "mount-proc",    optional_argument, NULL, OPT_MOUNTPROC   },
+		{ "map-root-user", no_argument,       NULL, 'r'             },
+		{ "propagation",   required_argument, NULL, OPT_PROPAGATION },
+		{ "setgroups",     required_argument, NULL, OPT_SETGROUPS   },
+		{ NULL, 0, NULL, 0 }
 	};
 
 	int setgrpcmd = SETGROUPS_NONE;
 	int unshare_flags = 0;
 	int c, forkit = 0, maproot = 0;
+	int kill_child_signo = 0; /* 0 means --kill-child was not used */
 	const char *procmnt = NULL;
 	pid_t pid = 0;
 	int fds[2];
 	int status;
 	unsigned long propagation = UNSHARE_PROPAGATION_DEFAULT;
 	uid_t real_euid = geteuid();
-	gid_t real_egid = getegid();;
+	gid_t real_egid = getegid();
 
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
@@ -321,7 +329,7 @@ int main(int argc, char *argv[])
 			forkit = 1;
 			break;
 		case 'h':
-			usage(EXIT_SUCCESS);
+			usage();
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
@@ -374,8 +382,18 @@ int main(int argc, char *argv[])
 		case OPT_PROPAGATION:
 			propagation = parse_propagation(optarg);
 			break;
+		case OPT_KILLCHILD:
+			forkit = 1;
+			if (optarg) {
+				if ((kill_child_signo = signame_to_signum(optarg)) < 0)
+					errx(EXIT_FAILURE, _("unknown signal: %s"),
+					     optarg);
+			} else {
+				kill_child_signo = SIGKILL;
+			}
+			break;
 		default:
-			usage(EXIT_FAILURE);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
@@ -431,6 +449,8 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	if (kill_child_signo != 0 && prctl(PR_SET_PDEATHSIG, kill_child_signo) < 0)
+		err(EXIT_FAILURE, "prctl failed");
 
 	if (maproot) {
 		if (setgrpcmd == SETGROUPS_ALLOW)
@@ -458,7 +478,7 @@ int main(int argc, char *argv[])
 
 	if (optind < argc) {
 		execvp(argv[optind], argv + optind);
-		err(EXIT_FAILURE, _("failed to execute %s"), argv[optind]);
+		errexec(argv[optind]);
 	}
 	exec_shell();
 }

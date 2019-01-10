@@ -1,8 +1,13 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /*
- * Copyright (C) 2008 Karel Zak <kzak@redhat.com>
+ * This file is part of libmount from util-linux project.
  *
- * This file may be redistributed under the terms of the
- * GNU Lesser General Public License.
+ * Copyright (C) 2008-2018 Karel Zak <kzak@redhat.com>
+ *
+ * libmount is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation; either version 2.1 of the License, or
+ * (at your option) any later version.
  */
 
 /**
@@ -51,7 +56,7 @@ void mnt_init_debug(int mask)
 	if (libmount_debug_mask)
 		return;
 
-	__UL_INIT_DEBUG(libmount, MNT_DEBUG_, mask, LIBMOUNT_DEBUG);
+	__UL_INIT_DEBUG_FROM_ENV(libmount, MNT_DEBUG_, mask, LIBMOUNT_DEBUG);
 
 	if (libmount_debug_mask != MNT_DEBUG_INIT
 	    && libmount_debug_mask != (MNT_DEBUG_HELP|MNT_DEBUG_INIT)) {

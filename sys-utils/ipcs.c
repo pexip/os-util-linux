@@ -46,8 +46,9 @@ static void print_msg (int id, int unit);
 /* we read time as int64_t from /proc, so cast... */
 #define xctime(_x)	ctime((time_t *) (_x))
 
-static void __attribute__ ((__noreturn__)) usage(FILE * out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %1$s [resource-option...] [output-option]\n"
 		       " %1$s -m|-q|-s -i <id>\n"), program_invocation_short_name);
@@ -57,8 +58,7 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -i, --id <id>  print details on resource identified by <id>\n"), out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
+	printf(USAGE_HELP_OPTIONS(16));
 
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_("Resource options:\n"), out);
@@ -76,9 +76,9 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fputs(_(" -u, --summary     show status summary\n"), out);
 	fputs(_("     --human       show sizes in human-readable format\n"), out);
 	fputs(_(" -b, --bytes       show sizes in bytes\n"), out);
-	fprintf(out, USAGE_MAN_TAIL("ipcs(1)"));
+	printf(USAGE_MAN_TAIL("ipcs(1)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 int main (int argc, char **argv)
@@ -150,12 +150,12 @@ int main (int argc, char **argv)
 			unit = IPC_UNIT_BYTES;
 			break;
 		case 'h':
-			usage(stdout);
+			usage();
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
@@ -198,6 +198,7 @@ static void do_shm (char format, int unit)
 	case LIMITS:
 	{
 		struct ipc_limits lim;
+		uint64_t tmp, pgsz = getpagesize();
 
 		if (ipc_shm_get_limits(&lim)) {
 			printf (_("unable to fetch shared memory limits\n"));
@@ -207,9 +208,14 @@ static void do_shm (char format, int unit)
 		printf (_("max number of segments = %ju\n"), lim.shmmni);
 		ipc_print_size(unit == IPC_UNIT_DEFAULT ? IPC_UNIT_KB : unit,
 			       _("max seg size"), lim.shmmax, "\n", 0);
+
+		tmp = (uint64_t) lim.shmall * pgsz;
+		/* overflow handling, at least we don't print ridiculous small values */
+		if (lim.shmall != 0 && tmp / lim.shmall != pgsz) {
+			tmp = UINT64_MAX - (UINT64_MAX % pgsz);
+		}
 		ipc_print_size(unit == IPC_UNIT_DEFAULT ? IPC_UNIT_KB : unit,
-			       _("max total shared memory"),
-			       (uint64_t) lim.shmall * getpagesize(), "\n", 0);
+			       _("max total shared memory"), tmp, "\n", 0);
 		ipc_print_size(unit == IPC_UNIT_DEFAULT ? IPC_UNIT_BYTES : unit,
 			       _("min seg size"), lim.shmmin, "\n", 0);
 		return;
@@ -596,7 +602,7 @@ static void print_shm(int shmid, int unit)
 	ipc_shm_free_info(shmdata);
 }
 
-void print_msg(int msgid, int unit)
+static void print_msg(int msgid, int unit)
 {
 	struct msg_data *msgdata;
 

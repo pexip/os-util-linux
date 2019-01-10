@@ -33,6 +33,10 @@
 # include <slang/slang.h>
 #endif
 
+#ifndef _XOPEN_SOURCE
+# define _XOPEN_SOURCE 500 /* for inclusion of get_wch */
+#endif
+
 #ifdef HAVE_SLCURSES_H
 # include <slcurses.h>
 #elif defined(HAVE_SLANG_SLCURSES_H)
@@ -56,6 +60,7 @@
 #include "strutils.h"
 #include "xalloc.h"
 #include "mbsalign.h"
+#include "mbsedit.h"
 #include "colors.h"
 #include "debug.h"
 #include "list.h"
@@ -106,6 +111,10 @@ static const char *default_disks[] = {
 #ifndef KEY_DELETE
 # define KEY_DELETE	'\177'
 #endif
+#ifndef KEY_DC
+# define KEY_DC		0423
+#endif
+
 
 /* colors */
 enum {
@@ -129,6 +138,7 @@ static struct cfdisk_menu *menu_push(struct cfdisk *cf, struct cfdisk_menuitem *
 static struct cfdisk_menu *menu_pop(struct cfdisk *cf);
 static void menu_refresh_size(struct cfdisk *cf);
 
+static int ui_end(void);
 static int ui_refresh(struct cfdisk *cf);
 static void ui_warnx(const char *fmt, ...);
 static void ui_warn(const char *fmt, ...);
@@ -137,16 +147,17 @@ static void ui_draw_menu(struct cfdisk *cf);
 static int ui_menu_move(struct cfdisk *cf, int key);
 static void ui_menu_resize(struct cfdisk *cf);
 
-static int ui_get_size(struct cfdisk *cf, const char *prompt, uintmax_t *res,
-		       uintmax_t low, uintmax_t up, int *expsize);
+static int ui_get_size(struct cfdisk *cf, const char *prompt, uint64_t *res,
+		       uint64_t low, uint64_t up, int *expsize);
 
 static int ui_enabled;
-static int ui_resize;
+static volatile sig_atomic_t sig_resize;
+static volatile sig_atomic_t sig_die;
 
 /* ncurses LINES and COLS may be actual variables or *macros*, but we need
  * something portable and writable */
-size_t ui_lines;
-size_t ui_cols;
+static size_t ui_lines;
+static size_t ui_cols;
 
 /* menu item */
 struct cfdisk_menuitem {
@@ -178,6 +189,7 @@ struct cfdisk_menu {
 static struct cfdisk_menuitem main_menuitems[] = {
 	{ 'b', N_("Bootable"), N_("Toggle bootable flag of the current partition") },
 	{ 'd', N_("Delete"), N_("Delete the current partition") },
+	{ 'r', N_("Resize"), N_("Reduce or enlarge the current partition") },
 	{ 'n', N_("New"), N_("Create new partition from free space") },
 	{ 'q', N_("Quit"), N_("Quit program without writing changes") },
 	{ 't', N_("Type"), N_("Change the partition type") },
@@ -207,6 +219,7 @@ struct cfdisk_line {
 struct cfdisk {
 	struct fdisk_context	*cxt;	/* libfdisk context */
 	struct fdisk_table	*table;	/* partition table */
+	struct fdisk_table	*original_layout; /* original on-disk PT */
 
 	struct cfdisk_menu	*menu;	/* the current menu */
 
@@ -233,6 +246,7 @@ struct cfdisk {
 #endif
 	unsigned int	wrong_order :1,		/* PT not in right order */
 			zero_start :1,		/* ignore existing partition table */
+			device_is_used : 1,	/* don't use re-read ioctl */
 			show_extra :1;		/* show extra partinfo */
 };
 
@@ -240,7 +254,7 @@ struct cfdisk {
 /*
  * let's use include/debug.h stuff for cfdisk too
  */
-UL_DEBUG_DEFINE_MASK(cfdisk);
+static UL_DEBUG_DEFINE_MASK(cfdisk);
 UL_DEBUG_DEFINE_MASKNAMES(cfdisk) = UL_DEBUG_EMPTY_MASKNAMES;
 
 #define CFDISK_DEBUG_INIT	(1 << 1)
@@ -254,7 +268,7 @@ UL_DEBUG_DEFINE_MASKNAMES(cfdisk) = UL_DEBUG_EMPTY_MASKNAMES;
 
 static void cfdisk_init_debug(void)
 {
-	__UL_INIT_DEBUG(cfdisk, CFDISK_DEBUG_, 0, CFDISK_DEBUG);
+	__UL_INIT_DEBUG_FROM_ENV(cfdisk, CFDISK_DEBUG_, 0, CFDISK_DEBUG);
 }
 
 /* Initialize output columns -- we follow libfdisk fields (usually specific
@@ -269,6 +283,13 @@ static int cols_init(struct cfdisk *cf)
 	cf->nfields = 0;
 
 	return fdisk_label_get_fields_ids(NULL, cf->cxt, &cf->fields, &cf->nfields);
+}
+
+static void die_on_signal(void)
+{
+	DBG(MISC, ul_debug("die on signal."));
+	ui_end();
+	exit(EXIT_FAILURE);
 }
 
 static void resize(void)
@@ -288,7 +309,7 @@ static void resize(void)
 
 	DBG(UI, ul_debug("ui: resize refresh ui_cols=%zu, ui_lines=%zu",
 				ui_cols, ui_lines));
-	ui_resize = 0;
+	sig_resize = 0;
 }
 
 /* Reads partition in tree-like order from scols
@@ -318,7 +339,7 @@ static char *table_to_string(struct cfdisk *cf, struct fdisk_table *tb)
 {
 	struct fdisk_partition *pa;
 	struct fdisk_label *lb;
-	struct fdisk_iter *itr = NULL;
+	struct fdisk_iter *itr;
 	struct libscols_table *table = NULL;
 	struct libscols_iter *s_itr = NULL;
 	char *res = NULL;
@@ -567,10 +588,12 @@ static int ask_menu(struct fdisk_ask *ask, struct cfdisk *cf)
 	refresh();
 
 	/* wait for keys */
-	do {
+	while (!sig_die) {
 		key = getch();
 
-		if (ui_resize)
+		if (sig_die)
+			break;
+		if (sig_resize)
 			ui_menu_resize(cf);
 		if (ui_menu_move(cf, key) == 0)
 			continue;
@@ -586,7 +609,10 @@ static int ask_menu(struct fdisk_ask *ask, struct cfdisk *cf)
 			free(cm);
 			return 0;
 		}
-	} while (1);
+	}
+
+	if (sig_die)
+		die_on_signal();
 
 	menu_pop(cf);
 	free(cm);
@@ -776,17 +802,15 @@ static void ui_clean_hint(void)
 	clrtoeol();
 }
 
-static void die_on_signal(int dummy __attribute__((__unused__)))
+
+static void sig_handler_die(int dummy __attribute__((__unused__)))
 {
-	DBG(MISC, ul_debug("die on signal."));
-	ui_end();
-	exit(EXIT_FAILURE);
+	sig_die = 1;
 }
 
-static void resize_on_signal(int dummy __attribute__((__unused__)))
+static void sig_handler_resize(int dummy __attribute__((__unused__)))
 {
-	DBG(MISC, ul_debug("resize on signal."));
-	ui_resize = 1;
+	sig_resize = 1;
 }
 
 static void menu_refresh_size(struct cfdisk *cf)
@@ -914,11 +938,11 @@ static int ui_init(struct cfdisk *cf __attribute__((__unused__)))
 	/* setup SIGCHLD handler */
 	sigemptyset(&sa.sa_mask);
 	sa.sa_flags = 0;
-	sa.sa_handler = die_on_signal;
+	sa.sa_handler = sig_handler_die;
 	sigaction(SIGINT, &sa, NULL);
 	sigaction(SIGTERM, &sa, NULL);
 
-	sa.sa_handler = resize_on_signal;
+	sa.sa_handler = sig_handler_resize;
 	sigaction(SIGWINCH, &sa, NULL);
 
 	ui_enabled = 1;
@@ -1044,9 +1068,10 @@ static void ui_draw_menuitem(struct cfdisk *cf,
 			     struct cfdisk_menuitem *d,
 			     size_t idx)
 {
-	char buf[80 * MB_CUR_MAX], *ptr = buf;
+	char *buf, *ptr;
 	const char *name;
 	size_t width;
+	const size_t buf_sz = 80 * MB_CUR_MAX;
 	int ln, cl, vert = cf->menu->vertical;
 
 	if (!menuitem_on_page(cf, idx))
@@ -1054,6 +1079,7 @@ static void ui_draw_menuitem(struct cfdisk *cf,
 	ln = menuitem_get_line(cf, idx);
 	cl = menuitem_get_column(cf, idx);
 
+	ptr = buf = xmalloc(buf_sz);
 	/* string width */
 	if (vert) {
 		width = cf->menu->width + MENU_V_SPADDING;
@@ -1063,7 +1089,7 @@ static void ui_draw_menuitem(struct cfdisk *cf,
 		width = MENU_H_SPADDING + cf->menu->width + MENU_H_SPADDING;
 
 	name = _(d->name);
-	mbsalign(name, ptr, sizeof(buf), &width,
+	mbsalign(name, ptr, buf_sz, &width,
 			vert ? MBS_ALIGN_LEFT : MBS_ALIGN_CENTER,
 			0);
 
@@ -1082,6 +1108,7 @@ static void ui_draw_menuitem(struct cfdisk *cf,
 		mvprintw(ln, cl, "%s", buf);
 	else
 		mvprintw(ln, cl, "%s%s%s", MENU_H_PRESTR, buf, MENU_H_POSTSTR);
+	free(buf);
 
 	if (cf->menu->idx == idx) {
 		standend();
@@ -1463,7 +1490,7 @@ static int ui_menu_move(struct cfdisk *cf, int key)
 	assert(cf);
 	assert(cf->menu);
 
-	if (key == ERR)
+	if (key == (int) ERR)
 		return 0;	/* ignore errors */
 
 	m = cf->menu;
@@ -1522,14 +1549,14 @@ static int ui_menu_move(struct cfdisk *cf, int key)
 		return 0;
 	}
 
-	DBG(MENU, ul_debug(" no memu move key"));
+	DBG(MENU, ul_debug(" no menu move key"));
 	return 1;
 }
 
 /* but don't call me from ui_run(), this is for pop-up menus only */
 static void ui_menu_resize(struct cfdisk *cf)
 {
-	DBG(MENU, ul_debug("memu resize/refresh"));
+	DBG(MENU, ul_debug("menu resize/refresh"));
 	resize();
 	ui_clean_menu(cf);
 	menu_refresh_size(cf);
@@ -1684,7 +1711,7 @@ static int ui_refresh(struct cfdisk *cf)
 	attron(A_BOLD);
 	ui_center(0, _("Disk: %s"), fdisk_get_devname(cf->cxt));
 	attroff(A_BOLD);
-	ui_center(1, _("Size: %s, %ju bytes, %ju sectors"),
+	ui_center(1, _("Size: %s, %"PRIu64" bytes, %ju sectors"),
 			strsz, bytes, (uintmax_t) fdisk_get_nsectors(cf->cxt));
 	if (fdisk_get_disklabel_id(cf->cxt, &id) == 0 && id)
 		ui_center(2, _("Label: %s, identifier: %s"),
@@ -1702,9 +1729,11 @@ static int ui_refresh(struct cfdisk *cf)
 static ssize_t ui_get_string(const char *prompt,
 			     const char *hint, char *buf, size_t len)
 {
-	size_t cells = 0;
-	ssize_t i = 0, rc = -1;
 	int ln = MENU_START_LINE, cl = 1;
+	ssize_t rc = -1;
+	struct mbs_editor *edit;
+
+	DBG(UI, ul_debug("ui get string"));
 
 	assert(buf);
 	assert(len);
@@ -1716,36 +1745,41 @@ static ssize_t ui_get_string(const char *prompt,
 	clrtoeol();
 
 	if (prompt) {
-		mvaddstr(ln, cl, (char *) prompt);
+		mvaddstr(ln, cl, prompt);
 		cl += mbs_safe_width(prompt);
 	}
 
-	/* default value */
-	if (*buf) {
-		i = strlen(buf);
-		cells = mbs_safe_width(buf);
-		mvaddstr(ln, cl, buf);
-	}
+	edit = mbs_new_edit(buf, len, ui_cols - cl);
+	if (!edit)
+		goto done;
+
+	mbs_edit_goto(edit, MBS_EDIT_END);
 
 	if (hint)
 		ui_hint(hint);
 	else
 		ui_clean_hint();
 
-	move(ln, cl + cells);
 	curs_set(1);
-	refresh();
 
-	while (1) {
+	while (!sig_die) {
+		wint_t c;	/* we have fallback in widechar.h */
+
+		move(ln, cl);
+		clrtoeol();
+		mvaddstr(ln, cl, edit->buf);
+		move(ln, cl + edit->cursor_cells);
+		refresh();
+
 #if !defined(HAVE_SLCURSES_H) && !defined(HAVE_SLANG_SLCURSES_H) && \
     defined(HAVE_LIBNCURSESW) && defined(HAVE_WIDECHAR)
-		wint_t c;
 		if (get_wch(&c) == ERR) {
 #else
-		int c;
-		if ((c = getch()) == ERR) {
+		if ((c = getch()) == (wint_t) ERR) {
 #endif
-			if (ui_resize) {
+			if (sig_die)
+				break;
+			if (sig_resize) {
 				resize();
 				continue;
 			}
@@ -1754,86 +1788,76 @@ static ssize_t ui_get_string(const char *prompt,
 			else
 				goto done;
 		}
+
+		DBG(UI, ul_debug("ui get string: key=%lc", c));
+
 		if (c == '\r' || c == '\n' || c == KEY_ENTER)
 			break;
+
+		rc = 1;
 
 		switch (c) {
 		case KEY_ESC:
 			rc = -CFDISK_ERR_ESC;
 			goto done;
-		case KEY_LEFT:		/* TODO: implement full buffer editor */
+		case KEY_LEFT:
+			rc = mbs_edit_goto(edit, MBS_EDIT_LEFT);
+			break;
 		case KEY_RIGHT:
+			rc = mbs_edit_goto(edit, MBS_EDIT_RIGHT);
+			break;
 		case KEY_END:
+			rc = mbs_edit_goto(edit, MBS_EDIT_END);
+			break;
 		case KEY_HOME:
+			rc = mbs_edit_goto(edit, MBS_EDIT_HOME);
+			break;
 		case KEY_UP:
 		case KEY_DOWN:
-			beep();
 			break;
-		case KEY_DELETE:
+		case KEY_DC:
+			rc = mbs_edit_delete(edit);
+			break;
 		case '\b':
+		case KEY_DELETE:
 		case KEY_BACKSPACE:
-			if (i > 0) {
-				cells--;
-				i = mbs_truncate(buf, &cells);
-				if (i < 0)
-					goto done;
-				mvaddch(ln, cl + cells, ' ');
-				move(ln, cl + cells);
-			} else
-				beep();
+			rc = mbs_edit_backspace(edit);
 			break;
-
 		default:
-#if defined(HAVE_LIBNCURSESW) && defined(HAVE_WIDECHAR)
-			if (i + 1 < (ssize_t) len && iswprint(c)) {
-				wchar_t wc = (wchar_t) c;
-				char s[MB_CUR_MAX + 1];
-				int sz = wctomb(s, wc);
-
-				if (sz > 0 && sz + i < (ssize_t) len) {
-					s[sz] = '\0';
-					mvaddnstr(ln, cl + cells, s, sz);
-					memcpy(buf + i, s, sz);
-					i += sz;
-					buf[i] = '\0';
-					cells += wcwidth(wc);
-				} else
-					beep();
-			}
-#else
-			if (i + 1 < (ssize_t) len && isprint(c)) {
-				mvaddch(ln, cl + cells, c);
-				buf[i++] = c;
-				buf[i] = '\0';
-				cells++;
-			}
-#endif
-			else
-				beep();
+			rc = mbs_edit_insert(edit, c);
+			break;
 		}
-		refresh();
+		if (rc == 1)
+			beep();
 	}
 
-	rc = i;		/* success */
+	if (sig_die)
+		die_on_signal();
+
+	rc = strlen(edit->buf);		/* success */
 done:
 	move(ln, 0);
 	clrtoeol();
 	curs_set(0);
 	refresh();
+	mbs_free_edit(edit);
 
 	return rc;
 }
 
-/* @res is default value as well as result in bytes */
-static int ui_get_size(struct cfdisk *cf, const char *prompt, uintmax_t *res,
-		       uintmax_t low, uintmax_t up, int *expsize)
+static int ui_get_size(struct cfdisk *cf,	/* context */
+		       const char *prompt,	/* UI dialog string */
+		       uint64_t *res,		/* result in bytes */
+		       uint64_t low,		/* minimal size */
+		       uint64_t up,		/* maximal size */
+		       int *expsize)		/* explicitly specified size */
 {
 	char buf[128];
-	uintmax_t user = 0;
+	uint64_t user = 0;
 	ssize_t rc;
 	char *dflt = size_to_human_string(0, *res);
 
-	DBG(UI, ul_debug("get_size (default=%ju)", *res));
+	DBG(UI, ul_debug("get_size (default=%"PRIu64")", *res));
 
 	ui_clean_info();
 
@@ -1862,16 +1886,16 @@ static int ui_get_size(struct cfdisk *cf, const char *prompt, uintmax_t *res,
 				insec = 1;
 				buf[len - 1] = '\0';
 			}
-			rc = parse_size(buf, &user, &pwr);	/* parse */
+			rc = parse_size(buf, (uintmax_t *)&user, &pwr);	/* parse */
 		}
 
 		if (rc == 0) {
-			DBG(UI, ul_debug("get_size user=%ju, power=%d, sectors=%s",
+			DBG(UI, ul_debug("get_size user=%"PRIu64", power=%d, in-sectors=%s",
 						user, pwr, insec ? "yes" : "no"));
 			if (insec)
 				user *= fdisk_get_sector_size(cf->cxt);
 			if (user < low) {
-				ui_warnx(_("Minimum size is %ju bytes."), low);
+				ui_warnx(_("Minimum size is %"PRIu64" bytes."), low);
 				rc = -ERANGE;
 			}
 			if (user > up && pwr && user < up + (1ULL << pwr * 10))
@@ -1880,7 +1904,7 @@ static int ui_get_size(struct cfdisk *cf, const char *prompt, uintmax_t *res,
 				user = up;
 
 			if (user > up) {
-				ui_warnx(_("Maximum size is %ju bytes."), up);
+				ui_warnx(_("Maximum size is %"PRIu64" bytes."), up);
 				rc = -ERANGE;
 			}
 			if (rc == 0 && insec && expsize)
@@ -1894,7 +1918,7 @@ static int ui_get_size(struct cfdisk *cf, const char *prompt, uintmax_t *res,
 		*res = user;
 	free(dflt);
 
-	DBG(UI, ul_debug("get_size (result=%ju, rc=%zd)", *res, rc));
+	DBG(UI, ul_debug("get_size (result=%"PRIu64", rc=%zd)", *res, rc));
 	return rc;
 }
 
@@ -1949,10 +1973,12 @@ static struct fdisk_parttype *ui_get_parttype(struct cfdisk *cf,
 	ui_draw_menu(cf);
 	refresh();
 
-	do {
+	while (!sig_die) {
 		int key = getch();
 
-		if (ui_resize)
+		if (sig_die)
+			break;
+		if (sig_resize)
 			ui_menu_resize(cf);
 		if (ui_menu_move(cf, key) == 0)
 			continue;
@@ -1970,8 +1996,10 @@ static struct fdisk_parttype *ui_get_parttype(struct cfdisk *cf,
 		case 'Q':
 			goto done;
 		}
-	} while (1);
+	}
 
+	if (sig_die)
+		die_on_signal();
 done:
 	menu_pop(cf);
 	if (codetypes) {
@@ -2095,7 +2123,9 @@ static int ui_create_label(struct cfdisk *cf)
 		ui_info(_("Device does not contain a recognized partition table."));
 
 
-	do {
+	while (!sig_die) {
+		int key;
+
 		if (refresh_menu) {
 			ui_draw_menu(cf);
 			ui_hint(_("Select a type to create a new label or press 'L' to load script file."));
@@ -2103,9 +2133,11 @@ static int ui_create_label(struct cfdisk *cf)
 			refresh_menu = 0;
 		}
 
-		int key = getch();
+		key = getch();
 
-		if (ui_resize)
+		if (sig_die)
+			break;
+		if (sig_resize)
 			ui_menu_resize(cf);
 		if (ui_menu_move(cf, key) == 0)
 			continue;
@@ -2129,8 +2161,10 @@ static int ui_create_label(struct cfdisk *cf)
 			refresh_menu = 1;
 			break;
 		}
-	} while (1);
+	}
 
+	if (sig_die)
+		die_on_signal();
 done:
 	menu_pop(cf);
 	free(cm);
@@ -2168,7 +2202,10 @@ static int ui_help(void)
 		N_("Note: All of the commands can be entered with either upper or lower"),
 		N_("case letters (except for Write)."),
 		"  ",
-		N_("Use lsblk(8) or partx(8) to see more details about the device.")
+		N_("Use lsblk(8) or partx(8) to see more details about the device."),
+		"  ",
+		"  ",
+		"Copyright (C) 2014-2017 Karel Zak <kzak@redhat.com>"
 	};
 
 	erase();
@@ -2178,6 +2215,9 @@ static int ui_help(void)
 	ui_info(_("Press a key to continue."));
 
 	getch();
+
+	if (sig_die)
+		die_on_signal();
 	return 0;
 }
 
@@ -2194,6 +2234,7 @@ static int main_menu_ignore_keys(struct cfdisk *cf, char *ignore,
 		ignore[i++] = 'd';	/* delete */
 		ignore[i++] = 't';	/* set type */
 		ignore[i++] = 'b';      /* set bootable */
+		ignore[i++] = 'r';	/* resize */
 		cf->menu->prefkey = 'n';
 	} else {
 		cf->menu->prefkey = 'q';
@@ -2279,7 +2320,7 @@ static int main_menu_action(struct cfdisk *cf, int key)
 		break;
 	case 'n': /* New */
 	{
-		uint64_t start, size, dflt_size, secs;
+		uint64_t start, size, dflt_size, secs, max_size;
 		struct fdisk_partition *npa;	/* the new partition */
 		int expsize = 0;		/* size specified explicitly in sectors */
 
@@ -2288,11 +2329,11 @@ static int main_menu_action(struct cfdisk *cf, int key)
 
 		/* free space range */
 		start = fdisk_partition_get_start(pa);
-		size = dflt_size = fdisk_partition_get_size(pa) * fdisk_get_sector_size(cf->cxt);
+		size = max_size = dflt_size = fdisk_partition_get_size(pa) * fdisk_get_sector_size(cf->cxt);
 
 		if (ui_get_size(cf, _("Partition size: "), &size,
 				fdisk_get_sector_size(cf->cxt),
-				size, &expsize) == -CFDISK_ERR_ESC)
+				max_size, &expsize) == -CFDISK_ERR_ESC)
 			break;
 
 		secs = size / fdisk_get_sector_size(cf->cxt);
@@ -2336,6 +2377,43 @@ static int main_menu_action(struct cfdisk *cf, int key)
 			info = _("The type of partition %zu is unchanged.");
 		break;
 	}
+	case 'r': /* resize */
+	{
+		struct fdisk_partition *npa, *next;
+		uint64_t size, max_size, secs;
+
+		if (fdisk_partition_is_freespace(pa) || !fdisk_partition_has_start(pa))
+			return -EINVAL;
+
+		size = fdisk_partition_get_size(pa);
+
+		/* is the next freespace? */
+		next = fdisk_table_get_partition(cf->table, cf->lines_idx + 1);
+		if (next && fdisk_partition_is_freespace(next))
+			size += fdisk_partition_get_size(next);
+
+		size *= fdisk_get_sector_size(cf->cxt);
+		max_size = size;
+
+		if (ui_get_size(cf, _("New size: "), &size,
+				fdisk_get_sector_size(cf->cxt),
+				max_size, NULL) == -CFDISK_ERR_ESC)
+			break;
+		secs = size / fdisk_get_sector_size(cf->cxt);
+		npa = fdisk_new_partition();
+		if (!npa)
+			return -ENOMEM;
+
+		fdisk_partition_set_size(npa, secs);
+
+		rc = fdisk_set_partition(cf->cxt, n, npa);
+		fdisk_unref_partition(npa);
+		if (rc == 0) {
+			ref = 1;
+			info = _("Partition %zu resized.");
+		}
+		break;
+	}
 	case 's': /* Sort */
 		if (cf->wrong_order) {
 			fdisk_reorder_partitions(cf->cxt);
@@ -2370,7 +2448,10 @@ static int main_menu_action(struct cfdisk *cf, int key)
 		if (rc)
 			warn = _("Failed to write disklabel.");
 		else {
-			fdisk_reread_partition_table(cf->cxt);
+			if (cf->device_is_used)
+				fdisk_reread_changes(cf->cxt, cf->original_layout);
+			else
+				fdisk_reread_partition_table(cf->cxt);
 			info = _("The partition table has been altered.");
 		}
 		cf->nwrites++;
@@ -2467,11 +2548,14 @@ static int ui_run(struct cfdisk *cf)
 	else if (cf->wrong_order)
 		ui_info(_("Note that partition table entries are not in disk order now."));
 
-	do {
+	while (!sig_die) {
 		int key = getch();
 
 		rc = 0;
-		if (ui_resize)
+
+		if (sig_die)
+			break;
+		if (sig_resize)
 			/* Note that ncurses getch() returns ERR when interrupted
 			 * by signal, but SLang does not interrupt at all. */
 			ui_resize_refresh(cf);
@@ -2502,6 +2586,7 @@ static int ui_run(struct cfdisk *cf)
 				ui_table_goto(cf, (int) cf->lines_idx - cf->page_sz);
 				break;
 			}
+			/* fallthrough */
 		case KEY_HOME:
 			ui_table_goto(cf, 0);
 			break;
@@ -2510,6 +2595,7 @@ static int ui_run(struct cfdisk *cf)
 				ui_table_goto(cf, cf->lines_idx + cf->page_sz);
 				break;
 			}
+			/* fallthrough */
 		case KEY_END:
 			ui_table_goto(cf, (int) cf->nlines - 1);
 			break;
@@ -2531,7 +2617,7 @@ static int ui_run(struct cfdisk *cf)
 
 		if (rc == 1)
 			break; /* quit */
-	} while (1);
+	}
 
 	menu_pop(cf);
 
@@ -2539,8 +2625,9 @@ static int ui_run(struct cfdisk *cf)
 	return 0;
 }
 
-static void __attribute__ ((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
 	      _(" %1$s [options] <disk>\n"), program_invocation_short_name);
@@ -2555,11 +2642,10 @@ static void __attribute__ ((__noreturn__)) usage(FILE *out)
 	fputs(_(" -z, --zero               start with zeroed partition table\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
+	printf(USAGE_HELP_OPTIONS(26));
 
-	fprintf(out, USAGE_MAN_TAIL("cfdisk(8)"));
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	printf(USAGE_MAN_TAIL("cfdisk(8)"));
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char *argv[])
@@ -2574,7 +2660,7 @@ int main(int argc, char *argv[])
 		{ "help",    no_argument,       NULL, 'h' },
 		{ "version", no_argument,       NULL, 'V' },
 		{ "zero",    no_argument,	NULL, 'z' },
-		{ NULL, 0, 0, 0 },
+		{ NULL, 0, NULL, 0 },
 	};
 
 	setlocale(LC_ALL, "");
@@ -2585,7 +2671,7 @@ int main(int argc, char *argv[])
 	while((c = getopt_long(argc, argv, "L::hVz", longopts, NULL)) != -1) {
 		switch(c) {
 		case 'h':
-			usage(stdout);
+			usage();
 			break;
 		case 'L':
 			colormode = UL_COLORMODE_AUTO;
@@ -2599,6 +2685,8 @@ int main(int argc, char *argv[])
 		case 'z':
 			cf->zero_start = 1;
 			break;
+		default:
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
@@ -2632,6 +2720,11 @@ int main(int argc, char *argv[])
 		rc = fdisk_assign_device(cf->cxt, diskpath, 1);
 	if (rc != 0)
 		err(EXIT_FAILURE, _("cannot open %s"), diskpath);
+
+	if (!fdisk_is_readonly(cf->cxt)) {
+		cf->device_is_used = fdisk_device_is_used(cf->cxt);
+		fdisk_get_partitions(cf->cxt, &cf->original_layout);
+	}
 
 	/* Don't use err(), warn() from this point */
 	ui_init(cf);

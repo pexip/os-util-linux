@@ -1,5 +1,0 @@
-# lintian needs updating to detect dh-exec >= 0.13 features.
-util-linux source: dh-exec-script-without-dh-exec-features debian/fdisk-udeb.install
-util-linux source: dh-exec-script-without-dh-exec-features debian/util-linux.links
-util-linux source: dh-exec-script-without-dh-exec-features debian/uuid-runtime.install
-util-linux source: dh-exec-script-without-dh-exec-features debian/bsdutils.install

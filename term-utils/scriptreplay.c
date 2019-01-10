@@ -36,8 +36,9 @@
 #define SCRIPT_MIN_DELAY 0.0001		/* from original sripreplay.pl */
 
 static void __attribute__((__noreturn__))
-usage(FILE *out)
+usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
 	      _(" %s [-t] timingfile [typescript] [divisor]\n"),
@@ -51,11 +52,11 @@ usage(FILE *out)
 		" -s, --typescript <file> script terminal session output file\n"
 		" -d, --divisor <num>     speed up or slow down execution with time divisor\n"
 		" -m, --maxdelay <num>    wait at most this many seconds between updates\n"
-		" -V, --version           output version information and exit\n"
-		" -h, --help              display this help and exit\n\n"), out);
+		), out);
+	printf(USAGE_HELP_OPTIONS(25));
 
-	fprintf(out, USAGE_MAN_TAIL("scriptreplay(1)"));
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	printf(USAGE_MAN_TAIL("scriptreplay(1)"));
+	exit(EXIT_SUCCESS);
 }
 
 static double
@@ -172,9 +173,9 @@ main(int argc, char *argv[])
 			printf(UTIL_LINUX_VERSION);
 			exit(EXIT_SUCCESS);
 		case 'h':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 			}
 	argc -= optind;
 	argv += optind;
@@ -182,7 +183,7 @@ main(int argc, char *argv[])
 
 	if ((argc < 1 && !tname) || argc > 3) {
 		warnx(_("wrong number of arguments"));
-		usage(stderr);
+		errtryhelp(EXIT_FAILURE);
 	}
 	if (!tname)
 		tname = argv[idx++];

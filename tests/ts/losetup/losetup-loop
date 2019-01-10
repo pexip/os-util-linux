@@ -36,7 +36,7 @@ ts_check_losetup
 ts_scsi_debug_init dev_size_mb=11
 BACKFILE="$TS_DEVICE"
 
-# All tests are separated by sleep 3, because loop device exists some time after
+# All tests are separated by "udevadm settle" because loop device exists some time after
 # "losetup -d". This device confuses some tests. And find-race-condition, tests,
 # whether re-use of this device works.
 
@@ -47,7 +47,7 @@ $TS_CMD_LOSETUP -d "$LODEV"
 LODEV=$( $TS_CMD_LOSETUP --find --nooverlap --show $BACKFILE )
 udevadm settle
 dd if=/dev/zero of="$LODEV" count=1 bs=1 >/dev/null 2>&1
-$TS_CMD_LOSETUP --list | grep -q "$LODEV"
+$TS_CMD_LOSETUP --list | grep -q "$LODEV\b"
 ts_log $?
 udevadm settle
 $TS_CMD_LOSETUP -d "$LODEV" >/dev/null 2>&1
@@ -202,34 +202,44 @@ ts_finalize_subtest
 udevadm settle
 
 ts_init_subtest "plain-conflict"
-LODEV=$( $TS_CMD_LOSETUP --find --nooverlap --show $BACKFILE )
-if [ -z "$LODEV" ]; then
-	ts_log "Failed to create loop device"
+if [ "$TS_PARALLEL" = "yes" ]; then
+	# There is a race in $LODEV is usage
+	ts_skip_subtest "no-reentrant"
+else
+	LODEV=$( $TS_CMD_LOSETUP --find --nooverlap --show $BACKFILE )
+	if [ -z "$LODEV" ]; then
+		ts_log "Failed to create loop device"
+	fi
+	LODEVR=$( $TS_CMD_LOSETUP --find )
+	$TS_CMD_LOSETUP --nooverlap "$LODEVR" $BACKFILE >/dev/null 2>&1
+	ts_log $?
+	udevadm settle
+	$TS_CMD_LOSETUP -d "$LODEV"
+	$TS_CMD_LOSETUP -d "$LODEVR" >/dev/null 2>&1
+	ts_log "Success"
+	ts_finalize_subtest
 fi
-LODEVR=$( $TS_CMD_LOSETUP --find )
-$TS_CMD_LOSETUP --nooverlap "$LODEVR" $BACKFILE >/dev/null 2>&1
-ts_log $?
-udevadm settle
-$TS_CMD_LOSETUP -d "$LODEV"
-$TS_CMD_LOSETUP -d "$LODEVR" >/dev/null 2>&1
-ts_log "Success"
-ts_finalize_subtest
 
 udevadm settle
 
 ts_init_subtest "plain-readonly"
-LODEV=$( $TS_CMD_LOSETUP --find --nooverlap --show --read-only $BACKFILE )
-if [ -z "$LODEV" ]; then
-	ts_log "Failed to create loop device"
+if [ "$TS_PARALLEL" = "yes" ]; then
+	# There is a race in $LODEV is usage
+	ts_skip_subtest "no-reentrant"
+else
+	LODEV=$( $TS_CMD_LOSETUP --find --nooverlap --show --read-only $BACKFILE )
+	if [ -z "$LODEV" ]; then
+		ts_log "Failed to create loop device"
+	fi
+	LODEVR=$( $TS_CMD_LOSETUP --find )
+	$TS_CMD_LOSETUP --nooverlap "$LODEVR" $BACKFILE >/dev/null 2>&1
+	ts_log $?
+	udevadm settle
+	$TS_CMD_LOSETUP -d "$LODEV"
+	$TS_CMD_LOSETUP -d "$LODEVR" >/dev/null 2>&1
+	ts_log "Success"
+	ts_finalize_subtest
 fi
-LODEVR=$( $TS_CMD_LOSETUP --find )
-$TS_CMD_LOSETUP --nooverlap "$LODEVR" $BACKFILE >/dev/null 2>&1
-ts_log $?
-udevadm settle
-$TS_CMD_LOSETUP -d "$LODEV"
-$TS_CMD_LOSETUP -d "$LODEVR" >/dev/null 2>&1
-ts_log "Success"
-ts_finalize_subtest
 
 udevadm settle
 

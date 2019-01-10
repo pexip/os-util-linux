@@ -1,8 +1,10 @@
 Source: util-linux
-Build-Depends: debhelper (>= 10),
+Build-Depends: bc <!stage1 !nocheck>,
+               debhelper (>= 11),
                dh-exec (>= 0.13),
                dpkg-dev (>= 1.17.14),
                gettext,
+               libaudit-dev [linux-any] <!stage1>,
                libcap-ng-dev [linux-any] <!stage1>,
                libncurses5-dev,
                libncursesw5-dev,
@@ -11,19 +13,21 @@ Build-Depends: debhelper (>= 10),
                libsystemd-dev [linux-any] <!stage1>,
                libtool,
                libudev-dev [linux-any] <!stage1>,
+               netbase <!stage1 !nocheck>,
                pkg-config,
                po-debconf,
+               socat <!stage1 !nocheck>,
                systemd [linux-any] <!stage1>,
+               bison,
                zlib1g-dev
 Section: base
 Priority: required
-Maintainer: Debian util-linux Maintainers <ah-util-linux@debian.org>
-Uploaders: LaMont Jones <lamont@debian.org>,
-           Andreas Henriksson <andreas@fatal.se>,
-           Adam Conrad <adconrad@0c3.net>
-Standards-Version: 3.9.8
-Vcs-Browser: https://anonscm.debian.org/cgit/collab-maint/pkg-util-linux.git/
-Vcs-Git: git://anonscm.debian.org/collab-maint/pkg-util-linux.git
+Maintainer: LaMont Jones <lamont@debian.org>
+Uploaders: Adam Conrad <adconrad@0c3.net>
+Standards-Version: 4.1.2
+Rules-Requires-Root: binary-targets
+Vcs-Browser: https://salsa.debian.org/debian/util-linux
+Vcs-Git: https://salsa.debian.org/debian/util-linux.git
 
 Package: util-linux
 Architecture: any
@@ -31,25 +35,28 @@ Build-Profiles: <!stage1>
 Section: utils
 Essential: yes
 Pre-Depends: ${misc:Pre-Depends}, ${shlibs:Depends}
-Depends: ${misc:Depends},
+Depends: ${misc:Depends}, fdisk, login (>= 1:4.5-1.1~)
 Suggests: dosfstools, kbd | console-tools, util-linux-locales
-Replaces: bash-completion (<< 1:2.1-4.1~),
+Replaces: bash-completion (<< 1:2.8),
           sysvinit-utils (<< 2.88dsf-59.1~),
           initscripts (<< 2.88dsf-59.2~),
-          mount (= 2.26.2-3),
-          mount (= 2.26.2-3ubuntu1)
-Breaks: bash-completion (<< 1:2.1-4.1~),
+          mount (<< 2.29.2-3~),
+          s390-tools (<< 2.2.0-1~),
+          login (<< 1:4.5-1.1~),
+          setpriv (<< 2.32.1-0.2~)
+Breaks: bash-completion (<< 1:2.8),
           grml-debootstrap (<< 0.68),
-          cloud-utils (<< 0.27-1~),
           sysvinit-utils (<< 2.88dsf-59.4~),
-          mount (= 2.26.2-3),
-          mount (= 2.26.2-3ubuntu1)
+          mount (<< 2.29.2-3~),
+          s390-tools (<< 2.2.0-1~),
+          setpriv (<< 2.32.1-0.2~)
 Multi-Arch: foreign
 Description: miscellaneous system utilities
  This package contains a number of important utilities, most of which
  are oriented towards maintenance of your system. Some of the more
- important utilities included in this package allow you to partition
- your hard disk, view kernel messages, and create new filesystems.
+ important utilities included in this package allow you to view kernel
+ messages, create new filesystems, view block device information,
+ interface with real time clock, etc.
 
 Package: util-linux-locales
 Architecture: all
@@ -58,6 +65,7 @@ Section: localization
 Priority: optional
 Depends: util-linux (>= ${source:Upstream-Version}), ${misc:Depends}
 Replaces: util-linux (<< 2.11b)
+Multi-Arch: foreign
 Description: locales files for util-linux
  This package contains the internationalization files for the util-linux
  package.
@@ -68,10 +76,10 @@ Description: locales files for util-linux
 Package: mount
 Architecture: linux-any
 Build-Profiles: <!stage1>
-Essential: yes
+XB-Important: yes
 Section: admin
 Pre-Depends: ${misc:Pre-Depends}, ${shlibs:Depends}
-Depends: ${misc:Depends}
+Depends: ${misc:Depends}, util-linux (>= 2.29.2-3~)
 Suggests: nfs-common (>=1:1.1.0-13)
 Breaks: bash-completion (<< 1:2.1-4.3~)
 Replaces: bash-completion (<< 1:2.1-4.3~)
@@ -96,10 +104,33 @@ Description: basic utilities from 4.4BSD-Lite
  Debian system: logger, renice, script, scriptreplay, and wall. The
  remaining standard BSD utilities are provided by bsdmainutils.
 
+Package: fdisk
+Architecture: any
+Build-Profiles: <!stage1>
+XB-Important: yes
+Section: utils
+Priority: important
+Pre-Depends: ${misc:Pre-Depends}
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Replaces: util-linux (<< 2.29.2-3~)
+Breaks: util-linux (<< 2.29.2-3~)
+Multi-Arch: foreign
+Description: collection of partitioning utilities
+ This package contains the classic fdisk, sfdisk and cfdisk partitioning
+ utilities from the util-linux suite.
+ .
+ The utilities included in this package allow you to partition
+ your hard disk. The utilities supports both modern and legacy
+ partition tables (eg. GPT, MBR, etc).
+ .
+ The fdisk utility is the classical text-mode utility.
+ The cfdisk utilitity gives a more userfriendly curses based interface.
+ The sfdisk utility is mostly for automation and scripting uses.
+
 Package: fdisk-udeb
 Architecture: hurd-any linux-any
 Build-Profiles: <!stage1>
-Priority: extra
+Priority: optional
 Section: debian-installer
 Depends: ${misc:Depends}, ${shlibs:Depends}
 Package-Type: udeb
@@ -109,6 +140,7 @@ Description: Manually partition a hard drive (fdisk)
 Package: libblkid1
 Architecture: any
 Section: libs
+Priority: optional
 Pre-Depends: ${misc:Pre-Depends}
 Depends: ${misc:Depends}, ${shlibs:Depends}
 Multi-Arch: same
@@ -153,6 +185,7 @@ Description: block device ID library - headers and static libraries
 Package: libfdisk1
 Architecture: any
 Section: libs
+Priority: optional
 Pre-Depends: ${misc:Pre-Depends}
 Depends: ${misc:Depends}, ${shlibs:Depends}
 Multi-Arch: same
@@ -192,6 +225,7 @@ Description: fdisk partitioning library - headers and static libraries
 Package: libmount1
 Architecture: any
 Section: libs
+Priority: optional
 Pre-Depends: ${misc:Pre-Depends}
 Depends: ${misc:Depends}, ${shlibs:Depends}
 Multi-Arch: same
@@ -226,6 +260,7 @@ Description: device mounting library - headers and static libraries
 Package: libsmartcols1
 Architecture: any
 Section: libs
+Priority: optional
 Pre-Depends: ${misc:Pre-Depends}
 Depends: ${misc:Depends}, ${shlibs:Depends}
 Multi-Arch: same
@@ -259,8 +294,9 @@ Description: smart column output alignment library - headers and static librarie
 Package: libuuid1
 Architecture: any
 Section: libs
+Priority: optional
 Pre-Depends: ${misc:Pre-Depends}
-Depends: passwd, ${misc:Depends}, ${shlibs:Depends}
+Depends: ${misc:Depends}, ${shlibs:Depends}
 Recommends: uuid-runtime
 Replaces: e2fsprogs (<< 1.34-1)
 Multi-Arch: same
@@ -279,7 +315,7 @@ Build-Profiles: <!stage1>
 Section: utils
 Priority: optional
 Pre-Depends: libuuid1 (>= 2.25-5~), ${misc:Pre-Depends}
-Depends: adduser, passwd, ${misc:Depends}, ${shlibs:Depends}
+Depends: adduser, ${misc:Depends}, ${shlibs:Depends}
 Replaces: e2fsprogs (<= 1.40.3-1ubuntu1)
 Multi-Arch: foreign
 Description: runtime components for the Universally Unique ID library
@@ -334,14 +370,18 @@ Description: stripped down miscellaneous system utilities, for debian-installer
  This is a minimal version of util-linux for debian-installer. It only
  contains the blkid binary at the moment.
 
-Package: setpriv
+Package: rfkill
 Architecture: linux-any
 Build-Profiles: <!stage1>
-Section: admin
+Section: utils
 Priority: optional
 Pre-Depends: ${misc:Pre-Depends}
 Depends: ${misc:Depends}, ${shlibs:Depends}
+Breaks: bash-completion (<< 1:2.8~)
+Replaces: bash-completion (<< 1:2.8~)
 Multi-Arch: foreign
-Description: tool to run a program with different Linux privilege settings
- This package provides the setpriv command which allows the user to set or
- query various Linux privilege settings that are inherited across execve.
+Description: tool for enabling and disabling wireless devices
+ rfkill is a simple tool for accessing the Linux rfkill device interface,
+ which is used to enable and disable wireless networking devices, typically
+ WLAN, Bluetooth and mobile broadband.
+

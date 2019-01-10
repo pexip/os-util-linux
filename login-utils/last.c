@@ -30,7 +30,7 @@
 #include <time.h>
 #include <stdio.h>
 #include <ctype.h>
-#include <utmp.h>
+#include <utmpx.h>
 #include <pwd.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -40,6 +40,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <libgen.h>
 
 #include "c.h"
 #include "nls.h"
@@ -51,12 +52,6 @@
 #include "strutils.h"
 #include "timeutils.h"
 #include "monotonic.h"
-
-#if defined(_HAVE_UT_TV)
-# define UL_UT_TIME ut_tv.tv_sec
-#else
-# define UL_UT_TIME ut_time
-#endif
 
 #ifndef SHUTDOWN_TIME
 # define SHUTDOWN_TIME 254
@@ -99,7 +94,7 @@ struct last_control {
 
 /* Double linked list of struct utmp's */
 struct utmplist {
-	struct utmp ut;
+	struct utmpx ut;
 	struct utmplist *next;
 	struct utmplist *prev;
 };
@@ -150,8 +145,8 @@ static struct last_timefmt timefmts[] = {
 	},
 	[LAST_TIMEFTM_ISO8601] = {
 		.name    = "iso",
-		.in_len  = 24,
-		.out_len = 26,
+		.in_len  = 25,
+		.out_len = 27,
 		.in_fmt  = LAST_TIMEFTM_ISO8601,
 		.out_fmt = LAST_TIMEFTM_ISO8601
 	}
@@ -178,7 +173,7 @@ static int which_time_format(const char *s)
  *	Read one utmp entry, return in new format.
  *	Automatically reposition file pointer.
  */
-static int uread(FILE *fp, struct utmp *u,  int *quit, const char *filename)
+static int uread(FILE *fp, struct utmpx *u,  int *quit, const char *filename)
 {
 	static int utsize;
 	static char buf[UCHUNKSIZE];
@@ -191,14 +186,14 @@ static int uread(FILE *fp, struct utmp *u,  int *quit, const char *filename)
 		/*
 		 *	Normal read.
 		 */
-		return fread(u, sizeof(struct utmp), 1, fp);
+		return fread(u, sizeof(struct utmpx), 1, fp);
 	}
 
 	if (u == NULL) {
 		/*
 		 *	Initialize and position.
 		 */
-		utsize = sizeof(struct utmp);
+		utsize = sizeof(struct utmpx);
 		fseeko(fp, 0, SEEK_END);
 		fpos = ftello(fp);
 		if (fpos == 0)
@@ -222,7 +217,7 @@ static int uread(FILE *fp, struct utmp *u,  int *quit, const char *filename)
 	 */
 	bpos -= utsize;
 	if (bpos >= 0) {
-		memcpy(u, buf + bpos, sizeof(struct utmp));
+		memcpy(u, buf + bpos, sizeof(struct utmpx));
 		return 1;
 	}
 
@@ -258,7 +253,7 @@ static int uread(FILE *fp, struct utmp *u,  int *quit, const char *filename)
 	memcpy(tmp, buf + UCHUNKSIZE + bpos, -bpos);
 	bpos += UCHUNKSIZE;
 
-	memcpy(u, tmp, sizeof(struct utmp));
+	memcpy(u, tmp, sizeof(struct utmpx));
 
 	return 1;
 }
@@ -350,10 +345,11 @@ static int time_formatter(int fmt, char *dst, size_t dlen, time_t *when)
 		break;
 	}
 	case LAST_TIMEFTM_CTIME:
-		ret = snprintf(dst, dlen, "%s", ctime(when));
+		snprintf(dst, dlen, "%s", ctime(when));
+		ret = rtrim_whitespace((unsigned char *) dst);
 		break;
 	case LAST_TIMEFTM_ISO8601:
-		ret = strtime_iso(when, ISO_8601_DATE|ISO_8601_TIME|ISO_8601_TIMEZONE, dst, dlen);
+		ret = strtime_iso(when, ISO_TIMESTAMP_T, dst, dlen);
 		break;
 	default:
 		abort();
@@ -381,14 +377,14 @@ static void trim_trailing_spaces(char *s)
 /*
  *	Show one line of information on screen
  */
-static int list(const struct last_control *ctl, struct utmp *p, time_t logout_time, int what)
+static int list(const struct last_control *ctl, struct utmpx *p, time_t logout_time, int what)
 {
 	time_t		secs, utmp_time;
 	char		logintime[LAST_TIMESTAMP_LEN];
 	char		logouttime[LAST_TIMESTAMP_LEN];
 	char		length[LAST_TIMESTAMP_LEN];
 	char		final[512];
-	char		utline[UT_LINESIZE+1];
+	char		utline[sizeof(p->ut_line) + 1];
 	char		domain[256];
 	char		*s;
 	int		mins, hours, days;
@@ -399,7 +395,7 @@ static int list(const struct last_control *ctl, struct utmp *p, time_t logout_ti
 	 *	uucp and ftp have special-type entries
 	 */
 	utline[0] = 0;
-	strncat(utline, p->ut_line, UT_LINESIZE);
+	strncat(utline, p->ut_line, sizeof(utline) - 1);
 	if (strncmp(utline, "ftp", 3) == 0 && isdigit(utline[3]))
 		utline[3] = 0;
 	if (strncmp(utline, "uucp", 4) == 0 && isdigit(utline[4]))
@@ -411,7 +407,7 @@ static int list(const struct last_control *ctl, struct utmp *p, time_t logout_ti
 	if (ctl->show) {
 		char **walk;
 		for (walk = ctl->show; *walk; walk++) {
-			if (strncmp(p->ut_user, *walk, UT_NAMESIZE) == 0 ||
+			if (strncmp(p->ut_user, *walk, sizeof(p->ut_user)) == 0 ||
 			    strcmp(utline, *walk) == 0 ||
 			    (strncmp(utline, "tty", 3) == 0 &&
 			     strcmp(utline + 3, *walk) == 0)) break;
@@ -424,7 +420,7 @@ static int list(const struct last_control *ctl, struct utmp *p, time_t logout_ti
 	 */
 	fmt = &timefmts[ctl->time_fmt];
 
-	utmp_time = p->UL_UT_TIME;
+	utmp_time = p->ut_tv.tv_sec;
 
 	if (ctl->present) {
 		if (ctl->present < utmp_time)
@@ -439,7 +435,7 @@ static int list(const struct last_control *ctl, struct utmp *p, time_t logout_ti
 		errx(EXIT_FAILURE, _("preallocation size exceeded"));
 
 	/* log-out time */
-	secs  = logout_time - utmp_time;
+	secs  = logout_time - utmp_time; /* Under strange circumstances, secs < 0 can happen */
 	mins  = (secs / 60) % 60;
 	hours = (secs / 3600) % 24;
 	days  = secs / 86400;
@@ -458,9 +454,13 @@ static int list(const struct last_control *ctl, struct utmp *p, time_t logout_ti
 			sprintf(length, "running");
 		}
 	} else if (days) {
-		sprintf(length, "(%d+%02d:%02d)", days, hours, mins);
+		sprintf(length, "(%d+%02d:%02d)", days, abs(hours), abs(mins)); /* hours and mins always shown as positive (w/o minus sign!) even if secs < 0 */
+	} else if (hours) {
+		sprintf(length, " (%02d:%02d)", hours, abs(mins));  /* mins always shown as positive (w/o minus sign!) even if secs < 0 */
+	} else if (secs >= 0) {
+		sprintf(length, " (%02d:%02d)", hours, mins); 
 	} else {
-		sprintf(length, " (%02d:%02d)", hours, mins);
+		sprintf(length, " (-00:%02d)", abs(mins));  /* mins always shown as positive (w/o minus sign!) even if secs < 0 */
 	}
 
 	switch(what) {
@@ -507,14 +507,9 @@ static int list(const struct last_control *ctl, struct utmp *p, time_t logout_ti
 	 */
 	r = -1;
 	if (ctl->usedns || ctl->useip)
-		r = dns_lookup(domain, sizeof(domain), ctl->useip, p->ut_addr_v6);
-	if (r < 0) {
-		len = UT_HOSTSIZE;
-		if (len >= (int)sizeof(domain)) len = sizeof(domain) - 1;
-		domain[0] = 0;
-		strncat(domain, p->ut_host, len);
-	}
-
+		r = dns_lookup(domain, sizeof(domain), ctl->useip, (int32_t*)p->ut_addr_v6);
+	if (r < 0)
+		mem2strcpy(domain, p->ut_host, sizeof(p->ut_host), sizeof(domain));
 
 	if (ctl->showhost) {
 		if (!ctl->altlist) {
@@ -562,8 +557,9 @@ static int list(const struct last_control *ctl, struct utmp *p, time_t logout_ti
 }
 
 
-static void __attribute__((__noreturn__)) usage(const struct last_control *ctl, FILE *out)
+static void __attribute__((__noreturn__)) usage(const struct last_control *ctl)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(
 		" %s [options] [<username>...] [<tty>...]\n"), program_invocation_short_name);
@@ -590,20 +586,19 @@ static void __attribute__((__noreturn__)) usage(const struct last_control *ctl, 
 		"                               notime|short|full|iso\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
-	fprintf(out, USAGE_MAN_TAIL("last(1)"));
+	printf(USAGE_HELP_OPTIONS(22));
+	printf(USAGE_MAN_TAIL("last(1)"));
 
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
 
-static int is_phantom(const struct last_control *ctl, struct utmp *ut)
+static int is_phantom(const struct last_control *ctl, struct utmpx *ut)
 {
 	struct passwd *pw;
-	char path[32];
+	char path[sizeof(ut->ut_line) + 16];
 	int ret = 0;
 
-	if (ut->UL_UT_TIME < ctl->boot_time.tv_sec)
+	if (ut->ut_tv.tv_sec < ctl->boot_time.tv_sec)
 		return 1;
 	pw = getpwnam(ut->ut_user);
 	if (!pw)
@@ -637,7 +632,7 @@ static void process_wtmp_file(const struct last_control *ctl,
 {
 	FILE *fp;		/* File pointer of wtmp file */
 
-	struct utmp ut;		/* Current utmp entry */
+	struct utmpx ut;	/* Current utmp entry */
 	struct utmplist *ulist = NULL;	/* All entries */
 	struct utmplist *p;	/* Pointer into utmplist */
 	struct utmplist *next;	/* Pointer into utmplist */
@@ -680,7 +675,7 @@ static void process_wtmp_file(const struct last_control *ctl,
 	 * Read first structure to capture the time field
 	 */
 	if (uread(fp, &ut, NULL, filename) == 1)
-		begintime = ut.UL_UT_TIME;
+		begintime = ut.ut_tv.tv_sec;
 	else {
 		if (fstat(fileno(fp), &st) != 0)
 			err(EXIT_FAILURE, _("stat of %s failed"), filename);
@@ -702,16 +697,16 @@ static void process_wtmp_file(const struct last_control *ctl,
 		if (uread(fp, &ut, &quit, filename) != 1)
 			break;
 
-		if (ctl->since && ut.UL_UT_TIME < ctl->since)
+		if (ctl->since && ut.ut_tv.tv_sec < ctl->since)
 			continue;
 
-		if (ctl->until && ctl->until < ut.UL_UT_TIME)
+		if (ctl->until && ctl->until < ut.ut_tv.tv_sec)
 			continue;
 
-		lastdate = ut.UL_UT_TIME;
+		lastdate = ut.ut_tv.tv_sec;
 
 		if (ctl->lastb) {
-			quit = list(ctl, &ut, ut.UL_UT_TIME, R_NORMAL);
+			quit = list(ctl, &ut, ut.ut_tv.tv_sec, R_NORMAL);
 			continue;
 		}
 
@@ -761,7 +756,7 @@ static void process_wtmp_file(const struct last_control *ctl,
 				strcpy(ut.ut_line, "system down");
 				quit = list(ctl, &ut, lastboot, R_NORMAL);
 			}
-			lastdown = lastrch = ut.UL_UT_TIME;
+			lastdown = lastrch = ut.ut_tv.tv_sec;
 			down = 1;
 			break;
 		case OLD_TIME:
@@ -776,7 +771,7 @@ static void process_wtmp_file(const struct last_control *ctl,
 		case BOOT_TIME:
 			strcpy(ut.ut_line, "system boot");
 			quit = list(ctl, &ut, lastdown, R_REBOOT);
-			lastboot = ut.UL_UT_TIME;
+			lastboot = ut.ut_tv.tv_sec;
 			down = 1;
 			break;
 		case RUN_LVL:
@@ -786,11 +781,11 @@ static void process_wtmp_file(const struct last_control *ctl,
 				quit = list(ctl, &ut, lastrch, R_NORMAL);
 			}
 			if (x == '0' || x == '6') {
-				lastdown = ut.UL_UT_TIME;
+				lastdown = ut.ut_tv.tv_sec;
 				down = 1;
 				ut.ut_type = SHUTDOWN_TIME;
 			}
-			lastrch = ut.UL_UT_TIME;
+			lastrch = ut.ut_tv.tv_sec;
 			break;
 
 		case USER_PROCESS:
@@ -803,10 +798,10 @@ static void process_wtmp_file(const struct last_control *ctl,
 			for (p = ulist; p; p = next) {
 				next = p->next;
 				if (strncmp(p->ut.ut_line, ut.ut_line,
-				    UT_LINESIZE) == 0) {
+				    sizeof(ut.ut_line)) == 0) {
 					/* Show it */
 					if (c == 0) {
-						quit = list(ctl, &ut, p->ut.UL_UT_TIME, R_NORMAL);
+						quit = list(ctl, &ut, p->ut.ut_tv.tv_sec, R_NORMAL);
 						c = 1;
 					}
 					if (p->next)
@@ -832,7 +827,7 @@ static void process_wtmp_file(const struct last_control *ctl,
 					c = whydown;
 				quit = list(ctl, &ut, lastboot, c);
 			}
-			/* FALLTHRU */
+			/* fallthrough */
 
 		case DEAD_PROCESS:
 			/*
@@ -842,7 +837,7 @@ static void process_wtmp_file(const struct last_control *ctl,
 			if (ut.ut_line[0] == 0)
 				break;
 			p = xmalloc(sizeof(struct utmplist));
-			memcpy(&p->ut, &ut, sizeof(struct utmp));
+			memcpy(&p->ut, &ut, sizeof(struct utmpx));
 			p->next  = ulist;
 			p->prev  = NULL;
 			if (ulist)
@@ -853,7 +848,9 @@ static void process_wtmp_file(const struct last_control *ctl,
 		case EMPTY:
 		case INIT_PROCESS:
 		case LOGIN_PROCESS:
+#ifdef ACCOUNTING
 		case ACCOUNTING:
+#endif
 			/* ignored ut_types */
 			break;
 
@@ -866,7 +863,7 @@ static void process_wtmp_file(const struct last_control *ctl,
 		 * the entire current ulist.
 		 */
 		if (down) {
-			lastboot = ut.UL_UT_TIME;
+			lastboot = ut.ut_tv.tv_sec;
 			whydown = (ut.ut_type == SHUTDOWN_TIME) ? R_DOWN : R_CRASH;
 			for (p = ulist; p; p = next) {
 				next = p->next;
@@ -877,7 +874,19 @@ static void process_wtmp_file(const struct last_control *ctl,
 		}
 	}
 
-	printf(_("\n%s begins %s"), basename(filename), ctime(&begintime));
+	if (ctl->time_fmt != LAST_TIMEFTM_NONE) {
+		struct last_timefmt *fmt;
+		char timestr[LAST_TIMESTAMP_LEN];
+		char *tmp = xstrdup(filename);
+
+		fmt = &timefmts[ctl->time_fmt];
+		if (time_formatter(fmt->in_fmt, timestr,
+				   sizeof(timestr), &begintime) < 0)
+			errx(EXIT_FAILURE, _("preallocation size exceeded"));
+		printf(_("\n%s begins %s\n"), basename(tmp), timestr);
+		free(tmp);
+	}
+
 	fclose(fp);
 
 	for (p = ulist; p; p = next) {
@@ -920,7 +929,7 @@ int main(int argc, char **argv)
 	      { "time-format", required_argument, NULL, OPT_TIME_FORMAT },
 	      { NULL, 0, NULL, 0 }
 	};
-	static const ul_excl_t excl[] = {	/* rows and cols in in ASCII order */
+	static const ul_excl_t excl[] = {	/* rows and cols in ASCII order */
 		{ 'F', OPT_TIME_FORMAT },	/* fulltime, time-format */
 		{ 0 }
 	};
@@ -941,7 +950,7 @@ int main(int argc, char **argv)
 
 		switch(c) {
 		case 'h':
-			usage(&ctl, stdout);
+			usage(&ctl);
 			break;
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
@@ -988,10 +997,10 @@ int main(int argc, char **argv)
 			ctl.until = (time_t) (p / 1000000);
 			break;
 		case 'w':
-			if (ctl.name_len < UT_NAMESIZE)
-				ctl.name_len = UT_NAMESIZE;
-			if (ctl.domain_len < UT_HOSTSIZE)
-				ctl.domain_len = UT_HOSTSIZE;
+			if (ctl.name_len < sizeof(((struct utmpx *) 0)->ut_user))
+				ctl.name_len = sizeof(((struct utmpx *) 0)->ut_user);
+			if (ctl.domain_len < sizeof(((struct utmpx *) 0)->ut_host))
+				ctl.domain_len = sizeof(((struct utmpx *) 0)->ut_host);
 			break;
 		case '0': case '1': case '2': case '3': case '4':
 		case '5': case '6': case '7': case '8': case '9':
@@ -1001,8 +1010,7 @@ int main(int argc, char **argv)
 			ctl.time_fmt = which_time_format(optarg);
 			break;
 		default:
-			usage(&ctl, stderr);
-			break;
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 

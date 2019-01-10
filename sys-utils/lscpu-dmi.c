@@ -27,10 +27,9 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "c.h"
-#include "pathnames.h"
-#include "all-io.h"
 #include "lscpu.h"
+
+#define _PATH_SYS_DMI	 "/sys/firmware/dmi/tables/DMI"
 
 #define WORD(x) (uint16_t)(*(const uint16_t *)(x))
 #define DWORD(x) (uint32_t)(*(const uint32_t *)(x))
@@ -172,7 +171,7 @@ done:
 static int hypervisor_decode_legacy(uint8_t *buf, const char *devmem)
 {
 	if (!checksum(buf, 0x0F))
-		return HYPER_NONE;
+		return -1;
 
 	return hypervisor_from_dmi_table(DWORD(buf + 0x08), WORD(buf + 0x06),
 			 WORD(buf + 0x0C),
@@ -190,6 +189,18 @@ static int hypervisor_decode_smbios(uint8_t *buf, const char *devmem)
 	return hypervisor_from_dmi_table(DWORD(buf + 0x18), WORD(buf + 0x16),
 			 WORD(buf + 0x1C),
 		devmem);
+}
+
+static int hypervisor_decode_sysfw(void)
+{
+	static char const sys_fw_dmi_tables[] = _PATH_SYS_DMI;
+	struct stat st;
+
+	if (stat(sys_fw_dmi_tables, &st))
+		return -1;
+
+	return hypervisor_from_dmi_table(0, st.st_size, st.st_size / 4,
+					 sys_fw_dmi_tables);
 }
 
 /*
@@ -240,7 +251,15 @@ int read_hypervisor_dmi(void)
 	    || sizeof(uint16_t) != 2
 	    || sizeof(uint32_t) != 4
 	    || '\0' != 0)
-		return rc;
+		goto done;
+
+	/* -1 : no DMI in /sys,
+	 *  0 : DMI exist, nothing detected (HYPER_NONE)
+	 * >0 : hypervisor detected
+	 */
+	rc = hypervisor_decode_sysfw();
+	if (rc >= HYPER_NONE)
+		goto done;
 
 	/* First try EFI (ia64, Intel-based Mac) */
 	switch (address_from_efi(&fp)) {
@@ -255,8 +274,9 @@ int read_hypervisor_dmi(void)
 		goto done;
 
 	rc = hypervisor_decode_smbios(buf, _PATH_DEV_MEM);
-	if (rc)
+	if (rc >= HYPER_NONE)
 		goto done;
+
 	free(buf);
 	buf = NULL;
 memory_scan:
@@ -269,17 +289,17 @@ memory_scan:
 	for (fp = 0; fp <= 0xFFF0; fp += 16) {
 		if (memcmp(buf + fp, "_SM_", 4) == 0 && fp <= 0xFFE0) {
 			rc = hypervisor_decode_smbios(buf + fp, _PATH_DEV_MEM);
-			if (rc == -1)
+			if (rc < 0)
 				fp += 16;
 
 		} else if (memcmp(buf + fp, "_DMI_", 5) == 0)
 			rc = hypervisor_decode_legacy(buf + fp, _PATH_DEV_MEM);
 
-		if (rc >= 0)
+		if (rc >= HYPER_NONE)
 			break;
 	}
 #endif
 done:
 	free(buf);
-	return rc;
+	return rc < 0 ? HYPER_NONE : rc;
 }

@@ -54,12 +54,12 @@ static long name_to_flag(const char *name, size_t namesz)
 
 static int parse_column_flags(char *str)
 {
-	unsigned long flags = 0;
+	unsigned long num_flags = 0;
 
-	if (string_to_bitmask(str, &flags, name_to_flag))
+	if (string_to_bitmask(str, &num_flags, name_to_flag))
 		err(EXIT_FAILURE, "failed to parse column flags");
 
-	return flags;
+	return num_flags;
 }
 
 static struct libscols_column *parse_column(FILE *f)
@@ -98,8 +98,8 @@ static struct libscols_column *parse_column(FILE *f)
 		}
 		case 2: /* FLAGS */
 		{
-			int flags = parse_column_flags(line);
-			if (scols_column_set_flags(cl, flags))
+			int num_flags = parse_column_flags(line);
+			if (scols_column_set_flags(cl, num_flags))
 				goto fail;
 			if (strcmp(line, "wrapnl") == 0) {
 				scols_column_set_wrapfunc(cl,
@@ -121,8 +121,10 @@ static struct libscols_column *parse_column(FILE *f)
 		nlines++;
 	}
 
+	free(line);
 	return cl;
 fail:
+	free(line);
 	scols_unref_column(cl);
 	return NULL;
 }
@@ -152,6 +154,7 @@ static int parse_column_data(FILE *f, struct libscols_table *tb, int col)
 		scols_line_set_data(ln, col, str);
 	}
 
+	free(str);
 	return 0;
 
 }
@@ -194,8 +197,9 @@ static void compose_tree(struct libscols_table *tb, int parent_col, int id_col)
 }
 
 
-static void __attribute__ ((__noreturn__)) usage(FILE * out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fprintf(out,
 		"\n %s [options] <column-data-file> ...\n\n", program_invocation_short_name);
 
@@ -212,7 +216,7 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fputs(" -h, --help                     this help\n", out);
 	fputs("\n", out);
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char *argv[])
@@ -222,21 +226,21 @@ int main(int argc, char *argv[])
 	int parent_col = -1, id_col = -1;
 
 	static const struct option longopts[] = {
-		{ "maxout", 0, 0, 'm' },
-		{ "column", 1, 0, 'c' },
-		{ "nlines", 1, 0, 'n' },
-		{ "width",  1, 0, 'w' },
-		{ "tree-parent-column", 1, 0, 'p' },
-		{ "tree-id-column",	1, 0, 'i' },
-		{ "json",   0, 0, 'J' },
-		{ "raw",    0, 0, 'r' },
-		{ "export", 0, 0, 'E' },
-		{ "colsep",  1, 0, 'C' },
-		{ "help",   0, 0, 'h' },
-		{ NULL, 0, 0, 0 },
+		{ "maxout", 0, NULL, 'm' },
+		{ "column", 1, NULL, 'c' },
+		{ "nlines", 1, NULL, 'n' },
+		{ "width",  1, NULL, 'w' },
+		{ "tree-parent-column", 1, NULL, 'p' },
+		{ "tree-id-column",	1, NULL, 'i' },
+		{ "json",   0, NULL, 'J' },
+		{ "raw",    0, NULL, 'r' },
+		{ "export", 0, NULL, 'E' },
+		{ "colsep",  1, NULL, 'C' },
+		{ "help",   0, NULL, 'h' },
+		{ NULL, 0, NULL, 0 },
 	};
 
-	static const ul_excl_t excl[] = {       /* rows and cols in in ASCII order */
+	static const ul_excl_t excl[] = {       /* rows and cols in ASCII order */
 		{ 'E', 'J', 'r' },
 		{ 0 }
 	};
@@ -298,9 +302,9 @@ int main(int argc, char *argv[])
 			scols_table_set_termwidth(tb, strtou32_or_err(optarg, "failed to parse terminal width"));
 			break;
 		case 'h':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
@@ -312,6 +316,8 @@ int main(int argc, char *argv[])
 
 		if (!ln || scols_table_add_line(tb, ln))
 			err(EXIT_FAILURE, "failed to add a new line");
+
+		scols_unref_line(ln);
 	}
 
 	n = 0;
