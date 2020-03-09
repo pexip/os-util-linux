@@ -55,7 +55,8 @@ working directory there, or when a swap file on it is in use.  The
 offending process could even be
 .B umount
 itself - it opens libc, and libc in its turn may open for example locale
-files.  A lazy unmount avoids this problem.
+files.  A lazy unmount avoids this problem, but it may introduce another
+issues. See \fB\-\-lazy\fR description below.
 .SH OPTIONS
 .TP
 .BR \-a , " \-\-all"
@@ -75,9 +76,17 @@ This option is only supported on systems where /etc/mtab is a symlink
 to /proc/mounts.
 .TP
 .BR \-c , " \-\-no\-canonicalize"
-Do not canonicalize paths.  For more details about this option see the
+Do not canonicalize paths.  The paths canonicalization is based on
+.BR stat (2)
+and
+.BR readlink (2)
+system calls. These system calls may hang in some cases (for example on NFS if
+server is not available). The option has to be used with canonical path to the
+mount point.
+
+For more details about this option see the
 .BR mount (8)
-man page.  Note that \fBumount\fR does not pass this option to the
+man page. Note that \fBumount\fR does not pass this option to the
 .BI /sbin/umount. type
 helpers.
 .TP
@@ -97,8 +106,7 @@ that were unmounted earlier with the
 option.
 .TP
 .BR \-f , " \-\-force"
-Force an unmount (in case of an unreachable NFS system).  (Requires kernel
-2.1.116 or later.)
+Force an unmount (in case of an unreachable NFS system).
 
 Note that this option does not guarantee that umount command does not hang.
 It's strongly recommended to use absolute paths without symlinks to avoid
@@ -111,7 +119,29 @@ By default such a helper program is called if it exists.
 .BR \-l , " \-\-lazy"
 Lazy unmount.  Detach the filesystem from the file hierarchy now,
 and clean up all references to this filesystem as soon as it is not busy
-anymore.  (Requires kernel 2.4.11 or later.)
+anymore.
+
+A system reboot would be expected in near future if you're going to use this
+option for network filesystem or local filesystem with submounts.  The
+recommended use-case for \fBumount -l\fR is to prevent hangs on shutdown due to
+an unreachable network share where a normal umount will hang due to a downed
+server or a network partition. Remounts of the share will not be possible.
+
+.TP
+.BR \-N , " \-\-namespace " \fIns
+Perform umount in namespace specified by \fIns\fR.
+\fIns\fR is either PID of process running in that namespace
+or special file representing that namespace.
+.sp
+.BR umount (8)
+switches to the namespace when it reads /etc/fstab, writes /etc/mtab (or writes to /run/mount) and calls
+.BR umount (2)
+system call, otherwise it runs in the original namespace. It means that the target namespace does not have
+to contain any libraries or another requirements necessary to execute
+.BR umount (2)
+command.
+.sp
+See \fBnamespaces\fR(7) for more information.
 .TP
 .BR \-n , " \-\-no\-mtab"
 Unmount without writing in
@@ -124,6 +154,9 @@ More than one option may be specified in a comma-separated list.
 Each option can be prefixed with
 .B no
 to indicate that no action should be taken for this option.
+.TP
+.BR \-q , " \-\-quiet"
+Suppress "not mounted" error messages.
 .TP
 .BR \-R , " \-\-recursive"
 Recursively unmount each specified directory.  Recursion for each directory will
@@ -143,7 +176,6 @@ More than one type may be specified in a comma-separated list.  The list
 of filesystem types can be prefixed with
 .B no
 to indicate that no action should be taken for all of the mentioned types.
-.BR
 Note that
 .B umount
 reads information about mounted filesystems from kernel (/proc/mounts) and
@@ -176,6 +208,8 @@ The syntax of external unmount helpers is:
 .BI umount. suffix
 .RI { directory | device }
 .RB [ \-flnrv ]
+.RB [ \-N
+.IR namespace ]
 .RB [ \-t
 .IR type . subtype ]
 .RE
@@ -228,6 +262,6 @@ A
 command appeared in Version 6 AT&T UNIX.
 .SH AVAILABILITY
 The umount command is part of the util-linux package and is available from
-.UR ftp://\:ftp.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
+.UR https://\:www.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
 Linux Kernel Archive
 .UE .

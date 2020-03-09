@@ -28,7 +28,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <utmp.h>
+#include <utmpx.h>
 #include <time.h>
 #include <ctype.h>
 #include <getopt.h>
@@ -42,9 +42,9 @@
 
 #include "c.h"
 #include "nls.h"
-#include "timeutils.h"
 #include "xalloc.h"
 #include "closestream.h"
+#include "timeutils.h"
 
 static time_t strtotime(const char *s_time)
 {
@@ -71,7 +71,6 @@ static time_t strtotime(const char *s_time)
 	return timegm(&tm);
 }
 
-#if defined(_HAVE_UT_TV)
 static suseconds_t strtousec(const char *s_time)
 {
 	const char *s = strchr(s_time, ',');
@@ -79,7 +78,6 @@ static suseconds_t strtousec(const char *s_time)
 		return (suseconds_t) atoi(s + 1);
 	return 0;
 }
-#endif
 
 #define cleanse(x) xcleanse(x, sizeof(x))
 static void xcleanse(char *s, int len)
@@ -89,7 +87,7 @@ static void xcleanse(char *s, int len)
 			*s = '?';
 }
 
-static void print_utline(struct utmp *ut, FILE *out)
+static void print_utline(struct utmpx *ut, FILE *out)
 {
 	const char *addr_string;
 	char buffer[INET6_ADDRSTRLEN];
@@ -104,9 +102,7 @@ static void print_utline(struct utmp *ut, FILE *out)
 	tv.tv_sec = ut->ut_tv.tv_sec;
 	tv.tv_usec = ut->ut_tv.tv_usec;
 
-	if (strtimeval_iso(&tv,
-			   ISO_8601_DATE | ISO_8601_TIME | ISO_8601_COMMAUSEC |
-			   ISO_8601_TIMEZONE | ISO_8601_GMTIME, time_string,
+	if (strtimeval_iso(&tv, ISO_TIMESTAMP_COMMA_GT, time_string,
 			   sizeof(time_string)) != 0)
 		return;
 	cleanse(ut->ut_id);
@@ -114,10 +110,12 @@ static void print_utline(struct utmp *ut, FILE *out)
 	cleanse(ut->ut_line);
 	cleanse(ut->ut_host);
 
-	/*            pid    id       user     line     host     addr       time */
+	/*            type pid    id       user     line     host     addr    time */
 	fprintf(out, "[%d] [%05d] [%-4.4s] [%-*.*s] [%-*.*s] [%-*.*s] [%-15s] [%s]\n",
-	       ut->ut_type, ut->ut_pid, ut->ut_id, 8, UT_NAMESIZE, ut->ut_user,
-	       12, UT_LINESIZE, ut->ut_line, 20, UT_HOSTSIZE, ut->ut_host,
+	       ut->ut_type, ut->ut_pid, ut->ut_id,
+	       8, (int)sizeof(ut->ut_user), ut->ut_user,
+	       12, (int)sizeof(ut->ut_line), ut->ut_line,
+	       20, (int)sizeof(ut->ut_host), ut->ut_host,
 	       addr_string, time_string);
 }
 
@@ -129,7 +127,7 @@ static void roll_file(const char *filename, off_t *size, FILE *out)
 {
 	FILE *in;
 	struct stat st;
-	struct utmp ut;
+	struct utmpx ut;
 	off_t pos;
 
 	if (!(in = fopen(filename, "r")))
@@ -207,7 +205,7 @@ static int follow_by_inotify(FILE *in, const char *filename, FILE *out)
 
 static FILE *dump(FILE *in, const char *filename, int follow, FILE *out)
 {
-	struct utmp ut;
+	struct utmpx ut;
 
 	if (follow)
 		ignore_result( fseek(in, -10 * sizeof(ut), SEEK_END) );
@@ -265,9 +263,8 @@ static int gettok(char *line, char *dest, int size, int eatspace)
 
 static void undump(FILE *in, FILE *out)
 {
-	struct utmp ut;
+	struct utmpx ut;
 	char s_addr[INET6_ADDRSTRLEN + 1], s_time[29], *linestart, *line;
-	int count = 0;
 
 	linestart = xmalloc(1024 * sizeof(*linestart));
 	s_time[28] = 0;
@@ -287,22 +284,19 @@ static void undump(FILE *in, FILE *out)
 			inet_pton(AF_INET, s_addr, &(ut.ut_addr_v6));
 		else
 			inet_pton(AF_INET6, s_addr, &(ut.ut_addr_v6));
-#if defined(_HAVE_UT_TV)
+
 		ut.ut_tv.tv_sec = strtotime(s_time);
 		ut.ut_tv.tv_usec = strtousec(s_time);
-#else
-		ut.ut_time = strtotime(s_time);
-#endif
-		ignore_result( fwrite(&ut, sizeof(ut), 1, out) );
 
-		++count;
+		ignore_result( fwrite(&ut, sizeof(ut), 1, out) );
 	}
 
 	free(linestart);
 }
 
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 
 	fprintf(out,
@@ -315,11 +309,10 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(_(" -f, --follow         output appended data as the file grows\n"), out);
 	fputs(_(" -r, --reverse        write back dumped data into utmp file\n"), out);
 	fputs(_(" -o, --output <file>  write to file instead of standard output\n"), out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
+	printf(USAGE_HELP_OPTIONS(22));
 
-	fprintf(out, USAGE_MAN_TAIL("utmpdump(1)"));
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	printf(USAGE_MAN_TAIL("utmpdump(1)"));
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char **argv)
@@ -330,12 +323,12 @@ int main(int argc, char **argv)
 	const char *filename = NULL;
 
 	static const struct option longopts[] = {
-		{ "follow",  0, 0, 'f' },
-		{ "reverse", 0, 0, 'r' },
-		{ "output",  required_argument, 0, 'o' },
-		{ "help",    0, 0, 'h' },
-		{ "version", 0, 0, 'V' },
-		{ NULL, 0, 0, 0 }
+		{ "follow",  no_argument,       NULL, 'f' },
+		{ "reverse", no_argument,       NULL, 'r' },
+		{ "output",  required_argument, NULL, 'o' },
+		{ "help",    no_argument,       NULL, 'h' },
+		{ "version", no_argument,       NULL, 'V' },
+		{ NULL, 0, NULL, 0 }
 	};
 
 	setlocale(LC_ALL, "");
@@ -361,13 +354,13 @@ int main(int argc, char **argv)
 			break;
 
 		case 'h':
-			usage(stdout);
+			usage();
 			break;
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 

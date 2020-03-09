@@ -20,6 +20,7 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
@@ -340,67 +341,141 @@ int parse_timestamp(const char *t, usec_t *usec)
 	return 0;
 }
 
+/* Returns the difference in seconds between its argument and GMT. If if TP is
+ * invalid or no DST information is available default to UTC, that is, zero.
+ * tzset is called so, for example, 'TZ="UTC" hwclock' will work as expected.
+ * Derived from glibc/time/strftime_l.c
+ */
+int get_gmtoff(const struct tm *tp)
+{
+	if (tp->tm_isdst < 0)
+	return 0;
+
+#if HAVE_TM_GMTOFF
+	return tp->tm_gmtoff;
+#else
+	struct tm tm;
+	struct tm gtm;
+	struct tm ltm = *tp;
+	time_t lt;
+
+	tzset();
+	lt = mktime(&ltm);
+	/* Check if mktime returning -1 is an error or a valid time_t */
+	if (lt == (time_t) -1) {
+		if (! localtime_r(&lt, &tm)
+			|| ((ltm.tm_sec ^ tm.tm_sec)
+			    | (ltm.tm_min ^ tm.tm_min)
+			    | (ltm.tm_hour ^ tm.tm_hour)
+			    | (ltm.tm_mday ^ tm.tm_mday)
+			    | (ltm.tm_mon ^ tm.tm_mon)
+			    | (ltm.tm_year ^ tm.tm_year)))
+			return 0;
+	}
+
+	if (! gmtime_r(&lt, &gtm))
+		return 0;
+
+	/* Calculate the GMT offset, that is, the difference between the
+	 * TP argument (ltm) and GMT (gtm).
+	 *
+	 * Compute intervening leap days correctly even if year is negative.
+	 * Take care to avoid int overflow in leap day calculations, but it's OK
+	 * to assume that A and B are close to each other.
+	 */
+	int a4 = (ltm.tm_year >> 2) + (1900 >> 2) - ! (ltm.tm_year & 3);
+	int b4 = (gtm.tm_year >> 2) + (1900 >> 2) - ! (gtm.tm_year & 3);
+	int a100 = a4 / 25 - (a4 % 25 < 0);
+	int b100 = b4 / 25 - (b4 % 25 < 0);
+	int a400 = a100 >> 2;
+	int b400 = b100 >> 2;
+	int intervening_leap_days = (a4 - b4) - (a100 - b100) + (a400 - b400);
+
+	int years = ltm.tm_year - gtm.tm_year;
+	int days = (365 * years + intervening_leap_days
+		    + (ltm.tm_yday - gtm.tm_yday));
+
+	return (60 * (60 * (24 * days + (ltm.tm_hour - gtm.tm_hour))
+		+ (ltm.tm_min - gtm.tm_min)) + (ltm.tm_sec - gtm.tm_sec));
+#endif
+}
+
 static int format_iso_time(struct tm *tm, suseconds_t usec, int flags, char *buf, size_t bufsz)
 {
 	char *p = buf;
 	int len;
 
-	if (flags & ISO_8601_DATE) {
-		len = snprintf(p, bufsz, "%4d-%.2d-%.2d", tm->tm_year + 1900,
-						tm->tm_mon + 1, tm->tm_mday);
+	if (flags & ISO_DATE) {
+		len = snprintf(p, bufsz, "%4ld-%.2d-%.2d",
+			       tm->tm_year + (long) 1900,
+			       tm->tm_mon + 1, tm->tm_mday);
 		if (len < 0 || (size_t) len > bufsz)
-			return -1;
+			goto err;
 		bufsz -= len;
 		p += len;
 	}
 
-	if ((flags & ISO_8601_DATE) && (flags & ISO_8601_TIME)) {
+	if ((flags & ISO_DATE) && (flags & ISO_TIME)) {
 		if (bufsz < 1)
-			return -1;
-		*p++ = (flags & ISO_8601_SPACE) ? ' ' : 'T';
+			goto err;
+		*p++ = (flags & ISO_T) ? 'T' : ' ';
 		bufsz--;
 	}
 
-	if (flags & ISO_8601_TIME) {
+	if (flags & ISO_TIME) {
 		len = snprintf(p, bufsz, "%02d:%02d:%02d", tm->tm_hour,
-						 tm->tm_min, tm->tm_sec);
+			       tm->tm_min, tm->tm_sec);
 		if (len < 0 || (size_t) len > bufsz)
-			return -1;
+			goto err;
 		bufsz -= len;
 		p += len;
 	}
 
-	if (flags & ISO_8601_DOTUSEC) {
+	if (flags & ISO_DOTUSEC) {
 		len = snprintf(p, bufsz, ".%06ld", (long) usec);
 		if (len < 0 || (size_t) len > bufsz)
-			return -1;
+			goto err;
 		bufsz -= len;
 		p += len;
 
-	} else if (flags & ISO_8601_COMMAUSEC) {
+	} else if (flags & ISO_COMMAUSEC) {
 		len = snprintf(p, bufsz, ",%06ld", (long) usec);
 		if (len < 0 || (size_t) len > bufsz)
-			return -1;
+			goto err;
 		bufsz -= len;
 		p += len;
 	}
 
-	if (flags & ISO_8601_TIMEZONE && strftime(p, bufsz, "%z", tm) <= 0)
-		return -1;
-
+	if (flags & ISO_TIMEZONE) {
+		int tmin  = get_gmtoff(tm) / 60;
+		int zhour = tmin / 60;
+		int zmin  = abs(tmin % 60);
+		len = snprintf(p, bufsz, "%+03d:%02d", zhour,zmin);
+		if (len < 0 || (size_t) len > bufsz)
+			goto err;
+	}
 	return 0;
+ err:
+	warnx(_("format_iso_time: buffer overflow."));
+	return -1;
 }
 
 /* timeval to ISO 8601 */
 int strtimeval_iso(struct timeval *tv, int flags, char *buf, size_t bufsz)
 {
 	struct tm tm;
+	struct tm *rc;
 
-	if (flags & ISO_8601_GMTIME)
-		tm = *gmtime(&tv->tv_sec);
+	if (flags & ISO_GMTIME)
+		rc = gmtime_r(&tv->tv_sec, &tm);
 	else
-		tm = *localtime(&tv->tv_sec);
-	return format_iso_time(&tm, tv->tv_usec, flags, buf, bufsz);
+		rc = localtime_r(&tv->tv_sec, &tm);
+
+	if (rc)
+		return format_iso_time(&tm, tv->tv_usec, flags, buf, bufsz);
+
+	warnx(_("time %ld is out of range."), tv->tv_sec);
+	return -1;
 }
 
 /* struct tm to ISO 8601 */
@@ -413,12 +488,18 @@ int strtm_iso(struct tm *tm, int flags, char *buf, size_t bufsz)
 int strtime_iso(const time_t *t, int flags, char *buf, size_t bufsz)
 {
 	struct tm tm;
+	struct tm *rc;
 
-	if (flags & ISO_8601_GMTIME)
-		tm = *gmtime(t);
+	if (flags & ISO_GMTIME)
+		rc = gmtime_r(t, &tm);
 	else
-		tm = *localtime(t);
-	return format_iso_time(&tm, 0, flags, buf, bufsz);
+		rc = localtime_r(t, &tm);
+
+	if (rc)
+		return format_iso_time(&tm, 0, flags, buf, bufsz);
+
+	warnx(_("time %ld is out of range."), (long)t);
+	return -1;
 }
 
 /* relative time functions */
@@ -460,12 +541,30 @@ int strtime_short(const time_t *t, struct timeval *now, int flags, char *buf, si
 	return rc <= 0 ? -1 : 0;
 }
 
+#ifndef HAVE_TIMEGM
+time_t timegm(struct tm *tm)
+{
+	const char *zone = getenv("TZ");
+	time_t ret;
+
+	setenv("TZ", "", 1);
+	tzset();
+	ret = mktime(tm);
+	if (zone)
+		setenv("TZ", zone, 1);
+	else
+		unsetenv("TZ");
+	tzset();
+	return ret;
+}
+#endif /* HAVE_TIMEGM */
+
 #ifdef TEST_PROGRAM_TIMEUTILS
 
 int main(int argc, char *argv[])
 {
 	struct timeval tv = { 0 };
-	char buf[ISO_8601_BUFSIZ];
+	char buf[ISO_BUFSIZ];
 
 	if (argc < 2) {
 		fprintf(stderr, "usage: %s <time> [<usec>]\n", argv[0]);
@@ -476,22 +575,20 @@ int main(int argc, char *argv[])
 	if (argc == 3)
 		tv.tv_usec = strtos64_or_err(argv[2], "failed to parse <usec>");
 
-	strtimeval_iso(&tv, ISO_8601_DATE, buf, sizeof(buf));
+	strtimeval_iso(&tv, ISO_DATE, buf, sizeof(buf));
 	printf("Date: '%s'\n", buf);
 
-	strtimeval_iso(&tv, ISO_8601_TIME, buf, sizeof(buf));
+	strtimeval_iso(&tv, ISO_TIME, buf, sizeof(buf));
 	printf("Time: '%s'\n", buf);
 
-	strtimeval_iso(&tv, ISO_8601_DATE | ISO_8601_TIME | ISO_8601_COMMAUSEC,
-			    buf, sizeof(buf));
+	strtimeval_iso(&tv, ISO_DATE | ISO_TIME | ISO_COMMAUSEC | ISO_T,
+		       buf, sizeof(buf));
 	printf("Full: '%s'\n", buf);
 
-	strtimeval_iso(&tv, ISO_8601_DATE | ISO_8601_TIME | ISO_8601_DOTUSEC |
-			    ISO_8601_TIMEZONE | ISO_8601_SPACE,
-			    buf, sizeof(buf));
+	strtimeval_iso(&tv, ISO_TIMESTAMP_DOT, buf, sizeof(buf));
 	printf("Zone: '%s'\n", buf);
 
 	return EXIT_SUCCESS;
 }
 
-#endif /* TEST_PROGRAM */
+#endif /* TEST_PROGRAM_TIMEUTILS */

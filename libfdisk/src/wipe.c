@@ -97,9 +97,14 @@ int fdisk_set_wipe_area(struct fdisk_context *cxt,
 	return 0;
 }
 
+#ifndef HAVE_LIBBLKID
+int fdisk_do_wipe(struct fdisk_context *cxt __attribute__((__unused__)))
+{
+	return 0;
+}
+#else
 int fdisk_do_wipe(struct fdisk_context *cxt)
 {
-#ifdef HAVE_LIBBLKID
 	struct list_head *p;
 	blkid_probe pr;
 	int rc;
@@ -140,6 +145,65 @@ int fdisk_do_wipe(struct fdisk_context *cxt)
 	}
 
 	blkid_free_probe(pr);
-#endif
 	return 0;
 }
+#endif
+
+
+/*
+ * Please don't call this function if there is already a PT.
+ *
+ * Returns: 0 if nothing found, < 0 on error, 1 if found a signature
+ */
+#ifndef HAVE_LIBBLKID
+int fdisk_check_collisions(struct fdisk_context *cxt __attribute__((__unused__)))
+{
+	return 0;
+}
+#else
+int fdisk_check_collisions(struct fdisk_context *cxt)
+{
+	int rc = 0;
+	blkid_probe pr;
+
+	assert(cxt);
+	assert(cxt->dev_fd >= 0);
+
+	DBG(CXT, ul_debugobj(cxt, "wipe check: initialize libblkid prober"));
+
+	pr = blkid_new_probe();
+	if (!pr)
+		return -ENOMEM;
+	rc = blkid_probe_set_device(pr, cxt->dev_fd, 0, 0);
+	if (rc)
+		return rc;
+
+	cxt->pt_collision = 0;
+	free(cxt->collision);
+	cxt->collision = NULL;
+
+	blkid_probe_enable_superblocks(pr, 1);
+	blkid_probe_set_superblocks_flags(pr, BLKID_SUBLKS_TYPE);
+	blkid_probe_enable_partitions(pr, 1);
+
+	/* we care about the first found FS/raid, so don't call blkid_do_probe()
+	 * in loop or don't use blkid_do_fullprobe() ... */
+	rc = blkid_do_probe(pr);
+	if (rc == 0) {
+		const char *name = NULL;
+
+		if (blkid_probe_lookup_value(pr, "TYPE", &name, 0) == 0)
+			cxt->collision = strdup(name);
+		else if (blkid_probe_lookup_value(pr, "PTTYPE", &name, 0) == 0) {
+			cxt->collision = strdup(name);
+			cxt->pt_collision = 1;
+		}
+
+		if (name && !cxt->collision)
+			rc = -ENOMEM;
+	}
+
+	blkid_free_probe(pr);
+	return rc;
+}
+#endif

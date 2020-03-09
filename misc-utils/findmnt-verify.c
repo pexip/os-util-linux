@@ -126,14 +126,13 @@ done:
 static int verify_target(struct verify_context *vfy)
 {
 	const char *tgt = mnt_fs_get_target(vfy->fs);
-	const char *cn = tgt;
 	struct stat sb;
 
 	if (!tgt)
 		return verify_err(vfy, _("undefined target (fs_file)"));
 
 	if (!(flags & FL_NOCACHE)) {
-		cn = mnt_resolve_target(tgt, cache);
+		const char *cn = mnt_resolve_target(tgt, cache);
 		if (!cn)
 			return -ENOMEM;
 		if (strcmp(cn, tgt) != 0)
@@ -328,14 +327,15 @@ static int read_proc_filesystems(struct verify_context *vfy)
 
 		rc = add_filesystem(vfy, cp);
 		if (rc)
-			return rc;
+			break;
 	}
 	fclose(f);
-	return 0;
+	return rc;
 }
 
 static int read_kernel_filesystems(struct verify_context *vfy)
 {
+	int rc = 0;
 #ifdef __linux__
 	struct utsname uts;
 	FILE *f;
@@ -351,7 +351,6 @@ static int read_kernel_filesystems(struct verify_context *vfy)
 
 	while (!feof(f)) {
 		char *p, *name;
-		int rc;
 
 		if (!fgets(buf, sizeof(buf), f))
 			break;
@@ -377,11 +376,11 @@ static int read_kernel_filesystems(struct verify_context *vfy)
 
 		rc = add_filesystem(vfy, name);
 		if (rc)
-			return rc;
+			break;
 	}
 	fclose(f);
 #endif /* __linux__ */
-	return 0;
+	return rc;
 }
 
 static int verify_fstype(struct verify_context *vfy)
@@ -472,7 +471,7 @@ static int verify_filesystem(struct verify_context *vfy)
 int verify_table(struct libmnt_table *tb)
 {
 	struct verify_context vfy = { .nerrors = 0 };
-	struct libmnt_iter *itr = NULL;
+	struct libmnt_iter *itr;
 	int rc = 0;		/* overall return code (alloc errors, etc.) */
 	int check_order = is_listall_mode();
 	static int has_read_fs = 0;

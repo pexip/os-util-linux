@@ -1,4 +1,4 @@
-Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: util-linux
 Upstream-Contact: util-linux@vger.kernel.org
 Source: https://www.kernel.org/pub/linux/utils/util-linux/

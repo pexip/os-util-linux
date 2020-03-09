@@ -367,6 +367,10 @@ int fdisk_create_disklabel(struct fdisk_context *cxt, const char *name)
 	lb = fdisk_get_label(cxt, name);
 	if (!lb || lb->disabled)
 		return -EINVAL;
+
+	if (!haslabel || (lb && cxt->label != lb))
+		fdisk_check_collisions(cxt);
+
 	if (!lb->op->create)
 		return -ENOSYS;
 
@@ -438,14 +442,14 @@ int fdisk_get_disklabel_id(struct fdisk_context *cxt, char **id)
 /**
  * fdisk_get_disklabel_item:
  * @cxt: fdisk context
- * @id: item ID (FDISK_LABELITEM_* or {GPT,MBR,...}_LABELITEM_*)
+ * @id: item ID (FDISK_LABELITEM_* or *_LABELITEM_*)
  * @item: specifies and returns the item
  *
  * Note that @id is always in range 0..N. It's fine to use the function in loop
  * until it returns error or 2, the result in @item should be ignored when
  * function returns 1. Don't forget to use fdisk_reset_labelitem() or fdisk_unref_labelitem().
  *
- * Returns: 0 on success, < 0 on error, 1 on unsupported item, 2 @id out of range
+ * Returns: 0 on success, < 0 on error, 1 on unsupported item, 2 id out of range
  */
 int fdisk_get_disklabel_item(struct fdisk_context *cxt, int id, struct fdisk_labelitem *item)
 {
@@ -624,3 +628,79 @@ int fdisk_label_is_disabled(const struct fdisk_label *lb)
 	assert(lb);
 	return lb ? lb->disabled : 0;
 }
+
+/**
+ * fdisk_label_get_geomrange_sectors:
+ * @lb: label
+ * @mi: minimal number
+ * @ma: maximal number
+ *
+ * The function provides minimal and maximal geometry supported for the label,
+ * if no range defined by library than returns -ENOSYS.
+ *
+ * Since: 2.32
+ *
+ * Returns: 0 on success, otherwise, a corresponding error.
+ */
+int fdisk_label_get_geomrange_sectors(const struct fdisk_label *lb,
+					fdisk_sector_t *mi, fdisk_sector_t *ma)
+{
+	if (!lb || lb->geom_min.sectors == 0)
+		return -ENOSYS;
+	if (mi)
+		*mi = lb->geom_min.sectors;
+	if (ma)
+		*ma = lb->geom_max.sectors;
+	return 0;
+}
+
+/**
+ * fdisk_label_get_geomrange_heads:
+ * @lb: label
+ * @mi: minimal number
+ * @ma: maximal number
+ *
+ * The function provides minimal and maximal geometry supported for the label,
+ * if no range defined by library than returns -ENOSYS.
+ *
+ * Since: 2.32
+ *
+ * Returns: 0 on success, otherwise, a corresponding error.
+ */
+int fdisk_label_get_geomrange_heads(const struct fdisk_label *lb,
+					unsigned int *mi, unsigned int *ma)
+{
+	if (!lb || lb->geom_min.heads == 0)
+		return -ENOSYS;
+	if (mi)
+		*mi = lb->geom_min.heads;
+	if (ma)
+		*ma = lb->geom_max.heads;
+	return 0;
+}
+
+/**
+ * fdisk_label_get_geomrange_cylinders:
+ * @lb: label
+ * @mi: minimal number
+ * @ma: maximal number
+ *
+ * The function provides minimal and maximal geometry supported for the label,
+ * if no range defined by library than returns -ENOSYS.
+ *
+ * Since: 2.32
+ *
+ * Returns: 0 on success, otherwise, a corresponding error.
+ */
+int fdisk_label_get_geomrange_cylinders(const struct fdisk_label *lb,
+					fdisk_sector_t *mi, fdisk_sector_t *ma)
+{
+	if (!lb || lb->geom_min.cylinders == 0)
+		return -ENOSYS;
+	if (mi)
+		*mi = lb->geom_min.cylinders;
+	if (ma)
+		*ma = lb->geom_max.cylinders;
+	return 0;
+}
+

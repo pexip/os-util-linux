@@ -54,8 +54,6 @@
 #include "c.h"
 #include "fileutils.h"
 #include "monotonic.h"
-
-#define STRTOXX_EXIT_CODE	FSCK_EX_ERROR
 #include "strutils.h"
 
 #define XALLOC_EXIT_CODE	FSCK_EX_ERROR
@@ -542,24 +540,34 @@ static struct libmnt_fs *lookup(char *path)
 }
 
 /* Find fsck program for a given fs type. */
-static char *find_fsck(const char *type)
+static int find_fsck(const char *type, char **progpath)
 {
 	char *s;
 	const char *tpl;
-	static char prog[256];
+	char *prog = NULL;
 	char *p = xstrdup(fsck_path);
+	int rc;
 
 	/* Are we looking for a program or just a type? */
 	tpl = (strncmp(type, "fsck.", 5) ? "%s/fsck.%s" : "%s/%s");
 
 	for(s = strtok(p, ":"); s; s = strtok(NULL, ":")) {
-		sprintf(prog, tpl, s, type);
+		xasprintf(&prog, tpl, s, type);
 		if (access(prog, X_OK) == 0)
 			break;
+		free(prog);
+		prog = NULL;
 	}
-	free(p);
 
-	return(s ? prog : NULL);
+	free(p);
+	rc = prog ? 1 : 0;
+
+	if (progpath)
+		*progpath = prog;
+	else
+		free(prog);
+
+	return rc;
 }
 
 static int progress_active(void)
@@ -652,7 +660,7 @@ static int execute(const char *progname, const char *progpath,
 	}
 
 	argv[argc++] = xstrdup(fs_get_device(fs));
-	argv[argc] = 0;
+	argv[argc] = NULL;
 
 	if (verbose || noexecute) {
 		const char *tgt = mnt_fs_get_target(fs);
@@ -742,7 +750,7 @@ static struct fsck_instance *wait_one(int flags)
 
 	if (noexecute) {
 		inst = instance_list;
-		prev = 0;
+		prev = NULL;
 #ifdef RANDOM_DEBUG
 		while (inst->next && (random() & 1)) {
 			prev = inst;
@@ -777,7 +785,7 @@ static struct fsck_instance *wait_one(int flags)
 			warn(_("waitpid failed"));
 			continue;
 		}
-		for (prev = 0, inst = instance_list;
+		for (prev = NULL, inst = instance_list;
 		     inst;
 		     prev = inst, inst = inst->next) {
 			if (inst->pid == pid)
@@ -823,7 +831,7 @@ static struct fsck_instance *wait_one(int flags)
 			 * bit before sending the kill, to give it
 			 * time to set up the signal handler
 			 */
-			if (inst2->start_time.tv_sec < time(0) + 2) {
+			if (inst2->start_time.tv_sec < time(NULL) + 2) {
 				if (fork() == 0) {
 					sleep(1);
 					kill(inst2->pid, SIGUSR1);
@@ -887,7 +895,7 @@ static int wait_many(int flags)
  */
 static int fsck_device(struct libmnt_fs *fs, int interactive)
 {
-	char progname[80], *progpath;
+	char *progname, *progpath;
 	const char *type;
 	int retval;
 
@@ -904,9 +912,10 @@ static int fsck_device(struct libmnt_fs *fs, int interactive)
 	else
 		type = DEFAULT_FSTYPE;
 
-	sprintf(progname, "fsck.%s", type);
-	progpath = find_fsck(progname);
-	if (progpath == NULL) {
+	xasprintf(&progname, "fsck.%s", type);
+
+	if (!find_fsck(progname, &progpath)) {
+		free(progname);
 		if (fs_check_required(type)) {
 			retval = ENOENT;
 			goto err;
@@ -916,6 +925,8 @@ static int fsck_device(struct libmnt_fs *fs, int interactive)
 
 	num_running++;
 	retval = execute(progname, progpath, type, fs, interactive);
+	free(progname);
+	free(progpath);
 	if (retval) {
 		num_running--;
 		goto err;
@@ -931,7 +942,7 @@ err:
 /*
  * Deal with the fsck -t argument.
  */
-struct fs_type_compile {
+static struct fs_type_compile {
 	char **list;
 	int *type;
 	int  negate;
@@ -1029,7 +1040,7 @@ static int fs_match(struct libmnt_fs *fs, struct fs_type_compile *cmp)
 	int n, ret = 0, checked_type = 0;
 	char *cp;
 
-	if (cmp->list == 0 || cmp->list[0] == 0)
+	if (cmp->list == NULL || cmp->list[0] == NULL)
 		return 1;
 
 	for (n=0; (cp = cmp->list[n]); n++) {
@@ -1150,7 +1161,7 @@ static int ignore(struct libmnt_fs *fs)
 
 
 	/* See if the <fsck.fs> program is available. */
-	if (find_fsck(type) == NULL) {
+	if (!find_fsck(type, NULL)) {
 		if (fs_check_required(type))
 			warnx(_("cannot check %s: fsck.%s not found"),
 				fs_get_device(fs), type);
@@ -1175,7 +1186,7 @@ static int count_slaves(dev_t disk)
 	if (!(dir = opendir(dirname)))
 		return -1;
 
-	while ((dp = readdir(dir)) != 0) {
+	while ((dp = readdir(dir)) != NULL) {
 #ifdef _DIRENT_HAVE_D_TYPE
 		if (dp->d_type != DT_UNKNOWN && dp->d_type != DT_LNK)
 			continue;
@@ -1217,7 +1228,7 @@ static int disk_already_active(struct libmnt_fs *fs)
 	 * Don't check a stacked device with any other disk too.
 	 */
 	if (!disk || fs_is_stacked(fs))
-		return (instance_list != 0);
+		return (instance_list != NULL);
 
 	for (inst = instance_list; inst; inst = inst->next) {
 		dev_t idisk = fs_get_disk(inst->fs, 0);
@@ -1369,8 +1380,9 @@ static int check_all(void)
 	return status;
 }
 
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options] -- [fs-options] [<filesystem> ...]\n"),
 			 program_invocation_short_name);
@@ -1393,13 +1405,14 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(_(" -t <type>  specify filesystem types to be checked;\n"
 		"            <type> is allowed to be a comma-separated list\n"), out);
 	fputs(_(" -V         explain what is being done\n"), out);
-	fputs(_(" -?         display this help and exit\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
+	printf( " -?, --help     %s\n", USAGE_OPTSTR_HELP);
+	printf( "     --version  %s\n", USAGE_OPTSTR_VERSION);
+	fputs(USAGE_SEPARATOR, out);
 	fputs(_("See the specific fsck.* commands for available fs-options."), out);
-	fprintf(out, USAGE_MAN_TAIL("fsck(8)"));
-
-	exit(out == stderr ? FSCK_EX_USAGE : FSCK_EX_OK);
+	printf(USAGE_MAN_TAIL("fsck(8)"));
+	exit(FSCK_EX_OK);
 }
 
 static void signal_cancel(int sig __attribute__((__unused__)))
@@ -1410,7 +1423,7 @@ static void signal_cancel(int sig __attribute__((__unused__)))
 static void parse_argv(int argc, char *argv[])
 {
 	int	i, j;
-	char	*arg, *dev, *tmp = 0;
+	char	*arg, *dev, *tmp = NULL;
 	char	options[128];
 	int	opt = 0;
 	int     opts_for_fsck = 0;
@@ -1422,17 +1435,26 @@ static void parse_argv(int argc, char *argv[])
 	 */
 	memset(&sa, 0, sizeof(struct sigaction));
 	sa.sa_handler = signal_cancel;
-	sigaction(SIGINT, &sa, 0);
-	sigaction(SIGTERM, &sa, 0);
+	sigaction(SIGINT, &sa, NULL);
+	sigaction(SIGTERM, &sa, NULL);
 
 	num_devices = 0;
 	num_args = 0;
-	instance_list = 0;
+	instance_list = NULL;
 
 	for (i=1; i < argc; i++) {
 		arg = argv[i];
 		if (!arg)
 			continue;
+
+		/* the only two longopts to satisfy UL standards */
+		if (!opts_for_fsck && !strcmp(arg, "--help"))
+			usage();
+		if (!opts_for_fsck && !strcmp(arg, "--version")) {
+			printf(UTIL_LINUX_VERSION);
+			exit(FSCK_EX_OK);
+		}
+
 		if ((arg[0] == '/' && !opts_for_fsck) || strchr(arg, '=')) {
 			if (num_devices >= MAX_DEVICES)
 				errx(FSCK_EX_ERROR, _("too many devices"));
@@ -1534,15 +1556,17 @@ static void parse_argv(int argc, char *argv[])
 				serialize = 1;
 				break;
 			case 't':
-				tmp = 0;
+				tmp = NULL;
 				if (fstype)
-					usage(stderr);
+					errx(FSCK_EX_USAGE,
+						_("option '%s' may be specified only once"), "-t");
 				if (arg[j+1])
 					tmp = arg+j+1;
 				else if ((i+1) < argc)
 					tmp = argv[++i];
 				else
-					usage(stderr);
+					errx(FSCK_EX_USAGE,
+						_("option '%s' requires an argument"), "-t");
 				fstype = xstrdup(tmp);
 				compile_fs_type(fstype, &fs_type_compiled);
 				goto next_arg;
@@ -1550,7 +1574,7 @@ static void parse_argv(int argc, char *argv[])
 				opts_for_fsck++;
 				break;
 			case '?':
-				usage(stdout);
+				usage();
 				break;
 			default:
 				options[++opt] = arg[j];
@@ -1599,6 +1623,7 @@ int main(int argc, char *argv[])
 	textdomain(PACKAGE);
 	atexit(close_stdout);
 
+	strutils_set_exitcode(FSCK_EX_USAGE);
 	mnt_init_debug(0);		/* init libmount debug mask */
 	mntcache = mnt_new_cache();	/* no fatal error if failed */
 

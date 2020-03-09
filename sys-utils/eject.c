@@ -127,8 +127,9 @@ static inline void info(const char *fmt, ...)
 	va_end(va);
 }
 
-static void __attribute__ ((__noreturn__)) usage(FILE * out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
 		_(" %s [options] [<device>|<mountpoint>]\n"), program_invocation_short_name);
@@ -158,13 +159,12 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 		out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
+	printf(USAGE_HELP_OPTIONS(29));
 
 	fputs(_("\nBy default tries -r, -s, -f, and -q in order until success.\n"), out);
-	fprintf(out, USAGE_MAN_TAIL("eject(1)"));
+	printf(USAGE_MAN_TAIL("eject(1)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 
@@ -193,7 +193,7 @@ static void parse_args(struct eject_control *ctl, int argc, char **argv)
 		{"traytoggle",	no_argument,	   NULL, 'T'},
 		{"verbose",	no_argument,	   NULL, 'v'},
 		{"version",	no_argument,	   NULL, 'V'},
-		{0, 0, 0, 0}
+		{NULL, 0, NULL, 0}
 	};
 	int c;
 
@@ -223,7 +223,7 @@ static void parse_args(struct eject_control *ctl, int argc, char **argv)
 			ctl->F_option = 1;
 			break;
 		case 'h':
-			usage(stdout);
+			usage();
 			break;
 		case 'i':
 			ctl->i_option = 1;
@@ -268,8 +268,7 @@ static void parse_args(struct eject_control *ctl, int argc, char **argv)
 			exit(EXIT_SUCCESS);
 			break;
 		default:
-		case '?':
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 			break;
 		}
 	}
@@ -439,7 +438,7 @@ static void toggle_tray(int fd)
 		warnx(_("CD-ROM drive is not ready"));
 		return;
 	default:
-		abort();
+		err(EXIT_FAILURE, _("CD-ROM status command failed"));
 	}
 #else
 	struct timeval time_start, time_stop;
@@ -549,7 +548,6 @@ static int read_speed(const char *devname)
  */
 static void list_speeds(struct eject_control *ctl)
 {
-#ifdef CDROM_SELECT_SPEED
 	int max_speed, curr_speed = 0;
 
 	select_speed(ctl);
@@ -566,9 +564,6 @@ static void list_speeds(struct eject_control *ctl)
 	}
 
 	printf("\n");
-#else
-	warnx(_("CD-ROM select speed command not supported by this kernel"));
-#endif
 }
 
 /*
@@ -672,7 +667,7 @@ static void umount_one(const struct eject_control *ctl, const char *name)
 		else
 			execl("/bin/umount", "/bin/umount", name, NULL);
 
-		errx(EXIT_FAILURE, _("unable to exec /bin/umount of `%s'"), name);
+		errexec("/bin/umount");
 
 	case -1:
 		warn( _("unable to fork"));
@@ -764,18 +759,20 @@ static char *get_disk_devname(const char *device)
 
 static int umount_partitions(struct eject_control *ctl)
 {
-	struct sysfs_cxt cxt = UL_SYSFSCXT_EMPTY;
+	struct path_cxt *pc = NULL;
 	dev_t devno;
 	DIR *dir = NULL;
 	struct dirent *d;
 	int count = 0;
 
-	devno = sysfs_devname_to_devno(ctl->device, NULL);
-	if (sysfs_init(&cxt, devno, NULL) != 0)
+	devno = sysfs_devname_to_devno(ctl->device);
+	if (devno)
+		pc = ul_new_sysfs_path(devno, NULL, NULL);
+	if (!pc)
 		return 0;
 
 	/* open /sys/block/<wholedisk> */
-	if (!(dir = sysfs_opendir(&cxt, NULL)))
+	if (!(dir = ul_path_opendir(pc, NULL)))
 		goto done;
 
 	/* scan for partition subdirs */
@@ -783,7 +780,7 @@ static int umount_partitions(struct eject_control *ctl)
 		if (!strcmp(d->d_name, ".") || !strcmp(d->d_name, ".."))
 			continue;
 
-		if (sysfs_is_partition_dirent(dir, d, ctl->device)) {
+		if (sysfs_blkdev_is_partition_dirent(dir, d, ctl->device)) {
 			char *mnt = NULL;
 			char *dev = find_device(d->d_name);
 
@@ -801,24 +798,25 @@ static int umount_partitions(struct eject_control *ctl)
 done:
 	if (dir)
 		closedir(dir);
-	sysfs_deinit(&cxt);
+	ul_unref_path(pc);
 
 	return count;
 }
 
 static int is_hotpluggable(const struct eject_control *ctl)
 {
-	struct sysfs_cxt cxt = UL_SYSFSCXT_EMPTY;
+	struct path_cxt *pc = NULL;
 	dev_t devno;
 	int rc = 0;
 
-	devno = sysfs_devname_to_devno(ctl->device, NULL);
-	if (sysfs_init(&cxt, devno, NULL) != 0)
+	devno = sysfs_devname_to_devno(ctl->device);
+	if (devno)
+		pc = ul_new_sysfs_path(devno, NULL, NULL);
+	if (!pc)
 		return 0;
 
-	rc = sysfs_is_hotpluggable(&cxt);
-
-	sysfs_deinit(&cxt);
+	rc = sysfs_blkdev_is_hotpluggable(pc);
+	ul_unref_path(pc);
 	return rc;
 }
 
@@ -846,7 +844,7 @@ int main(int argc, char **argv)
 	char *disk = NULL;
 	char *mountpoint = NULL;
 	int worked = 0;    /* set to 1 when successfully ejected */
-	struct eject_control ctl = { 0 };
+	struct eject_control ctl = { NULL };
 
 	setlocale(LC_ALL,"");
 	bindtextdomain(PACKAGE, LOCALEDIR);

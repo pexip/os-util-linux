@@ -20,6 +20,11 @@ avoid using default outputs in your scripts.  Always explicitly define expected
 columns by using the \fB\-\-output\fR option together with a columns list in
 environments where a stable output is required.
 
+\fBNSFS\fP column, printed when \fBnet\fP is specified for
+\fB\-\-type\fR option, is special; it uses multi-line cells.
+Use the option \fB\-\-nowrap\fR is for switching to "," separated single-line
+representation.
+
 Note that \fBlsns\fR reads information directly from the /proc filesystem and
 for non-root users it may return incomplete information.  The current /proc
 filesystem may be unshared and affected by a PID namespace
@@ -46,6 +51,9 @@ to get a list of all supported columns.
 The default list of columns may be extended if \fIlist\fP is
 specified in the format \fB+\fIlist\fP (e.g. \fBlsns \-o +PATH\fP).
 .TP
+.B \-\-output\-all
+Output all available columns.
+.TP
 .BR \-p , " \-\-task " \fIpid\fP
 Display only the namespaces held by the process with this \fIpid\fR.
 .TP
@@ -59,6 +67,9 @@ Display the specified \fItype\fP of namespaces only.  The supported types are
 .TP
 .BR \-u , " \-\-notruncate"
 Do not truncate text in columns.
+.TP
+.BR \-W , " \-\-nowrap"
+Do not use multi-line text in columns.
 .TP
 .BR \-V , " \-\-version"
 Display version information and exit.
@@ -79,4 +90,4 @@ Karel Zak <kzak@redhat.com>
 
 .SH AVAILABILITY
 The lsns command is part of the util-linux package and is available from
-ftp://ftp.kernel.org/pub/linux/utils/util-linux/.
+https://www.kernel.org/pub/linux/utils/util-linux/.

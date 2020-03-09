@@ -22,7 +22,8 @@ if BUILD_COLUMN
 usrbin_exec_PROGRAMS += column
 dist_man_MANS += text-utils/column.1
 column_SOURCES = text-utils/column.c
-column_LDADD = $(LDADD) libcommon.la
+column_LDADD = $(LDADD) libcommon.la libsmartcols.la
+column_CFLAGS = $(AM_CFLAGS) -I$(ul_libsmartcols_incdir)
 endif
 
 if BUILD_HEXDUMP
@@ -41,13 +42,6 @@ if BUILD_REV
 usrbin_exec_PROGRAMS += rev
 dist_man_MANS += text-utils/rev.1
 rev_SOURCES = text-utils/rev.c
-endif
-
-if BUILD_TAILF
-usrbin_exec_PROGRAMS += tailf
-dist_man_MANS += text-utils/tailf.1
-tailf_SOURCES = text-utils/tailf.c
-tailf_LDADD = $(LDADD) libcommon.la
 endif
 
 if BUILD_LINE

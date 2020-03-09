@@ -137,11 +137,15 @@ static void dbg(char *fmt, ...)
 	if (debug == 0)
 		return;
 	fflush(NULL);
-	fprintf(stderr, "%s: ", program_invocation_short_name);
 	va_start(args, fmt);
+#ifdef HAVE_VWARNX
+	vwarnx(fmt, args);
+#else
+	fprintf(stderr, "%s: ", program_invocation_short_name);
 	vfprintf(stderr, fmt, args);
-	va_end(args);
 	fprintf(stderr, "\n");
+#endif
+	va_end(args);
 	fflush(NULL);
 	return;
 }
@@ -188,9 +192,9 @@ static int parse_iflag(char *str, int *set_iflag, int *clr_iflag)
 }
 
 
-static void __attribute__ ((__noreturn__)) usage(int exitcode)
+static void __attribute__((__noreturn__)) usage(void)
 {
-	FILE *out = exitcode == EXIT_SUCCESS ? stdout : stderr;
+	FILE *out = stdout;
 
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options] <ldisc> <device>\n"), program_invocation_short_name);
@@ -213,8 +217,7 @@ static void __attribute__ ((__noreturn__)) usage(int exitcode)
 	fputs(_(" -i, --iflag [-]<iflag>  set input mode flag\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
+	printf(USAGE_HELP_OPTIONS(25));
 
 	fputs(_("\nKnown <ldisc> names:\n"), out);
 	print_table(out, ld_discs);
@@ -223,8 +226,8 @@ static void __attribute__ ((__noreturn__)) usage(int exitcode)
 	fputs(_("\nKnown <iflag> names:\n"), out);
 	print_table(out, ld_iflags);
 
-	fprintf(out, USAGE_MAN_TAIL("ldattach(8)"));
-	exit(exitcode);
+	printf(USAGE_MAN_TAIL("ldattach(8)"));
+	exit(EXIT_SUCCESS);
 }
 
 static int my_cfsetspeed(struct termios *ts, int speed)
@@ -253,7 +256,7 @@ static int my_cfsetspeed(struct termios *ts, int speed)
 
 static void handler(int s)
 {
-	dbg("got SIG %i -> exiting\n", s);
+	dbg("got SIG %i -> exiting", s);
 	exit(EXIT_SUCCESS);
 }
 
@@ -315,7 +318,8 @@ int main(int argc, char **argv)
 
 	/* parse options */
 	if (argc == 0)
-		usage(EXIT_SUCCESS);
+		errx(EXIT_FAILURE, _("bad usage"));
+
 	while ((optc =
 		getopt_long(argc, argv, "dhV78neo12s:i:c:p:", opttbl,
 			    NULL)) >= 0) {
@@ -354,16 +358,16 @@ int main(int argc, char **argv)
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
-			usage(EXIT_SUCCESS);
+			usage();
 		default:
-			warnx(_("invalid option"));
-			usage(EXIT_FAILURE);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
-	if (argc - optind != 2)
-		usage(EXIT_FAILURE);
-
+	if (argc - optind != 2) {
+		warnx(_("not enough arguments"));
+		errtryhelp(EXIT_FAILURE);
+	}
 	/* parse line discipline specification */
 	ldisc = lookup_table(ld_discs, argv[optind]);
 	if (ldisc < 0)

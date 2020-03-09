@@ -54,7 +54,8 @@ size_t mbs_safe_nwidth(const char *buf, size_t bufsz, size_t *sz)
 		last = p + (bufsz - 1);
 
 	while (p && *p && p <= last) {
-		if (iscntrl((unsigned char) *p)) {
+		if ((p < last && *p == '\\' && *(p + 1) == 'x')
+		    || iscntrl((unsigned char) *p)) {
 			width += 4, bytes += 4;		/* *p encoded to \x?? */
 			p++;
 		}
@@ -135,7 +136,8 @@ char *mbs_safe_encode_to_buffer(const char *s, size_t *width, char *buf, const c
 			continue;
 		}
 
-		if (iscntrl((unsigned char) *p)) {
+		if ((*p == '\\' && *(p + 1) == 'x')
+		    || iscntrl((unsigned char) *p)) {
 			sprintf(r, "\\x%02x", (unsigned char) *p);
 			r += 4;
 			*width += 4;
@@ -166,7 +168,7 @@ char *mbs_safe_encode_to_buffer(const char *s, size_t *width, char *buf, const c
 			} else if (!iswprint(wc)) {
 				size_t i;
 				for (i = 0; i < len; i++) {
-					sprintf(r, "\\x%02x", (unsigned char) *p);
+					sprintf(r, "\\x%02x", (unsigned char) p[i]);
 					r += 4;
 					*width += 4;
 				}
@@ -194,6 +196,70 @@ char *mbs_safe_encode_to_buffer(const char *s, size_t *width, char *buf, const c
 	return buf;
 }
 
+/*
+ * Copy @s to @buf and replace broken sequences to \x?? hex sequence. The
+ * @width returns number of cells. The @safechars are not encoded.
+ *
+ * The @buf has to be big enough to store mbs_safe_encode_size(strlen(s)))
+ * bytes.
+ */
+char *mbs_invalid_encode_to_buffer(const char *s, size_t *width, char *buf)
+{
+	const char *p = s;
+	char *r;
+	size_t sz = s ? strlen(s) : 0;
+
+#ifdef HAVE_WIDECHAR
+	mbstate_t st;
+	memset(&st, 0, sizeof(st));
+#endif
+	if (!sz || !buf)
+		return NULL;
+
+	r = buf;
+	*width = 0;
+
+	while (p && *p) {
+#ifdef HAVE_WIDECHAR
+		wchar_t wc;
+		size_t len = mbrtowc(&wc, p, MB_CUR_MAX, &st);
+#else
+		size_t len = 1;
+#endif
+
+		if (len == 0)
+			break;		/* end of string */
+
+		if (len == (size_t) -1 || len == (size_t) -2) {
+			len = 1;
+			/*
+			 * Not valid multibyte sequence -- maybe it's
+			 * printable char according to the current locales.
+			 */
+			if (!isprint((unsigned char) *p)) {
+				sprintf(r, "\\x%02x", (unsigned char) *p);
+				r += 4;
+				*width += 4;
+			} else {
+				(*width)++;
+				*r++ = *p;
+			}
+		} else if (*p == '\\' && *(p + 1) == 'x') {
+			sprintf(r, "\\x%02x", (unsigned char) *p);
+			r += 4;
+			*width += 4;
+		} else {
+			memcpy(r, p, len);
+			r += len;
+			*width += wcwidth(wc);
+		}
+		p += len;
+	}
+
+	*r = '\0';
+	return buf;
+}
+
 size_t mbs_safe_encode_size(size_t bytes)
 {
 	return (bytes * 4) + 1;
@@ -206,13 +272,32 @@ size_t mbs_safe_encode_size(size_t bytes)
 char *mbs_safe_encode(const char *s, size_t *width)
 {
 	size_t sz = s ? strlen(s) : 0;
-	char *buf, *ret = NULL;;
+	char *buf, *ret = NULL;
 
 	if (!sz)
 		return NULL;
 	buf = malloc(mbs_safe_encode_size(sz));
 	if (buf)
 		ret = mbs_safe_encode_to_buffer(s, width, buf, NULL);
+	if (!ret)
+		free(buf);
+	return ret;
+}
+
+/*
+ * Returns allocated string where all broken widechars chars are
+ * replaced with \x?? hex sequence.
+ */
+char *mbs_invalid_encode(const char *s, size_t *width)
+{
+	size_t sz = s ? strlen(s) : 0;
+	char *buf, *ret = NULL;
+
+	if (!sz)
+		return NULL;
+	buf = malloc(mbs_safe_encode_size(sz));
+	if (buf)
+		ret = mbs_invalid_encode_to_buffer(s, width, buf);
 	if (!ret)
 		free(buf);
 	return ret;

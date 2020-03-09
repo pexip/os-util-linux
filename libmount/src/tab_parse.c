@@ -1,10 +1,14 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /*
- * Copyright (C) 2009 Karel Zak <kzak@redhat.com>
+ * This file is part of libmount from util-linux project.
  *
- * This file may be redistributed under the terms of the
- * GNU Lesser General Public License.
+ * Copyright (C) 2009-2018 Karel Zak <kzak@redhat.com>
+ *
+ * libmount is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation; either version 2.1 of the License, or
+ * (at your option) any later version.
  */
-
 #ifdef HAVE_SCANDIRAT
 #ifndef __USE_GNU
 #define __USE_GNU
@@ -39,32 +43,34 @@ static void parser_cleanup(struct libmnt_parser *pa)
 	memset(pa, 0, sizeof(*pa));
 }
 
-static int next_number(char **s, int *num)
+static const char *next_number(const char *s, int *num, int *ok)
 {
 	char *end = NULL;
 
 	assert(num);
 	assert(s);
+	assert(ok);
 
-	*s = (char *) skip_blank(*s);
-	if (!**s)
-		return -1;
-	*num = strtol(*s, &end, 10);
-	if (end == NULL || *s == end)
-	       return -1;
+	*ok = 0;
+	s = skip_blank(s);
+	if (!s || !*s)
+		return s;
 
-	*s = end;
+	*num = strtol(s, &end, 10);
+	if (end == NULL || s == end)
+	       return s;
 
 	/* valid end of number is a space or a terminator */
 	if (*end == ' ' || *end == '\t' || *end == '\0')
-		return 0;
-	return -1;
+		*ok = 1;
+
+	return end;
 }
 
 /*
  * Parses one line from {fs,m}tab
  */
-static int mnt_parse_table_line(struct libmnt_fs *fs, char *s)
+static int mnt_parse_table_line(struct libmnt_fs *fs, const char *s)
 {
 	int rc, n = 0, xrc;
 	char *src = NULL, *fstype = NULL, *optstr = NULL;
@@ -119,16 +125,22 @@ static int mnt_parse_table_line(struct libmnt_fs *fs, char *s)
 	fs->passno = fs->freq = 0;
 
 	if (xrc == 4 && n)
-		s = (char *) skip_blank(s + n);
+		s = skip_blank(s + n);
 	if (xrc == 4 && *s) {
-		if (next_number(&s, &fs->freq) != 0) {
-			if (*s) {
+		int ok = 0;
+
+		s = next_number(s, &fs->freq, &ok);
+		if (!ok) {
+			if (s && *s) {
 				DBG(TAB, ul_debug("tab parse error: [freq]"));
 				rc = -EINVAL;
 			}
-		} else if (next_number(&s, &fs->passno) != 0 && *s) {
-			DBG(TAB, ul_debug("tab parse error: [passno]"));
-			rc = -EINVAL;
+		} else {
+			s = next_number(s, &fs->passno, &ok);
+			if (!ok && s && *s) {
+				DBG(TAB, ul_debug("tab parse error: [passno]"));
+				rc = -EINVAL;
+			}
 		}
 	}
 
@@ -138,11 +150,12 @@ static int mnt_parse_table_line(struct libmnt_fs *fs, char *s)
 /*
  * Parses one line from a mountinfo file
  */
-static int mnt_parse_mountinfo_line(struct libmnt_fs *fs, char *s)
+static int mnt_parse_mountinfo_line(struct libmnt_fs *fs, const char *s)
 {
 	int rc, end = 0;
 	unsigned int maj, min;
-	char *fstype = NULL, *src = NULL, *p;
+	char *fstype = NULL, *src = NULL;
+	const char *p;
 
 	rc = sscanf(s,	"%d "		/* (1) id */
 			"%d "		/* (2) parent */
@@ -173,13 +186,36 @@ static int mnt_parse_mountinfo_line(struct libmnt_fs *fs, char *s)
 		fs->opt_fields = strndup(s + 1, p - s - 1);
 	s = p + 3;
 
-	rc += sscanf(s,	UL_SCNsA" "	/* (8) FS type */
-			UL_SCNsA" "	/* (9) source */
-			UL_SCNsA,	/* (10) fs options (fs specific) */
+	end = 0;
+	rc += sscanf(s,	UL_SCNsA"%n",	/* (8) FS type */
 
 			&fstype,
-			&src,
-			&fs->fs_optstr);
+			&end);
+
+	if (rc >= 8 && end > 0)
+		s += end;
+	if (s[0] == ' ')
+		s++;
+
+	/* (9) source can unfortunately be an empty string "" and scanf does
+	 * not work well with empty string. Test with:
+	 *     $ sudo mount -t tmpfs "" /tmp/bb
+	 *     $ mountpoint /tmp/bb
+	 * */
+	if (s[0] == ' ') {
+		src = strdup("");
+		s++;
+		rc++;
+		rc += sscanf(s,	UL_SCNsA,	/* (10) fs options (fs specific) */
+
+				&fs->fs_optstr);
+	} else {
+		rc += sscanf(s,	UL_SCNsA" "	/* (9) source */
+				UL_SCNsA,	/* (10) fs options (fs specific) */
+
+				&src,
+				&fs->fs_optstr);
+	}
 
 	if (rc >= 10) {
 		size_t sz;
@@ -187,7 +223,7 @@ static int mnt_parse_mountinfo_line(struct libmnt_fs *fs, char *s)
 		fs->flags |= MNT_FS_KERNEL;
 		fs->devno = makedev(maj, min);
 
-		/* remove "(deleted)" suffix */
+		/* remove "\040(deleted)" suffix */
 		sz = strlen(fs->target);
 		if (sz > PATH_DELETED_SUFFIX_SZ) {
 			char *ptr = fs->target + (sz - PATH_DELETED_SUFFIX_SZ);
@@ -216,12 +252,14 @@ static int mnt_parse_mountinfo_line(struct libmnt_fs *fs, char *s)
 		if (!fs->optstr)
 			rc = -ENOMEM;
 	} else {
-		free(fstype);
-		free(src);
 		DBG(TAB, ul_debug(
 			"mountinfo parse error [sscanf rc=%d]: '%s'", rc, s));
 		rc = -EINVAL;
 	}
+
+	free(fstype);
+	free(src);
+
 	return rc;
 }
 
@@ -238,7 +276,7 @@ static int mnt_parse_utab_line(struct libmnt_fs *fs, const char *s)
 	assert(!fs->target);
 
 	while (p && *p) {
-		char *end = NULL;
+		const char *end = NULL;
 
 		while (*p == ' ') p++;
 		if (!*p)
@@ -292,7 +330,7 @@ enomem:
 /*
  * Parses one line from /proc/swaps
  */
-static int mnt_parse_swaps_line(struct libmnt_fs *fs, char *s)
+static int mnt_parse_swaps_line(struct libmnt_fs *fs, const char *s)
 {
 	uintmax_t fsz, usz;
 	int rc;
@@ -316,9 +354,7 @@ static int mnt_parse_swaps_line(struct libmnt_fs *fs, char *s)
 		fs->size = fsz;
 		fs->usedsize = usz;
 
-		unmangle_string(src);
-
-		/* remove "(deleted)" suffix */
+		/* remove "\040(deleted)" suffix */
 		sz = strlen(src);
 		if (sz > PATH_DELETED_SUFFIX_SZ) {
 			char *p = src + (sz - PATH_DELETED_SUFFIX_SZ);
@@ -326,14 +362,17 @@ static int mnt_parse_swaps_line(struct libmnt_fs *fs, char *s)
 				*p = '\0';
 		}
 
+		unmangle_string(src);
+
 		rc = mnt_fs_set_source(fs, src);
 		if (!rc)
 			mnt_fs_set_fstype(fs, "swap");
-		free(src);
 	} else {
 		DBG(TAB, ul_debug("tab parse error: [sscanf rc=%d]: '%s'", rc, s));
 		rc = -EINVAL;
 	}
+
+	free(src);
 
 	return rc;
 }
@@ -348,7 +387,7 @@ static int mnt_parse_swaps_line(struct libmnt_fs *fs, char *s)
  *
  * mountinfo: "<number> <number> ... "
  */
-static int guess_table_format(char *line)
+static int guess_table_format(const char *line)
 {
 	unsigned int a, b;
 
@@ -363,9 +402,9 @@ static int guess_table_format(char *line)
 	return MNT_FMT_FSTAB;		/* fstab, mtab or /proc/mounts */
 }
 
-static int is_comment_line(char *line)
+static int is_comment_line(const char *line)
 {
-	char *p	= (char *) skip_blank(line);
+	const char *p = skip_blank(line);
 
 	if (p && (*p == '#' || *p == '\n'))
 		return 1;
@@ -838,7 +877,7 @@ int mnt_table_parse_dir(struct libmnt_table *tb, const char *dirname)
 	return __mnt_table_parse_dir(tb, dirname);
 }
 
-struct libmnt_table *__mnt_new_table_from_file(const char *filename, int fmt)
+struct libmnt_table *__mnt_new_table_from_file(const char *filename, int fmt, int empty_for_enoent)
 {
 	struct libmnt_table *tb;
 	struct stat st;
@@ -846,7 +885,8 @@ struct libmnt_table *__mnt_new_table_from_file(const char *filename, int fmt)
 	if (!filename)
 		return NULL;
 	if (stat(filename, &st))
-		return NULL;
+		return empty_for_enoent ? mnt_new_table() : NULL;
+
 	tb = mnt_new_table();
 	if (tb) {
 		DBG(TAB, ul_debugobj(tb, "new tab for file: %s", filename));
@@ -875,7 +915,7 @@ struct libmnt_table *mnt_new_table_from_file(const char *filename)
 	if (!filename)
 		return NULL;
 
-	return __mnt_new_table_from_file(filename, MNT_FMT_GUESS);
+	return __mnt_new_table_from_file(filename, MNT_FMT_GUESS, 0);
 }
 
 /**

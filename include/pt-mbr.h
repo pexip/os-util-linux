@@ -1,6 +1,8 @@
 #ifndef UTIL_LINUX_PT_MBR_H
 #define UTIL_LINUX_PT_MBR_H
 
+#include <assert.h>
+
 struct dos_partition {
 	unsigned char boot_ind;		/* 0x80 - active */
 	unsigned char bh, bs, bc;	/* begin CHS */
@@ -20,13 +22,16 @@ static inline struct dos_partition *mbr_get_partition(unsigned char *mbr, int i)
 }
 
 /* assemble badly aligned little endian integer */
-static inline unsigned int __dos_assemble_4le(const unsigned char *p)
+static inline uint32_t __dos_assemble_4le(const unsigned char *p)
 {
-	return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
+	uint32_t last_byte = p[3];
+
+	return p[0] | (p[1] << 8) | (p[2] << 16) | (last_byte << 24);
 }
 
 static inline void __dos_store_4le(unsigned char *p, unsigned int val)
 {
+	assert(!(p == NULL));
 	p[0] = (val & 0xff);
 	p[1] = ((val >> 8) & 0xff);
 	p[2] = ((val >> 16) & 0xff);
@@ -174,7 +179,7 @@ enum {
 	MBR_DOS_SECONDARY_PARTITION	= 0xf2, /* DOS 3.3+ secondary */
 	MBR_VMWARE_VMFS_PARTITION	= 0xfb,
 	MBR_VMWARE_VMKCORE_PARTITION	= 0xfc, /* VMware kernel dump partition */
-	MBR_LINUX_RAID_PARTITION	= 0xfd, /* New (2.2.x) raid partition with autodetect using persistent superblock */
+	MBR_LINUX_RAID_PARTITION	= 0xfd, /* Linux raid partition with autodetect using persistent superblock */
 	MBR_LANSTEP_PARTITION		= 0xfe, /* SpeedStor >1024 cyl. or LANstep */
 	MBR_XENIX_BBT_PARTITION		= 0xff, /* Xenix Bad Block Table */
 };

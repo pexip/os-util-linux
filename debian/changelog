@@ -1,16 +1,293 @@
+util-linux (2.33.1-0.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * New upstream release.
+  * Drop all patches, now included in upstream release
+
+ -- Andreas Henriksson <andreas@fatal.se>  Thu, 10 Jan 2019 09:30:43 +0100
+
+util-linux (2.33-0.2) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Make tests non-fatal on alpha and arm*
+  * Breaks/Replaces bash-completion < 2.8 (Closes: #913412)
+  * Enable bindnow hardening
+  * Add Build-Depends-Package to debian/*.symbols
+  * Add debian/patches/uuid-service-documentation.patch
+  * Add debian/patches/fstrim-service-documentation.patch
+  * Add d/p/agetty-Return-old-behavior-with-empty-logname.patch
+
+ -- Andreas Henriksson <andreas@fatal.se>  Fri, 07 Dec 2018 10:56:50 +0100
+
+util-linux (2.33-0.1) experimental; urgency=medium
+
+  * Non-maintainer upload.
+  * New upstream release.
+  * Ship new choom(1) command in util-linux pkg
+  * Add debian/patches/fix-agetty-hurd.patch.
+    Thanks to Samuel Thibault for fixing this upstream.
+  * Update symbols files with new additions
+  * Bump shlibs for new symbols
+  * Add lintian override because su really needs suid bit
+  * Drop unused lintian overrides
+  * Ship adjtime_config(5) manpage in util-linux
+
+ -- Andreas Henriksson <andreas@fatal.se>  Tue, 06 Nov 2018 22:17:06 +0100
+
+util-linux (2.32.1-0.2) unstable; urgency=medium
+
+  * Non-maintainer upload.
+
+  [ Niels Thykier ]
+  * Declare the explicit requirement for (fake)root
+
+  [ Hideki Yamane ]
+  * Add fincore and blkzone command (Closes: #907391)
+
+  [ Andreas Henriksson ]
+  * Drop obsolete Breaks against cloud-utils
+  * debian/rules: Avoid hardcoding list of packages for bash-completions
+  * Merge setpriv into util-linux package
+
+  [ Stefano Zacchiroli ]
+  * debian/util-linux.README.Debian: Add information about the fstrim.timer
+
+  [ Ondřej Nový ]
+  * d/copyright: Use https protocol in Format field
+  * d/changelog: Remove trailing whitespaces
+
+ -- Andreas Henriksson <andreas@fatal.se>  Tue, 06 Nov 2018 20:53:01 +0100
+
+util-linux (2.32.1-0.1) unstable; urgency=medium
+
+  [ Kapil Hari Paranjape ]
+  * Mention the su-l pam config keyinit revoke in NEWS (Closes: #905710)
+
+  [ Andreas Henriksson ]
+  * Mention DISPLAY and XAUTHORITY in util-linux.NEWS (Closes: #905409)
+  * New upstream release.
+  * Drop fix-hurd.patch from upstream, now part of release
+
+ -- Andreas Henriksson <andreas@fatal.se>  Sun, 12 Aug 2018 07:11:02 +0200
+
+util-linux (2.32-0.4) unstable; urgency=medium
+
+  * Non-maintainer upload (greetings from DebCamp/DebConf Taiwan).
+  * ci: Add GitLab CI definition for package build/test runs
+  * Add NEWS entry for /bin/su takeover
+  * Bump util-linux Breaks/Replaces against bash-completion (Closes: #905303)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Fri, 03 Aug 2018 10:55:29 +0200
+
+util-linux (2.32-0.3) unstable; urgency=medium
+
+  * Non-maintainer upload (greetings from DebCamp/DebConf Taiwan).
+
+  [ Andreas Henriksson ]
+  * Revert "Disable pristine-tar"
+    - needs pristine-tar >= 1.43
+  * Install su(1) manpage (Closes: #904837)
+  * Actually install su and su-l pam configs (Closes: #904832)
+
+  [ Samuel Thibault ]
+  * Add patches from upstream that should fix build on hurd
+    - debian/patches/fix-hurd.patch (Closes: #891812)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Sat, 28 Jul 2018 20:21:05 +0200
+
+util-linux (2.32-0.2) unstable; urgency=medium
+
+  * Non-maintainer upload (greetings from DebCamp/DebConf Taiwan).
+
+  [ Laurent Bigonville ]
+  * debian/libfdisk1.shlibs: Bump shlibs version as well
+
+  [ Andreas Henriksson ]
+  * Mark rfkill as linux-any in debian/control
+  * Demote rfkill package to optional again
+  * Mark util-linux-locales as M-A foreign
+    - as suggested by Multiarch hinter on tracker.debian.org
+  * Take over /bin/su from login/src:shadow (See #833256)
+    - depends on new login package (rather than breaking old) as an
+      attempt to make apt unpack new u-l before new login to avoid
+      any gaps where /bin/su is not available.
+      The Depends/Breaks relationship between u-l and login can
+      be switched around (in both packages at the same time) once
+      the transition is fully done (after next stable or lts release).
+
+ -- Andreas Henriksson <andreas@fatal.se>  Fri, 27 Jul 2018 10:01:46 +0200
+
+util-linux (2.32-0.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  [ Ben Hutchings ]
+  * debian/control: Remove mention of minimum kernel version for rfkill
+
+  [ Laurent Bigonville ]
+  * New upstream release.
+    - Drop all the patches merged upstream
+  * debian/libfdisk1.symbols: Add new exported symbols
+
+ -- Laurent Bigonville <bigon@debian.org>  Thu, 10 May 2018 17:22:53 +0200
+
+util-linux (2.31.1-0.5) unstable; urgency=medium
+
+  * Non-maintainer upload.
+
+  [ Laurent Bigonville ]
+  * debian/rules: Enable SMACK support for libmount
+  * Enable audit support (Closes: #745771)
+
+  [ Salvatore Bonaccorso ]
+  * bash-completion: (umount) use findmnt, escape a space in paths.
+    (CVE-2018-7738)
+    Fixes "code execution in bash-completion for umount". (Closes: #892179)
+
+ -- Salvatore Bonaccorso <carnil@debian.org>  Tue, 06 Mar 2018 22:31:39 +0100
+
+util-linux (2.31.1-0.4) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Cherry-pick cramfs related patches from upstream
+    - this fixes the testsuite failure seen on ppc64el.
+
+ -- Andreas Henriksson <andreas@fatal.se>  Wed, 14 Feb 2018 15:53:19 +0100
+
+util-linux (2.31.1-0.3) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Install fstrim.timer and fstrim.service without enabling it by default
+    (for now), see discussion in #732054 (Closes: #889668)
+
+ -- Laurent Bigonville <bigon@debian.org>  Wed, 14 Feb 2018 10:32:51 +0100
+
+util-linux (2.31.1-0.2) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * lib/sha1: use proper WORDS_BIGENDIAN macro (Closes: #890318)
+
+ -- Michael Biebl <biebl@debian.org>  Tue, 13 Feb 2018 19:14:21 +0100
+
+util-linux (2.31.1-0.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * New upstream release.
+  * Bump debhelper compat to 11
+  * debian/rules: Stop setting --localstatedir=/run
+    - upstream uses runstatedir and dh compat 11 sets it automagically.
+  * Ship new uuidparse command in uuid-runtime package
+  * Take over the rfkill package
+    - Priority bumped to important.
+  * Drop Multiarch-support-in-util-linux-build.patch
+  * Bump Standards-Version to 4.1.2
+  * Downgrade all lib* packages to Priority: optional
+  * Update blkid,fdisk,smartcols,uuid symbols files
+  * Bump dependency version is shlibs files
+
+ -- Andreas Henriksson <andreas@fatal.se>  Fri, 09 Feb 2018 19:16:51 +0100
+
+util-linux (2.30.2-0.3) unstable; urgency=medium
+
+  * Fix build on hurd-i386 by restricting fallocate installation into
+    the udeb to linux-any.
+
+ -- Philipp Kern <pkern@debian.org>  Wed, 17 Jan 2018 04:43:45 -0500
+
+util-linux (2.30.2-0.2) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Ship lsmem in /usr/bin and chmem in /usr/sbin (moved from s390-tools;
+    Closes: #882003).
+  * Ship fallocate in util-linux-udeb (Closes: #882001).
+
+ -- Philipp Kern <pkern@debian.org>  Sun, 14 Jan 2018 11:27:53 -0500
+
+util-linux (2.30.2-0.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * New upstream version 2.30.2 (Closes: #877932)
+    - fstab(5): mention how tabs are escaped (Closes: #580047)
+    - fstrim: prefer earlier mounted filesystems (Closes: #864806)
+    - lib/pager: don't use pager if command not available (Closes: #852605)
+    - lscpu: use libsmartcols to print summary too (Closes: #811488)
+  * Disable pristine-tar.
+    It's currently not possible to generate pristine tarballs for util-linux
+    with pristine-tar.
+    See https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=869191
+  * Update symbols file for libblkid1, libfdisk1, libmount1 and libsmartcols1
+  * Add bison to Build-Depends
+  * Drop d/p/man-page-tweaks-cleanup-my_dev_t.h-ancient-stuff.patch.
+    No longer useful, as it adds a reference to the deprecated SysV init
+    script and a no longer existing README file.
+  * Drop d/p/Disable-the-fallback-clause-in-hwclock-when-dev-rtc-.patch.
+    Fixed upstream.
+  * Refresh remaining patches
+
+ -- Michael Biebl <biebl@debian.org>  Mon, 09 Oct 2017 18:40:15 +0200
+
+util-linux (2.29.2-5) unstable; urgency=medium
+
+  * Switch to XB-Important: yes to actually apply it.
+    Thanks to Adam Borowski for the catch. (Closes: #872877)
+  * Let uscan verify signature of upstream tarballs
+  * Bump Standards-Version to 4.1.0
+  * Reinstate LaMont as primary maintainer and remove myself from uploaders
+
+ -- Andreas Henriksson <andreas@fatal.se>  Thu, 14 Sep 2017 11:05:39 +0200
+
+util-linux (2.29.2-4) unstable; urgency=medium
+
+  * Bump Standards-Version to 4.0.1
+  * Upload to unstable.
+
+ -- Andreas Henriksson <andreas@fatal.se>  Thu, 17 Aug 2017 14:31:09 +0200
+
+util-linux (2.29.2-3) experimental; urgency=medium
+
+  * Enable more tests by build-dep on bc, socat and netbase (Closes: #867183)
+  * Move findmnt from mount to util-linux package
+  * Make mount package non-Essential (Important: yes)
+  * Split out cfdisk, fdisk and sfdisk to separate package
+  * Switch fdisk-udeb Priority from extra to optional
+  * Add util-linux NEWS entry for fdisk package split
+  * Add mount NEWS entry about now being non-Essential
+
+ -- Andreas Henriksson <andreas@fatal.se>  Sun, 06 Aug 2017 14:59:02 +0200
+
+util-linux (2.29.2-2) unstable; urgency=medium
+
+  "The big post-release cleanup."
+
+  [ Andreas Henriksson ]
+  * Add DEP12 upstream metadata (Closes: #852731)
+  * Revert "Add configure flag to make libmount skip /etc/mtab"
+  * Drop explicit --disable-silent-rules configure flag
+  * Stop shipping the deprecated 'pg' utility
+  * Revert "Explicitly (re)enable deprecated pg utility"
+  * Stop shipping deprecated 'tunelp' utility
+  * Stop shipping the deprecated 'line' utility
+  * Drop explicitly passing CC for cross-building
+  * Use configure flags to disable utils shipped by bsdmainutils
+  * Revert "Attempt to work around debootstrap problems for hwclock.sh"
+  * Drop no longer needed lintian overrides for dropped workaround
+  * Drop obsolete fdisk reclaim on PPC
+  * Revert "Rename libuuid user to uuidd in libuuidd1 postinst as well"
+  * Revert "libuuid1: add passwd dependency for user migration"
+  * Drop obsolete uuid-runtime user/group migration code
+  * Remove 'pg' from being a pager alternative
+  * Stop shipping deprecated tailf utility
+  * Mention tailf removal in util-linux.NEWS
+
+  [ Christian Hofstaedtler ]
+  * Fix debhelper -s deprecation warning (Closes: #852228)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Tue, 11 Jul 2017 03:19:46 +0200
+
 util-linux (2.29.2-1+deb9u1pexip1) pexip; urgency=medium
 
   * Migrate to Stretch
 
  -- Vincent Sanders <vince@pexip.com>  Thu, 12 Jul 2018 13:25:25 +0000
-
-util-linux (2.29.2-1+deb9u1) stretch-security; urgency=high
-
-  * Non-maintainer upload by the Security Team.
-  * bash-completion: (umount) use findmnt, escape a space in paths
-    (CVE-2018-7738) (Closes: #892179)
-
- -- Salvatore Bonaccorso <carnil@debian.org>  Wed, 07 Mar 2018 19:29:09 +0100
 
 util-linux (2.29.2-1) unstable; urgency=medium
 
@@ -964,7 +1241,7 @@ util-linux (2.24.2-1) experimental; urgency=low
 util-linux (2.20.1-5.8) unstable; urgency=medium
 
   * Non-maintainer upload.
-  
+
   [Martin Pitt]
   * misc-utils/wipefs.c: In --all mode, wipe several times until no further
     signatures are found. This is required for file systems like VFAT which
@@ -1003,7 +1280,7 @@ util-linux (2.20.1-5.5) unstable; urgency=medium
 
   * Non-maintainer upload by the Security Team.
   * Fix cve-2013-0157: mount discloses information about the existence of
-    folders (closes: #697464) 
+    folders (closes: #697464)
 
  -- Michael Gilbert <mgilbert@debian.org>  Wed, 03 Jul 2013 01:39:47 +0000
 

@@ -9,7 +9,7 @@
     <title>libmount Reference Manual</title>
     <releaseinfo>for libmount version &version;</releaseinfo>
     <copyright>
-      <year>2010-2015</year>
+      <year>2010-2018</year>
       <holder>Karel Zak &lt;kzak@redhat.com&gt;</holder>
     </copyright>
   </bookinfo>
@@ -23,7 +23,7 @@ The libmount library is used to parse /etc/fstab, /etc/mtab and
     </para>
     <para>
 The library is part of the util-linux package since version 2.18 and is
-available from ftp://ftp.kernel.org/pub/linux/utils/util-linux/.
+available from https://www.kernel.org/pub/linux/utils/util-linux/.
     </para>
   </partintro>
  </part>
@@ -66,5 +66,14 @@ available from ftp://ftp.kernel.org/pub/linux/utils/util-linux/.
   <index role="2.28">
     <title>Index of new symbols in 2.28</title>
     <xi:include href="xml/api-index-2.28.xml"><xi:fallback /></xi:include>
+  </index>
+  <index role="2.29">
+    <title>Index of new symbols in 2.29</title>
+    <xi:include href="xml/api-index-2.29.xml"><xi:fallback /></xi:include>
+  </index>
+
+  <index role="2.30">
+    <title>Index of new symbols in 2.30</title>
+    <xi:include href="xml/api-index-2.30.xml"><xi:fallback /></xi:include>
   </index>
 </book>

@@ -82,13 +82,19 @@
 # define ADDR_LIMIT_3GB          0x8000000
 #endif
 
-static int archwrapper;
 
-static void __attribute__((__noreturn__)) show_help(void)
+struct arch_domain {
+	int		perval;		/* PER_* */
+	const char	*target_arch;
+	const char	*result_arch;
+};
+
+
+static void __attribute__((__noreturn__)) usage(int archwrapper)
 {
 	fputs(USAGE_HEADER, stdout);
 	if (!archwrapper)
-		printf(_(" %s <arch> [options] [<program> [<argument>...]]\n"), program_invocation_short_name);
+		printf(_(" %s [<arch>] [options] [<program> [<argument>...]]\n"), program_invocation_short_name);
 	else
 		printf(_(" %s [options] [<program> [<argument>...]]\n"), program_invocation_short_name);
 
@@ -114,41 +120,22 @@ static void __attribute__((__noreturn__)) show_help(void)
 		fputs(_("     --list               list settable architectures, and exit\n"), stdout);
 
 	fputs(USAGE_SEPARATOR, stdout);
-	fputs(USAGE_HELP, stdout);
-	fputs(USAGE_VERSION, stdout);
+	printf(USAGE_HELP_OPTIONS(26));
 	printf(USAGE_MAN_TAIL("setarch(8)"));
 
 	exit(EXIT_SUCCESS);
 }
 
-static void __attribute__((__noreturn__)) show_usage(const char *s)
-{
-	if (s)
-		errx(EXIT_FAILURE,
-		     _("%s\nTry `%s --help' for more information."), s,
-		     program_invocation_short_name);
-	else
-		errx(EXIT_FAILURE, _("Try `%s --help' for more information."),
-		     program_invocation_short_name);
-}
-
-static void __attribute__((__noreturn__))
-    show_version(void)
-{
-	printf(UTIL_LINUX_VERSION);
-	exit(EXIT_SUCCESS);
-}
-
-static int set_arch(const char *pers, unsigned long options, int list)
+/*
+ * Returns inilialized list of all available execution domains.
+ */
+static struct arch_domain *init_arch_domains(void)
 {
 	struct utsname un;
-	int i;
-	unsigned long pers_value;
+	size_t i;
 
-	struct {
-		int perval;
-		const char *target_arch, *result_arch;
-	} transitions[] = {
+	static struct arch_domain transitions[] =
+	{
 		{UNAME26,	"uname26",	NULL},
 		{PER_LINUX32,	"linux32",	NULL},
 		{PER_LINUX,	"linux64",	NULL},
@@ -160,6 +147,8 @@ static int set_arch(const char *pers, unsigned long options, int list)
 		{PER_LINUX,	"ppc64pseries",	"ppc64"},
 		{PER_LINUX,	"ppc64iseries",	"ppc64"},
 # else
+		{PER_LINUX32,	"ppc32",	"ppcle"},
+		{PER_LINUX32,	"ppc",		"ppcle"},
 		{PER_LINUX32,	"ppc32le",	"ppcle"},
 		{PER_LINUX32,	"ppcle",	"ppcle"},
 		{PER_LINUX,	"ppc64le",	"ppc64le"},
@@ -225,39 +214,49 @@ static int set_arch(const char *pers, unsigned long options, int list)
 			transitions[i].result_arch = un.machine;
 		}
 	}
-	if (list) {
-		for (i = 0; transitions[i].target_arch != NULL; i++)
-			printf("%s\n", transitions[i].target_arch);
-		return 0;
-	}
-	for (i = 0; transitions[i].perval >= 0; i++)
-		if (!strcmp(pers, transitions[i].target_arch))
+
+	return transitions;
+}
+
+/*
+ * List all execution domains from transitions
+ */
+static void list_arch_domains(struct arch_domain *doms)
+{
+	struct arch_domain *d;
+
+	for (d = doms; d->target_arch != NULL; d++)
+		printf("%s\n", d->target_arch);
+}
+
+static struct arch_domain *get_arch_domain(struct arch_domain *doms, const char *pers)
+{
+	struct arch_domain *d;
+
+	for (d = doms; d->perval >= 0; d++) {
+		if (!strcmp(pers, d->target_arch))
 			break;
-	if (transitions[i].perval < 0)
-		errx(EXIT_FAILURE, _("%s: Unrecognized architecture"), pers);
-	pers_value = transitions[i].perval | options;
-	if (personality(pers_value) < 0) {
-		/*
-		 * Depending on architecture and kernel version, personality
-		 * syscall is either capable or incapable of returning an error.
-		 * If the return value is not an error, then it's the previous
-		 * personality value, which can be an arbitrary value
-		 * undistinguishable from an error value.
-		 * To make things clear, a second call is needed.
-		 */
-		if (personality(pers_value) < 0)
-			return 1;
 	}
+
+	return !d || d->perval < 0 ? NULL : d;
+}
+
+static void verify_arch_domain(struct arch_domain *dom, const char *wanted)
+{
+	struct utsname un;
+
+	if (!dom || !dom->result_arch)
+		return;
+
 	uname(&un);
-	if (transitions[i].result_arch && strcmp(un.machine, transitions[i].result_arch)) {
-		if (strcmp(transitions[i].result_arch, "i386")
+	if (strcmp(un.machine, dom->result_arch)) {
+		if (strcmp(dom->result_arch, "i386")
 		    || (strcmp(un.machine, "i486")
 			&& strcmp(un.machine, "i586")
 			&& strcmp(un.machine, "i686")
 			&& strcmp(un.machine, "athlon")))
-			errx(EXIT_FAILURE, _("Kernel cannot set architecture to %s"), pers);
+			errx(EXIT_FAILURE, _("Kernel cannot set architecture to %s"), wanted);
 	}
-	return 0;
 }
 
 int main(int argc, char *argv[])
@@ -265,7 +264,11 @@ int main(int argc, char *argv[])
 	const char *arch = NULL;
 	unsigned long options = 0;
 	int verbose = 0;
+	int archwrapper;
 	int c;
+	struct arch_domain *doms, *target;
+	unsigned long pers_value = 0;
+	char *shell = NULL, *shell_arg = NULL;
 
 	/* Options without equivalent short options */
 	enum {
@@ -301,13 +304,22 @@ int main(int argc, char *argv[])
 	textdomain(PACKAGE);
 	atexit(close_stdout);
 
-	if (argc < 1)
-		show_usage(_("Not enough arguments"));
-
+	if (argc < 1) {
+		warnx(_("Not enough arguments"));
+		errtryhelp(EXIT_FAILURE);
+	}
 	archwrapper = strcmp(program_invocation_short_name, "setarch") != 0;
-	if (archwrapper)
+	if (archwrapper) {
 		arch = program_invocation_short_name;	/* symlinks to setarch */
-	else {
+
+		/* Don't use ifdef sparc here, we get "Unrecognized architecture"
+		 * error message later if necessary */
+		if (strcmp(arch, "sparc32bash") == 0) {
+			shell = "/bin/bash";
+			shell_arg = "";
+			goto set_arch;
+		}
+	} else {
 		if (1 < argc && *argv[1] != '-') {
 			arch = argv[1];
 			argv[1] = argv[0];	/* for getopt_long() to get the program name */
@@ -316,23 +328,14 @@ int main(int argc, char *argv[])
 		}
 	}
 
-#if defined(__sparc64__) || defined(__sparc__)
-	if (archwrapper && strcmp(arch, "sparc32bash") == 0) {
-		if (set_arch(arch, 0L, 0))
-			err(EXIT_FAILURE, _("Failed to set personality to %s"), arch);
-		execl("/bin/bash", NULL);
-		err(EXIT_FAILURE, _("failed to execute %s"), "/bin/bash");
-	}
-#endif
-
 	while ((c = getopt_long(argc, argv, "+hVv3BFILRSTXZ", longopts, NULL)) != -1) {
 		switch (c) {
 		case 'h':
-			show_help();
+			usage(archwrapper);
 			break;
 		case 'V':
-			show_version();
-			break;
+			printf(UTIL_LINUX_VERSION);
+			return EXIT_SUCCESS;
 		case 'v':
 			verbose = 1;
 			break;
@@ -373,37 +376,71 @@ int main(int argc, char *argv[])
 			break;
 		case OPT_LIST:
 			if (!archwrapper) {
-				set_arch(NULL, 0, 1);
+				list_arch_domains(init_arch_domains());
 				return EXIT_SUCCESS;
 			} else
 				warnx(_("unrecognized option '--list'"));
 			/* fallthrough */
 		default:
-			show_usage(NULL);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
-	if (!arch)
-		errx(EXIT_FAILURE, _("no architecture argument specified"));
+	if (!arch && !options)
+		errx(EXIT_FAILURE, _("no architecture argument or personality flags specified"));
 
 	argc -= optind;
 	argv += optind;
 
-	if (set_arch(arch, options, 0))
-		err(EXIT_FAILURE, _("failed to set personality to %s"), arch);
+set_arch:
+	/* get execution domain (architecture) */
+	if (arch) {
+		doms = init_arch_domains();
+		target = get_arch_domain(doms, arch);
 
+		if (!target)
+			errx(EXIT_FAILURE, _("%s: Unrecognized architecture"), arch);
+		pers_value = target->perval;
+	}
+
+	/* add personality flags */
+	pers_value |= options;
+
+	/* call kernel */
+	if (personality(pers_value) < 0) {
+		/*
+		 * Depending on architecture and kernel version, personality
+		 * syscall is either capable or incapable of returning an error.
+		 * If the return value is not an error, then it's the previous
+		 * personality value, which can be an arbitrary value
+		 * undistinguishable from an error value.
+		 * To make things clear, a second call is needed.
+		 */
+		if (personality(pers_value) < 0)
+			err(EXIT_FAILURE, _("failed to set personality to %s"), arch);
+	}
+
+	/* make sure architecture is set as expected */
+	if (arch)
+		verify_arch_domain(target, arch);
+
+	if (!argc) {
+		shell = "/bin/sh";
+		shell_arg = "-sh";
+	}
 	if (verbose) {
-		printf(_("Execute command `%s'.\n"), argc ? argv[0] : "/bin/sh");
+		printf(_("Execute command `%s'.\n"), shell ? shell : argv[0]);
 		/* flush all output streams before exec */
 		fflush(NULL);
 	}
 
-	if (!argc) {
-		execl("/bin/sh", "-sh", NULL);
-		err(EXIT_FAILURE, _("failed to execute %s"), "/bin/sh");
+	/* Execute shell */
+	if (shell) {
+		execl(shell, shell_arg, NULL);
+		errexec(shell);
 	}
 
+	/* Execute on command line specified command */
 	execvp(argv[0], argv);
-	err(EXIT_FAILURE, "%s", argv[0]);
-	return EXIT_FAILURE;
+	errexec(argv[0]);
 }

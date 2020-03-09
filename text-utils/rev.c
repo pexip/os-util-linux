@@ -64,15 +64,14 @@
 #include "c.h"
 #include "closestream.h"
 
-wchar_t *buf;
-
 static void sig_handler(int signo __attribute__ ((__unused__)))
 {
 	_exit(EXIT_SUCCESS);
 }
 
-static void __attribute__ ((__noreturn__)) usage(FILE * out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fprintf(out, _("Usage: %s [options] [file ...]\n"),
 		program_invocation_short_name);
 
@@ -80,11 +79,10 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fputs(_("Reverse lines characterwise.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
-	fprintf(out, USAGE_MAN_TAIL("rev(1)"));
+	printf(USAGE_HELP_OPTIONS(16));
+	printf(USAGE_MAN_TAIL("rev(1)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 static void reverse_str(wchar_t *str, size_t n)
@@ -100,15 +98,16 @@ static void reverse_str(wchar_t *str, size_t n)
 
 int main(int argc, char *argv[])
 {
-	char *filename = "stdin";
+	char const *filename = "stdin";
+	wchar_t *buf;
 	size_t len, bufsiz = BUFSIZ;
 	FILE *fp = stdin;
 	int ch, rval = EXIT_SUCCESS;
 
 	static const struct option longopts[] = {
-		{ "version",    no_argument,       0, 'V' },
-		{ "help",       no_argument,       0, 'h' },
-		{ NULL,         0, 0, 0 }
+		{ "version",    no_argument,       NULL, 'V' },
+		{ "help",       no_argument,       NULL, 'h' },
+		{ NULL,         0, NULL, 0 }
 	};
 
 	setlocale(LC_ALL, "");
@@ -125,9 +124,9 @@ int main(int argc, char *argv[])
 			printf(UTIL_LINUX_VERSION);
 			exit(EXIT_SUCCESS);
 		case 'h':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 
 	argc -= optind;

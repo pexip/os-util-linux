@@ -1,5 +1,0 @@
-Multiarch-support-in-util-linux-build.patch
-man-page-tweaks-cleanup-my_dev_t.h-ancient-stuff.patch
-Disable-the-fallback-clause-in-hwclock-when-dev-rtc-.patch
-verbose-tests.patch
-bash-completion-umount-use-findmnt-escape-a-space-in.patch

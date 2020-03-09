@@ -57,7 +57,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
-#include <utmp.h>
+#include <utmpx.h>
 
 #include "c.h"
 #include "carefulputc.h"
@@ -79,8 +79,9 @@ struct write_control {
 	const char *dst_tty_name;
 };
 
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
 	      _(" %s [options] <user> [<ttyname>]\n"),
@@ -90,11 +91,9 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(_("Send a message to another user.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
-
-	fprintf(out, USAGE_MAN_TAIL("write(1)"));
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	printf(USAGE_HELP_OPTIONS(16));
+	printf(USAGE_MAN_TAIL("write(1)"));
+	exit(EXIT_SUCCESS);
 }
 
 /*
@@ -130,13 +129,13 @@ static int check_tty(const char *tty, int *tty_writeable, time_t *tty_atime, int
  */
 static int check_utmp(const struct write_control *ctl)
 {
-	struct utmp *u;
+	struct utmpx *u;
 	int res = 1;
 
-	utmpname(_PATH_UTMP);
-	setutent();
+	utmpxname(_PATH_UTMP);
+	setutxent();
 
-	while ((u = getutent())) {
+	while ((u = getutxent())) {
 		if (strncmp(ctl->dst_login, u->ut_user, sizeof(u->ut_user)) == 0 &&
 		    strncmp(ctl->dst_tty_name, u->ut_line, sizeof(u->ut_line)) == 0) {
 			res = 0;
@@ -144,7 +143,7 @@ static int check_utmp(const struct write_control *ctl)
 		}
 	}
 
-	endutent();
+	endutxent();
 	return res;
 }
 
@@ -161,15 +160,15 @@ static int check_utmp(const struct write_control *ctl)
  */
 static void search_utmp(struct write_control *ctl)
 {
-	struct utmp *u;
+	struct utmpx *u;
 	time_t best_atime = 0, tty_atime;
 	int num_ttys = 0, valid_ttys = 0, tty_writeable = 0, user_is_me = 0;
-	char path[UT_LINESIZE + 6];
+	char path[sizeof(u->ut_line) + 6];
 
-	utmpname(_PATH_UTMP);
-	setutent();
+	utmpxname(_PATH_UTMP);
+	setutxent();
 
-	while ((u = getutent())) {
+	while ((u = getutxent())) {
 		if (strncmp(ctl->dst_login, u->ut_user, sizeof(u->ut_user)) != 0)
 			continue;
 		num_ttys++;
@@ -197,7 +196,7 @@ static void search_utmp(struct write_control *ctl)
 		}
 	}
 
-	endutent();
+	endutxent();
 	if (num_ttys == 0)
 		errx(EXIT_FAILURE, _("%s is not logged in"), ctl->dst_login);
 	if (valid_ttys == 0) {
@@ -317,9 +316,9 @@ int main(int argc, char **argv)
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 
 	if (get_terminal_name(&ctl.src_tty_path, &ctl.src_tty_name, NULL) == 0) {
@@ -362,7 +361,7 @@ int main(int argc, char **argv)
 		do_write(&ctl);
 		break;
 	default:
-		usage(stderr);
+		errtryhelp(EXIT_FAILURE);
 	}
 	free(ctl.dst_tty_path);
 	return EXIT_SUCCESS;

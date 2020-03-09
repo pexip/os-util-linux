@@ -54,8 +54,9 @@ COLRM removes unwanted columns from a file
 	Jeff Schriebman  UC Berkeley 11-74
 */
 
-static void __attribute__ ((__noreturn__)) usage(FILE * out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fprintf(out, _("\nUsage:\n"
 		       " %s [startcol [endcol]]\n"),
 		       program_invocation_short_name);
@@ -64,12 +65,11 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fputs(_("Filter out the specified columns.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
+	printf(USAGE_HELP_OPTIONS(16));
 	fprintf(out, _("%s reads from standard input and writes to standard output\n\n"),
 		       program_invocation_short_name);
-	fprintf(out, USAGE_MAN_TAIL("colrm(1)"));
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	printf(USAGE_MAN_TAIL("colrm(1)"));
+	exit(EXIT_SUCCESS);
 }
 
 static int process_input(unsigned long first, unsigned long last)
@@ -158,9 +158,9 @@ int main(int argc, char **argv)
 	int opt;
 
 	static const struct option longopts[] = {
-		{"version", no_argument, 0, 'V'},
-		{"help", no_argument, 0, 'h'},
-		{NULL, 0, 0, 0}
+		{"version", no_argument, NULL, 'V'},
+		{"help",    no_argument, NULL, 'h'},
+		{NULL, 0, NULL, 0}
 	};
 
 	setlocale(LC_ALL, "");
@@ -176,9 +176,9 @@ int main(int argc, char **argv)
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 
 	if (argc > 1)

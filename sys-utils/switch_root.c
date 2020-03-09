@@ -33,6 +33,7 @@
 #include <errno.h>
 #include <ctype.h>
 #include <dirent.h>
+#include <getopt.h>
 
 #include "c.h"
 #include "nls.h"
@@ -94,8 +95,12 @@ static int recursiveRemove(int fd)
 				continue;
 			}
 
-			/* remove subdirectories if device is same as dir */
-			if (S_ISDIR(sb.st_mode) && sb.st_dev == rb.st_dev) {
+			/* skip if device is not the same */
+			if (sb.st_dev != rb.st_dev)
+				continue;
+
+			/* remove subdirectories */
+			if (S_ISDIR(sb.st_mode)) {
 				int cfd;
 
 				cfd = openat(dfd, d->d_name, O_RDONLY);
@@ -104,8 +109,7 @@ static int recursiveRemove(int fd)
 					close(cfd);
 				}
 				isdir = 1;
-			} else
-				continue;
+			}
 		}
 
 		if (unlinkat(dfd, d->d_name, isdir ? AT_REMOVEDIR : 0))
@@ -194,8 +198,9 @@ static int switchroot(const char *newroot)
 	return 0;
 }
 
-static void __attribute__((__noreturn__)) usage(FILE *output)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *output = stdout;
 	fputs(USAGE_HEADER, output);
 	fprintf(output, _(" %s [options] <newrootdir> <init> <args to init>\n"),
 		program_invocation_short_name);
@@ -204,33 +209,47 @@ static void __attribute__((__noreturn__)) usage(FILE *output)
 	fputs(_("Switch to another filesystem as the root of the mount tree.\n"), output);
 
 	fputs(USAGE_OPTIONS, output);
-	fputs(USAGE_HELP, output);
-	fputs(USAGE_VERSION, output);
-	fprintf(output, USAGE_MAN_TAIL("switch_root(8)"));
+	printf(USAGE_HELP_OPTIONS(16));
+	printf(USAGE_MAN_TAIL("switch_root(8)"));
 
-	exit(output == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char *argv[])
 {
 	char *newroot, *init, **initargs;
+	int c;
+	static const struct option longopts[] = {
+		{"version", no_argument, NULL, 'V'},
+		{"help", no_argument, NULL, 'h'},
+		{NULL, 0, NULL, 0}
+	};
+
 	atexit(close_stdout);
 
-	if (argv[1] && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h")))
-		usage(stdout);
-	if (argv[1] && (!strcmp(argv[1], "--version") || !strcmp(argv[1], "-V"))) {
-		printf(UTIL_LINUX_VERSION);
-		return EXIT_SUCCESS;
+	while ((c = getopt_long(argc, argv, "+Vh", longopts, NULL)) != -1)
+		switch (c) {
+		case 'V':
+			printf(UTIL_LINUX_VERSION);
+			return EXIT_SUCCESS;
+		case 'h':
+			usage();
+		default:
+			errtryhelp(EXIT_FAILURE);
+		}
+	if (argc < 3) {
+		warnx(_("not enough arguments"));
+		errtryhelp(EXIT_FAILURE);
 	}
-	if (argc < 3)
-		usage(stderr);
 
 	newroot = argv[1];
 	init = argv[2];
 	initargs = &argv[2];
 
-	if (!*newroot || !*init)
-		usage(stderr);
+	if (!*newroot || !*init) {
+		warnx(_("bad usage"));
+		errtryhelp(EXIT_FAILURE);
+	}
 
 	if (switchroot(newroot))
 		errx(EXIT_FAILURE, _("failed. Sorry."));
@@ -239,6 +258,6 @@ int main(int argc, char *argv[])
 		warn(_("cannot access %s"), init);
 
 	execv(init, initargs);
-	err(EXIT_FAILURE, _("failed to execute %s"), init);
+	errexec(init);
 }
 

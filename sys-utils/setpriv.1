@@ -10,11 +10,22 @@ setpriv \- run a program with different Linux privilege settings
 Sets or queries various Linux privilege settings that are inherited across
 .BR execve (2).
 .PP
-The difference between the commands setpriv and su (or runuser) is that setpriv does
-not use open PAM session and does not ask for password.
-It's simple non-set-user-ID wrapper around
-.B execve
-system call.
+In comparison to
+.BR su (1)
+and
+.BR runuser (1),
+.BR setpriv (1)
+neither uses PAM, nor does it prompt for a password.
+It is a simple, non-set-user-ID wrapper around
+.BR execve (2),
+and can be used to drop privileges in the same way as
+.BR setuidgid (8)
+from
+.BR daemontools ,
+.BR chpst (8)
+from
+.BR runit ,
+or similar tools shipped by other service managers.
 .SH OPTION
 .TP
 .B \-\-clear\-groups
@@ -25,22 +36,29 @@ Dump current privilege state.  Can be specified more than once to show extra,
 mostly useless, information.  Incompatible with all other options.
 .TP
 .B \-\-groups \fIgroup\fR...
-Set supplementary groups.  The argument is a comma-separated list.
+Set supplementary groups.  The argument is a comma-separated list of GIDs or names.
 .TP
-.BR \-\-inh\-caps " (" + | \- ) \fIcap "...  or  " \-\-bounding\-set " (" + | \- ) \fIcap ...
-Set the inheritable capabilities or the capability bounding set.  See
+.BR \-\-inh\-caps " (" + | \- ) \fIcap "...  or  " \-\-ambient-caps " (" + | \- ) \fIcap "...  or  " \-\-bounding\-set " (" + | \- ) \fIcap ...
+Set the inheritable capabilities, ambient capabilities or the capability bounding set.  See
 .BR capabilities (7).
 The argument is a comma-separated list of
 .BI + cap
 and
 .BI \- cap
-entries, which add or remove an entry respectively.
+entries, which add or remove an entry respectively. \fIcap\fR can either be a
+human-readable name as seen in
+.BR capabilities (7)
+without the \fIcap_\fR prefix or of the format
+.BI cap_N ,
+where \fIN\fR is the internal capability index used by Linux.
 .B +all
 and
 .B \-all
 can be used to add or remove all caps.  The set of capabilities starts out as
 the current inheritable set for
-.B \-\-inh\-caps
+.BR \-\-inh\-caps ,
+the current ambient set for
+.B \-\-ambient\-caps
 and the current bounding set for
 .BR \-\-bounding\-set .
 If you drop something from the bounding set without also dropping it from the
@@ -52,7 +70,15 @@ Preserve supplementary groups.  Only useful in conjunction with
 .BR \-\-egid ", or"
 .BR \-\-regid .
 .TP
-.BR \-\-list\-caps
+.B \-\-init\-groups
+Initialize supplementary groups using
+.BR initgroups "(3)."
+Only useful in conjunction with
+.B \-\-ruid
+or
+.BR \-\-reuid .
+.TP
+.B \-\-list\-caps
 List all known capabilities.  This option must be specified alone.
 .TP
 .B \-\-no\-new\-privs
@@ -68,7 +94,7 @@ AppArmor, may result in failures to execute certain programs.)  This bit is
 inherited by child processes and cannot be unset.  See
 .BR prctl (2)
 and
-.IR Documentation/\:prctl/\:no_\:new_\:privs.txt
+.I Documentation/\:prctl/\:no_\:new_\:privs.txt
 in the Linux kernel source.
 .sp
 The no_new_privs bit is supported since Linux 3.5.
@@ -79,8 +105,9 @@ given as textual group name.
 .sp
 For safety, you must specify one of
 .BR \-\-clear\-groups ,
-.BR \-\-groups ", or"
-.BR \-\-keep\-groups
+.BR \-\-groups ,
+.BR \-\-keep\-groups ", or"
+.B \-\-init\-groups
 if you set any primary
 .IR gid .
 .TP
@@ -96,7 +123,7 @@ does not change capabilities, although the exec call at the end might change
 capabilities.  This means that, if you are root, you probably want to do
 something like:
 .sp
-.B "        setpriv \-\-reuid=1000 \-\-regid=1000 \-\-caps=\-all"
+.B "        setpriv \-\-reuid=1000 \-\-regid=1000 \-\-inh\-caps=\-all"
 .TP
 .BR \-\-securebits " (" + | \- ) \fIsecurebit ...
 Set or clear securebits.  The argument is a comma-separated list.
@@ -111,6 +138,12 @@ and
 is cleared by
 .BR execve (2)
 and is therefore not allowed.
+.TP
+.BR "\-\-pdeathsig keep" | clear | <signal>
+Keep, clear or set the parent death signal.  Some LSMs, most notably SELinux and
+AppArmor, clear the signal when the process' credentials change.  Using
+\fB--pdeathsig keep\fR will restore the parent death signal after changing
+credentials to remedy that situation.
 .TP
 .BI \-\-selinux\-label " label"
 Request a particular SELinux transition (using a transition on exec, not
@@ -132,6 +165,15 @@ to abort if AppArmor is not in use, and the transition may be ignored or cause
 .BR execve (2)
 to fail at AppArmor's whim.
 .TP
+.BI \-\-reset\-env
+Clears all the environment variables except TERM; initializes the environment variables HOME, SHELL, USER, LOGNAME
+according to the user's passwd entry; sets PATH to \fI/usr/local/bin:/bin:/usr/bin\fR for a regual user and to
+\fI/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\fR for root.
+.sp
+The environment variable PATH may be different on systems where /bin and /sbin
+are merged into /usr.  The environment variable SHELL defaults to \fI/bin/sh\fR if none is given in the user's
+passwd entry.
+.TP
 .BR \-V , " \-\-version"
 Display version information and exit.
 .TP
@@ -148,6 +190,20 @@ Be careful with this tool \-\- it may have unexpected security consequences.
 For example, setting no_new_privs and then execing a program that is
 SELinux\-confined (as this tool would do) may prevent the SELinux
 restrictions from taking effect.
+.SH EXAMPLE
+If you're looking for behaviour similar to
+.BR su (1)/ runuser "(1), or " sudo (8)
+(without the
+.B -g
+option), try something like:
+.sp
+.B "    setpriv \-\-reuid=1000 \-\-regid=1000 \-\-init\-groups"
+.PP
+If you want to mimic daemontools'
+.BR setuid (8),
+try:
+.sp
+.B "    setpriv \-\-reuid=1000 \-\-regid=1000 \-\-clear\-groups"
 .SH SEE ALSO
 .BR runuser (1),
 .BR su (1),
@@ -161,6 +217,6 @@ Andy Lutomirski
 The
 .B setpriv
 command is part of the util-linux package and is available from
-.UR ftp://\:ftp.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
+.UR https://\:www.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
 Linux Kernel Archive
 .UE .

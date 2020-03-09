@@ -25,6 +25,14 @@
 # include <sys/sysmacros.h>     /* for major, minor */
 #endif
 
+#ifndef LOGIN_NAME_MAX
+# define LOGIN_NAME_MAX 256
+#endif
+
+#ifndef NAME_MAX
+# define NAME_MAX PATH_MAX
+#endif
+
 /*
  * Compiler-specific stuff
  */
@@ -125,8 +133,14 @@
 #define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
 #endif
 
+/*
+ * container_of - cast a member of a structure out to the containing structure
+ * @ptr:	the pointer to the member.
+ * @type:	the type of the container struct this is embedded in.
+ * @member:	the name of the member within the struct.
+ */
 #ifndef container_of
-#define container_of(ptr, type, member) __extension__ ({	 \
+#define container_of(ptr, type, member) __extension__ ({	\
 	const __typeof__( ((type *)0)->member ) *__mptr = (ptr); \
 	(type *)( (char *)__mptr - offsetof(type,member) );})
 #endif
@@ -202,6 +216,21 @@ errmsg(char doexit, int excode, char adderr, const char *fmt, ...)
 # define warnx(FMT...) errmsg(0, 0, 0, FMT)
 #endif
 #endif /* !HAVE_ERR_H */
+
+
+/* Don't use inline function to avoid '#include "nls.h"' in c.h
+ */
+#define errtryhelp(eval) __extension__ ({ \
+	fprintf(stderr, _("Try '%s --help' for more information.\n"), \
+			program_invocation_short_name); \
+	exit(eval); \
+})
+
+/* After failed execvp() */
+#define EX_EXEC_FAILED		126	/* Program located, but not usable. */
+#define EX_EXEC_ENOENT		127	/* Could not find program to exec.  */
+#define errexec(name)	err(errno == ENOENT ? EX_EXEC_ENOENT : EX_EXEC_FAILED, \
+			_("failed to execute %s"), name)
 
 
 static inline __attribute__((const)) int is_power_of_2(unsigned long num)
@@ -294,13 +323,24 @@ static inline int xusleep(useconds_t usec)
 
 /*
  * Constant strings for usage() functions. For more info see
- * Documentation/howto-usage-function.txt and disk-utils/delpart.c
+ * Documentation/{howto-usage-function.txt,boilerplate.c}
  */
 #define USAGE_HEADER     _("\nUsage:\n")
 #define USAGE_OPTIONS    _("\nOptions:\n")
+#define USAGE_FUNCTIONS  _("\nFunctions:\n")
+#define USAGE_COMMANDS   _("\nCommands:\n")
+#define USAGE_COLUMNS    _("\nAvailable output columns:\n")
 #define USAGE_SEPARATOR    "\n"
-#define USAGE_HELP       _(" -h, --help     display this help and exit\n")
-#define USAGE_VERSION    _(" -V, --version  output version information and exit\n")
+
+#define USAGE_OPTSTR_HELP     _("display this help")
+#define USAGE_OPTSTR_VERSION  _("display version")
+
+#define USAGE_HELP_OPTIONS(marg_dsc) \
+		"%-" #marg_dsc "s%s\n" \
+		"%-" #marg_dsc "s%s\n" \
+		, " -h, --help",    USAGE_OPTSTR_HELP \
+		, " -V, --version", USAGE_OPTSTR_VERSION
+
 #define USAGE_MAN_TAIL(_man)   _("\nFor more details see %s.\n"), _man
 
 #define UTIL_LINUX_VERSION _("%s from %s\n"), program_invocation_short_name, PACKAGE_STRING

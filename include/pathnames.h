@@ -7,7 +7,7 @@
 #define PATHNAMES_H
 
 #ifdef HAVE_PATHS_H
-#include <paths.h>
+# include <paths.h>
 #endif
 
 #ifndef __STDC__
@@ -35,53 +35,48 @@
 # define _PATH_DEFPATH_ROOT	"/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin"
 #endif
 
-#define _PATH_WTMPLOCK		"/etc/wtmplock"
-
 #define	_PATH_HUSHLOGIN		".hushlogin"
 #define	_PATH_HUSHLOGINS	"/etc/hushlogins"
 
 #define _PATH_NOLOGIN_TXT	"/etc/nologin.txt"
 
 #ifndef _PATH_MAILDIR
-#define	_PATH_MAILDIR		"/var/spool/mail"
+# define _PATH_MAILDIR		"/var/spool/mail"
 #endif
-#define	_PATH_MOTDFILE		"/etc/motd"
+#define	_PATH_MOTDFILE		"/usr/share/misc/motd:/run/motd:/etc/motd"
 #ifndef _PATH_NOLOGIN
-#define	_PATH_NOLOGIN		"/etc/nologin"
+# define _PATH_NOLOGIN		"/etc/nologin"
 #endif
 #define	_PATH_VAR_NOLOGIN	"/var/run/nologin"
 
 #ifndef _PATH_LOGIN
-#define _PATH_LOGIN		"/bin/login"
+# define _PATH_LOGIN		"/bin/login"
 #endif
 #define _PATH_SHUTDOWN		"/sbin/shutdown"
 
 #define _PATH_TERMCOLORS_DIRNAME "terminal-colors.d"
 #define _PATH_TERMCOLORS_DIR	"/etc/" _PATH_TERMCOLORS_DIRNAME
 
-/* used in login-utils/shutdown.c */
-
-/* used in login-utils/setpwnam.h and login-utils/islocal.c */
+/* login paths */
 #define _PATH_PASSWD		"/etc/passwd"
-
-/* used in login-utils/newgrp and login-utils/setpwnam.h*/
 #define _PATH_GSHADOW		"/etc/gshadow"
-
-/* used in login-utils/setpwnam.h */
 #define _PATH_GROUP		"/etc/group"
 #define _PATH_SHADOW_PASSWD	"/etc/shadow"
 #define _PATH_SHELLS		"/etc/shells"
 
-/* used in term-utils/agetty.c */
+#ifndef _PATH_BTMP
+# define _PATH_BTMP		"/var/log/btmp"
+#endif
+
 #define _PATH_ISSUE		"/etc/issue"
+#define _PATH_ISSUEDIR		_PATH_ISSUE ".d"
+
 #define _PATH_OS_RELEASE_ETC	"/etc/os-release"
 #define _PATH_OS_RELEASE_USR	"/usr/lib/os-release"
-
-#define _PATH_NUMLOCK_ON	_PATH_LOCALSTATEDIR "/numlock-on"
-
+#define _PATH_NUMLOCK_ON	_PATH_RUNSTATEDIR "/numlock-on"
 #define _PATH_LOGINDEFS		"/etc/login.defs"
 
-/* used in misc-utils/look.c */
+/* misc paths */
 #define _PATH_WORDS             "/usr/share/dict/words"
 #define _PATH_WORDS_ALT         "/usr/share/dict/web2"
 
@@ -136,6 +131,8 @@
 # define _PATH_DEV		"/dev/"
 #endif
 
+#define _PATH_DEV_MAPPER	"/dev/mapper"
+
 #define _PATH_DEV_MEM		"/dev/mem"
 
 #define _PATH_DEV_LOOP		"/dev/loop"
@@ -156,15 +153,10 @@
 # define _PATH_ADJTIME		"/etc/adjtime"
 #endif
 
-#define _PATH_LASTDATE		"/var/lib/lastdate"
 #ifdef __ia64__
 # define _PATH_RTC_DEV		"/dev/efirtc"
 #else
-# define _PATH_RTC_DEV		"/dev/rtc"
-#endif
-
-#ifndef _PATH_BTMP
-#define _PATH_BTMP		"/var/log/btmp"
+# define _PATH_RTC_DEV		"/dev/rtc0"
 #endif
 
 /* raw paths*/
@@ -197,5 +189,11 @@
 /* ctrlaltdel paths */
 #define _PATH_PROC_CTRL_ALT_DEL	"/proc/sys/kernel/ctrl-alt-del"
 
-#endif /* PATHNAMES_H */
+/* lscpu paths */
+#define _PATH_PROC_CPUINFO	"/proc/cpuinfo"
 
+/* rfkill paths */
+#define _PATH_DEV_RFKILL	"/dev/rfkill"
+#define _PATH_SYS_RFKILL	"/sys/class/rfkill"
+
+#endif /* PATHNAMES_H */

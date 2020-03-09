@@ -55,6 +55,7 @@
 #include "closestream.h"
 #include "nls.h"
 #include "procutils.h"
+#include "signames.h"
 #include "strutils.h"
 #include "ttyutils.h"
 #include "xalloc.h"
@@ -82,98 +83,13 @@ struct kill_control {
 		verbose:1;
 };
 
-struct signv {
-	const char *name;
-	int val;
-} sys_signame[] = {
-	/* POSIX signals */
-	{ "HUP",	SIGHUP },	/* 1 */
-	{ "INT",	SIGINT },	/* 2 */
-	{ "QUIT",	SIGQUIT },	/* 3 */
-	{ "ILL",	SIGILL },	/* 4 */
-#ifdef SIGTRAP
-	{ "TRAP",	SIGTRAP },	/* 5 */
-#endif
-	{ "ABRT",	SIGABRT },	/* 6 */
-#ifdef SIGIOT
-	{ "IOT",	SIGIOT },	/* 6, same as SIGABRT */
-#endif
-#ifdef SIGEMT
-	{ "EMT",	SIGEMT },	/* 7 (mips,alpha,sparc*) */
-#endif
-#ifdef SIGBUS
-	{ "BUS",	SIGBUS },	/* 7 (arm,i386,m68k,ppc), 10 (mips,alpha,sparc*) */
-#endif
-	{ "FPE",	SIGFPE },	/* 8 */
-	{ "KILL",	SIGKILL },	/* 9 */
-	{ "USR1",	SIGUSR1 },	/* 10 (arm,i386,m68k,ppc), 30 (alpha,sparc*), 16 (mips) */
-	{ "SEGV",	SIGSEGV },	/* 11 */
-	{ "USR2",	SIGUSR2 },	/* 12 (arm,i386,m68k,ppc), 31 (alpha,sparc*), 17 (mips) */
-	{ "PIPE",	SIGPIPE },	/* 13 */
-	{ "ALRM",	SIGALRM },	/* 14 */
-	{ "TERM",	SIGTERM },	/* 15 */
-#ifdef SIGSTKFLT
-	{ "STKFLT",	SIGSTKFLT },	/* 16 (arm,i386,m68k,ppc) */
-#endif
-	{ "CHLD",	SIGCHLD },	/* 17 (arm,i386,m68k,ppc), 20 (alpha,sparc*), 18 (mips) */
-#ifdef SIGCLD
-	{ "CLD",	SIGCLD },	/* same as SIGCHLD (mips) */
-#endif
-	{ "CONT",	SIGCONT },	/* 18 (arm,i386,m68k,ppc), 19 (alpha,sparc*), 25 (mips) */
-	{ "STOP",	SIGSTOP },	/* 19 (arm,i386,m68k,ppc), 17 (alpha,sparc*), 23 (mips) */
-	{ "TSTP",	SIGTSTP },	/* 20 (arm,i386,m68k,ppc), 18 (alpha,sparc*), 24 (mips) */
-	{ "TTIN",	SIGTTIN },	/* 21 (arm,i386,m68k,ppc,alpha,sparc*), 26 (mips) */
-	{ "TTOU",	SIGTTOU },	/* 22 (arm,i386,m68k,ppc,alpha,sparc*), 27 (mips) */
-#ifdef SIGURG
-	{ "URG",	SIGURG },	/* 23 (arm,i386,m68k,ppc), 16 (alpha,sparc*), 21 (mips) */
-#endif
-#ifdef SIGXCPU
-	{ "XCPU",	SIGXCPU },	/* 24 (arm,i386,m68k,ppc,alpha,sparc*), 30 (mips) */
-#endif
-#ifdef SIGXFSZ
-	{ "XFSZ",	SIGXFSZ },	/* 25 (arm,i386,m68k,ppc,alpha,sparc*), 31 (mips) */
-#endif
-#ifdef SIGVTALRM
-	{ "VTALRM",	SIGVTALRM },	/* 26 (arm,i386,m68k,ppc,alpha,sparc*), 28 (mips) */
-#endif
-#ifdef SIGPROF
-	{ "PROF",	SIGPROF },	/* 27 (arm,i386,m68k,ppc,alpha,sparc*), 29 (mips) */
-#endif
-#ifdef SIGWINCH
-	{ "WINCH",	SIGWINCH },	/* 28 (arm,i386,m68k,ppc,alpha,sparc*), 20 (mips) */
-#endif
-#ifdef SIGIO
-	{ "IO",		SIGIO },	/* 29 (arm,i386,m68k,ppc), 23 (alpha,sparc*), 22 (mips) */
-#endif
-#ifdef SIGPOLL
-	{ "POLL",	SIGPOLL },	/* same as SIGIO */
-#endif
-#ifdef SIGINFO
-	{ "INFO",	SIGINFO },	/* 29 (alpha) */
-#endif
-#ifdef SIGLOST
-	{ "LOST",	SIGLOST },	/* 29 (arm,i386,m68k,ppc,sparc*) */
-#endif
-#ifdef SIGPWR
-	{ "PWR",	SIGPWR },	/* 30 (arm,i386,m68k,ppc), 29 (alpha,sparc*), 19 (mips) */
-#endif
-#ifdef SIGUNUSED
-	{ "UNUSED",	SIGUNUSED },	/* 31 (arm,i386,m68k,ppc) */
-#endif
-#ifdef SIGSYS
-	{ "SYS",	SIGSYS },	/* 31 (mips,alpha,sparc*) */
-#endif
-};
-
 static void print_signal_name(int signum)
 {
-	size_t n;
+	const char *name = signum_to_signame(signum);
 
-	for (n = 0; n < ARRAY_SIZE(sys_signame); n++) {
-		if (sys_signame[n].val == signum) {
-			printf("%s\n", sys_signame[n].name);
-			return;
-		}
+	if (name) {
+		printf("%s\n", name);
+		return;
 	}
 #ifdef SIGRTMIN
 	if (SIGRTMIN <= signum && signum <= SIGRTMAX) {
@@ -198,17 +114,19 @@ static void pretty_print_signal(FILE *fp, size_t term_width, size_t *lpos,
 static void print_all_signals(FILE *fp, int pretty)
 {
 	size_t n, lth, lpos = 0, width;
+	const char *signame = NULL;
+	int signum = 0;
 
 	if (!pretty) {
-		for (n = 0; n < ARRAY_SIZE(sys_signame); n++) {
-			lth = 1 + strlen(sys_signame[n].name);
+		for (n = 0; get_signame_by_idx(n, &signame, NULL) == 0; n++) {
+			lth = 1 + strlen(signame);
 			if (KILL_OUTPUT_WIDTH < lpos + lth) {
 				fputc('\n', fp);
 				lpos = 0;
 			} else if (lpos)
 				fputc(' ', fp);
 			lpos += lth;
-			fputs(sys_signame[n].name, fp);
+			fputs(signame, fp);
 		}
 #ifdef SIGRTMIN
 		fputs(" RT<N> RTMIN+<N> RTMAX-<N>", fp);
@@ -219,9 +137,8 @@ static void print_all_signals(FILE *fp, int pretty)
 
 	/* pretty print */
 	width = get_terminal_width(KILL_OUTPUT_WIDTH + 1) - 1;
-	for (n = 0; n < ARRAY_SIZE(sys_signame); n++)
-		pretty_print_signal(fp, width, &lpos,
-				    sys_signame[n].val, sys_signame[n].name);
+	for (n = 0; get_signame_by_idx(n, &signame, &signum) == 0; n++)
+		pretty_print_signal(fp, width, &lpos, signum, signame);
 #ifdef SIGRTMIN
 	pretty_print_signal(fp, width, &lpos, SIGRTMIN, "RTMIN");
 	pretty_print_signal(fp, width, &lpos, SIGRTMAX, "RTMAX");
@@ -234,50 +151,6 @@ static void err_nosig(char *name)
 	warnx(_("unknown signal %s; valid signals:"), name);
 	print_all_signals(stderr, 1);
 	exit(EXIT_FAILURE);
-}
-
-#ifdef SIGRTMIN
-static int rtsig_to_signum(char *sig)
-{
-	int num, maxi = 0;
-	char *ep = NULL;
-
-	if (strncasecmp(sig, "min+", 4) == 0)
-		sig += 4;
-	else if (strncasecmp(sig, "max-", 4) == 0) {
-		sig += 4;
-		maxi = 1;
-	}
-	if (!isdigit(*sig))
-		return -1;
-	errno = 0;
-	num = strtol(sig, &ep, 10);
-	if (!ep || sig == ep || errno || num < 0)
-		return -1;
-	num = maxi ? SIGRTMAX - num : SIGRTMIN + num;
-	if (num < SIGRTMIN || SIGRTMAX < num)
-		return -1;
-	return num;
-}
-#endif
-
-static int signame_to_signum(char *sig)
-{
-	size_t n;
-
-	if (!strncasecmp(sig, "sig", 3))
-		sig += 3;
-#ifdef SIGRTMIN
-	/* RT signals */
-	if (!strncasecmp(sig, "rt", 2))
-		return rtsig_to_signum(sig + 2);
-#endif
-	/* Normal signals */
-	for (n = 0; n < ARRAY_SIZE(sys_signame); n++) {
-		if (!strcasecmp(sys_signame[n].name, sig))
-			return sys_signame[n].val;
-	}
-	return -1;
 }
 
 static int arg_to_signum(char *arg, int maskbit)
@@ -296,8 +169,9 @@ static int arg_to_signum(char *arg, int maskbit)
 	return signame_to_signum(arg);
 }
 
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options] <pid>|<name>...\n"), program_invocation_short_name);
 
@@ -317,11 +191,10 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(_("     --verbose          print pids that will be signaled\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
-	fprintf(out, USAGE_MAN_TAIL("kill(1)"));
+	printf(USAGE_HELP_OPTIONS(24));
+	printf(USAGE_MAN_TAIL("kill(1)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 static char **parse_arguments(int argc, char **argv, struct kill_control *ctl)
@@ -345,7 +218,7 @@ static char **parse_arguments(int argc, char **argv, struct kill_control *ctl)
 			exit(EXIT_SUCCESS);
 		}
 		if (!strcmp(arg, "-h") || !strcmp(arg, "--help"))
-			usage(stdout);
+			usage();
 		if (!strcmp(arg, "--verbose")) {
 			ctl->verbose = 1;
 			continue;

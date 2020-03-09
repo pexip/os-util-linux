@@ -23,12 +23,14 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <linux/rtc.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <termios.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -88,8 +90,9 @@ struct rtcwake_control {
 		     dryrun:1;		/* do not set alarm, suspend system, etc */
 };
 
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
 	      _(" %s [options]\n"), program_invocation_short_name);
@@ -113,13 +116,10 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(_(" -u, --utc                RTC uses UTC\n"), out);
 	fputs(_(" -v, --verbose            verbose messages\n"), out);
 
-	printf(USAGE_SEPARATOR);
-	printf(USAGE_HELP);
-	printf(USAGE_VERSION);
-
+	fputs(USAGE_SEPARATOR, out);
+	printf(USAGE_HELP_OPTIONS(26));
 	printf(USAGE_MAN_TAIL("rtcwake(8)"));
-
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 static int is_wakeup_enabled(const char *devname)
@@ -168,7 +168,7 @@ static int get_basetimes(struct rtcwake_control *ctl, int fd)
 		return -1;
 	}
 
-	ctl->sys_time = time(0);
+	ctl->sys_time = time(NULL);
 	if (ctl->sys_time == (time_t)-1) {
 		warn(_("read system time failed"));
 		return -1;
@@ -262,6 +262,22 @@ nothing:
 	return NULL;
 }
 
+static void wait_stdin(struct rtcwake_control *ctl)
+{
+	struct pollfd fd[] = {
+		{.fd = STDIN_FILENO, .events = POLLIN}
+	};
+	int tries = 0;
+
+	while (tries < 8 && poll(fd, 1, 10) == 1) {
+		if (ctl->verbose)
+			warnx(_("discarding stdin"));
+		xusleep(250000);
+		tcflush(STDIN_FILENO, TCIFLUSH);
+		tries++;
+	}
+}
+
 static void suspend_system(struct rtcwake_control *ctl)
 {
 	FILE	*f = fopen(SYS_POWER_STATE_PATH, "w");
@@ -272,6 +288,8 @@ static void suspend_system(struct rtcwake_control *ctl)
 	}
 
 	if (!ctl->dryrun) {
+		if (isatty(STDIN_FILENO))
+			wait_stdin(ctl);
 		fprintf(f, "%s\n", ctl->mode_str);
 		fflush(f);
 	}
@@ -413,21 +431,21 @@ int main(int argc, char **argv)
 		OPT_LIST
 	};
 	static const struct option long_options[] = {
-		{"adjfile",     required_argument,      0, 'A'},
-		{"auto",	no_argument,		0, 'a'},
-		{"dry-run",	no_argument,		0, 'n'},
-		{"local",	no_argument,		0, 'l'},
-		{"utc",		no_argument,		0, 'u'},
-		{"verbose",	no_argument,		0, 'v'},
-		{"version",	no_argument,		0, 'V'},
-		{"help",	no_argument,		0, 'h'},
-		{"mode",	required_argument,	0, 'm'},
-		{"device",	required_argument,	0, 'd'},
-		{"seconds",	required_argument,	0, 's'},
-		{"time",	required_argument,	0, 't'},
-		{"date",	required_argument,	0, OPT_DATE},
-		{"list-modes",	no_argument,		0, OPT_LIST},
-		{0,		0,			0, 0  }
+		{ "adjfile",	required_argument,	NULL, 'A'      },
+		{ "auto",	no_argument,		NULL, 'a'      },
+		{ "dry-run",	no_argument,		NULL, 'n'      },
+		{ "local",	no_argument,		NULL, 'l'      },
+		{ "utc",	no_argument,		NULL, 'u'      },
+		{ "verbose",	no_argument,		NULL, 'v'      },
+		{ "version",	no_argument,		NULL, 'V'      },
+		{ "help",	no_argument,		NULL, 'h'      },
+		{ "mode",	required_argument,	NULL, 'm'      },
+		{ "device",	required_argument,	NULL, 'd'      },
+		{ "seconds",	required_argument,	NULL, 's'      },
+		{ "time",	required_argument,	NULL, 't'      },
+		{ "date",	required_argument,	NULL, OPT_DATE },
+		{ "list-modes",	no_argument,		NULL, OPT_LIST },
+		{ NULL, 0, NULL, 0 }
 	};
 	static const ul_excl_t excl[] = {
 		{ 'a', 'l', 'u' },
@@ -496,9 +514,9 @@ int main(int argc, char **argv)
 			printf(UTIL_LINUX_VERSION);
 			exit(EXIT_SUCCESS);
 		case 'h':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
@@ -534,7 +552,7 @@ int main(int argc, char **argv)
 			if (alarm < ctl.sys_time)
 				errx(EXIT_FAILURE, _("time doesn't go backward to %s"),
 						ctime(&alarm));
-			alarm += ctl.sys_time - ctl.rtc_time;
+			alarm -= ctl.sys_time - ctl.rtc_time;
 		} else
 			alarm = ctl.rtc_time + seconds + 1;
 

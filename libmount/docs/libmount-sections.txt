@@ -20,6 +20,7 @@ mnt_resolve_target
 <SECTION>
 <FILE>context</FILE>
 libmnt_context
+libmnt_ns
 mnt_free_context
 mnt_new_context
 mnt_reset_context
@@ -35,9 +36,12 @@ mnt_context_enable_fork
 mnt_context_enable_lazy
 mnt_context_enable_loopdel
 mnt_context_enable_rdonly_umount
+mnt_context_enable_rwonly_mount
 mnt_context_enable_sloppy
 mnt_context_enable_verbose
+mnt_context_forced_rdonly
 mnt_context_get_cache
+mnt_context_get_excode
 mnt_context_get_fs
 mnt_context_get_fstab
 mnt_context_get_fstab_userdata
@@ -50,11 +54,13 @@ mnt_context_get_mtab
 mnt_context_get_mtab_userdata
 mnt_context_get_options
 mnt_context_get_optsmode
+mnt_context_get_origin_ns
 mnt_context_get_source
 mnt_context_get_status
 mnt_context_get_syscall_errno
 mnt_context_get_table
 mnt_context_get_target
+mnt_context_get_target_ns
 mnt_context_get_user_mflags
 mnt_context_helper_executed
 mnt_context_helper_setopt
@@ -72,6 +78,7 @@ mnt_context_is_nomtab
 mnt_context_is_parent
 mnt_context_is_rdonly_umount
 mnt_context_is_restricted
+mnt_context_is_rwonly_mount
 mnt_context_is_sloppy
 mnt_context_is_swapmatch
 mnt_context_is_verbose
@@ -91,8 +98,12 @@ mnt_context_set_source
 mnt_context_set_syscall_status
 mnt_context_set_tables_errcb
 mnt_context_set_target
+mnt_context_set_target_ns
 mnt_context_set_user_mflags
 mnt_context_strerror
+mnt_context_switch_ns
+mnt_context_switch_origin_ns
+mnt_context_switch_target_ns
 mnt_context_syscall_called
 mnt_context_tab_applied
 mnt_context_wait_for_children
@@ -105,6 +116,17 @@ MNT_ERR_NOFSTAB
 MNT_ERR_NOFSTYPE
 MNT_ERR_NOSOURCE
 MNT_ERR_LOOPOVERLAP
+MNT_ERR_LOCK
+MNT_ERR_NAMESPACE
+<SUBSECTION>
+MNT_EX_SUCCESS
+MNT_EX_USAGE
+MNT_EX_SYSERR
+MNT_EX_SOFTWARE
+MNT_EX_USER
+MNT_EX_FILEIO
+MNT_EX_FAIL
+MNT_EX_SOMEOK
 </SECTION>
 
 <SECTION>
@@ -130,6 +152,7 @@ MNT_MS_UHELPER
 MNT_MS_USER
 MNT_MS_USERS
 MNT_MS_XCOMMENT
+MNT_MS_XFSTABCOMM
 <SUBSECTION>
 MS_BIND
 MS_DIRSYNC
@@ -287,6 +310,7 @@ mnt_optstr_prepend_option
 mnt_optstr_remove_option
 mnt_optstr_set_option
 mnt_split_optstr
+mnt_match_options
 </SECTION>
 
 <SECTION>
@@ -377,7 +401,6 @@ mnt_get_swaps_path
 mnt_has_regular_mtab
 mnt_mangle
 mnt_match_fstype
-mnt_match_options
 mnt_tag_is_valid
 mnt_unmangle
 </SECTION>

@@ -1,5 +1,7 @@
 blkid:  libblkid 
+column:  libsmartcols 
 eject:  libblkid libmount librt 
+fincore:  libsmartcols 
 findfs:  libblkid 
 findmnt:  libblkid libmount librt libsmartcols libudev 
 fsck:  libblkid libmount librt 
@@ -13,33 +15,37 @@ lscpu:  libsmartcols
 lsipc:  libsmartcols 
 lslocks:  libblkid libmount librt libsmartcols 
 lslogins:  libsmartcols libsystemd 
-lsns:  libsmartcols 
+lsmem:  libsmartcols 
+lsns:  libblkid libmount librt libsmartcols 
 mkswap:  libblkid 
 mount:  libblkid libmount librt 
 mountpoint:  libblkid libmount librt 
 partx:  libblkid libsmartcols 
 prlimit:  libsmartcols 
 pylibmount.so:  libblkid libmount libpython2 librt 
+rfkill:  libsmartcols 
 swaplabel:  libblkid 
 swapoff:  libblkid libmount librt 
 swapon:  libblkid libmount librt libsmartcols 
 umount:  libblkid libmount librt 
 wdctl:  libsmartcols 
-wipefs:  libblkid 
+wipefs:  libblkid libsmartcols 
 zramctl:  libsmartcols 
 addpart:  
 agetty:  
 blkdiscard:  librt 
+blkzone:  
 blockdev:  
-cal:  libncursesw libtinfo 
+cal:  libtinfo 
 chcpu:  
-chfn:  libpam libpam_misc libpthread libuser 
+chfn:  libpam libpam_misc libpthread libreadline libuser 
+chmem:  
+choom:  
 chrt:  
-chsh:  libpam libpam_misc libpthread libuser 
+chsh:  libpam libpam_misc libpthread libreadline libuser 
 col:  
 colcrt:  
 colrm:  
-column:  
 ctrlaltdel:  
 delpart:  
 dmesg:  librt libtinfo 
@@ -51,7 +57,7 @@ fsck.minix:
 fsfreeze:  
 getopt:  
 hexdump:  libtinfo 
-hwclock:  
+hwclock:  libm 
 ionice:  
 ipcmk:  
 ipcrm:  
@@ -81,17 +87,16 @@ renice:
 resizepart:  
 rev:  
 rtcwake:  
-runuser:  libpam libpam_misc 
+runuser:  libpam libpam_misc libutil 
 script:  librt libutil 
 scriptreplay:  
 setarch:  
 setpriv:  ap-ng 
 setsid:  
 setterm:  libtinfo 
-su:  libpam libpam_misc 
+su:  libpam libpam_misc libutil 
 sulogin:  rypt 
 switch_root:  
-tailf:  
 taskset:  
 ul:  libtinfo 
 unshare:  

@@ -59,7 +59,7 @@ struct namei {
 	struct namei	*next;		/* next item */
 	int		level;
 	int		mountpoint;	/* is mount point */
-	int		noent;		/* is this item not existing */
+	int		noent;		/* this item not existing (stores errno from stat()) */
 };
 
 static int flags;
@@ -151,9 +151,10 @@ new_namei(struct namei *parent, const char *path, const char *fname, int lev)
 	nm->level = lev;
 	nm->name = xstrdup(fname);
 
-	nm->noent = (lstat(path, &nm->st) == -1);
-	if (nm->noent)
+	if (lstat(path, &nm->st) != 0) {
+		nm->noent = errno;
 		return nm;
+	}
 
 	if (S_ISLNK(nm->st.st_mode))
 		readlink_to_namei(nm, path);
@@ -280,7 +281,7 @@ print_namei(struct namei *nm, char *path)
 				blanks += 1;
 			blanks += nm->level * 2;
 			printf("%*s ", blanks, "");
-			printf(_("%s - No such file or directory\n"), nm->name);
+			printf("%s - %s\n", nm->name, strerror(nm->noent));
 			return -1;
 		}
 
@@ -320,10 +321,10 @@ print_namei(struct namei *nm, char *path)
 	return 0;
 }
 
-static void usage(int rc)
+static void __attribute__((__noreturn__)) usage(void)
 {
 	const char *p = program_invocation_short_name;
-	FILE *out = rc == EXIT_FAILURE ? stderr : stdout;
+	FILE *out = stdout;
 
 	if (!*p)
 		p = "namei";
@@ -336,30 +337,30 @@ static void usage(int rc)
 	fputs(_("Follow a pathname until a terminal point is found.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
-	fputs(_(" -h, --help          displays this help text\n"
-		" -V, --version       output version information and exit\n"
+	fputs(_(
 		" -x, --mountpoints   show mount point directories with a 'D'\n"
 		" -m, --modes         show the mode bits of each file\n"
 		" -o, --owners        show owner and group name of each file\n"
 		" -l, --long          use a long listing format (-m -o -v) \n"
 		" -n, --nosymlinks    don't follow symlinks\n"
 		" -v, --vertical      vertical align of modes and owners\n"), out);
+	printf(USAGE_HELP_OPTIONS(21));
 
-	fprintf(out, USAGE_MAN_TAIL("namei(1)"));
-	exit(rc);
+	printf(USAGE_MAN_TAIL("namei(1)"));
+	exit(EXIT_SUCCESS);
 }
 
 static const struct option longopts[] =
 {
-	{ "help",	0, 0, 'h' },
-	{ "version",    0, 0, 'V' },
-	{ "mountpoints",0, 0, 'x' },
-	{ "modes",	0, 0, 'm' },
-	{ "owners",	0, 0, 'o' },
-	{ "long",       0, 0, 'l' },
-	{ "nolinks",	0, 0, 'n' },
-	{ "vertical",   0, 0, 'v' },
-	{ NULL,		0, 0, 0 },
+	{ "help",	 no_argument, NULL, 'h' },
+	{ "version",     no_argument, NULL, 'V' },
+	{ "mountpoints", no_argument, NULL, 'x' },
+	{ "modes",	 no_argument, NULL, 'm' },
+	{ "owners",	 no_argument, NULL, 'o' },
+	{ "long",        no_argument, NULL, 'l' },
+	{ "nolinks",	 no_argument, NULL, 'n' },
+	{ "vertical",    no_argument, NULL, 'v' },
+	{ NULL, 0, NULL, 0 },
 };
 
 int
@@ -376,7 +377,7 @@ main(int argc, char **argv)
 	while ((c = getopt_long(argc, argv, "hVlmnovx", longopts, NULL)) != -1) {
 		switch(c) {
 		case 'h':
-			usage(EXIT_SUCCESS);
+			usage();
 			break;
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
@@ -400,13 +401,13 @@ main(int argc, char **argv)
 			flags |= NAMEI_VERTICAL;
 			break;
 		default:
-			usage(EXIT_FAILURE);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
 	if (optind == argc) {
 		warnx(_("pathname argument is missing"));
-		usage(EXIT_FAILURE);
+		errtryhelp(EXIT_FAILURE);
 	}
 
 	ucache = new_idcache();

@@ -29,6 +29,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <grp.h>
+#include <sys/stat.h>
 
 #ifdef HAVE_LIBSELINUX
 # include <selinux/selinux.h>
@@ -64,18 +65,19 @@ static struct namespace_file {
 	{ .nstype = 0, .name = NULL, .fd = -1 }
 };
 
-static void usage(int status)
+static void __attribute__((__noreturn__)) usage(void)
 {
-	FILE *out = status == EXIT_SUCCESS ? stdout : stderr;
+	FILE *out = stdout;
 
 	fputs(USAGE_HEADER, out);
-	fprintf(out, _(" %s [options] <program> [<argument>...]\n"),
+	fprintf(out, _(" %s [options] [<program> [<argument>...]]\n"),
 		program_invocation_short_name);
 
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_("Run a program with namespaces of other processes.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
+	fputs(_(" -a, --all              enter all namespaces\n"), out);
 	fputs(_(" -t, --target <pid>     target process to get namespaces from\n"), out);
 	fputs(_(" -m, --mount[=<file>]   enter mount namespace\n"), out);
 	fputs(_(" -u, --uts[=<file>]     enter UTS namespace (hostname etc)\n"), out);
@@ -95,11 +97,10 @@ static void usage(int status)
 #endif
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
-	fprintf(out, USAGE_MAN_TAIL("nsenter(1)"));
+	printf(USAGE_HELP_OPTIONS(24));
+	printf(USAGE_MAN_TAIL("nsenter(1)"));
 
-	exit(status);
+	exit(EXIT_SUCCESS);
 }
 
 static pid_t namespace_target_pid = 0;
@@ -143,6 +144,32 @@ static void open_namespace_fd(int nstype, const char *path)
 	assert(nsfile->nstype);
 }
 
+static int get_ns_ino(const char *path, ino_t *ino)
+{
+	struct stat st;
+
+	if (stat(path, &st) != 0)
+		return -errno;
+	*ino = st.st_ino;
+	return 0;
+}
+
+static int is_same_namespace(pid_t a, pid_t b, const char *type)
+{
+	char path[PATH_MAX];
+	ino_t a_ino = 0, b_ino = 0;
+
+	snprintf(path, sizeof(path), "/proc/%u/%s", a, type);
+	if (get_ns_ino(path, &a_ino) != 0)
+		err(EXIT_FAILURE, _("stat of %s failed"), path);
+
+	snprintf(path, sizeof(path), "/proc/%u/%s", b, type);
+	if (get_ns_ino(path, &b_ino) != 0)
+		err(EXIT_FAILURE, _("stat of %s failed"), path);
+
+	return a_ino == b_ino;
+}
+
 static void continue_as_child(void)
 {
 	pid_t child = fork();
@@ -181,6 +208,7 @@ int main(int argc, char *argv[])
 		OPT_PRESERVE_CRED = CHAR_MAX + 1
 	};
 	static const struct option longopts[] = {
+		{ "all", no_argument, NULL, 'a' },
 		{ "help", no_argument, NULL, 'h' },
 		{ "version", no_argument, NULL, 'V'},
 		{ "target", required_argument, NULL, 't' },
@@ -206,6 +234,7 @@ int main(int argc, char *argv[])
 	struct namespace_file *nsfile;
 	int c, pass, namespaces = 0, setgroups_nerrs = 0, preserve_cred = 0;
 	bool do_rd = false, do_wd = false, force_uid = false, force_gid = false;
+	bool do_all = false;
 	int do_fork = -1; /* unknown yet */
 	uid_t uid = 0;
 	gid_t gid = 0;
@@ -219,14 +248,17 @@ int main(int argc, char *argv[])
 	atexit(close_stdout);
 
 	while ((c =
-		getopt_long(argc, argv, "+hVt:m::u::i::n::p::C::U::S:G:r::w::FZ",
+		getopt_long(argc, argv, "+ahVt:m::u::i::n::p::C::U::S:G:r::w::FZ",
 			    longopts, NULL)) != -1) {
 		switch (c) {
 		case 'h':
-			usage(EXIT_SUCCESS);
+			usage();
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
+		case 'a':
+			do_all = true;
+			break;
 		case 't':
 			namespace_target_pid =
 			    strtoul_or_err(optarg, _("failed to parse pid"));
@@ -305,7 +337,7 @@ int main(int argc, char *argv[])
 			break;
 #endif
 		default:
-			usage(EXIT_FAILURE);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
@@ -323,6 +355,25 @@ int main(int argc, char *argv[])
 		freecon(scon);
 	}
 #endif
+
+	if (do_all) {
+		if (!namespace_target_pid)
+			errx(EXIT_FAILURE, _("no target PID specified for --all"));
+		for (nsfile = namespace_files; nsfile->nstype; nsfile++) {
+			if (nsfile->fd >= 0)
+				continue;	/* namespace already specified */
+
+			/* It is not permitted to use setns(2) to reenter the caller's
+			 * current user namespace; see setns(2) man page for more details.
+			 */
+			if (nsfile->nstype & CLONE_NEWUSER
+			    && is_same_namespace(getpid(), namespace_target_pid, nsfile->name))
+				continue;
+
+			namespaces |= nsfile->nstype;
+		}
+	}
+
 	/*
 	 * Open remaining namespace and directory descriptors.
 	 */
@@ -427,7 +478,7 @@ int main(int argc, char *argv[])
 
 	if (optind < argc) {
 		execvp(argv[optind], argv + optind);
-		err(EXIT_FAILURE, _("failed to execute %s"), argv[optind]);
+		errexec(argv[optind]);
 	}
 	exec_shell();
 }

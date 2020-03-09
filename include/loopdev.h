@@ -24,6 +24,7 @@
 /* #define LOOP_CHANGE_FD	0x4C06 */
 #define LOOP_SET_CAPACITY	0x4C07
 #define LOOP_SET_DIRECT_IO	0x4C08
+#define LOOP_SET_BLOCK_SIZE	0x4C09
 
 /* /dev/loop-control interface */
 #ifndef LOOP_CTL_ADD
@@ -102,12 +103,12 @@ struct loopdev_cxt {
 	unsigned int	info_failed:1;	/* LOOP_GET_STATUS ioctl failed */
 	unsigned int    control_ok:1;	/* /dev/loop-control success */
 
-	struct sysfs_cxt	sysfs;	/* pointer to /sys/dev/block/<maj:min>/ */
+	struct path_cxt		*sysfs; /* pointer to /sys/dev/block/<maj:min>/ */
 	struct loop_info64	info;	/* for GET/SET ioctl */
 	struct loopdev_iter	iter;	/* scans /sys or /dev for used/free devices */
 };
 
-#define UL_LOOPDEVCXT_EMPTY { .fd = -1, .sysfs = UL_SYSFSCXT_EMPTY }
+#define UL_LOOPDEVCXT_EMPTY { .fd = -1  }
 
 /*
  * loopdev_cxt.flags
@@ -153,7 +154,6 @@ extern int loopcxt_has_device(struct loopdev_cxt *lc);
 extern int loopcxt_add_device(struct loopdev_cxt *lc);
 extern char *loopcxt_strdup_device(struct loopdev_cxt *lc);
 extern const char *loopcxt_get_device(struct loopdev_cxt *lc);
-extern struct sysfs_cxt *loopcxt_get_sysfs(struct loopdev_cxt *lc);
 extern struct loop_info64 *loopcxt_get_info(struct loopdev_cxt *lc);
 
 extern int loopcxt_get_fd(struct loopdev_cxt *lc);
@@ -173,11 +173,13 @@ int loopcxt_set_offset(struct loopdev_cxt *lc, uint64_t offset);
 int loopcxt_set_sizelimit(struct loopdev_cxt *lc, uint64_t sizelimit);
 int loopcxt_set_flags(struct loopdev_cxt *lc, uint32_t flags);
 int loopcxt_set_backing_file(struct loopdev_cxt *lc, const char *filename);
+int loopcxt_set_blocksize(struct loopdev_cxt *lc, uint64_t blocksize);
 
 extern char *loopcxt_get_backing_file(struct loopdev_cxt *lc);
 extern int loopcxt_get_backing_devno(struct loopdev_cxt *lc, dev_t *devno);
 extern int loopcxt_get_backing_inode(struct loopdev_cxt *lc, ino_t *ino);
 extern int loopcxt_get_offset(struct loopdev_cxt *lc, uint64_t *offset);
+extern int loopcxt_get_blocksize(struct loopdev_cxt *lc, uint64_t *blocksize);
 extern int loopcxt_get_sizelimit(struct loopdev_cxt *lc, uint64_t *size);
 extern int loopcxt_get_encrypt_type(struct loopdev_cxt *lc, uint32_t *type);
 extern const char *loopcxt_get_crypt_name(struct loopdev_cxt *lc);

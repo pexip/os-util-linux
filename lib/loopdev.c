@@ -32,7 +32,6 @@
 #include <sys/mman.h>
 #include <inttypes.h>
 #include <dirent.h>
-#include <linux/posix_types.h>
 
 #include "linux_version.h"
 #include "c.h"
@@ -46,23 +45,25 @@
 /*
  * Debug stuff (based on include/debug.h)
  */
-UL_DEBUG_DEFINE_MASK(loopdev);
+static UL_DEBUG_DEFINE_MASK(loopdev);
 UL_DEBUG_DEFINE_MASKNAMES(loopdev) = UL_DEBUG_EMPTY_MASKNAMES;
 
 #define LOOPDEV_DEBUG_INIT	(1 << 1)
 #define LOOPDEV_DEBUG_CXT	(1 << 2)
 #define LOOPDEV_DEBUG_ITER	(1 << 3)
 #define LOOPDEV_DEBUG_SETUP	(1 << 4)
-#define SFDISKPROG_DEBUG_ALL	0xFFFF
 
 #define DBG(m, x)       __UL_DBG(loopdev, LOOPDEV_DEBUG_, m, x)
 #define ON_DBG(m, x)    __UL_DBG_CALL(loopdev, LOOPDEV_DEBUG_, m, x)
+
+#define UL_DEBUG_CURRENT_MASK	UL_DEBUG_MASK(loopdev)
+#include "debugobj.h"
 
 static void loopdev_init_debug(void)
 {
 	if (loopdev_debug_mask)
 		return;
-	__UL_INIT_DEBUG(loopdev, LOOPDEV_DEBUG_, 0, LOOPDEV_DEBUG);
+	__UL_INIT_DEBUG_FROM_ENV(loopdev, LOOPDEV_DEBUG_, 0, LOOPDEV_DEBUG);
 }
 
 /*
@@ -121,7 +122,8 @@ int loopcxt_set_device(struct loopdev_cxt *lc, const char *device)
 		DBG(CXT, ul_debugobj(lc, "%s name assigned", device));
 	}
 
-	sysfs_deinit(&lc->sysfs);
+	ul_unref_path(lc->sysfs);
+	lc->sysfs = NULL;
 	return 0;
 }
 
@@ -145,7 +147,7 @@ int loopcxt_has_device(struct loopdev_cxt *lc)
  * Note about LOOPDEV_FL_{RDONLY,RDWR} flags. These flags are used for open(2)
  * syscall to open loop device. By default is the device open read-only.
  *
- * The expection is loopcxt_setup_device(), where the device is open read-write
+ * The exception is loopcxt_setup_device(), where the device is open read-write
  * if LO_FLAGS_READ_ONLY flags is not set (see loopcxt_set_flags()).
  *
  * Returns: <0 on error, 0 on success.
@@ -242,24 +244,24 @@ const char *loopcxt_get_device(struct loopdev_cxt *lc)
  *
  * Returns pointer to the sysfs context (see lib/sysfs.c)
  */
-struct sysfs_cxt *loopcxt_get_sysfs(struct loopdev_cxt *lc)
+static struct path_cxt *loopcxt_get_sysfs(struct loopdev_cxt *lc)
 {
 	if (!lc || !*lc->device || (lc->flags & LOOPDEV_FL_NOSYSFS))
 		return NULL;
 
-	if (!lc->sysfs.devno) {
-		dev_t devno = sysfs_devname_to_devno(lc->device, NULL);
+	if (!lc->sysfs) {
+		dev_t devno = sysfs_devname_to_devno(lc->device);
 		if (!devno) {
 			DBG(CXT, ul_debugobj(lc, "sysfs: failed devname to devno"));
 			return NULL;
 		}
-		if (sysfs_init(&lc->sysfs, devno, NULL)) {
+
+		lc->sysfs = ul_new_sysfs_path(devno, NULL, NULL);
+		if (!lc->sysfs)
 			DBG(CXT, ul_debugobj(lc, "sysfs: init failed"));
-			return NULL;
-		}
 	}
 
-	return &lc->sysfs;
+	return lc->sysfs;
 }
 
 /*
@@ -400,8 +402,8 @@ static int loopiter_set_device(struct loopdev_cxt *lc, const char *device)
 
 static int cmpnum(const void *p1, const void *p2)
 {
-	return (((* (int *) p1) > (* (int *) p2)) -
-			((* (int *) p1) < (* (int *) p2)));
+	return (((* (const int *) p1) > (* (const int *) p2)) -
+			((* (const int *) p1) < (* (const int *) p2)));
 }
 
 /*
@@ -533,7 +535,7 @@ static int loopcxt_next_from_sysfs(struct loopdev_cxt *lc)
 	fd = dirfd(iter->sysblock);
 
 	while ((d = readdir(iter->sysblock))) {
-		char name[256];
+		char name[NAME_MAX + 18 + 1];
 		struct stat st;
 
 		DBG(ITER, ul_debugobj(iter, "check %s", d->d_name));
@@ -684,7 +686,7 @@ struct loop_info64 *loopcxt_get_info(struct loopdev_cxt *lc)
  */
 char *loopcxt_get_backing_file(struct loopdev_cxt *lc)
 {
-	struct sysfs_cxt *sysfs = loopcxt_get_sysfs(lc);
+	struct path_cxt *sysfs = loopcxt_get_sysfs(lc);
 	char *res = NULL;
 
 	if (sysfs)
@@ -692,7 +694,7 @@ char *loopcxt_get_backing_file(struct loopdev_cxt *lc)
 		 * This is always preffered, the loop_info64
 		 * has too small buffer for the filename.
 		 */
-		res = sysfs_strdup(sysfs, "loop/backing_file");
+		ul_path_read_string(sysfs, &res, "loop/backing_file");
 
 	if (!res && loopcxt_ioctl_enabled(lc)) {
 		struct loop_info64 *lo = loopcxt_get_info(lc);
@@ -716,11 +718,11 @@ char *loopcxt_get_backing_file(struct loopdev_cxt *lc)
  */
 int loopcxt_get_offset(struct loopdev_cxt *lc, uint64_t *offset)
 {
-	struct sysfs_cxt *sysfs = loopcxt_get_sysfs(lc);
+	struct path_cxt *sysfs = loopcxt_get_sysfs(lc);
 	int rc = -EINVAL;
 
 	if (sysfs)
-		rc = sysfs_read_u64(sysfs, "loop/offset", offset);
+		rc = ul_path_read_u64(sysfs, offset, "loop/offset");
 
 	if (rc && loopcxt_ioctl_enabled(lc)) {
 		struct loop_info64 *lo = loopcxt_get_info(lc);
@@ -738,17 +740,49 @@ int loopcxt_get_offset(struct loopdev_cxt *lc, uint64_t *offset)
 
 /*
  * @lc: context
+ * @blocksize: returns logical blocksize for the given device
+ *
+ * Returns: <0 on error, 0 on success
+ */
+int loopcxt_get_blocksize(struct loopdev_cxt *lc, uint64_t *blocksize)
+{
+	struct path_cxt *sysfs = loopcxt_get_sysfs(lc);
+	int rc = -EINVAL;
+
+	if (sysfs)
+		rc = ul_path_read_u64(sysfs, blocksize, "queue/logical_block_size");
+
+	/* Fallback based on BLKSSZGET ioctl */
+	if (rc) {
+		int fd = loopcxt_get_fd(lc);
+		int sz = 0;
+
+		if (fd < 0)
+			return -EINVAL;
+		rc = blkdev_get_sector_size(fd, &sz);
+		if (rc)
+			return rc;
+
+		*blocksize = sz;
+	}
+
+	DBG(CXT, ul_debugobj(lc, "get_blocksize [rc=%d]", rc));
+	return rc;
+}
+
+/*
+ * @lc: context
  * @sizelimit: returns size limit for the given device
  *
  * Returns: <0 on error, 0 on success
  */
 int loopcxt_get_sizelimit(struct loopdev_cxt *lc, uint64_t *size)
 {
-	struct sysfs_cxt *sysfs = loopcxt_get_sysfs(lc);
+	struct path_cxt *sysfs = loopcxt_get_sysfs(lc);
 	int rc = -EINVAL;
 
 	if (sysfs)
-		rc = sysfs_read_u64(sysfs, "loop/sizelimit", size);
+		rc = ul_path_read_u64(sysfs, size, "loop/sizelimit");
 
 	if (rc && loopcxt_ioctl_enabled(lc)) {
 		struct loop_info64 *lo = loopcxt_get_info(lc);
@@ -893,12 +927,12 @@ int loopmod_supports_partscan(void)
  */
 int loopcxt_is_partscan(struct loopdev_cxt *lc)
 {
-	struct sysfs_cxt *sysfs = loopcxt_get_sysfs(lc);
+	struct path_cxt *sysfs = loopcxt_get_sysfs(lc);
 
 	if (sysfs) {
 		/* kernel >= 3.2 */
 		int fl;
-		if (sysfs_read_int(sysfs, "loop/partscan", &fl) == 0)
+		if (ul_path_read_s32(sysfs, &fl, "loop/partscan") == 0)
 			return fl;
 	}
 
@@ -913,11 +947,11 @@ int loopcxt_is_partscan(struct loopdev_cxt *lc)
  */
 int loopcxt_is_autoclear(struct loopdev_cxt *lc)
 {
-	struct sysfs_cxt *sysfs = loopcxt_get_sysfs(lc);
+	struct path_cxt *sysfs = loopcxt_get_sysfs(lc);
 
 	if (sysfs) {
 		int fl;
-		if (sysfs_read_int(sysfs, "loop/autoclear", &fl) == 0)
+		if (ul_path_read_s32(sysfs, &fl, "loop/autoclear") == 0)
 			return fl;
 	}
 
@@ -936,11 +970,11 @@ int loopcxt_is_autoclear(struct loopdev_cxt *lc)
  */
 int loopcxt_is_readonly(struct loopdev_cxt *lc)
 {
-	struct sysfs_cxt *sysfs = loopcxt_get_sysfs(lc);
+	struct path_cxt *sysfs = loopcxt_get_sysfs(lc);
 
 	if (sysfs) {
 		int fl;
-		if (sysfs_read_int(sysfs, "ro", &fl) == 0)
+		if (ul_path_read_s32(sysfs, &fl, "ro") == 0)
 			return fl;
 	}
 
@@ -959,11 +993,11 @@ int loopcxt_is_readonly(struct loopdev_cxt *lc)
  */
 int loopcxt_is_dio(struct loopdev_cxt *lc)
 {
-	struct sysfs_cxt *sysfs = loopcxt_get_sysfs(lc);
+	struct path_cxt *sysfs = loopcxt_get_sysfs(lc);
 
 	if (sysfs) {
 		int fl;
-		if (sysfs_read_int(sysfs, "loop/dio", &fl) == 0)
+		if (ul_path_read_s32(sysfs, &fl, "loop/dio") == 0)
 			return fl;
 	}
 	if (loopcxt_ioctl_enabled(lc)) {
@@ -1396,6 +1430,28 @@ int loopcxt_set_dio(struct loopdev_cxt *lc, unsigned long use_dio)
 	}
 
 	DBG(CXT, ul_debugobj(lc, "direct io set"));
+	return 0;
+}
+
+/*
+ * Kernel uses "unsigned long" as ioctl arg, but we use u64 for all sizes to
+ * keep loopdev internal API simple.
+ */
+int loopcxt_set_blocksize(struct loopdev_cxt *lc, uint64_t blocksize)
+{
+	int fd = loopcxt_get_fd(lc);
+
+	if (fd < 0)
+		return -EINVAL;
+
+	/* Kernels prior to v4.14 don't support this ioctl */
+	if (ioctl(fd, LOOP_SET_BLOCK_SIZE, (unsigned long) blocksize) < 0) {
+		int rc = -errno;
+		DBG(CXT, ul_debugobj(lc, "LOOP_SET_BLOCK_SIZE failed: %m"));
+		return rc;
+	}
+
+	DBG(CXT, ul_debugobj(lc, "logical block size set"));
 	return 0;
 }
 

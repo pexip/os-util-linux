@@ -56,6 +56,11 @@
 # include "auth.h"
 #endif
 
+#ifdef HAVE_LIBREADLINE
+# define _FUNCTION_DEF
+# include <readline/readline.h>
+#endif
+
 struct finfo {
 	char *full_name;
 	char *office;
@@ -84,8 +89,9 @@ struct chfn_control {
 /* we do not accept gecos field sizes longer than MAX_FIELD_SIZE */
 #define MAX_FIELD_SIZE		256
 
-static void __attribute__((__noreturn__)) usage(FILE *fp)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *fp = stdout;
 	fputs(USAGE_HEADER, fp);
 	fprintf(fp, _(" %s [options] [<username>]\n"), program_invocation_short_name);
 
@@ -98,10 +104,10 @@ static void __attribute__((__noreturn__)) usage(FILE *fp)
 	fputs(_(" -p, --office-phone <phone>   office phone number\n"), fp);
 	fputs(_(" -h, --home-phone <phone>     home phone number\n"), fp);
 	fputs(USAGE_SEPARATOR, fp);
-	fputs(_(" -u, --help     display this help and exit\n"), fp);
-	fputs(_(" -v, --version  output version information and exit\n"), fp);
-	fprintf(fp, USAGE_MAN_TAIL("chfn(1)"));
-	exit(fp == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	printf( " -u, --help                   %s\n", USAGE_OPTSTR_HELP);
+	printf( " -v, --version                %s\n", USAGE_OPTSTR_VERSION);
+	printf(USAGE_MAN_TAIL("chfn(1)"));
+	exit(EXIT_SUCCESS);
 }
 
 /*
@@ -133,13 +139,13 @@ static void parse_argv(struct chfn_control *ctl, int argc, char **argv)
 {
 	int index, c, status = 0;
 	static const struct option long_options[] = {
-		{"full-name", required_argument, 0, 'f'},
-		{"office", required_argument, 0, 'o'},
-		{"office-phone", required_argument, 0, 'p'},
-		{"home-phone", required_argument, 0, 'h'},
-		{"help", no_argument, 0, 'u'},
-		{"version", no_argument, 0, 'v'},
-		{NULL, no_argument, 0, '0'},
+		{ "full-name",    required_argument, NULL, 'f' },
+		{ "office",       required_argument, NULL, 'o' },
+		{ "office-phone", required_argument, NULL, 'p' },
+		{ "home-phone",   required_argument, NULL, 'h' },
+		{ "help",         no_argument,       NULL, 'u' },
+		{ "version",      no_argument,       NULL, 'v' },
+		{ NULL, 0, NULL, 0 },
 	};
 
 	while ((c = getopt_long(argc, argv, "f:r:p:h:o:uv", long_options,
@@ -173,9 +179,9 @@ static void parse_argv(struct chfn_control *ctl, int argc, char **argv)
 			printf(UTIL_LINUX_VERSION);
 			exit(EXIT_SUCCESS);
 		case 'u':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 		ctl->changed = 1;
 		ctl->interactive = 0;
@@ -184,8 +190,10 @@ static void parse_argv(struct chfn_control *ctl, int argc, char **argv)
 		exit(EXIT_FAILURE);
 	/* done parsing arguments.  check for a username. */
 	if (optind < argc) {
-		if (optind + 1 < argc)
-			usage(stderr);
+		if (optind + 1 < argc) {
+			warnx(_("cannot handle multiple usernames"));
+			errtryhelp(EXIT_FAILURE);
+		}
 		ctl->username = argv[optind];
 	}
 	return;
@@ -221,31 +229,40 @@ static char *ask_new_field(struct chfn_control *ctl, const char *question,
 			   char *def_val)
 {
 	int len;
-	char *ans;
-	char buf[MAX_FIELD_SIZE + 2];
+	char *buf;
+#ifndef HAVE_LIBREADLINE
+	size_t dummy = 0;
+#endif
 
 	if (!def_val)
 		def_val = "";
 	while (true) {
 		printf("%s [%s]: ", question, def_val);
 		__fpurge(stdin);
-		if (fgets(buf, sizeof(buf), stdin) == NULL)
+#ifdef HAVE_LIBREADLINE
+		rl_bind_key('\t', rl_insert);
+		if ((buf = readline(NULL)) == NULL)
+#else
+		if (getline(&buf, &dummy, stdin) < 0)
+#endif
 			errx(EXIT_FAILURE, _("Aborted."));
-		ans = buf;
 		/* remove white spaces from string end */
-		ltrim_whitespace((unsigned char *) ans);
-		len = rtrim_whitespace((unsigned char *) ans);
-		if (len == 0)
+		ltrim_whitespace((unsigned char *) buf);
+		len = rtrim_whitespace((unsigned char *) buf);
+		if (len == 0) {
+			free(buf);
 			return xstrdup(def_val);
-		if (!strcasecmp(ans, "none")) {
+		}
+		if (!strcasecmp(buf, "none")) {
+			free(buf);
 			ctl->changed = 1;
 			return xstrdup("");
 		}
-		if (check_gecos_string(question, ans) >= 0)
+		if (check_gecos_string(question, buf) >= 0)
 			break;
 	}
 	ctl->changed = 1;
-	return xstrdup(ans);
+	return buf;
 }
 
 /*

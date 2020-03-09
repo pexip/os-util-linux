@@ -25,6 +25,26 @@
 #define THREAD_LOCAL static
 #endif
 
+#ifdef HAVE_GETRANDOM
+# include <sys/random.h>
+#elif defined (__linux__)
+# if !defined(SYS_getrandom) && defined(__NR_getrandom)
+   /* usable kernel-headers, but old glibc-headers */
+#  define SYS_getrandom __NR_getrandom
+# endif
+#endif
+
+#if !defined(HAVE_GETRANDOM) && defined(SYS_getrandom)
+/* libc without function, but we have syscal */
+#define GRND_NONBLOCK 0x01
+#define GRND_RANDOM 0x02
+static int getrandom(void *buf, size_t buflen, unsigned int flags)
+{
+	return (syscall(SYS_getrandom, buf, buflen, flags));
+}
+# define HAVE_GETRANDOM
+#endif
+
 #if defined(__linux__) && defined(__NR_gettid) && defined(HAVE_JRAND48)
 #define DO_JRAND_MIX
 THREAD_LOCAL unsigned short ul_jrand_seed[3];
@@ -35,10 +55,28 @@ int rand_get_number(int low_n, int high_n)
 	return rand() % (high_n - low_n + 1) + low_n;
 }
 
+static void crank_random(void)
+{
+	int i;
+	struct timeval tv;
+
+	gettimeofday(&tv, NULL);
+	srand((getpid() << 16) ^ getuid() ^ tv.tv_sec ^ tv.tv_usec);
+
+#ifdef DO_JRAND_MIX
+	ul_jrand_seed[0] = getpid() ^ (tv.tv_sec & 0xFFFF);
+	ul_jrand_seed[1] = getppid() ^ (tv.tv_usec & 0xFFFF);
+	ul_jrand_seed[2] = (tv.tv_sec ^ tv.tv_usec) >> 16;
+#endif
+	/* Crank the random number generator a few times */
+	gettimeofday(&tv, NULL);
+	for (i = (tv.tv_sec ^ tv.tv_usec) & 0x1F; i > 0; i--)
+		rand();
+}
+
 int random_get_fd(void)
 {
 	int i, fd;
-	struct timeval tv;
 
 	fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
 	if (fd == -1)
@@ -48,55 +86,78 @@ int random_get_fd(void)
 		if (i >= 0)
 			fcntl(fd, F_SETFD, i | FD_CLOEXEC);
 	}
-
-	gettimeofday(&tv, 0);
-	srand((getpid() << 16) ^ getuid() ^ tv.tv_sec ^ tv.tv_usec);
-
-#ifdef DO_JRAND_MIX
-	ul_jrand_seed[0] = getpid() ^ (tv.tv_sec & 0xFFFF);
-	ul_jrand_seed[1] = getppid() ^ (tv.tv_usec & 0xFFFF);
-	ul_jrand_seed[2] = (tv.tv_sec ^ tv.tv_usec) >> 16;
-#endif
-	/* Crank the random number generator a few times */
-	gettimeofday(&tv, 0);
-	for (i = (tv.tv_sec ^ tv.tv_usec) & 0x1F; i > 0; i--)
-		rand();
+	crank_random();
 	return fd;
 }
-
 
 /*
  * Generate a stream of random nbytes into buf.
  * Use /dev/urandom if possible, and if not,
  * use glibc pseudo-random functions.
  */
+#define UL_RAND_READ_ATTEMPTS	8
+#define UL_RAND_READ_DELAY	125000	/* microseconds */
+
 void random_get_bytes(void *buf, size_t nbytes)
 {
+	unsigned char *cp = (unsigned char *)buf;
 	size_t i, n = nbytes;
-	int fd = random_get_fd();
 	int lose_counter = 0;
-	unsigned char *cp = (unsigned char *) buf;
 
-	if (fd >= 0) {
-		while (n > 0) {
-			ssize_t x = read(fd, cp, n);
-			if (x <= 0) {
-				if (lose_counter++ > 16)
-					break;
-				continue;
-			}
-			n -= x;
-			cp += x;
-			lose_counter = 0;
-		}
+#ifdef HAVE_GETRANDOM
+	while (n > 0) {
+		int x;
 
-		close(fd);
+		errno = 0;
+		x = getrandom(cp, n, GRND_NONBLOCK);
+		if (x > 0) {			/* success */
+		       n -= x;
+		       cp += x;
+		       lose_counter = 0;
+
+		} else if (errno == ENOSYS) {	/* kernel without getrandom() */
+			break;
+
+		} else if (errno == EAGAIN && lose_counter < UL_RAND_READ_ATTEMPTS) {
+			xusleep(UL_RAND_READ_DELAY);	/* no etropy, wait and try again */
+			lose_counter++;
+		} else
+			break;
 	}
 
+	if (errno == ENOSYS)
+#endif
+	/*
+	 * We've been built against headers that support getrandom, but the
+	 * running kernel does not.  Fallback to reading from /dev/{u,}random
+	 * as before
+	 */
+	{
+		int fd = random_get_fd();
+
+		lose_counter = 0;
+		if (fd >= 0) {
+			while (n > 0) {
+				ssize_t x = read(fd, cp, n);
+				if (x <= 0) {
+					if (lose_counter++ > UL_RAND_READ_ATTEMPTS)
+						break;
+					xusleep(UL_RAND_READ_DELAY);
+					continue;
+				}
+				n -= x;
+				cp += x;
+				lose_counter = 0;
+			}
+
+			close(fd);
+		}
+	}
 	/*
 	 * We do this all the time, but this is the only source of
 	 * randomness if /dev/random/urandom is out to lunch.
 	 */
+	crank_random();
 	for (cp = buf, i = 0; i < nbytes; i++)
 		*cp++ ^= (rand() >> 7) & 0xFF;
 
@@ -112,7 +173,6 @@ void random_get_bytes(void *buf, size_t nbytes)
 		       sizeof(ul_jrand_seed)-sizeof(unsigned short));
 	}
 #endif
-
 	return;
 }
 
@@ -122,6 +182,9 @@ void random_get_bytes(void *buf, size_t nbytes)
  */
 const char *random_tell_source(void)
 {
+#ifdef HAVE_GETRANDOM
+	return _("getrandom() function");
+#else
 	size_t i;
 	static const char *random_sources[] = {
 		"/dev/urandom",
@@ -132,22 +195,41 @@ const char *random_tell_source(void)
 		if (!access(random_sources[i], R_OK))
 			return random_sources[i];
 	}
-
+#endif
 	return _("libc pseudo-random functions");
 }
 
-#ifdef TEST_PROGRAM
-int main(int argc __attribute__ ((__unused__)),
-         char *argv[] __attribute__ ((__unused__)))
-{
-	unsigned int v, i;
+#ifdef TEST_PROGRAM_RANDUTILS
+#include <inttypes.h>
 
-	/* generate and print 10 random numbers */
-	for (i = 0; i < 10; i++) {
+int main(int argc, char *argv[])
+{
+	size_t i, n;
+	int64_t *vp, v;
+	char *buf;
+	size_t bufsz;
+
+	n = argc == 1 ? 16 : atoi(argv[1]);
+
+	printf("Multiple random calls:\n");
+	for (i = 0; i < n; i++) {
 		random_get_bytes(&v, sizeof(v));
-		printf("%d\n", v);
+		printf("#%02zu: %25"PRIu64"\n", i, v);
+	}
+
+
+	printf("One random call:\n");
+	bufsz = n * sizeof(*vp);
+	buf = malloc(bufsz);
+	if (!buf)
+		err(EXIT_FAILURE, "failed to allocate buffer");
+
+	random_get_bytes(buf, bufsz);
+	for (i = 0; i < n; i++) {
+		vp = (int64_t *) (buf + (i * sizeof(*vp)));
+		printf("#%02zu: %25"PRIu64"\n", i, *vp);
 	}
 
 	return EXIT_SUCCESS;
 }
-#endif /* TEST_PROGRAM */
+#endif /* TEST_PROGRAM_RANDUTILS */

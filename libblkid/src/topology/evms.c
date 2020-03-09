@@ -33,7 +33,7 @@
 struct evms_stripe_info {
 	uint32_t	size;		/* stripe unit 512-byte blocks */
 	uint32_t	width;		/* the number of stripe members or RAID data disks */
-} evms_stripe_info;
+};
 
 static int is_evms_device(dev_t devno)
 {

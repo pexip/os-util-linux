@@ -116,7 +116,8 @@ lower case characters.
 .RS
 This field describes the mount point (target) for the filesystem.  For swap partitions, this
 field should be specified as `none'. If the name of the mount point
-contains spaces these can be escaped as `\\040'.
+contains spaces or tabs these can be escaped as `\\040' and '\\011'
+respectively.
 .RE
 
 .B The third field
@@ -244,4 +245,4 @@ file format appeared in 4.0BSD.
 .\" Instead there was a type rw/ro/rq/sw/xx, where xx is the present 'ignore'.
 .SH AVAILABILITY
 This man page is part of the util-linux package and is available from
-ftp://ftp.kernel.org/pub/linux/utils/util-linux/.
+https://www.kernel.org/pub/linux/utils/util-linux/.

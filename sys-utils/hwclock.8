@@ -4,9 +4,9 @@
 .\"   Authored new section: DATE-TIME CONFIGURATION.
 .\"   Subsections: Keeping Time..., LOCAL vs UTC, POSIX vs 'RIGHT'.
 .\"
-.TH HWCLOCK 8 "April 2015" "util-linux" "System Administration"
+.TH HWCLOCK 8 "July 2017" "util-linux" "System Administration"
 .SH NAME
-hwclock \- read or set the hardware clock (RTC)
+hwclock \- time clocks utility
 .SH SYNOPSIS
 .B hwclock
 .RI [ function ]
@@ -14,12 +14,12 @@ hwclock \- read or set the hardware clock (RTC)
 .
 .SH DESCRIPTION
 .B hwclock
-is a tool for accessing the Hardware Clock.  It can: display the
+is an administration tool for the time clocks.  It can: display the
 Hardware Clock time; set the Hardware Clock to a specified time; set the
 Hardware Clock from the System Clock; set the System Clock from the
 Hardware Clock; compensate for Hardware Clock drift; correct the System
 Clock timescale; set the kernel's timezone, NTP timescale, and epoch
-(Alpha only); compare the System and Hardware Clocks; and predict future
+(Alpha only); and predict future
 Hardware Clock values based on its drift rate.
 .PP
 Since v2.26 important changes were made to the
@@ -34,38 +34,40 @@ was added.  See their respective descriptions below.
 The following functions are mutually exclusive, only one can be given at
 a time.  If none is given, the default is \fB\-\-show\fR.
 .TP
-.B \-\-adjust
+.B \-a, \-\-adjust
 Add or subtract time from the Hardware Clock to account for systematic
 drift since the last time the clock was set or adjusted.  See the
 discussion below, under
 .BR "The Adjust Function" .
 .
 .TP
-.BR \-c , \ \-\-compare
-Periodically compare the Hardware Clock to the System Time and output
-the difference every 10 seconds.  This will also print the frequency
-offset and tick.
-.
-.TP
 .B \-\-getepoch
 .TQ
 .B \-\-setepoch
-These functions are for Alpha machines only.
+These functions are for Alpha machines only, and are only available
+through the Linux kernel RTC driver.
 .sp
-Read and set the kernel's Hardware Clock epoch value.
+They are used to read and set the kernel's Hardware Clock epoch value.
 Epoch is the number of years into AD to which a zero year value in the
-Hardware Clock refers.  For example, if you are using the convention
-that the year counter in your Hardware Clock contains the number of
-full years since 1952, then the kernel's Hardware Clock epoch value
-must be 1952.
+Hardware Clock refers.  For example, if the machine's BIOS sets the year
+counter in the Hardware Clock to contain the number of full years since
+1952, then the kernel's Hardware Clock epoch value must be 1952.
 .sp
 The \fB\%\-\-setepoch\fR function requires using the
 .B \%\-\-epoch
-option to specify the year.
-.sp
+option to specify the year.  For example:
+.RS
+.IP "" 4
+.B hwclock\ \-\-setepoch\ \-\-epoch=1952
+.PP
+The RTC driver attempts to guess the correct epoch value, so setting it
+may not be required.
+.PP
 This epoch value is used whenever
 .B \%hwclock
-reads or sets the Hardware Clock.
+reads or sets the Hardware Clock on an Alpha machine.  For ISA machines
+the kernel uses the fixed Hardware Clock epoch of 1900.
+.RE
 .
 .TP
 .B \-\-predict
@@ -191,12 +193,13 @@ the Hardware Clock while its Linux instance is not running.
 .TP
 .B \-\-set
 Set the Hardware Clock to the time given by the
-.BR \-\-date
+.B \-\-date
 option, and update the timestamps in
 .IR /etc/adjtime .
 With the
-.B --update-drift
-option (re)calculate the drift factor.
+.B \%\-\-update-drift
+option also (re)calculate the drift factor.  Try it without the option if
+.BR \%\-\-set " fails.  See " \%\-\-update-drift " below."
 .
 .TP
 .B \-\-systz
@@ -232,9 +235,10 @@ changed then a reboot would be required to inform the kernel.
 .BR \-w , \ \-\-systohc
 Set the Hardware Clock from the System Clock, and update the timestamps in
 .IR /etc/adjtime .
-When the
-.B --update-drift
-option is given, then also (re)calculate the drift factor.
+With the
+.B \%\-\-update-drift
+option also (re)calculate the drift factor.  Try it without the option if
+.BR \%\-\-systohc " fails.  See " \%\-\-update-drift " below."
 .
 .TP
 .BR \-V , \ \-\-version
@@ -251,90 +255,78 @@ Display help text and exit.
 .RI "Override the default " /etc/adjtime " file path."
 .
 .TP
-.B \-\-badyear
-Indicate that the Hardware Clock is incapable of storing years outside
-the range 1994-1999.  There is a problem in some BIOSes (almost all
-Award BIOSes made between 4/26/94 and 5/31/95) wherein they are unable
-to deal with years after 1999.  If one attempts to set the year-of-century
-value to something less than 94 (or 95 in some cases), the value that
-actually gets set is 94 (or 95).  Thus, if you have one of these machines,
-.B \%hwclock
-cannot set the year after 1999 and cannot use the value of the clock as
-the true time in the normal way.
-.sp
-To compensate for this (without your getting a BIOS update, which would
-definitely be preferable), always use
-.B \%\-\-badyear
-if you have one of these machines.  When
-.B \%hwclock
-knows it's working with a brain-damaged clock, it ignores the year part of
-the Hardware Clock value and instead tries to guess the year based on the
-last calibrated date in the adjtime file, by assuming that date is
-within the past year.  For this to work, you had better do a
-.B \%hwclock\ \-\-set
-or
-.B \%hwclock\ \-\-systohc
-at least once a year!
-.sp
-Though
-.B \%hwclock
-ignores the year value when it reads the Hardware Clock, it sets the
-year value when it sets the clock.  It sets it to 1995, 1996, 1997, or
-1998, whichever one has the same position in the leap year cycle as
-the true year.  That way, the Hardware Clock inserts leap days where
-they belong.  Again, if you let the Hardware Clock run for more than a
-year without setting it, this scheme could be defeated and you could
-end up losing a day.
-.
-.TP
 .BI \%\-\-date= date_string
-You need this option if you specify the
+This option must be used with the
 .B \-\-set
 or
 .B \%\-\-predict
 functions, otherwise it is ignored.
-It specifies the time to which to set the Hardware Clock, or the
-time for which to predict the Hardware Clock reading.
-The value of this option is used as an argument to the
-.BR date "(1) program's " \-\-date
-option.  For example:
 .RS
 .IP "" 4
-.B "hwclock\ \-\-set\ \-\-date='2011-08-14\ 16:45:05'"
+.B "hwclock\ \-\-set\ \-\-date='16:45'"
+.IP "" 4
+.B "hwclock\ \-\-predict\ \-\-date='2525-08-14\ 07:11:05'"
 .PP
 The argument must be in local time, even if you keep your Hardware Clock in
 UTC.  See the
 .B \%\-\-localtime
-option.  The argument must not be a relative time like "+5 minutes", because
+option.  Therefore, the argument should not include any timezone information.
+It also should not be a relative time like "+5 minutes", because
 .BR \%hwclock 's
-precision depends upon correlation between the argument's value and when
-the enter key is pressed.
+precision depends upon correlation between the argument's value and when the
+enter key is pressed.  Fractional seconds are silently dropped.  This option is
+capable of understanding many time and date formats, but the previous
+parameters should be observed.
 .RE
 .
 .TP
+.BI \%\-\-delay= seconds
+This option allows to overwrite internally used delay when set clock time. The
+default is 0.5 (500ms) for rtc_cmos, for another RTC types the delay is 0. If
+RTC type is impossible to determine (from sysfs) then it defaults also to 0.5
+to be backwardly compatible.
+.RS
+.PP
+The 500ms default is based on commonly used MC146818A-compatible (x86) hardware clock. This
+Hardware Clock can only be set to any integer time plus one half second.  The
+integer time is required because there is no interface to set or get a
+fractional second.  The additional half second delay is because the Hardware
+Clock updates to the following second precisely 500 ms after setting the new
+time. Unfortunately, this behavior is hardware specific and in same cases
+another delay is required.
+.RE
+.
+.TP
+.TP
 .BR \-D ", " \-\-debug
-Display a lot of information about what
-.B \%hwclock
-is doing internally.  Some of its functions are complex and this output
-can help you understand how the program works.
+.RB Use\  \-\-verbose .
+.RB The\  \%\-\-debug\  option
+has been deprecated and may be repurposed or removed in a future release.
 .
 .TP
 .B \-\-directisa
-This option is meaningful for: ISA compatible machines including x86, and
-x86_64; and Alpha (which has a similar Hardware Clock interface).  For other
-machines, it has no effect.  This option tells
+This option is meaningful for ISA compatible machines in the x86 and
+x86_64 family.  For other machines, it has no effect.  This option tells
 .B \%hwclock
 to use explicit I/O instructions to access the Hardware Clock.
 Without this option,
 .B \%hwclock
-will use the rtc device, which it assumes to be driven by the RTC device
-driver.  As of v2.26 it will no longer automatically use directisa when
-the rtc driver is unavailable; this was causing an unsafe condition that
-could allow two processes to access the Hardware Clock at the same time.
-Direct hardware access from userspace should only be used for testing,
-troubleshooting, and as a last resort when all other methods fail.  See
-the
+will use the rtc device file, which it assumes to be driven by the Linux
+RTC device driver.  As of v2.26 it will no longer automatically use
+directisa when the rtc driver is unavailable; this was causing an unsafe
+condition that could allow two processes to access the Hardware Clock at
+the same time.  Direct hardware access from userspace should only be
+used for testing, troubleshooting, and as a last resort when all other
+methods fail.  See the
 .BR \-\-rtc " option."
+.
+.TP
+.BI \-\-epoch= year
+This option is required when using the
+.BR \%\-\-setepoch \ function.
+.RI "The minimum " year
+value is 1900. The maximum is system dependent
+.RB ( ULONG_MAX\ -\ 1 ).
 .
 .TP
 .BR \-f , \ \-\-rtc=\fIfilename\fR
@@ -343,9 +335,9 @@ default rtc device file name.  Otherwise it will
 use the first one found in this order:
 .in +4
 .br
-.I /dev/rtc
-.br
 .I /dev/rtc0
+.br
+.I /dev/rtc
 .br
 .I /dev/misc/rtc
 .br
@@ -359,7 +351,7 @@ use the first one found in this order:
 .in
 .
 .TP
-.B \-\-localtime
+.BR \-l , \ \-\-localtime
 .TQ
 .BR \-u ", " \-\-utc
 Indicate which timescale the Hardware Clock is set to.
@@ -397,18 +389,17 @@ must be specified when using this option.
 .
 .TP
 .B \-\-test
-Do not actually change anything on the system, i.e., the Clocks or
-adjtime file.  This is useful, especially in conjunction with
-.BR \%\-\-debug ,
-in learning about the internal operations of hwclock.
+Do not actually change anything on the system, that is, the Clocks or
+.I /etc/adjtime
+.RB ( \%\-\-verbose
+is implicit with this option).
 .
 .TP
 .B \-\-update\-drift
 Update the Hardware Clock's drift factor in
 .IR /etc/adjtime .
-It is used with
+It can only be used with
 .BR \-\-set " or " \%\-\-systohc ,
-otherwise it is ignored.
 .sp
 A minimum four hour period between settings is required.  This is to
 avoid invalid calculations.  The longer the period, the more precise the
@@ -421,7 +412,7 @@ at shutdown; with the old behaviour this would automatically
 (re)calculate the drift factor which caused several problems:
 .RS
 .IP \(bu 2
-When using ntpd with an \%'11\ minute\ mode' kernel the drift factor
+When using NTP with an \%'11\ minute\ mode' kernel the drift factor
 would be clobbered to near zero.
 .IP \(bu 2
 It would not allow the use of 'cold' drift correction.  With most
@@ -432,6 +423,11 @@ on the drift factor.
 (Re)calculating drift factor on every shutdown delivers suboptimal
 results.  For example, if ephemeral conditions cause the machine to be
 abnormally hot the drift factor calculation would be out of range.
+.IP \(bu 2
+Significantly increased system shutdown times (as of v2.31 when not
+using
+.B \%\-\-update\-drift
+the RTC is not read).
 .PP
 .RB "Having " \%hwclock
 calculate the drift factor is a good starting point, but for optimal
@@ -442,56 +438,20 @@ crafted it should not need to be changed.  Therefore, the old behavior to
 automatically (re)calculate drift was changed and now requires this
 option to be used.  See the discussion below, under
 .BR "The Adjust Function" .
-.RE
-.
-.SH OPTIONS FOR ALPHA MACHINES ONLY
-.
-.TP
-.B \-\-arc
-This option is equivalent to
-.B \%\-\-epoch=1980
-and is used to specify the most common epoch on Alphas
-with an ARC console (although Ruffians have an epoch of 1900).
-.
-.TP
-.BI \-\-epoch= year
-Specifies the year which is the beginning of the Hardware Clock's epoch,
-that is the number of years into AD to which a zero value in the
-Hardware Clock's year counter refers.  It is used together with the
-.B \%\-\-setepoch
-option to set the kernel's idea of the epoch of the Hardware Clock.
-.sp
-For example, on a Digital Unix machine:
-.RS
-.IP "" 4
-.B hwclock\ \-\-setepoch\ \-\-epoch=1952
+.PP
+This option requires reading the Hardware Clock before setting it.  If
+it cannot be read, then this option will cause the set functions to fail.
+This can happen, for example, if the Hardware Clock is corrupted by a
+power failure.  In that case, the clock must first be set without this
+option.  Despite it not working, the resulting drift correction factor
+would be invalid anyway.
 .RE
 .
 .TP
-.B \-\-funky\-toy
-.TQ
-.B \-\-jensen
-These two options specify what kind of Alpha machine you have.  They
-are invalid if you do not have an Alpha and are usually unnecessary
-if you do;
+.BR \-v ", " \-\-verbose
+Display more details about what
 .B \%hwclock
-should be able to determine what it is running on when
-.I \%/proc
-is mounted.
-.sp
-.RB "The " \%\-\-jensen
-option is used for Jensen models;
-.B \%\-\-funky\-toy
-means that the machine requires the UF bit instead of the UIP bit in
-the Hardware Clock to detect a time transition.  The "toy" in the option
-name refers to the Time Of Year facility of the machine.
-.
-.TP
-.B \-\-srm
-This option is equivalent to
-.B \%\-\-epoch=1900
-and is used to specify the most common epoch on Alphas
-with an SRM console.
+is doing internally.
 .
 .SH NOTES
 .
@@ -608,20 +568,8 @@ reasons that userspace programs are generally not supposed to do
 direct I/O and disable interrupts.
 .B \%hwclock
 provides it for testing, troubleshooting, and  because it may be the
-only method available on ISA compatible and Alpha systems which do not
-have a working rtc device driver.
-.PP
-In the case of a Jensen Alpha, there is no way for
-.B \%hwclock
-to execute those I/O instructions, and so it uses instead the
-.I \%/dev/port
-device special file, which provides almost as low-level an interface to
-the I/O subsystem.
-.PP
-On an m68k system,
-.B \%hwclock
-can access the clock with the console driver, via the device special file
-.IR \%/dev/tty1 .
+only method available on ISA systems which do not have a working rtc
+device driver.
 .SS The Adjust Function
 .PP
 The Hardware Clock is usually not very accurate.  However, much of its
@@ -741,7 +689,6 @@ variable is unset. This value is output as the 'status' line of the
 .BR \%adjtimex\ --print " or " \%ntptime " commands."
 .PP
 It takes an outside influence, like the NTP daemon
-.BR ntpd (1),
 to put the kernel's clock discipline into a synchronized state, and
 therefore turn on \%'11\ minute\ mode'.
 It can be turned off by running anything that sets the System Clock the old
@@ -796,8 +743,7 @@ are supported by the hardware.
 .PP
 This discussion is based on the following conditions:
 .IP \(bu 2
-Nothing is running that alters the date-time clocks, such as
-.BR \%ntpd "(1) or a cron job."
+Nothing is running that alters the date-time clocks, such as NTP daemon or a cron job."
 .IP \(bu 2
 The system timezone is configured for the correct local time.  See below, under
 .BR "POSIX vs 'RIGHT'" .
@@ -816,8 +762,7 @@ During shutdown the following is called:
 .BR * " Systems without " adjtimex " may use " ntptime .
 .in
 .PP
-Whether maintaining precision time with
-.BR \%ntpd (1)
+Whether maintaining precision time with NTP daemon
 or not, it makes sense to configure the system to keep reasonably good
 date-time on its own.
 .PP
@@ -879,7 +824,7 @@ cold drift should yield better results.
 .PP
 .B Steps to calculate cold drift:
 .IP 1 2
-.RB "Ensure that " ntpd "(1) will not be launched at startup."
+.B "Ensure that NTP daemon will not be launched at startup."
 .IP 2 2
 .RI The " System Clock " "time must be correct at shutdown!"
 .IP 3 2
@@ -992,6 +937,14 @@ timescale. The zoneinfo database must be configured to use either posix
 or 'right', as described above, or by assigning a database path to the
 .SB TZDIR
 environment variable.
+.SH EXIT STATUS
+One of the following exit values will be returned:
+.TP
+.BR EXIT_SUCCESS " ('0' on POSIX systems)"
+Successful program execution.
+.TP
+.BR EXIT_FAILURE " ('1' on POSIX systems)"
+The operation failed or the command syntax was not valid.
 .SH ENVIRONMENT
 .TP
 .B TZ
@@ -1016,19 +969,15 @@ Device files
 .B hwclock
 may try for Hardware Clock access:
 .br
-.I /dev/rtc
-.br
 .I /dev/rtc0
+.br
+.I /dev/rtc
 .br
 .I /dev/misc/rtc
 .br
 .I /dev/efirtc
 .br
 .I /dev/misc/efirtc
-.br
-.I /dev/port
-.br
-.I /dev/tty1
 .SH "SEE ALSO"
 .BR date (1),
 .BR adjtimex (8),
@@ -1046,4 +995,4 @@ See the source code for complete history and credits.
 .
 .SH AVAILABILITY
 The hwclock command is part of the util-linux package and is available from
-ftp://ftp.kernel.org/pub/linux/utils/util-linux/.
+https://www.kernel.org/pub/linux/utils/util-linux/.

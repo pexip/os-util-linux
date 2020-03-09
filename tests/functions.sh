@@ -45,6 +45,16 @@ function ts_cd {
 	fi
 }
 
+function ts_separator {
+	local header="$1"
+	echo >> $TS_OUTPUT
+	if [ -z "$header" ]; then
+		echo "============================================" >> $TS_OUTPUT
+	else
+		echo "=====$header================================" >> $TS_OUTPUT
+	fi
+}
+
 function ts_report {
 	local desc=
 
@@ -220,8 +230,9 @@ function ts_init_env {
 	LANGUAGE="POSIX"
 	LC_ALL="POSIX"
 	CHARSET="UTF-8"
+	ASAN_OPTIONS="detect_leaks=0"
 
-	export LANG LANGUAGE LC_ALL CHARSET
+	export LANG LANGUAGE LC_ALL CHARSET ASAN_OPTIONS
 
 	mydir=$(ts_canonicalize "$mydir")
 
@@ -260,18 +271,29 @@ function ts_init_env {
 	TS_OUTDIR="$top_builddir/tests/output/$TS_COMPONENT"
 	TS_DIFFDIR="$top_builddir/tests/diff/$TS_COMPONENT"
 
+	TS_NOLOCKS=$(ts_has_option "nolocks" "$*")
+	TS_LOCKDIR="$top_builddir/tests/output"
+
+	# Don't lock if flock(1) is missing
+	type "flock" >/dev/null 2>&1 || TS_NOLOCKS="yes"
+
 	ts_init_core_env
 
 	TS_VERBOSE=$(ts_has_option "verbose" "$*")
+	TS_SHOWDIFF=$(ts_has_option "show-diff" "$*")
 	TS_PARALLEL=$(ts_has_option "parallel" "$*")
 	TS_KNOWN_FAIL=$(ts_has_option "known-fail" "$*")
 	TS_SKIP_LOOPDEVS=$(ts_has_option "skip-loopdevs" "$*")
 	TS_PARSABLE=$(ts_has_option "parsable" "$*")
 	[ "$TS_PARSABLE" = "yes" ] || TS_PARSABLE="$TS_PARALLEL"
 
-	tmp=$( ts_has_option "memcheck" "$*")
+	tmp=$( ts_has_option "memcheck-valgrind" "$*")
 	if [ "$tmp" == "yes" -a -f /usr/bin/valgrind ]; then
 		TS_VALGRIND_CMD="/usr/bin/valgrind"
+	fi
+	tmp=$( ts_has_option "memcheck-asan" "$*")
+	if [ "$tmp" == "yes" ]; then
+		TS_ENABLE_ASAN="yes"
 	fi
 
 	BLKID_FILE="$TS_OUTDIR/${TS_TESTNAME}.blkidtab"
@@ -280,6 +302,7 @@ function ts_init_env {
 	declare -a TS_SUID_USER
 	declare -a TS_SUID_GROUP
 	declare -a TS_LOOP_DEVS
+	declare -a TS_LOCKFILE_FD
 
 	if [ -f $TS_TOPDIR/commands.sh ]; then
 		. $TS_TOPDIR/commands.sh
@@ -365,13 +388,26 @@ function ts_init_py {
 	export PYTHON="python${PYTHON_MAJOR_VERSION}"
 }
 
-function ts_valgrind {
-	if [ -z "$TS_VALGRIND_CMD" ]; then
-		"$@"
-	else
+function ts_run {
+	#
+	# valgrind mode
+	#
+	if [ -n "$TS_VALGRIND_CMD" ]; then
+		libtool --mode=execute \
 		$TS_VALGRIND_CMD --tool=memcheck --leak-check=full \
 				 --leak-resolution=high --num-callers=20 \
 				 --log-file="$TS_VGDUMP" "$@"
+	#
+	# ASAN mode
+	#
+	elif [ "$TS_ENABLE_ASAN" == "yes" ]; then
+		ASAN_OPTIONS='detect_leaks=1' "$@"
+
+	#
+	# Default mode
+	#
+	else
+		"$@"
 	fi
 }
 
@@ -389,6 +425,13 @@ function ts_gen_diff {
 
 	if [ $? -ne 0 ] || [ -s $TS_DIFF ]; then
 		res=1
+		if [ "$TS_SHOWDIFF" == "yes" ]; then
+			echo
+			echo "diff-{{{"
+			cat $TS_DIFF
+			echo "}}}-diff"
+			echo
+		fi
 	else
 		rm -f $TS_DIFF;
 	fi
@@ -397,11 +440,13 @@ function ts_gen_diff {
 }
 
 function tt_gen_mem_report {
-	[ -z "$TS_VALGRIND_CMD" ] && echo "$1"
-
-	grep -q -E 'ERROR SUMMARY: [1-9]' $TS_VGDUMP &> /dev/null
-	if [ $? -eq 0 ]; then
-		echo "mem-error detected!"
+	if [ -n "$TS_VALGRIND_CMD" ]; then
+		grep -q -E 'ERROR SUMMARY: [1-9]' $TS_VGDUMP &> /dev/null
+		if [ $? -eq 0 ]; then
+			echo "mem-error detected!"
+		fi
+	else
+		echo "$1"
 	fi
 }
 
@@ -511,16 +556,34 @@ function ts_device_deinit {
 	fi
 }
 
+function ts_blkidtag_by_devname()
+{
+	local tag=$1
+	local dev=$2
+	local out
+	local rval
+
+	out=$($TS_CMD_BLKID -p -s "$tag" -o value "$dev")
+	rval=$?
+	printf "%s\n" "$out"
+
+	test -n "$out" -a "$rval" = "0"
+	return $?
+}
+
 function ts_uuid_by_devname {
-	echo $($TS_CMD_BLKID -p -s UUID -o value $1)
+	ts_blkidtag_by_devname "UUID" "$1"
+	return $?
 }
 
 function ts_label_by_devname {
-	echo $($TS_CMD_BLKID -p -s LABEL -o value $1)
+	ts_blkidtag_by_devname "LABEL" "$1"
+	return $?
 }
 
 function ts_fstype_by_devname {
-	echo $($TS_CMD_BLKID -p -s TYPE -o value $1)
+	ts_blkidtag_by_devname "TYPE" "$1"
+	return $?
 }
 
 function ts_device_has {
@@ -529,22 +592,22 @@ function ts_device_has {
 	local DEV="$3"
 	local vl=""
 
-	case $TAG in
-		"TYPE") vl=$(ts_fstype_by_devname $DEV);;
-		"LABEL") vl=$(ts_label_by_devname $DEV);;
-		"UUID") vl=$(ts_uuid_by_devname $DEV);;
-		*) return 1;;
-	esac
-
-	if [ "$vl" == "$VAL" ]; then
-		return 0
-	fi
-	return 1
+	vl=$(ts_blkidtag_by_devname "$TAG" "$DEV")
+	test $? = 0 -a "$vl" = "$VAL"
+	return $?
 }
 
-function ts_device_has_uuid {
-	ts_uuid_by_devname "$1" | egrep -q '^[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}$'
+function ts_is_uuid()
+{
+	printf "%s\n" "$1" | egrep -q '^[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}$'
 	return $?
+}
+
+function ts_udevadm_settle()
+{
+	local dev=$1 # optional, might be empty
+	shift        # all other args are tags, LABEL, UUID, ...
+	udevadm settle
 }
 
 function ts_mount {
@@ -574,10 +637,10 @@ function ts_mount {
 function ts_is_mounted {
 	local DEV=$(ts_canonicalize "$1")
 
-	grep -q $DEV /proc/mounts && return 0
+	grep -q "\(^\| \)$DEV " /proc/mounts && return 0
 
 	if [ "${DEV#/dev/loop/}" != "$DEV" ]; then
-		grep -q "/dev/loop${DEV#/dev/loop/}" /proc/mounts && return 0
+		grep -q "^/dev/loop${DEV#/dev/loop/} " /proc/mounts && return 0
 	fi
 	return 1
 }
@@ -588,6 +651,7 @@ function ts_fstab_open {
 
 function ts_fstab_close {
 	echo "# -->" >> /etc/fstab
+	sync /etc/fstab 2>/dev/null
 }
 
 function ts_fstab_addline {
@@ -599,13 +663,19 @@ function ts_fstab_addline {
 	echo "$SPEC   $MNT   $FS   $OPT   0   0" >> /etc/fstab
 }
 
+function ts_fstab_lock {
+	ts_lock "fstab"
+}
+
 function ts_fstab_add {
+	ts_fstab_lock
 	ts_fstab_open
 	ts_fstab_addline $*
 	ts_fstab_close
 }
 
 function ts_fstab_clean {
+	ts_have_lock "fstab" || return 0
 	sed --in-place "
 /# <!-- util-linux/!b
 :a
@@ -615,6 +685,9 @@ function ts_fstab_clean {
 }
 s/# <!-- util-linux.*-->//;
 /^$/d" /etc/fstab
+
+	sync /etc/fstab 2>/dev/null
+	ts_unlock "fstab"
 }
 
 function ts_fdisk_clean {
@@ -636,10 +709,94 @@ function ts_fdisk_clean {
 		$TS_OUTPUT
 }
 
+
+# https://stackoverflow.com/questions/41603787/how-to-find-next-available-file-descriptor-in-bash
+function ts_find_free_fd()
+{
+	local rco
+	local rci
+	for fd in {3..200}; do
+		rco="$(true 2>/dev/null >&${fd}; echo $?)"
+		rci="$(true 2>/dev/null <&${fd}; echo $?)"
+		if [[ "${rco}${rci}" = "11" ]]; then
+			echo "$fd"
+			return 0
+		fi
+	done
+	return 1
+}
+
+function ts_get_lock_fd {
+	local resource=$1
+	local fd
+
+	for fd in "${!TS_LOCKFILE_FD[@]}"; do
+		if [ "${TS_LOCKFILE_FD["$fd"]}" = "$resource" ]; then
+			echo "$fd"
+			return 0
+		fi
+	done
+	return 1
+}
+
+function ts_have_lock {
+	local resource=$1
+
+	test "$TS_NOLOCKS" = "yes" && return 0
+	ts_get_lock_fd "$resource" >/dev/null && return 0
+	return 1
+}
+
+function ts_lock {
+	local resource="$1"
+	local lockfile="${TS_LOCKDIR}/${resource}.lock"
+	local fd
+
+	if [ "$TS_NOLOCKS" == "yes" ]; then
+		return 0
+	fi
+
+	# Don't lock again
+	fd=$(ts_get_lock_fd "$resource")
+	if [ -n "$fd" ]; then
+		echo "[$$ $TS_TESTNAME] ${resource} already locked!"
+		return 0
+	fi
+
+	fd=$(ts_find_free_fd) || ts_skip "failed to find lock fd"
+
+	eval "exec $fd>$lockfile"
+	flock --exclusive "$fd" || ts_skip "failed to lock $resource"
+
+	TS_LOCKFILE_FD["$fd"]="$resource"
+	###echo "[$$ $TS_TESTNAME] Locked   $resource"
+}
+
+function ts_unlock {
+	local resource="$1"
+	local lockfile="${TS_LOCKDIR}/${resource}.lock"
+	local fd
+
+	if [ "$TS_NOLOCKS" == "yes" ]; then
+		return 0
+	fi
+
+	fd=$(ts_get_lock_fd "$resource")
+	if [ -n "$fd" ]; then
+		eval "exec $fd<&-"
+		TS_LOCKFILE_FD["$fd"]=""
+		###echo "[$$ $TS_TESTNAME] Unlocked $resource"
+	else
+		echo "[$$ $TS_TESTNAME] unlocking unlocked $resource!?"
+	fi
+}
+
 function ts_scsi_debug_init {
 	local devname
 	local t
 	TS_DEVICE="none"
+
+	ts_lock "scsi_debug"
 
 	# dry run is not really reliable, real modprobe may still fail
 	modprobe --dry-run --quiet scsi_debug &>/dev/null \
@@ -647,8 +804,11 @@ function ts_scsi_debug_init {
 
 	# skip if still in use or removal of modules not supported at all
 	# We don't want a slow timeout here so we don't use ts_scsi_debug_rmmod!
-	modprobe -r scsi_debug &>/dev/null \
-		|| ts_skip "cannot remove scsi_debug module (rmmod)"
+	modprobe -r scsi_debug &>/dev/null
+	if [ "$?" -eq 1 ]; then
+		ts_unlock "scsi_debug"
+		ts_skip "cannot remove scsi_debug module (rmmod)"
+	fi
 
 	modprobe -b scsi_debug "$@" &>/dev/null \
 		|| ts_skip "cannot load scsi_debug module (modprobe)"
@@ -678,6 +838,9 @@ function ts_scsi_debug_rmmod {
 	local err=1
 	local t
 	local lastmsg
+
+	# We must not run if we don't have the lock
+	ts_have_lock "scsi_debug" || return 0
 
 	# Return early most importantly in case we are not root or the module does
 	# not exist at all.
@@ -709,6 +872,7 @@ function ts_scsi_debug_rmmod {
 
 	# TODO unset TS_DEVICE, check that nobody uses it later, e.g. ts_fdisk_clean
 
+	ts_unlock "scsi_debug"
 	return 0
 }
 

@@ -58,35 +58,18 @@
 
 #include <libsmartcols.h>
 
-#include "cpuset.h"
-#include "nls.h"
-#include "xalloc.h"
-#include "c.h"
-#include "strutils.h"
-#include "bitops.h"
-#include "path.h"
 #include "closestream.h"
 #include "optutils.h"
+
 #include "lscpu.h"
 
 #define CACHE_MAX 100
 
 /* /sys paths */
 #define _PATH_SYS_SYSTEM	"/sys/devices/system"
-#define _PATH_SYS_HYP_FEATURES "/sys/hypervisor/properties/features"
+#define _PATH_SYS_HYP_FEATURES	"/sys/hypervisor/properties/features"
 #define _PATH_SYS_CPU		_PATH_SYS_SYSTEM "/cpu"
 #define _PATH_SYS_NODE		_PATH_SYS_SYSTEM "/node"
-#define _PATH_PROC_XEN		"/proc/xen"
-#define _PATH_PROC_XENCAP	_PATH_PROC_XEN "/capabilities"
-#define _PATH_PROC_CPUINFO	"/proc/cpuinfo"
-#define _PATH_PROC_PCIDEVS	"/proc/bus/pci/devices"
-#define _PATH_PROC_SYSINFO	"/proc/sysinfo"
-#define _PATH_PROC_STATUS	"/proc/self/status"
-#define _PATH_PROC_VZ	"/proc/vz"
-#define _PATH_PROC_BC	"/proc/bc"
-#define _PATH_PROC_DEVICETREE	"/proc/device-tree"
-#define _PATH_DEV_MEM 		"/dev/mem"
-#define _PATH_PROC_OSRELEASE	"/proc/sys/kernel/osrelease"
 
 /* Xen Domain feature flag used for /sys/hypervisor/properties/features */
 #define XENFEAT_supervisor_mode_kernel		3
@@ -97,21 +80,14 @@
 #define XEN_FEATURES_PVH_MASK	( (1U << XENFEAT_supervisor_mode_kernel) \
 								| (1U << XENFEAT_hvm_callback_vector) )
 
-/* virtualization types */
-enum {
-	VIRT_NONE	= 0,
-	VIRT_PARA,
-	VIRT_FULL,
-	VIRT_CONT
-};
-const char *virt_types[] = {
+static const char *virt_types[] = {
 	[VIRT_NONE]	= N_("none"),
 	[VIRT_PARA]	= N_("para"),
 	[VIRT_FULL]	= N_("full"),
 	[VIRT_CONT]	= N_("container"),
 };
 
-const char *hv_vendors[] = {
+static const char *hv_vendors[] = {
 	[HYPER_NONE]	= NULL,
 	[HYPER_XEN]	= "Xen",
 	[HYPER_KVM]	= "KVM",
@@ -130,7 +106,7 @@ const char *hv_vendors[] = {
 	[HYPER_WSL]	= "Windows Subsystem for Linux"
 };
 
-const int hv_vendor_pci[] = {
+static const int hv_vendor_pci[] = {
 	[HYPER_NONE]	= 0x0000,
 	[HYPER_XEN]	= 0x5853,
 	[HYPER_KVM]	= 0x0000,
@@ -139,7 +115,7 @@ const int hv_vendor_pci[] = {
 	[HYPER_VBOX]	= 0x80ee,
 };
 
-const int hv_graphics_pci[] = {
+static const int hv_graphics_pci[] = {
 	[HYPER_NONE]	= 0x0000,
 	[HYPER_XEN]	= 0x0001,
 	[HYPER_KVM]	= 0x0000,
@@ -148,158 +124,19 @@ const int hv_graphics_pci[] = {
 	[HYPER_VBOX]	= 0xbeef,
 };
 
-/* CPU modes */
-enum {
-	MODE_32BIT	= (1 << 1),
-	MODE_64BIT	= (1 << 2)
-};
-
-/* cache(s) description */
-struct cpu_cache {
-	char		*name;
-	char		*size;
-
-	int		nsharedmaps;
-	cpu_set_t	**sharedmaps;
-};
 
 /* dispatching modes */
-enum {
-	DISP_HORIZONTAL = 0,
-	DISP_VERTICAL	= 1
-};
-
-const char *disp_modes[] = {
+static const char *disp_modes[] = {
 	[DISP_HORIZONTAL]	= N_("horizontal"),
 	[DISP_VERTICAL]		= N_("vertical")
 };
 
-/* cpu polarization */
-enum {
-	POLAR_UNKNOWN	= 0,
-	POLAR_VLOW,
-	POLAR_VMEDIUM,
-	POLAR_VHIGH,
-	POLAR_HORIZONTAL
-};
-
-struct polarization_modes {
-	char *parsable;
-	char *readable;
-};
-
-struct polarization_modes polar_modes[] = {
+static struct polarization_modes polar_modes[] = {
 	[POLAR_UNKNOWN]	   = {"U",  "-"},
 	[POLAR_VLOW]	   = {"VL", "vert-low"},
 	[POLAR_VMEDIUM]	   = {"VM", "vert-medium"},
 	[POLAR_VHIGH]	   = {"VH", "vert-high"},
 	[POLAR_HORIZONTAL] = {"H",  "horizontal"},
-};
-
-/* global description */
-struct lscpu_desc {
-	char	*arch;
-	char	*vendor;
-	char	*machinetype;	/* s390 */
-	char	*family;
-	char	*model;
-	char	*modelname;
-	char	*revision;  /* alternative for model (ppc) */
-	char	*cpu;       /* alternative for modelname (ppc, sparc) */
-	char	*virtflag;	/* virtualization flag (vmx, svm) */
-	char	*hypervisor;	/* hypervisor software */
-	int	hyper;		/* hypervisor vendor ID */
-	int	virtype;	/* VIRT_PARA|FULL|NONE ? */
-	char	*mhz;
-	char	*dynamic_mhz;	/* dynamic mega hertz (s390) */
-	char	*static_mhz;	/* static mega hertz (s390) */
-	char	**maxmhz;	/* maximum mega hertz */
-	char	**minmhz;	/* minimum mega hertz */
-	char	*stepping;
-	char    *bogomips;
-	char	*flags;
-	char	*mtid;		/* maximum thread id (s390) */
-	int	dispatching;	/* none, horizontal or vertical */
-	int	mode;		/* rm, lm or/and tm */
-
-	int		ncpuspos;	/* maximal possible CPUs */
-	int		ncpus;		/* number of present CPUs */
-	cpu_set_t	*present;	/* mask with present CPUs */
-	cpu_set_t	*online;	/* mask with online CPUs */
-
-	int		nthreads;	/* number of online threads */
-
-	int		ncaches;
-	struct cpu_cache *caches;
-
-	int		necaches;	/* extra caches (s390) */
-	struct cpu_cache *ecaches;
-
-	/*
-	 * All maps are sequentially indexed (0..ncpuspos), the array index
-	 * does not have match with cpuX number as presented by kernel. You
-	 * have to use real_cpu_num() to get the real cpuX number.
-	 *
-	 * For example, the possible system CPUs are: 1,3,5, it means that
-	 * ncpuspos=3, so all arrays are in range 0..3.
-	 */
-	int		*idx2cpunum;	/* mapping index to CPU num */
-
-	int		nnodes;		/* number of NUMA modes */
-	int		*idx2nodenum;	/* Support for discontinuous nodes */
-	cpu_set_t	**nodemaps;	/* array with NUMA nodes */
-
-	/* drawers -- based on drawer_siblings (internal kernel map of cpuX's
-	 * hardware threads within the same drawer */
-	int		ndrawers;	/* number of all online drawers */
-	cpu_set_t	**drawermaps;	/* unique drawer_siblings */
-	int		*drawerids;	/* physical drawer ids */
-
-	/* books -- based on book_siblings (internal kernel map of cpuX's
-	 * hardware threads within the same book */
-	int		nbooks;		/* number of all online books */
-	cpu_set_t	**bookmaps;	/* unique book_siblings */
-	int		*bookids;	/* physical book ids */
-
-	/* sockets -- based on core_siblings (internal kernel map of cpuX's
-	 * hardware threads within the same physical_package_id (socket)) */
-	int		nsockets;	/* number of all online sockets */
-	cpu_set_t	**socketmaps;	/* unique core_siblings */
-	int		*socketids;	/* physical socket ids */
-
-	/* cores -- based on thread_siblings (internal kernel map of cpuX's
-	 * hardware threads within the same core as cpuX) */
-	int		ncores;		/* number of all online cores */
-	cpu_set_t	**coremaps;	/* unique thread_siblings */
-	int		*coreids;	/* physical core ids */
-
-	int		*polarization;	/* cpu polarization */
-	int		*addresses;	/* physical cpu addresses */
-	int		*configured;	/* cpu configured */
-	int		physsockets;	/* Physical sockets (modules) */
-	int		physchips;	/* Physical chips */
-	int		physcoresperchip;	/* Physical cores per chip */
-};
-
-enum {
-	OUTPUT_SUMMARY	= 0,	/* default */
-	OUTPUT_PARSABLE,	/* -p */
-	OUTPUT_READABLE,	/* -e */
-};
-
-enum {
-	SYSTEM_LIVE = 0,	/* analyzing a live system */
-	SYSTEM_SNAPSHOT,	/* analyzing a snapshot of a different system */
-};
-
-struct lscpu_modifier {
-	int		mode;		/* OUTPUT_* */
-	int		system;		/* SYSTEM_* */
-	unsigned int	hex:1,		/* print CPU masks rather than CPU lists */
-			compat:1,	/* use backwardly compatible format */
-			online:1,	/* print online CPUs */
-			offline:1,	/* print offline CPUs */
-			physical:1;	/* use physical numbers */
 };
 
 static int maxcpus;		/* size in bits of kernel cpu mask */
@@ -537,28 +374,37 @@ static void read_physical_info_powerpc(
 }
 #endif
 
+
 static void
 read_basicinfo(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 {
-	FILE *fp = path_fopen("r", 1, _PATH_PROC_CPUINFO);
+	FILE *fp;
 	char buf[BUFSIZ];
 	struct utsname utsbuf;
 	size_t setsize;
+	cpu_set_t *cpuset = NULL;
 
 	/* architecture */
 	if (uname(&utsbuf) == -1)
 		err(EXIT_FAILURE, _("error: uname failed"));
+
+	fp = ul_path_fopen(desc->procfs, "r", "cpuinfo");
+	if (!fp)
+		err(EXIT_FAILURE, _("cannot open %s"), "/proc/cpuinfo");
 	desc->arch = xstrdup(utsbuf.machine);
 
 	/* details */
 	while (fgets(buf, sizeof(buf), fp) != NULL) {
 		if (lookup(buf, "vendor", &desc->vendor)) ;
 		else if (lookup(buf, "vendor_id", &desc->vendor)) ;
+		else if (lookup(buf, "CPU implementer", &desc->vendor)) ; /* ARM and aarch64 */
 		else if (lookup(buf, "family", &desc->family)) ;
 		else if (lookup(buf, "cpu family", &desc->family)) ;
 		else if (lookup(buf, "model", &desc->model)) ;
+		else if (lookup(buf, "CPU part", &desc->model)) ; /* ARM and aarch64 */
 		else if (lookup(buf, "model name", &desc->modelname)) ;
 		else if (lookup(buf, "stepping", &desc->stepping)) ;
+		else if (lookup(buf, "CPU variant", &desc->stepping)) ; /* aarch64 */
 		else if (lookup(buf, "cpu MHz", &desc->mhz)) ;
 		else if (lookup(buf, "cpu MHz dynamic", &desc->dynamic_mhz)) ; /* s390 */
 		else if (lookup(buf, "cpu MHz static", &desc->static_mhz)) ;   /* s390 */
@@ -573,6 +419,7 @@ read_basicinfo(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 		else if (lookup(buf, "revision", &desc->revision)) ;
 		else if (lookup(buf, "CPU revision", &desc->revision)) ; /* aarch64 */
 		else if (lookup(buf, "max thread id", &desc->mtid)) ; /* s390 */
+		else if (lookup(buf, "address sizes", &desc->addrsz)) ; /* x86 */
 		else if (lookup_cache(buf, desc)) ;
 		else
 			continue;
@@ -603,9 +450,9 @@ read_basicinfo(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 
 	fclose(fp);
 
-	if (path_exist(_PATH_SYS_CPU "/kernel_max"))
+	if (ul_path_read_s32(desc->syscpu, &maxcpus, "kernel_max") == 0)
 		/* note that kernel_max is maximum index [NR_CPUS-1] */
-		maxcpus = path_read_s32(_PATH_SYS_CPU "/kernel_max") + 1;
+		maxcpus += 1;
 
 	else if (mod->system == SYSTEM_LIVE)
 		/* the root is '/' so we are working with data from the current kernel */
@@ -618,45 +465,39 @@ read_basicinfo(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 
 	setsize = CPU_ALLOC_SIZE(maxcpus);
 
-	if (path_exist(_PATH_SYS_CPU "/possible")) {
-		cpu_set_t *tmp = path_read_cpulist(maxcpus, _PATH_SYS_CPU "/possible");
+	if (ul_path_readf_cpulist(desc->syscpu, &cpuset, maxcpus, "possible") == 0) {
 		int num, idx;
 
-		desc->ncpuspos = CPU_COUNT_S(setsize, tmp);
+		desc->ncpuspos = CPU_COUNT_S(setsize, cpuset);
 		desc->idx2cpunum = xcalloc(desc->ncpuspos, sizeof(int));
 
 		for (num = 0, idx = 0; num < maxcpus; num++) {
-			if (CPU_ISSET(num, tmp))
+			if (CPU_ISSET_S(num, setsize, cpuset))
 				desc->idx2cpunum[idx++] = num;
 		}
-		cpuset_free(tmp);
+		cpuset_free(cpuset);
+		cpuset = NULL;
 	} else
 		err(EXIT_FAILURE, _("failed to determine number of CPUs: %s"),
 				_PATH_SYS_CPU "/possible");
 
 
 	/* get mask for present CPUs */
-	if (path_exist(_PATH_SYS_CPU "/present")) {
-		desc->present = path_read_cpulist(maxcpus, _PATH_SYS_CPU "/present");
+	if (ul_path_readf_cpulist(desc->syscpu, &desc->present, maxcpus, "present") == 0)
 		desc->ncpus = CPU_COUNT_S(setsize, desc->present);
-	}
 
 	/* get mask for online CPUs */
-	if (path_exist(_PATH_SYS_CPU "/online")) {
-		desc->online = path_read_cpulist(maxcpus, _PATH_SYS_CPU "/online");
+	if (ul_path_readf_cpulist(desc->syscpu, &desc->online, maxcpus, "online") == 0)
 		desc->nthreads = CPU_COUNT_S(setsize, desc->online);
-	}
 
 	/* get dispatching mode */
-	if (path_exist(_PATH_SYS_CPU "/dispatching"))
-		desc->dispatching = path_read_s32(_PATH_SYS_CPU "/dispatching");
-	else
+	if (ul_path_read_s32(desc->syscpu, &desc->dispatching, "dispatching") != 0)
 		desc->dispatching = -1;
 
 	if (mod->system == SYSTEM_LIVE)
 		read_physical_info_powerpc(desc);
 
-	if ((fp = path_fopen("r", 0, _PATH_PROC_SYSINFO))) {
+	if ((fp = ul_path_fopen(desc->procfs, "r", "sysinfo"))) {
 		while (fgets(buf, sizeof(buf), fp) != NULL && !desc->machinetype)
 			lookup(buf, "Type", &desc->machinetype);
 		fclose(fp);
@@ -664,13 +505,13 @@ read_basicinfo(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 }
 
 static int
-has_pci_device(unsigned int vendor, unsigned int device)
+has_pci_device(struct lscpu_desc *desc, unsigned int vendor, unsigned int device)
 {
 	FILE *f;
 	unsigned int num, fn, ven, dev;
 	int res = 1;
 
-	f = path_fopen("r", 0, _PATH_PROC_PCIDEVS);
+	f = ul_path_fopen(desc->procfs, "r", "bus/pci/devices");
 	if (!f)
 		return 0;
 
@@ -756,9 +597,9 @@ read_hypervisor_cpuid(struct lscpu_desc *desc __attribute__((__unused__)))
 }
 #endif
 
-static int is_compatible(const char *path, const char *str)
+static int is_devtree_compatible(struct lscpu_desc *desc, const char *str)
 {
-	FILE *fd = path_fopen("r", 0, "%s", path);
+	FILE *fd = ul_path_fopen(desc->procfs, "r", "device-tree/compatible");
 
 	if (fd) {
 		char buf[256];
@@ -785,23 +626,25 @@ read_hypervisor_powerpc(struct lscpu_desc *desc)
 	assert(!desc->hyper);
 
 	 /* IBM iSeries: legacy, para-virtualized on top of OS/400 */
-	if (path_exist("/proc/iSeries")) {
+	if (ul_path_access(desc->procfs, F_OK, "iSeries") == 0) {
 		desc->hyper = HYPER_OS400;
 		desc->virtype = VIRT_PARA;
 
 	/* PowerNV (POWER Non-Virtualized, bare-metal) */
-	} else if (is_compatible(_PATH_PROC_DEVICETREE "/compatible", "ibm,powernv")) {
+	} else if (is_devtree_compatible(desc, "ibm,powernv")) {
 		desc->hyper = HYPER_NONE;
 		desc->virtype = VIRT_NONE;
 
 	/* PowerVM (IBM's proprietary hypervisor, aka pHyp) */
-	} else if (path_exist(_PATH_PROC_DEVICETREE "/ibm,partition-name")
-		   && path_exist(_PATH_PROC_DEVICETREE "/hmc-managed?")
-		   && !path_exist(_PATH_PROC_DEVICETREE "/chosen/qemu,graphic-width")) {
+	} else if (ul_path_access(desc->procfs, F_OK, "device-tree/ibm,partition-name") == 0
+		   && ul_path_access(desc->procfs, F_OK, "device-tree/hmc-managed?") == 0
+		   && ul_path_access(desc->procfs, F_OK, "device-tree/chosen/qemu,graphic-width") != 0) {
+
 		FILE *fd;
 		desc->hyper = HYPER_PHYP;
 		desc->virtype = VIRT_PARA;
-		fd = path_fopen("r", 0, _PATH_PROC_DEVICETREE "/ibm,partition-name");
+
+		fd = ul_path_fopen(desc->procfs, "r", "device-tree/ibm,partition-name");
 		if (fd) {
 			char buf[256];
 			if (fscanf(fd, "%255s", buf) == 1 && !strcmp(buf, "full"))
@@ -810,7 +653,7 @@ read_hypervisor_powerpc(struct lscpu_desc *desc)
 		}
 
 	/* Qemu */
-	} else if (is_compatible(_PATH_PROC_DEVICETREE "/compatible", "qemu,pseries")) {
+	} else if (is_devtree_compatible(desc, "qemu,pseries")) {
 		desc->hyper = HYPER_KVM;
 		desc->virtype = VIRT_PARA;
 	}
@@ -888,12 +731,12 @@ is_vmware_platform(void)
 	act.sa_flags = SA_SIGINFO;
 
 	if (sigaction(SIGSEGV, &act, &oact))
-		err(EXIT_FAILURE, _("error: can not set signal handler"));
+		err(EXIT_FAILURE, _("cannot set signal handler"));
 
 	vmware_bdoor(&eax, &ebx, &ecx, &edx);
 
 	if (sigaction(SIGSEGV, &oact, NULL))
-		err(EXIT_FAILURE, _("error: can not restore signal handler"));
+		err(EXIT_FAILURE, _("cannot restore signal handler"));
 
 	return eax != (uint32_t)-1 && ebx == VMWARE_BDOOR_MAGIC;
 }
@@ -915,7 +758,7 @@ read_hypervisor(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 
 	/* We have to detect WSL first. is_vmware_platform() crashes on Windows 10. */
 
-	if ((fd = path_fopen("r", 0, _PATH_PROC_OSRELEASE))) {
+	if ((fd = ul_path_fopen(desc->procfs, "r", "sys/kernel/osrelease"))) {
 		char buf[256];
 
 		if (fgets(buf, sizeof(buf), fd) != NULL) {
@@ -943,7 +786,8 @@ read_hypervisor(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 		if (desc->hyper == HYPER_XEN) {
 			uint32_t features;
 
-			fd = path_fopen("r", 0, _PATH_SYS_HYP_FEATURES);
+			fd = ul_prefix_fopen(desc->prefix, "r", _PATH_SYS_HYP_FEATURES);
+
 			if (fd && fscanf(fd, "%x", &features) == 1) {
 				/* Xen PV domain */
 				if (features & XEN_FEATURES_PV_MASK)
@@ -952,19 +796,17 @@ read_hypervisor(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 				else if ((features & XEN_FEATURES_PVH_MASK)
 								== XEN_FEATURES_PVH_MASK)
 					desc->virtype = VIRT_PARA;
-				fclose(fd);
-			} else {
-				err(EXIT_FAILURE, _("failed to read from: %s"),
-						_PATH_SYS_HYP_FEATURES);
 			}
+			if (fd)
+				fclose(fd);
 		}
 	} else if (read_hypervisor_powerpc(desc) > 0) {}
 
 	/* Xen para-virt or dom0 */
-	else if (path_exist(_PATH_PROC_XEN)) {
+	else if (ul_path_access(desc->procfs, F_OK, "xen") == 0) {
 		int dom0 = 0;
-		fd = path_fopen("r", 0, _PATH_PROC_XENCAP);
 
+		fd = ul_path_fopen(desc->procfs, "r", "xen/capabilities");
 		if (fd) {
 			char buf[256];
 
@@ -977,25 +819,25 @@ read_hypervisor(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 		desc->hyper = HYPER_XEN;
 
 	/* Xen full-virt on non-x86_64 */
-	} else if (has_pci_device( hv_vendor_pci[HYPER_XEN], hv_graphics_pci[HYPER_XEN])) {
+	} else if (has_pci_device(desc, hv_vendor_pci[HYPER_XEN], hv_graphics_pci[HYPER_XEN])) {
 		desc->hyper = HYPER_XEN;
 		desc->virtype = VIRT_FULL;
-	} else if (has_pci_device( hv_vendor_pci[HYPER_VMWARE], hv_graphics_pci[HYPER_VMWARE])) {
+	} else if (has_pci_device(desc, hv_vendor_pci[HYPER_VMWARE], hv_graphics_pci[HYPER_VMWARE])) {
 		desc->hyper = HYPER_VMWARE;
 		desc->virtype = VIRT_FULL;
-	} else if (has_pci_device( hv_vendor_pci[HYPER_VBOX], hv_graphics_pci[HYPER_VBOX])) {
+	} else if (has_pci_device(desc, hv_vendor_pci[HYPER_VBOX], hv_graphics_pci[HYPER_VBOX])) {
 		desc->hyper = HYPER_VBOX;
 		desc->virtype = VIRT_FULL;
 
 	/* IBM PR/SM */
-	} else if ((fd = path_fopen("r", 0, _PATH_PROC_SYSINFO))) {
+	} else if ((fd = ul_path_fopen(desc->procfs, "r", "sysinfo"))) {
 		char buf[BUFSIZ];
 
 		desc->hyper = HYPER_IBM;
 		desc->hypervisor = "PR/SM";
 		desc->virtype = VIRT_FULL;
 		while (fgets(buf, sizeof(buf), fd) != NULL) {
-			char *str;
+			char *str, *p;
 
 			if (!strstr(buf, "Control Program:"))
 				continue;
@@ -1003,10 +845,10 @@ read_hypervisor(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 				desc->hyper = HYPER_IBM;
 			else
 				desc->hyper = HYPER_KVM;
-			str = strchr(buf, ':');
-			if (!str)
+			p = strchr(buf, ':');
+			if (!p)
 				continue;
-			xasprintf(&str, "%s", str + 1);
+			xasprintf(&str, "%s", p + 1);
 
 			/* remove leading, trailing and repeating whitespace */
 			while (*str == ' ')
@@ -1017,13 +859,15 @@ read_hypervisor(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 				*(str--) = '\0';
 			while ((str = strstr(desc->hypervisor, "  ")))
 				memmove(str, str + 1, strlen(str));
+			break;
 		}
 		fclose(fd);
 	}
 
 	/* OpenVZ/Virtuozzo - /proc/vz dir should exist
 	 *		      /proc/bc should not */
-	else if (path_exist(_PATH_PROC_VZ) && !path_exist(_PATH_PROC_BC)) {
+	else if (ul_path_access(desc->procfs, F_OK, "vz") == 0 &&
+		 ul_path_access(desc->procfs, F_OK, "bc") != 0) {
 		desc->hyper = HYPER_PARALLELS;
 		desc->virtype = VIRT_CONT;
 
@@ -1040,7 +884,7 @@ read_hypervisor(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 		desc->virtype = VIRT_PARA;
 
 	/* Linux-VServer */
-	} else if ((fd = path_fopen("r", 0, _PATH_PROC_STATUS))) {
+	} else if ((fd = ul_path_fopen(desc->procfs, "r", "self/status"))) {
 		char buf[BUFSIZ];
 		char *val = NULL;
 
@@ -1051,12 +895,15 @@ read_hypervisor(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 		fclose(fd);
 
 		if (val) {
+			char *org = val;
+
 			while (isdigit(*val))
 				++val;
 			if (!*val) {
 				desc->hyper = HYPER_VSERVER;
 				desc->virtype = VIRT_CONT;
 			}
+			free(org);
 		}
 	}
 }
@@ -1091,37 +938,29 @@ read_topology(struct lscpu_desc *desc, int idx)
 	int coreid, socketid, bookid, drawerid;
 	int i, num = real_cpu_num(desc, idx);
 
-	if (!path_exist(_PATH_SYS_CPU "/cpu%d/topology/thread_siblings", num))
+	if (ul_path_accessf(desc->syscpu, F_OK, "cpu%d/topology/thread_siblings", num) != 0)
 		return;
 
-	thread_siblings = path_read_cpuset(maxcpus, _PATH_SYS_CPU
-					"/cpu%d/topology/thread_siblings", num);
-	core_siblings = path_read_cpuset(maxcpus, _PATH_SYS_CPU
-					"/cpu%d/topology/core_siblings", num);
-	book_siblings = NULL;
-	if (path_exist(_PATH_SYS_CPU "/cpu%d/topology/book_siblings", num))
-		book_siblings = path_read_cpuset(maxcpus, _PATH_SYS_CPU
-					    "/cpu%d/topology/book_siblings", num);
-	drawer_siblings = NULL;
-	if (path_exist(_PATH_SYS_CPU "/cpu%d/topology/drawer_siblings", num))
-		drawer_siblings = path_read_cpuset(maxcpus, _PATH_SYS_CPU
-					    "/cpu%d/topology/drawer_siblings", num);
-	coreid = -1;
-	if (path_exist(_PATH_SYS_CPU "/cpu%d/topology/core_id", num))
-		coreid = path_read_s32(_PATH_SYS_CPU
-				       "/cpu%d/topology/core_id", num);
-	socketid = -1;
-	if (path_exist(_PATH_SYS_CPU "/cpu%d/topology/physical_package_id", num))
-		socketid = path_read_s32(_PATH_SYS_CPU
-				       "/cpu%d/topology/physical_package_id", num);
-	bookid = -1;
-	if (path_exist(_PATH_SYS_CPU "/cpu%d/topology/book_id", num))
-		bookid = path_read_s32(_PATH_SYS_CPU
-				       "/cpu%d/topology/book_id", num);
-	drawerid = -1;
-	if (path_exist(_PATH_SYS_CPU "/cpu%d/topology/drawer_id", num))
-		drawerid = path_read_s32(_PATH_SYS_CPU
-				       "/cpu%d/topology/drawer_id", num);
+	ul_path_readf_cpuset(desc->syscpu, &thread_siblings, maxcpus,
+					"cpu%d/topology/thread_siblings", num);
+	ul_path_readf_cpuset(desc->syscpu, &core_siblings, maxcpus,
+					"cpu%d/topology/core_siblings", num);
+	ul_path_readf_cpuset(desc->syscpu, &book_siblings, maxcpus,
+					"cpu%d/topology/book_siblings", num);
+	ul_path_readf_cpuset(desc->syscpu, &drawer_siblings, maxcpus,
+					"cpu%d/topology/drawer_siblings", num);
+
+	if (ul_path_readf_s32(desc->syscpu, &coreid, "cpu%d/topology/core_id", num) != 0)
+		coreid = -1;
+
+	if (ul_path_readf_s32(desc->syscpu, &socketid, "cpu%d/topology/physical_package_id", num) != 0)
+		socketid = -1;
+
+	if (ul_path_readf_s32(desc->syscpu, &bookid, "cpu%d/topology/book_id", num) != 0)
+		bookid = -1;
+
+	if (ul_path_readf_s32(desc->syscpu, &drawerid, "cpu%d/topology/drawer_id", num) != 0)
+		drawerid = -1;
 
 	if (!desc->coremaps) {
 		int ndrawers, nbooks, nsockets, ncores, nthreads;
@@ -1210,11 +1049,13 @@ read_polarization(struct lscpu_desc *desc, int idx)
 
 	if (desc->dispatching < 0)
 		return;
-	if (!path_exist(_PATH_SYS_CPU "/cpu%d/polarization", num))
+	if (ul_path_accessf(desc->syscpu, F_OK, "cpu%d/polarization", num) != 0)
 		return;
 	if (!desc->polarization)
 		desc->polarization = xcalloc(desc->ncpuspos, sizeof(int));
-	path_read_str(mode, sizeof(mode), _PATH_SYS_CPU "/cpu%d/polarization", num);
+
+	ul_path_readf_buffer(desc->syscpu, mode, sizeof(mode), "cpu%d/polarization", num);
+
 	if (strncmp(mode, "vertical:low", sizeof(mode)) == 0)
 		desc->polarization[idx] = POLAR_VLOW;
 	else if (strncmp(mode, "vertical:medium", sizeof(mode)) == 0)
@@ -1232,11 +1073,11 @@ read_address(struct lscpu_desc *desc, int idx)
 {
 	int num = real_cpu_num(desc, idx);
 
-	if (!path_exist(_PATH_SYS_CPU "/cpu%d/address", num))
+	if (ul_path_accessf(desc->syscpu, F_OK, "cpu%d/address", num) != 0)
 		return;
 	if (!desc->addresses)
 		desc->addresses = xcalloc(desc->ncpuspos, sizeof(int));
-	desc->addresses[idx] = path_read_s32(_PATH_SYS_CPU "/cpu%d/address", num);
+	ul_path_readf_s32(desc->syscpu, &desc->addresses[idx], "cpu%d/address", num);
 }
 
 static void
@@ -1244,39 +1085,84 @@ read_configured(struct lscpu_desc *desc, int idx)
 {
 	int num = real_cpu_num(desc, idx);
 
-	if (!path_exist(_PATH_SYS_CPU "/cpu%d/configure", num))
+	if (ul_path_accessf(desc->syscpu, F_OK, "cpu%d/configure", num) != 0)
 		return;
 	if (!desc->configured)
 		desc->configured = xcalloc(desc->ncpuspos, sizeof(int));
-	desc->configured[idx] = path_read_s32(_PATH_SYS_CPU "/cpu%d/configure", num);
+	ul_path_readf_s32(desc->syscpu, &desc->configured[idx], "cpu%d/configure", num);
 }
+
+/* Read overall maximum frequency of cpu */
+static char *
+cpu_max_mhz(struct lscpu_desc *desc, char *buf, size_t bufsz)
+{
+	int i;
+	float cpu_freq = 0.0;
+	size_t setsize = CPU_ALLOC_SIZE(maxcpus);
+
+	if (desc->present) {
+		for (i = 0; i < desc->ncpuspos; i++) {
+			if (CPU_ISSET_S(real_cpu_num(desc, i), setsize, desc->present)
+			    && desc->maxmhz[i]) {
+				float freq = atof(desc->maxmhz[i]);
+
+				if (freq > cpu_freq)
+					cpu_freq = freq;
+			}
+		}
+	}
+	snprintf(buf, bufsz, "%.4f", cpu_freq);
+	return buf;
+}
+
+/* Read overall minimum frequency of cpu */
+static char *
+cpu_min_mhz(struct lscpu_desc *desc, char *buf, size_t bufsz)
+{
+	int i;
+	float cpu_freq = -1.0;
+	size_t setsize = CPU_ALLOC_SIZE(maxcpus);
+
+	if (desc->present) {
+		for (i = 0; i < desc->ncpuspos; i++) {
+			if (CPU_ISSET_S(real_cpu_num(desc, i), setsize, desc->present)
+			    && desc->minmhz[i]) {
+				float freq = atof(desc->minmhz[i]);
+
+				if (cpu_freq < 0.0 || freq < cpu_freq)
+					cpu_freq = freq;
+			}
+		}
+	}
+        snprintf(buf, bufsz, "%.4f", cpu_freq);
+	return buf;
+}
+
 
 static void
 read_max_mhz(struct lscpu_desc *desc, int idx)
 {
 	int num = real_cpu_num(desc, idx);
+	int mhz;
 
-	if (!path_exist(_PATH_SYS_CPU "/cpu%d/cpufreq/cpuinfo_max_freq", num))
+	if (ul_path_readf_s32(desc->syscpu, &mhz, "cpu%d/cpufreq/cpuinfo_max_freq", num) != 0)
 		return;
 	if (!desc->maxmhz)
 		desc->maxmhz = xcalloc(desc->ncpuspos, sizeof(char *));
-	xasprintf(&(desc->maxmhz[idx]), "%.4f",
-		  (float)path_read_s32(_PATH_SYS_CPU
-				       "/cpu%d/cpufreq/cpuinfo_max_freq", num) / 1000);
+	xasprintf(&desc->maxmhz[idx], "%.4f", (float) mhz / 1000);
 }
 
 static void
 read_min_mhz(struct lscpu_desc *desc, int idx)
 {
 	int num = real_cpu_num(desc, idx);
+	int mhz;
 
-	if (!path_exist(_PATH_SYS_CPU "/cpu%d/cpufreq/cpuinfo_min_freq", num))
+	if (ul_path_readf_s32(desc->syscpu, &mhz, "cpu%d/cpufreq/cpuinfo_min_freq", num) != 0)
 		return;
 	if (!desc->minmhz)
 		desc->minmhz = xcalloc(desc->ncpuspos, sizeof(char *));
-	xasprintf(&(desc->minmhz[idx]), "%.4f",
-		  (float)path_read_s32(_PATH_SYS_CPU
-				       "/cpu%d/cpufreq/cpuinfo_min_freq", num) / 1000);
+	xasprintf(&desc->minmhz[idx], "%.4f", (float) mhz / 1000);
 }
 
 static int
@@ -1296,39 +1182,37 @@ read_cache(struct lscpu_desc *desc, int idx)
 	int num = real_cpu_num(desc, idx);
 
 	if (!desc->ncaches) {
-		while(path_exist(_PATH_SYS_CPU "/cpu%d/cache/index%d",
-					num, desc->ncaches))
+		while (ul_path_accessf(desc->syscpu, F_OK,
+					"cpu%d/cache/index%d",
+					num, desc->ncaches) == 0)
 			desc->ncaches++;
 
 		if (!desc->ncaches)
 			return;
-
 		desc->caches = xcalloc(desc->ncaches, sizeof(*desc->caches));
 	}
 	for (i = 0; i < desc->ncaches; i++) {
 		struct cpu_cache *ca = &desc->caches[i];
 		cpu_set_t *map;
 
-		if (!path_exist(_PATH_SYS_CPU "/cpu%d/cache/index%d",
-				num, i))
+		if (ul_path_accessf(desc->syscpu, F_OK,
+					"cpu%d/cache/index%d", num, i) != 0)
 			continue;
 		if (!ca->name) {
-			int type, level;
+			int type = 0, level;
 
 			/* cache type */
-			path_read_str(buf, sizeof(buf),
-					_PATH_SYS_CPU "/cpu%d/cache/index%d/type",
-					num, i);
-			if (!strcmp(buf, "Data"))
-				type = 'd';
-			else if (!strcmp(buf, "Instruction"))
-				type = 'i';
-			else
-				type = 0;
+			if (ul_path_readf_buffer(desc->syscpu, buf, sizeof(buf),
+					"cpu%d/cache/index%d/type", num, i) > 0) {
+				if (!strcmp(buf, "Data"))
+					type = 'd';
+				else if (!strcmp(buf, "Instruction"))
+					type = 'i';
+			}
 
 			/* cache level */
-			level = path_read_s32(_PATH_SYS_CPU "/cpu%d/cache/index%d/level",
-					num, i);
+			ul_path_readf_s32(desc->syscpu, &level,
+					"cpu%d/cache/index%d/level", num, i);
 			if (type)
 				snprintf(buf, sizeof(buf), "L%d%c", level, type);
 			else
@@ -1337,19 +1221,14 @@ read_cache(struct lscpu_desc *desc, int idx)
 			ca->name = xstrdup(buf);
 
 			/* cache size */
-			if (path_exist(_PATH_SYS_CPU "/cpu%d/cache/index%d/size",num, i)) {
-				path_read_str(buf, sizeof(buf),
-					_PATH_SYS_CPU "/cpu%d/cache/index%d/size", num, i);
-				ca->size = xstrdup(buf);
-			} else {
+			if (ul_path_readf_string(desc->syscpu, &ca->size,
+					"cpu%d/cache/index%d/size", num, i) < 0)
 				ca->size = xstrdup("unknown size");
-			}
 		}
 
 		/* information about how CPUs share different caches */
-		map = path_read_cpuset(maxcpus,
-				  _PATH_SYS_CPU "/cpu%d/cache/index%d/shared_cpu_map",
-				  num, i);
+		ul_path_readf_cpuset(desc->syscpu, &map, maxcpus,
+				  "cpu%d/cache/index%d/shared_cpu_map", num, i);
 
 		if (!ca->sharedmaps)
 			ca->sharedmaps = xcalloc(desc->ncpuspos, sizeof(cpu_set_t *));
@@ -1381,43 +1260,47 @@ read_nodes(struct lscpu_desc *desc)
 	int i = 0;
 	DIR *dir;
 	struct dirent *d;
-	char *path;
+	struct path_cxt *sysnode;
 
-	/* number of NUMA node */
-	path = path_strdup(_PATH_SYS_NODE);
-	dir = opendir(path);
-	free(path);
+	desc->nnodes = 0;
 
-	while (dir && (d = readdir(dir))) {
+	sysnode = ul_new_path(_PATH_SYS_NODE);
+	if (!sysnode)
+		err(EXIT_FAILURE, _("failed to initialize %s handler"), _PATH_SYS_NODE);
+	ul_path_set_prefix(sysnode, desc->prefix);
+
+	dir = ul_path_opendir(sysnode, NULL);
+	if (!dir)
+		goto done;
+
+	while ((d = readdir(dir))) {
 		if (is_node_dirent(d))
 			desc->nnodes++;
 	}
 
 	if (!desc->nnodes) {
-		if (dir)
-			closedir(dir);
-		return;
+		closedir(dir);
+		goto done;
 	}
 
 	desc->nodemaps = xcalloc(desc->nnodes, sizeof(cpu_set_t *));
 	desc->idx2nodenum = xmalloc(desc->nnodes * sizeof(int));
 
-	if (dir) {
-		rewinddir(dir);
-		while ((d = readdir(dir)) && i < desc->nnodes) {
-			if (is_node_dirent(d))
-				desc->idx2nodenum[i++] = strtol_or_err(((d->d_name) + 4),
-							_("Failed to extract the node number"));
-		}
-		closedir(dir);
-		qsort(desc->idx2nodenum, desc->nnodes, sizeof(int), nodecmp);
+	rewinddir(dir);
+	while ((d = readdir(dir)) && i < desc->nnodes) {
+		if (is_node_dirent(d))
+			desc->idx2nodenum[i++] = strtol_or_err(((d->d_name) + 4),
+						_("Failed to extract the node number"));
 	}
+	closedir(dir);
+	qsort(desc->idx2nodenum, desc->nnodes, sizeof(int), nodecmp);
 
 	/* information about how nodes share different CPUs */
 	for (i = 0; i < desc->nnodes; i++)
-		desc->nodemaps[i] = path_read_cpuset(maxcpus,
-					_PATH_SYS_NODE "/node%d/cpumap",
-					desc->idx2nodenum[i]);
+		ul_path_readf_cpuset(sysnode, &desc->nodemaps[i], maxcpus,
+				"node%d/cpumap", desc->idx2nodenum[i]);
+done:
+	ul_unref_path(sysnode);
 }
 
 static char *
@@ -1550,11 +1433,11 @@ get_cell_data(struct lscpu_desc *desc, int idx, int col,
 				 is_cpu_online(desc, cpu) ? _("yes") : _("no"));
 		break;
 	case COL_MAXMHZ:
-		if (desc->maxmhz)
+		if (desc->maxmhz && desc->maxmhz[idx])
 			xstrncpy(buf, desc->maxmhz[idx], bufsz);
 		break;
 	case COL_MINMHZ:
-		if (desc->minmhz)
+		if (desc->minmhz && desc->minmhz[idx])
 			xstrncpy(buf, desc->minmhz[idx], bufsz);
 		break;
 	}
@@ -1710,12 +1593,16 @@ print_readable(struct lscpu_desc *desc, int cols[], int ncols,
 
 	table = scols_new_table();
 	if (!table)
-		 err(EXIT_FAILURE, _("failed to initialize output table"));
+		 err(EXIT_FAILURE, _("failed to allocate output table"));
+	if (mod->json) {
+		scols_table_enable_json(table, 1);
+		scols_table_set_name(table, "cpus");
+	}
 
 	for (i = 0; i < ncols; i++) {
 		data = get_cell_header(desc, cols[i], mod, buf, sizeof(buf));
-		if (!scols_table_new_column(table, xstrdup(data), 0, 0))
-			err(EXIT_FAILURE, _("failed to initialize output column"));
+		if (!scols_table_new_column(table, data, 0, 0))
+			err(EXIT_FAILURE, _("failed to allocate output column"));
 	}
 
 	for (i = 0; i < desc->ncpuspos; i++) {
@@ -1732,14 +1619,15 @@ print_readable(struct lscpu_desc *desc, int cols[], int ncols,
 
 		line = scols_table_new_line(table, NULL);
 		if (!line)
-			err(EXIT_FAILURE, _("failed to initialize output line"));
+			err(EXIT_FAILURE, _("failed to allocate output line"));
 
 		for (c = 0; c < ncols; c++) {
 			data = get_cell_data(desc, i, cols[c], mod,
 					     buf, sizeof(buf));
 			if (!data || !*data)
 				data = "-";
-			scols_line_set_data(line, c, data);
+			if (scols_line_set_data(line, c, data))
+				err(EXIT_FAILURE, _("failed to add output data"));
 		}
 	}
 
@@ -1747,12 +1635,38 @@ print_readable(struct lscpu_desc *desc, int cols[], int ncols,
 	scols_unref_table(table);
 }
 
-/* output formats "<key>  <value>"*/
-#define print_s(_key, _val)	printf("%-23s%s\n", _key, _val)
-#define print_n(_key, _val)	printf("%-23s%d\n", _key, _val)
+
+static void __attribute__ ((__format__(printf, 3, 4)))
+	add_summary_sprint(struct libscols_table *tb,
+			const char *txt,
+			const char *fmt,
+			...)
+{
+	struct libscols_line *ln = scols_table_new_line(tb, NULL);
+	char *data;
+	va_list args;
+
+	if (!ln)
+		err(EXIT_FAILURE, _("failed to allocate output line"));
+
+	/* description column */
+	scols_line_set_data(ln, 0, txt);
+
+	/* data column */
+	va_start(args, fmt);
+	xvasprintf(&data, fmt, args);
+	va_end(args);
+
+	if (data && scols_line_refer_data(ln, 1, data))
+		 err(EXIT_FAILURE, _("failed to add output data"));
+}
+
+#define add_summary_n(tb, txt, num)	add_summary_sprint(tb, txt, "%d", num)
+#define add_summary_s(tb, txt, str)	add_summary_sprint(tb, txt, "%s", str)
 
 static void
-print_cpuset(const char *key, cpu_set_t *set, int hex)
+print_cpuset(struct libscols_table *tb,
+	     const char *key, cpu_set_t *set, int hex)
 {
 	size_t setsize = CPU_ALLOC_SIZE(maxcpus);
 	size_t setbuflen = 7 * maxcpus;
@@ -1760,12 +1674,11 @@ print_cpuset(const char *key, cpu_set_t *set, int hex)
 
 	if (hex) {
 		p = cpumask_create(setbuf, setbuflen, set, setsize);
-		printf("%-23s0x%s\n", key, p);
+		add_summary_s(tb, key, p);
 	} else {
 		p = cpulist_create(setbuf, setbuflen, set, setsize);
-		print_s(key, p);
+		add_summary_s(tb, key, p);
 	}
-
 }
 
 /*
@@ -1774,14 +1687,30 @@ print_cpuset(const char *key, cpu_set_t *set, int hex)
 static void
 print_summary(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 {
-	char buf[512];
-	int i;
+	char buf[BUFSIZ];
+	int i = 0;
 	size_t setsize = CPU_ALLOC_SIZE(maxcpus);
+	struct libscols_table *tb;
 
-	print_s(_("Architecture:"), desc->arch);
+	scols_init_debug(0);
 
+	tb = scols_new_table();
+	if (!tb)
+		err(EXIT_FAILURE, _("failed to allocate output table"));
+
+	scols_table_enable_noheadings(tb, 1);
+	if (mod->json) {
+		scols_table_enable_json(tb, 1);
+		scols_table_set_name(tb, "lscpu");
+	}
+
+	if (scols_table_new_column(tb, "field", 0, 0) == NULL ||
+	    scols_table_new_column(tb, "data", 0, SCOLS_FL_NOEXTREMES) == NULL)
+		err(EXIT_FAILURE, _("failed to initialize output column"));
+
+	add_summary_s(tb, _("Architecture:"), desc->arch);
 	if (desc->mode) {
-		char mbuf[64], *p = mbuf;
+		char *p = buf;
 
 		if (desc->mode & MODE_32BIT) {
 			strcpy(p, "32-bit, ");
@@ -1792,18 +1721,22 @@ print_summary(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 			p += 8;
 		}
 		*(p - 2) = '\0';
-		print_s(_("CPU op-mode(s):"), mbuf);
+		add_summary_s(tb, _("CPU op-mode(s):"), buf);
 	}
 #if !defined(WORDS_BIGENDIAN)
-	print_s(_("Byte Order:"), "Little Endian");
+	add_summary_s(tb, _("Byte Order:"), "Little Endian");
 #else
-	print_s(_("Byte Order:"), "Big Endian");
+	add_summary_s(tb, _("Byte Order:"), "Big Endian");
 #endif
-	print_n(_("CPU(s):"), desc->ncpus);
+
+	if (desc->addrsz)
+		add_summary_s(tb, _("Address sizes:"), desc->addrsz);
+
+	add_summary_n(tb, _("CPU(s):"), desc->ncpus);
 
 	if (desc->online)
-		print_cpuset(mod->hex ? _("On-line CPU(s) mask:") :
-					_("On-line CPU(s) list:"),
+		print_cpuset(tb, mod->hex ? _("On-line CPU(s) mask:") :
+					    _("On-line CPU(s) list:"),
 				desc->online, mod->hex);
 
 	if (desc->online && CPU_COUNT_S(setsize, desc->online) != desc->ncpus) {
@@ -1822,8 +1755,8 @@ print_summary(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 			if (!is_cpu_online(desc, cpu) && is_cpu_present(desc, cpu))
 				CPU_SET_S(cpu, setsize, set);
 		}
-		print_cpuset(mod->hex ? _("Off-line CPU(s) mask:") :
-					_("Off-line CPU(s) list:"),
+		print_cpuset(tb, mod->hex ? _("Off-line CPU(s) mask:") :
+					    _("Off-line CPU(s) list:"),
 			     set, mod->hex);
 		cpuset_free(set);
 	}
@@ -1843,12 +1776,11 @@ print_summary(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 		 * If the cpu topology is not exported (e.g. 2nd level guest)
 		 * fall back to old calculation scheme.
 		 */
-		if ((fd = path_fopen("r", 0, _PATH_PROC_SYSINFO))) {
-			char pbuf[BUFSIZ];
+		if ((fd = ul_path_fopen(desc->procfs, "r", "sysinfo"))) {
 			int t0, t1;
 
-			while (fd && fgets(pbuf, sizeof(pbuf), fd) != NULL) {
-				if (sscanf(pbuf, "CPU Topology SW:%d%d%d%d%d%d",
+			while (fd && fgets(buf, sizeof(buf), fd) != NULL) {
+				if (sscanf(buf, "CPU Topology SW:%d%d%d%d%d%d",
 					   &t0, &t1, &drawers, &books_per_drawer,
 					   &sockets_per_book,
 					   &cores_per_socket) == 6)
@@ -1859,101 +1791,100 @@ print_summary(struct lscpu_desc *desc, struct lscpu_modifier *mod)
 		}
 		if (desc->mtid)
 			threads_per_core = atoi(desc->mtid) + 1;
-		print_n(_("Thread(s) per core:"),
+		add_summary_n(tb, _("Thread(s) per core:"),
 			threads_per_core ?: desc->nthreads / desc->ncores);
-		print_n(_("Core(s) per socket:"),
+		add_summary_n(tb, _("Core(s) per socket:"),
 			cores_per_socket ?: desc->ncores / desc->nsockets);
 		if (desc->nbooks) {
-			print_n(_("Socket(s) per book:"),
+			add_summary_n(tb, _("Socket(s) per book:"),
 				sockets_per_book ?: desc->nsockets / desc->nbooks);
 			if (desc->ndrawers) {
-				print_n(_("Book(s) per drawer:"),
+				add_summary_n(tb, _("Book(s) per drawer:"),
 					books_per_drawer ?: desc->nbooks / desc->ndrawers);
-				print_n(_("Drawer(s):"), drawers ?: desc->ndrawers);
+				add_summary_n(tb, _("Drawer(s):"), drawers ?: desc->ndrawers);
 			} else {
-				print_n(_("Book(s):"), books_per_drawer ?: desc->nbooks);
+				add_summary_n(tb, _("Book(s):"), books_per_drawer ?: desc->nbooks);
 			}
 		} else {
-			print_n(_("Socket(s):"), sockets_per_book ?: desc->nsockets);
+			add_summary_n(tb, _("Socket(s):"), sockets_per_book ?: desc->nsockets);
 		}
 	}
 	if (desc->nnodes)
-		print_n(_("NUMA node(s):"), desc->nnodes);
+		add_summary_n(tb, _("NUMA node(s):"), desc->nnodes);
 	if (desc->vendor)
-		print_s(_("Vendor ID:"), desc->vendor);
+		add_summary_s(tb, _("Vendor ID:"), desc->vendor);
 	if (desc->machinetype)
-		print_s(_("Machine type:"), desc->machinetype);
+		add_summary_s(tb, _("Machine type:"), desc->machinetype);
 	if (desc->family)
-		print_s(_("CPU family:"), desc->family);
+		add_summary_s(tb, _("CPU family:"), desc->family);
 	if (desc->model || desc->revision)
-		print_s(_("Model:"), desc->revision ? desc->revision : desc->model);
+		add_summary_s(tb, _("Model:"), desc->revision ? desc->revision : desc->model);
 	if (desc->modelname || desc->cpu)
-		print_s(_("Model name:"), desc->cpu ? desc->cpu : desc->modelname);
+		add_summary_s(tb, _("Model name:"), desc->cpu ? desc->cpu : desc->modelname);
 	if (desc->stepping)
-		print_s(_("Stepping:"), desc->stepping);
+		add_summary_s(tb, _("Stepping:"), desc->stepping);
 	if (desc->mhz)
-		print_s(_("CPU MHz:"), desc->mhz);
+		add_summary_s(tb, _("CPU MHz:"), desc->mhz);
 	if (desc->dynamic_mhz)
-		print_s(_("CPU dynamic MHz:"), desc->dynamic_mhz);
+		add_summary_s(tb, _("CPU dynamic MHz:"), desc->dynamic_mhz);
 	if (desc->static_mhz)
-		print_s(_("CPU static MHz:"), desc->static_mhz);
+		add_summary_s(tb, _("CPU static MHz:"), desc->static_mhz);
 	if (desc->maxmhz)
-		print_s(_("CPU max MHz:"), desc->maxmhz[0]);
+		add_summary_s(tb, _("CPU max MHz:"), cpu_max_mhz(desc, buf, sizeof(buf)));
 	if (desc->minmhz)
-		print_s(_("CPU min MHz:"), desc->minmhz[0]);
+		add_summary_s(tb, _("CPU min MHz:"), cpu_min_mhz(desc, buf, sizeof(buf)));
 	if (desc->bogomips)
-		print_s(_("BogoMIPS:"), desc->bogomips);
+		add_summary_s(tb, _("BogoMIPS:"), desc->bogomips);
 	if (desc->virtflag) {
 		if (!strcmp(desc->virtflag, "svm"))
-			print_s(_("Virtualization:"), "AMD-V");
+			add_summary_s(tb, _("Virtualization:"), "AMD-V");
 		else if (!strcmp(desc->virtflag, "vmx"))
-			print_s(_("Virtualization:"), "VT-x");
+			add_summary_s(tb, _("Virtualization:"), "VT-x");
 	}
 	if (desc->hypervisor)
-		print_s(_("Hypervisor:"), desc->hypervisor);
+		add_summary_s(tb, _("Hypervisor:"), desc->hypervisor);
 	if (desc->hyper) {
-		print_s(_("Hypervisor vendor:"), hv_vendors[desc->hyper]);
-		print_s(_("Virtualization type:"), _(virt_types[desc->virtype]));
+		add_summary_s(tb, _("Hypervisor vendor:"), hv_vendors[desc->hyper]);
+		add_summary_s(tb, _("Virtualization type:"), _(virt_types[desc->virtype]));
 	}
 	if (desc->dispatching >= 0)
-		print_s(_("Dispatching mode:"), _(disp_modes[desc->dispatching]));
+		add_summary_s(tb, _("Dispatching mode:"), _(disp_modes[desc->dispatching]));
 	if (desc->ncaches) {
-		char cbuf[512];
-
 		for (i = desc->ncaches - 1; i >= 0; i--) {
-			snprintf(cbuf, sizeof(cbuf),
+			snprintf(buf, sizeof(buf),
 					_("%s cache:"), desc->caches[i].name);
-			print_s(cbuf, desc->caches[i].size);
+			add_summary_s(tb, buf, desc->caches[i].size);
 		}
 	}
-
 	if (desc->necaches) {
-		char cbuf[512];
-
 		for (i = desc->necaches - 1; i >= 0; i--) {
-			snprintf(cbuf, sizeof(cbuf),
+			snprintf(buf, sizeof(buf),
 					_("%s cache:"), desc->ecaches[i].name);
-			print_s(cbuf, desc->ecaches[i].size);
+			add_summary_s(tb, buf, desc->ecaches[i].size);
 		}
 	}
 
 	for (i = 0; i < desc->nnodes; i++) {
 		snprintf(buf, sizeof(buf), _("NUMA node%d CPU(s):"), desc->idx2nodenum[i]);
-		print_cpuset(buf, desc->nodemaps[i], mod->hex);
+		print_cpuset(tb, buf, desc->nodemaps[i], mod->hex);
+	}
+
+	if (desc->physsockets) {
+		add_summary_n(tb, _("Physical sockets:"), desc->physsockets);
+		add_summary_n(tb, _("Physical chips:"), desc->physchips);
+		add_summary_n(tb, _("Physical cores/chip:"), desc->physcoresperchip);
 	}
 
 	if (desc->flags)
-		print_s(_("Flags:"), desc->flags);
+		add_summary_s(tb, _("Flags:"), desc->flags);
 
-	if (desc->physsockets) {
-		print_n(_("Physical sockets:"), desc->physsockets);
-		print_n(_("Physical chips:"), desc->physchips);
-		print_n(_("Physical cores/chip:"), desc->physcoresperchip);
-	}
+	scols_print_table(tb);
+	scols_unref_table(tb);
 }
 
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	size_t i;
 
 	fputs(USAGE_HEADER, out);
@@ -1966,45 +1897,50 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(_(" -a, --all               print both online and offline CPUs (default for -e)\n"), out);
 	fputs(_(" -b, --online            print online CPUs only (default for -p)\n"), out);
 	fputs(_(" -c, --offline           print offline CPUs only\n"), out);
+	fputs(_(" -J, --json              use JSON for default or extended format\n"), out);
 	fputs(_(" -e, --extended[=<list>] print out an extended readable format\n"), out);
 	fputs(_(" -p, --parse[=<list>]    print out a parsable format\n"), out);
 	fputs(_(" -s, --sysroot <dir>     use specified directory as system root\n"), out);
 	fputs(_(" -x, --hex               print hexadecimal masks rather than lists of CPUs\n"), out);
 	fputs(_(" -y, --physical          print physical instead of logical IDs\n"), out);
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
+	printf(USAGE_HELP_OPTIONS(25));
 
-	fprintf(out, _("\nAvailable columns:\n"));
-
+	fputs(USAGE_COLUMNS, out);
 	for (i = 0; i < ARRAY_SIZE(coldescs); i++)
 		fprintf(out, " %13s  %s\n", coldescs[i].name, _(coldescs[i].help));
 
-	fprintf(out, USAGE_MAN_TAIL("lscpu(1)"));
+	printf(USAGE_MAN_TAIL("lscpu(1)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char *argv[])
 {
 	struct lscpu_modifier _mod = { .mode = OUTPUT_SUMMARY }, *mod = &_mod;
-	struct lscpu_desc _desc = { .flags = 0 }, *desc = &_desc;
+	struct lscpu_desc _desc = { .flags = NULL }, *desc = &_desc;
 	int c, i;
 	int columns[ARRAY_SIZE(coldescs)], ncolumns = 0;
 	int cpu_modifier_specified = 0;
+	size_t setsize;
 
+	enum {
+		OPT_OUTPUT_ALL = CHAR_MAX + 1,
+	};
 	static const struct option longopts[] = {
-		{ "all",        no_argument,       0, 'a' },
-		{ "online",     no_argument,       0, 'b' },
-		{ "offline",    no_argument,       0, 'c' },
-		{ "help",	no_argument,       0, 'h' },
-		{ "extended",	optional_argument, 0, 'e' },
-		{ "parse",	optional_argument, 0, 'p' },
-		{ "sysroot",	required_argument, 0, 's' },
-		{ "physical",	no_argument,	   0, 'y' },
-		{ "hex",	no_argument,	   0, 'x' },
-		{ "version",	no_argument,	   0, 'V' },
-		{ NULL,		0, 0, 0 }
+		{ "all",        no_argument,       NULL, 'a' },
+		{ "online",     no_argument,       NULL, 'b' },
+		{ "offline",    no_argument,       NULL, 'c' },
+		{ "help",	no_argument,       NULL, 'h' },
+		{ "extended",	optional_argument, NULL, 'e' },
+		{ "json",       no_argument,       NULL, 'J' },
+		{ "parse",	optional_argument, NULL, 'p' },
+		{ "sysroot",	required_argument, NULL, 's' },
+		{ "physical",	no_argument,	   NULL, 'y' },
+		{ "hex",	no_argument,	   NULL, 'x' },
+		{ "version",	no_argument,	   NULL, 'V' },
+		{ "output-all",	no_argument,	   NULL, OPT_OUTPUT_ALL },
+		{ NULL,		0, NULL, 0 }
 	};
 
 	static const ul_excl_t excl[] = {	/* rows and cols in ASCII order */
@@ -2019,7 +1955,7 @@ int main(int argc, char *argv[])
 	textdomain(PACKAGE);
 	atexit(close_stdout);
 
-	while ((c = getopt_long(argc, argv, "abce::hp::s:xyV", longopts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "abce::hJp::s:xyV", longopts, NULL)) != -1) {
 
 		err_exclusive_options(c, longopts, excl, excl_st);
 
@@ -2037,7 +1973,10 @@ int main(int argc, char *argv[])
 			cpu_modifier_specified = 1;
 			break;
 		case 'h':
-			usage(stdout);
+			usage();
+		case 'J':
+			mod->json = 1;
+			break;
 		case 'p':
 		case 'e':
 			if (optarg) {
@@ -2052,7 +1991,7 @@ int main(int argc, char *argv[])
 			mod->mode = c == 'p' ? OUTPUT_PARSABLE : OUTPUT_READABLE;
 			break;
 		case 's':
-			path_set_prefix(optarg);
+			desc->prefix = optarg;
 			mod->system = SYSTEM_SNAPSHOT;
 			break;
 		case 'x':
@@ -2064,8 +2003,15 @@ int main(int argc, char *argv[])
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
+		case OPT_OUTPUT_ALL:
+		{
+			size_t sz;
+			for (sz = 0; sz < ARRAY_SIZE(coldescs); sz++)
+				columns[sz] = 1;
+			break;
+		}
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
@@ -2077,8 +2023,10 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	if (argc != optind)
-		usage(stderr);
+	if (argc != optind) {
+		warnx(_("bad usage"));
+		errtryhelp(EXIT_FAILURE);
+	}
 
 	/* set default cpu display mode if none was specified */
 	if (!mod->online && !mod->offline) {
@@ -2086,12 +2034,30 @@ int main(int argc, char *argv[])
 		mod->offline = mod->mode == OUTPUT_READABLE ? 1 : 0;
 	}
 
+	ul_path_init_debug();
+
+	/* /sys/devices/system/cpu */
+	desc->syscpu = ul_new_path(_PATH_SYS_CPU);
+	if (!desc->syscpu)
+		err(EXIT_FAILURE, _("failed to initialize CPUs sysfs handler"));
+	if (desc->prefix)
+		ul_path_set_prefix(desc->syscpu, desc->prefix);
+
+	/* /proc */
+	desc->procfs = ul_new_path("/proc");
+	if (!desc->procfs)
+		err(EXIT_FAILURE, _("failed to initialize procfs handler"));
+	if (desc->prefix)
+		ul_path_set_prefix(desc->procfs, desc->prefix);
+
 	read_basicinfo(desc, mod);
+
+	setsize = CPU_ALLOC_SIZE(maxcpus);
 
 	for (i = 0; i < desc->ncpuspos; i++) {
 		/* only consider present CPUs */
 		if (desc->present &&
-		    !CPU_ISSET(real_cpu_num(desc, i), desc->present))
+		    !CPU_ISSET_S(real_cpu_num(desc, i), setsize, desc->present))
 			continue;
 		read_topology(desc, i);
 		read_cache(desc, i);
@@ -2112,6 +2078,7 @@ int main(int argc, char *argv[])
 
 	read_nodes(desc);
 	read_hypervisor(desc, mod);
+	arm_cpu_decode(desc);
 
 	switch(mod->mode) {
 	case OUTPUT_SUMMARY:
@@ -2161,5 +2128,7 @@ int main(int argc, char *argv[])
 		break;
 	}
 
+	ul_unref_path(desc->syscpu);
+	ul_unref_path(desc->procfs);
 	return EXIT_SUCCESS;
 }

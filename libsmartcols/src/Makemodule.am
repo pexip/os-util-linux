@@ -2,7 +2,7 @@
 
 # smartcols.h is generated, so it's stored in builddir!
 smartcolsincdir = $(includedir)/libsmartcols
-nodist_smartcolsinc_HEADERS = $(top_builddir)/libsmartcols/src/libsmartcols.h
+nodist_smartcolsinc_HEADERS = libsmartcols/src/libsmartcols.h
 
 usrlib_exec_LTLIBRARIES += libsmartcols.la
 libsmartcols_la_SOURCES= \
@@ -17,12 +17,9 @@ libsmartcols_la_SOURCES= \
 	libsmartcols/src/table.c \
 	libsmartcols/src/table_print.c \
 	libsmartcols/src/version.c \
-	libsmartcols/src/init.c \
-	$(nodist_smartcolsinc_HEADERS)
+	libsmartcols/src/init.c
 
-nodist_libsmartcols_la_SOURCES = libsmartcols/src/smartcolsP.h
-
-libsmartcols_la_LIBADD = libcommon.la
+libsmartcols_la_LIBADD = $(LDADD) libcommon.la
 
 libsmartcols_la_CFLAGS = \
 	$(AM_CFLAGS) \
@@ -30,10 +27,8 @@ libsmartcols_la_CFLAGS = \
 	-I$(ul_libsmartcols_incdir) \
 	-I$(top_srcdir)/libsmartcols/src
 
-libsmartcols_la_DEPENDENCIES = \
-	libcommon.la \
-	libsmartcols/src/libsmartcols.sym \
-	libsmartcols/src/libsmartcols.h.in
+EXTRA_libsmartcols_la_DEPENDENCIES = \
+	libsmartcols/src/libsmartcols.sym
 
 libsmartcols_la_LDFLAGS = $(SOLIB_LDFLAGS)
 if HAVE_VSCRIPT
@@ -42,8 +37,7 @@ endif
 libsmartcols_la_LDFLAGS += -version-info $(LIBSMARTCOLS_VERSION_INFO)
 
 EXTRA_DIST += \
-	libsmartcols/src/libsmartcols.sym \
-	libsmartcols/src/libsmartcols.h.in
+	libsmartcols/src/libsmartcols.sym
 
 # move lib from $(usrlib_execdir) to $(libdir) if needed
 install-exec-hook-libsmartcols:

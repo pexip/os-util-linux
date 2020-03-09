@@ -51,7 +51,7 @@ enum {
 #define IOPRIO_PRIO_DATA(mask)	((mask) & IOPRIO_PRIO_MASK)
 #define IOPRIO_PRIO_VALUE(class, data)	(((class) << IOPRIO_CLASS_SHIFT) | data)
 
-const char *to_prio[] = {
+static const char *to_prio[] = {
 	[IOPRIO_CLASS_NONE] = "none",
 	[IOPRIO_CLASS_RT]   = "realtime",
 	[IOPRIO_CLASS_BE]   = "best-effort",
@@ -98,8 +98,9 @@ static void ioprio_setid(int which, int ioclass, int data, int who)
 		err(EXIT_FAILURE, _("ioprio_set failed"));
 }
 
-static void __attribute__ ((__noreturn__)) usage(FILE * out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out,  _(" %1$s [options] -p <pid>...\n"
 			" %1$s [options] -P <pgid>...\n"
@@ -120,12 +121,11 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fputs(_(" -u, --uid <uid>...     act on already running processes owned by these users\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
+	printf(USAGE_HELP_OPTIONS(24));
 
-	fprintf(out, USAGE_MAN_TAIL("ionice(1)"));
+	printf(USAGE_MAN_TAIL("ionice(1)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char **argv)
@@ -201,9 +201,9 @@ int main(int argc, char **argv)
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 
 	switch (ioclass) {
@@ -257,10 +257,11 @@ int main(int argc, char **argv)
 		 */
 		ioprio_setid(0, ioclass, data, IOPRIO_WHO_PROCESS);
 		execvp(argv[optind], &argv[optind]);
-		err(EXIT_FAILURE, _("failed to execute %s"), argv[optind]);
-	} else
-		usage(stderr);
-
+		errexec(argv[optind]);
+	} else {
+		warnx(_("bad usage"));
+		errtryhelp(EXIT_FAILURE);
+	}
 
 	return EXIT_SUCCESS;
 }

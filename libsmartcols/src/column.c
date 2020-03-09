@@ -96,7 +96,7 @@ struct libscols_column *scols_copy_column(const struct libscols_column *cl)
 	if (!ret)
 		return NULL;
 
-	DBG(COL, ul_debugobj(cl, "copy to %p", ret));
+	DBG(COL, ul_debugobj(cl, "copy"));
 
 	if (scols_column_set_color(ret, cl->color))
 		goto err;
@@ -167,9 +167,48 @@ int scols_column_set_flags(struct libscols_column *cl, int flags)
 			cl->table->ntreecols--;
 	}
 
+	DBG(COL, ul_debugobj(cl, "setting flags from 0%x to 0%x", cl->flags, flags));
 	cl->flags = flags;
 	return 0;
 }
+
+/**
+ * scols_column_set_json_type:
+ * @cl: a pointer to a struct libscols_column instance
+ * @type: SCOLS_JSON_* type
+ *
+ * Sets the type used for JSON formatting, the default is SCOLS_JSON_STRING.
+ *
+ * Returns: 0, a negative value in case of an error.
+ *
+ * Since: 2.33
+ */
+int scols_column_set_json_type(struct libscols_column *cl, int type)
+{
+	if (!cl)
+		return -EINVAL;
+
+	cl->json_type = type;
+	return 0;
+
+}
+
+/**
+ * scols_column_get_json_type:
+ * @cl: a pointer to a struct libscols_column instance
+ *
+ * Note that SCOLS_JSON_BOOLEAN interprets NULL, empty strings, '0', 'N' and
+ * 'n' as "false"; and everything else as "true".
+ *
+ * Returns: JSON type used for formatting or a negative value in case of an error.
+ *
+ * Since: 2.33
+ */
+int scols_column_get_json_type(const struct libscols_column *cl)
+{
+	return cl ? cl->json_type : -EINVAL;
+}
+
 
 /**
  * scols_column_get_table:
@@ -293,7 +332,7 @@ size_t scols_wrapnl_chunksize(const struct libscols_column *cl __attribute__((un
 	size_t sum = 0;
 
 	while (data && *data) {
-		const char *p = data;
+		const char *p;
 		size_t sz;
 
 		p = strchr(data, '\n');
@@ -304,7 +343,7 @@ size_t scols_wrapnl_chunksize(const struct libscols_column *cl __attribute__((un
 			sz = mbs_safe_width(data);
 
 		sum = max(sum, sz);
-		data = p;;
+		data = p;
 	}
 
 	return sum;

@@ -47,7 +47,7 @@
 
 /* We don't use our include/crc32.h, but crc32 from zlib!
  *
- * The zlib implemenation performs pre/post-conditioning. The util-linux
+ * The zlib implementation performs pre/post-conditioning. The util-linux
  * imlemenation requires post-conditioning (xor) in the applications.
  */
 #include <zlib.h>
@@ -69,11 +69,11 @@
 
 static int fd;			/* ROM image file descriptor */
 static char *filename;		/* ROM image filename */
-struct cramfs_super super;	/* just find the cramfs superblock once */
+static struct cramfs_super super;	/* just find the cramfs superblock once */
 static int cramfs_is_big_endian = 0;	/* source is big endian */
 static int opt_verbose = 0;	/* 1 = verbose (-v), 2+ = very verbose (-vv) */
 static int opt_extract = 0;	/* extract cramfs (-x) */
-char *extract_dir = "";		/* optional extraction directory (-x) */
+static char *extract_dir = "";		/* optional extraction directory (-x) */
 
 #define PAD_SIZE 512
 
@@ -102,11 +102,9 @@ static char *outbuffer;
 
 static size_t blksize = 0;
 
-
-/* Input status of 0 to print help and exit without an error. */
-static void __attribute__((__noreturn__)) usage(int status)
+static void __attribute__((__noreturn__)) usage(void)
 {
-	FILE *out = status ? stderr : stdout;
+	FILE *out = stdout;
 
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
@@ -122,11 +120,10 @@ static void __attribute__((__noreturn__)) usage(int status)
 	fputs(_(" -b, --blocksize <size>   use this blocksize, defaults to page size\n"), out);
 	fputs(_("     --extract[=<dir>]    test uncompression, optionally extract into <dir>\n"), out);
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
-	fputs(USAGE_SEPARATOR, out);
+	printf(USAGE_HELP_OPTIONS(26));
 
-	exit(status);
+	printf(USAGE_MAN_TAIL("fsck.cramfs(8)"));
+	exit(FSCK_EX_OK);
 }
 
 static int get_superblock_endianness(uint32_t magic)
@@ -195,7 +192,7 @@ static void test_super(int *start, size_t * length)
 		errx(FSCK_EX_ERROR, _("unsupported filesystem features"));
 
 	/* What are valid superblock sizes? */
-	if (super.size < sizeof(struct cramfs_super))
+	if (super.size < *start + sizeof(struct cramfs_super))
 		errx(FSCK_EX_UNCORRECTED, _("superblock size (%d) too small"),
 		     super.size);
 
@@ -220,7 +217,7 @@ static void test_crc(int start)
 		return;
 	}
 
-	crc = crc32(0L, Z_NULL, 0);
+	crc = crc32(0L, NULL, 0);
 
 	buf =
 	    mmap(NULL, super.size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
@@ -229,15 +226,20 @@ static void test_crc(int start)
 		    mmap(NULL, super.size, PROT_READ | PROT_WRITE,
 			 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 		if (buf != MAP_FAILED) {
+			ssize_t tmp;
 			if (lseek(fd, 0, SEEK_SET) == (off_t) -1)
 				err(FSCK_EX_ERROR, _("seek on %s failed"), filename);
-			if (read(fd, buf, super.size) != (ssize_t) super.size)
+			tmp = read(fd, buf, super.size);
+			if (tmp < 0)
 				err(FSCK_EX_ERROR, _("cannot read %s"), filename);
+			if (tmp != (ssize_t) super.size)
+				errx(FSCK_EX_ERROR, _("failed to read %"PRIu32" bytes from file %s"),
+					super.size, filename);
 		}
 	}
 	if (buf != MAP_FAILED) {
 		((struct cramfs_super *)((unsigned char *) buf + start))->fsid.crc =
-		    crc32(0L, Z_NULL, 0);
+		    crc32(0L, NULL, 0);
 		crc = crc32(crc, (unsigned char *) buf + start, super.size - start);
 		munmap(buf, super.size);
 	} else {
@@ -255,7 +257,7 @@ static void test_crc(int start)
 				break;
 			if (length == 0)
 				((struct cramfs_super *)buf)->fsid.crc =
-				    crc32(0L, Z_NULL, 0);
+				    crc32(0L, NULL, 0);
 			length += retval;
 			if (length > (super.size - start)) {
 				crc = crc32(crc, buf,
@@ -646,12 +648,12 @@ int main(int argc, char **argv)
 	size_t length = 0;
 
 	static const struct option longopts[] = {
-		{"verbose", no_argument, 0, 'v'},
-		{"version", no_argument, 0, 'V'},
-		{"help", no_argument, 0, 'h'},
-		{"blocksize", required_argument, 0, 'b'},
-		{"extract", optional_argument, 0, 'x'},
-		{NULL, no_argument, 0, '0'},
+		{"verbose",   no_argument,       NULL, 'v'},
+		{"version",   no_argument,       NULL, 'V'},
+		{"help",      no_argument,       NULL, 'h'},
+		{"blocksize", required_argument, NULL, 'b'},
+		{"extract",   optional_argument, NULL, 'x'},
+		{NULL, 0, NULL, 0},
 	};
 
 	setlocale(LC_MESSAGES, "");
@@ -660,6 +662,8 @@ int main(int argc, char **argv)
 	textdomain(PACKAGE);
 	atexit(close_stdout);
 
+	strutils_set_exitcode(FSCK_EX_USAGE);
+
 	/* command line options */
 	while ((c = getopt_long(argc, argv, "ayvVhb:", longopts, NULL)) != EOF)
 		switch (c) {
@@ -667,11 +671,11 @@ int main(int argc, char **argv)
 		case 'y':
 			break;
 		case 'h':
-			usage(FSCK_EX_OK);
+			usage();
 			break;
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			return FSCK_EX_OK;
 		case 'x':
 			opt_extract = 1;
 			if(optarg)
@@ -684,11 +688,13 @@ int main(int argc, char **argv)
 			blksize = strtou32_or_err(optarg, _("invalid blocksize argument"));
 			break;
 		default:
-			usage(FSCK_EX_USAGE);
+			errtryhelp(FSCK_EX_USAGE);
 		}
 
-	if ((argc - optind) != 1)
-		usage(FSCK_EX_USAGE);
+	if ((argc - optind) != 1){
+		warnx(_("bad usage"));
+		errtryhelp(FSCK_EX_USAGE);
+	}
 	filename = argv[optind];
 
 	test_super(&start, &length);

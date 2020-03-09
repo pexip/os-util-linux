@@ -76,8 +76,7 @@ static int dir_to_device(struct mountpoint_control *ctl)
 		if (stat(buf, &pst) !=0)
 			return -1;
 
-		if ((ctl->st.st_dev != pst.st_dev) ||
-		    (ctl->st.st_dev == pst.st_dev && ctl->st.st_ino == pst.st_ino)) {
+		if (ctl->st.st_dev != pst.st_dev || ctl->st.st_ino == pst.st_ino) {
 			ctl->dev = ctl->st.st_dev;
 			return 0;
 		}
@@ -111,8 +110,9 @@ static int print_devno(const struct mountpoint_control *ctl)
 	return 0;
 }
 
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
 	      _(" %1$s [-qd] /path/to/directory\n"
@@ -126,25 +126,24 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 		" -d, --fs-devno     print maj:min device number of the filesystem\n"
 		" -x, --devno        print maj:min device number of the block device\n"), out);
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
-	fprintf(out, USAGE_MAN_TAIL("mountpoint(1)"));
+	printf(USAGE_HELP_OPTIONS(20));
+	printf(USAGE_MAN_TAIL("mountpoint(1)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char **argv)
 {
 	int c;
-	struct mountpoint_control ctl = { 0 };
+	struct mountpoint_control ctl = { NULL };
 
 	static const struct option longopts[] = {
-		{ "quiet", 0, 0, 'q' },
-		{ "fs-devno", 0, 0, 'd' },
-		{ "devno", 0, 0, 'x' },
-		{ "help", 0, 0, 'h' },
-		{ "version", 0, 0, 'V' },
-		{ NULL, 0, 0, 0 }
+		{ "quiet",    no_argument, NULL, 'q' },
+		{ "fs-devno", no_argument, NULL, 'd' },
+		{ "devno",    no_argument, NULL, 'x' },
+		{ "help",     no_argument, NULL, 'h' },
+		{ "version",  no_argument, NULL, 'V' },
+		{ NULL, 0, NULL, 0 }
 	};
 
 	setlocale(LC_ALL, "");
@@ -167,19 +166,20 @@ int main(int argc, char **argv)
 			ctl.dev_devno = 1;
 			break;
 		case 'h':
-			usage(stdout);
+			usage();
 			break;
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		default:
-			usage(stderr);
-			break;
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
-	if (optind + 1 != argc)
-		usage(stderr);
+	if (optind + 1 != argc) {
+		warnx(_("bad usage"));
+		errtryhelp(EXIT_FAILURE);
+	}
 
 	ctl.path = argv[optind];
 

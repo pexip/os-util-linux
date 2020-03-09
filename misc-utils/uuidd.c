@@ -41,15 +41,6 @@
 
 #include "nls.h"
 
-#ifdef __GNUC__
-#define CODE_ATTR(x) __attribute__(x)
-#else
-#define CODE_ATTR(x)
-#endif
-
-/* length of textual representation of UUID, including trailing \0 */
-#define UUID_STR_LEN	37
-
 /* length of binary representation of UUID */
 #define UUID_LEN	(sizeof(uuid_t))
 
@@ -64,8 +55,9 @@ struct uuidd_cxt_t {
 			no_sock: 1;
 };
 
-static void __attribute__ ((__noreturn__)) usage(FILE * out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options]\n"), program_invocation_short_name);
 	fputs(USAGE_SEPARATOR, out);
@@ -84,10 +76,9 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fputs(_(" -d, --debug             run in debugging mode\n"), out);
 	fputs(_(" -q, --quiet             turn on quiet mode\n"), out);
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
-	fprintf(out, USAGE_MAN_TAIL("uuidd(8)"));
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	printf(USAGE_HELP_OPTIONS(25));
+	printf(USAGE_MAN_TAIL("uuidd(8)"));
+	exit(EXIT_SUCCESS);
 }
 
 static void create_daemon(void)
@@ -127,8 +118,8 @@ static int call_daemon(const char *socket_path, int op, char *buf,
 	}
 
 	srv_addr.sun_family = AF_UNIX;
-	strncpy(srv_addr.sun_path, socket_path, sizeof(srv_addr.sun_path));
-	srv_addr.sun_path[sizeof(srv_addr.sun_path) - 1] = '\0';
+	assert(strlen(socket_path) < sizeof(srv_addr.sun_path));
+	xstrncpy(srv_addr.sun_path, socket_path, sizeof(srv_addr.sun_path));
 
 	if (connect(s, (const struct sockaddr *) &srv_addr,
 		    sizeof(struct sockaddr_un)) < 0) {
@@ -261,8 +252,8 @@ static int create_socket(struct uuidd_cxt_t *uuidd_cxt,
 	 * Create the address we will be binding to.
 	 */
 	my_addr.sun_family = AF_UNIX;
-	strncpy(my_addr.sun_path, socket_path, sizeof(my_addr.sun_path));
-	my_addr.sun_path[sizeof(my_addr.sun_path) - 1] = '\0';
+	assert(strlen(socket_path) < sizeof(my_addr.sun_path));
+	xstrncpy(my_addr.sun_path, socket_path, sizeof(my_addr.sun_path));
 	unlink(socket_path);
 	save_umask = umask(0);
 	if (bind(s, (const struct sockaddr *) &my_addr,
@@ -639,11 +630,14 @@ int main(int argc, char **argv)
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
+
+	if (strlen(socket_path) >= sizeof(((struct sockaddr_un *)0)->sun_path))
+		errx(EXIT_FAILURE, _("socket name too long: %s"), socket_path);
 
 	if (!no_pid && !pidfile_path)
 		pidfile_path = UUIDD_PIDFILE_PATH;

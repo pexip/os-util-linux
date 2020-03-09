@@ -39,6 +39,8 @@ wall \- write a message to all users
 .RB [ \-n ]
 .RB [ \-t
 .IR timeout ]
+.RB [ \-g
+.IR group ]
 .RI [ message " | " file ]
 .SH DESCRIPTION
 .B wall
@@ -69,6 +71,11 @@ This \fItimeout\fR must be a positive integer.  The default value
 is 300 seconds, which is a legacy from the time when people ran terminals over
 modem lines.
 .TP
+.BR \-g , " \-\-group " \fIgroup\fR
+Limit printing message to members of group defined as a
+.I group
+argument.  The argument can be group name or GID.
+.TP
 .BR \-V , " \-\-version"
 Display version information and exit.
 .TP
@@ -91,6 +98,6 @@ A
 command appeared in Version 7 AT&T UNIX.
 .SH AVAILABILITY
 The wall command is part of the util-linux package and is available from
-.UR ftp://\:ftp.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
+.UR https://\:www.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
 Linux Kernel Archive
 .UE .

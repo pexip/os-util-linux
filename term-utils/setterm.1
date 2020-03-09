@@ -47,7 +47,7 @@ can be an
 or
 .BR grey ,
 or
-.BR bright
+.B bright
 followed
 by
 .BR red ,
@@ -179,7 +179,7 @@ Makes the terminal continue on a new line when a line is full.
 .TP
 .BR \-\-msg " [" on | off "]  (virtual consoles only)"
 Enables or disables the sending of kernel
-.BR printk()
+.BR printk ()
 messages to the console.
 .TP
 \fB\-\-msglevel\fP \fB0-8\fP  (virtual consoles only)
@@ -228,6 +228,13 @@ Turns keyboard repeat on or off.
 Displays the terminal reset string, which typically resets the terminal to
 its power-on state.
 .TP
+\fB\-\-resize\fP
+Reset terminal size by assessing maximum row and column.  This is useful
+when actual geometry and kernel terminal driver are not in sync.  Most
+notable use case is with serial consoles, that do not use
+.BR ioctl (3)
+but just byte streams and breaks.
+.TP
 \fB\-\-reverse\fP [\fBon\fP|\fBoff\fP]
 Turns reverse video mode on or off.  Except on a virtual console,
 .B \-\-reverse off
@@ -275,6 +282,6 @@ reasons to discontinue single-hyphen compatibility.
 Differences between the Minix and Linux versions are not documented.
 .SH AVAILABILITY
 The setterm command is part of the util-linux package and is available from
-.UR ftp://\:ftp.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
+.UR https://\:www.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
 Linux Kernel Archive
 .UE .

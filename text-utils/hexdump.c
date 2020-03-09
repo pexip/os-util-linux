@@ -107,7 +107,7 @@ parse_args(int argc, char **argv, struct hexdump *hex)
 		case 'f':
 			addfile(optarg, hex);
 			break;
-                case 'L':
+		case 'L':
 			colormode = UL_COLORMODE_AUTO;
 			if (optarg)
 				colormode = colormode_or_err(optarg,
@@ -131,13 +131,13 @@ parse_args(int argc, char **argv, struct hexdump *hex)
 			add_fmt("\"%07.7_ax \" 8/2 \"   %04x \" \"\\n\"", hex);
 			break;
 		case 'h':
-			usage(stdout);
+			usage();
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
 			exit(EXIT_SUCCESS);
 			break;
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
@@ -149,8 +149,9 @@ parse_args(int argc, char **argv, struct hexdump *hex)
 	return optind;
 }
 
-void __attribute__((__noreturn__)) usage(FILE *out)
+void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options] <file>...\n"), program_invocation_short_name);
 
@@ -173,11 +174,10 @@ void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(_(" -s, --skip <offset>       skip offset bytes from the beginning\n"), out);
 	fputs(_(" -v, --no-squeezing        output identical lines\n"), out);
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
-	fprintf(out, USAGE_MAN_TAIL("hexdump(1)"));
+	printf(USAGE_HELP_OPTIONS(27));
+	printf(USAGE_MAN_TAIL("hexdump(1)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char **argv)

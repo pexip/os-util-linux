@@ -2,7 +2,7 @@ AM_CPPFLAGS = \
 	-include config.h \
 	-I$(top_srcdir)/include \
 	-DLOCALEDIR=\"$(localedir)\" \
-	-D_PATH_LOCALSTATEDIR=\"${localstatedir}\"
+	-D_PATH_RUNSTATEDIR=\"${runstatedir}\"
 AM_CFLAGS = -fsigned-char $(WARN_CFLAGS)
 AM_LDFLAGS =
 
@@ -119,7 +119,7 @@ edit_cmd = sed \
 	 -e 's|@sbindir[@]|$(sbindir)|g' \
 	 -e 's|@bindir[@]|$(bindir)|g' \
 	 -e 's|@includedir[@]|$(includedir)|g' \
-	 -e 's|@localstatedir[@]|$(localstatedir)|g' \
+	 -e 's|@runstatedir[@]|$(runstatedir)|g' \
 	 -e 's|@usrlib_execdir[@]|$(usrlib_execdir)|g' \
 	 -e 's|@usrbin_execdir[@]|$(usrbin_execdir)|g' \
 	 -e 's|@usrsbin_execdir[@]|$(usrsbin_execdir)|g' \
@@ -183,10 +183,16 @@ checkdecl:
 checkcompletion:
 	@ $(top_srcdir)/tools/checkcompletion.sh $(top_srcdir)
 
+checkusage:
+	@ $(top_srcdir)/tools/checkusage.sh \
+		$(bin_PROGRAMS) $(sbin_PROGRAMS) \
+		$(usrbin_exec_PROGRAMS) $(usrsbin_exec_PROGRAMS)
+
 DISTCHECK_CONFIGURE_FLAGS = \
 	--disable-use-tty-group \
 	--disable-silent-rules \
 	--enable-all-programs \
+	--disable-makeinstall-chown \
 	--enable-static-programs \
 	--enable-gtk-doc \
 	--with-python \

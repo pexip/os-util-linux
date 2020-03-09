@@ -59,13 +59,16 @@
 # define SWAP_FLAG_PRIO_SHIFT	0
 #endif
 
-#ifndef SWAPON_HAS_TWO_ARGS
-/* libc is insane, let's call the kernel */
+#if !defined(HAVE_SWAPON) && defined(SYS_swapon)
 # include <sys/syscall.h>
 # define swapon(path, flags) syscall(SYS_swapon, path, flags)
 #endif
 
 #define MAX_PAGESIZE	(64 * 1024)
+
+#ifndef UUID_STR_LEN
+# define UUID_STR_LEN	37
+#endif
 
 enum {
 	SIG_SWAPSPACE = 1,
@@ -89,7 +92,7 @@ enum {
 	COL_UUID,
 	COL_LABEL
 };
-struct colinfo infos[] = {
+static struct colinfo infos[] = {
 	[COL_PATH]     = { "NAME",	0.20, 0, N_("device file or partition path") },
 	[COL_TYPE]     = { "TYPE",	0.20, SCOLS_FL_TRUNC, N_("type of the device")},
 	[COL_SIZE]     = { "SIZE",	0.20, SCOLS_FL_RIGHT, N_("size of the swap area")},
@@ -173,7 +176,8 @@ static void add_scols_line(const struct swapon_ctl *ctl, struct libscols_table *
 
 	line = scols_table_new_line(table, NULL);
 	if (!line)
-		err(EXIT_FAILURE, _("failed to initialize output line"));
+		err(EXIT_FAILURE, _("failed to allocate output line"));
+
 	data = mnt_fs_get_source(fs);
 	if (access(data, R_OK) == 0)
 		pr = get_swap_prober(data);
@@ -219,8 +223,8 @@ static void add_scols_line(const struct swapon_ctl *ctl, struct libscols_table *
 			break;
 		}
 
-		if (str)
-			scols_line_refer_data(line, i, str);
+		if (str && scols_line_refer_data(line, i, str))
+			err(EXIT_FAILURE, _("failed to add output data"));
 	}
 	if (pr)
 		blkid_free_probe(pr);
@@ -277,7 +281,7 @@ static int show_table(struct swapon_ctl *ctl)
 
 	table = scols_new_table();
 	if (!table)
-		err(EXIT_FAILURE, _("failed to initialize output table"));
+		err(EXIT_FAILURE, _("failed to allocate output table"));
 
 	scols_table_enable_raw(table, ctl->raw);
 	scols_table_enable_noheadings(table, ctl->no_heading);
@@ -286,7 +290,7 @@ static int show_table(struct swapon_ctl *ctl)
 		struct colinfo *col = get_column_info(ctl, i);
 
 		if (!scols_table_new_column(table, col->name, col->whint, col->flags))
-			err(EXIT_FAILURE, _("failed to initialize output column"));
+			err(EXIT_FAILURE, _("failed to allocate output column"));
 	}
 
 	while (mnt_table_next_fs(st, itr, &fs) == 0)
@@ -337,7 +341,7 @@ static int swap_reinitialize(struct swap_device *dev)
 		cmd[idx++] = dev->path;
 		cmd[idx++] = NULL;
 		execvp(cmd[0], (char * const *) cmd);
-		err(EXIT_FAILURE, _("failed to execute %s"), cmd[0]);
+		errexec(cmd[0]);
 
 	default: /* parent */
 		do {
@@ -349,7 +353,7 @@ static int swap_reinitialize(struct swap_device *dev)
 			return -1;
 		}
 
-		/* mkswap returns: 0=suss, 1=error */
+		/* mkswap returns: 0=suss, >0 error */
 		if (WIFEXITED(status) && WEXITSTATUS(status)==0)
 			return 0; /* ok */
 		break;
@@ -458,12 +462,12 @@ static unsigned long long swap_get_size(const struct swap_device *dev,
 {
 	unsigned int last_page = 0;
 	const unsigned int swap_version = SWAP_VERSION;
-	struct swap_header_v1_2 *s;
+	const struct swap_header_v1_2 *s;
 
 	assert(dev);
 	assert(dev->pagesize > 0);
 
-	s = (struct swap_header_v1_2 *) hdr;
+	s = (const struct swap_header_v1_2 *) hdr;
 
 	if (s->version == swap_version)
 		last_page = s->last_page;
@@ -475,7 +479,7 @@ static unsigned long long swap_get_size(const struct swap_device *dev,
 
 static void swap_get_info(struct swap_device *dev, const char *hdr)
 {
-	struct swap_header_v1_2 *s = (struct swap_header_v1_2 *) hdr;
+	const struct swap_header_v1_2 *s = (const struct swap_header_v1_2 *) hdr;
 
 	assert(dev);
 
@@ -484,7 +488,7 @@ static void swap_get_info(struct swap_device *dev, const char *hdr)
 
 	if (s && *s->uuid) {
 		const unsigned char *u = s->uuid;
-		char str[37];
+		char str[UUID_STR_LEN];
 
 		snprintf(str, sizeof(str),
 			"%02x%02x%02x%02x-"
@@ -500,7 +504,7 @@ static void swap_get_info(struct swap_device *dev, const char *hdr)
 static int swapon_checks(const struct swapon_ctl *ctl, struct swap_device *dev)
 {
 	struct stat st;
-	int fd = -1, sig;
+	int fd, sig;
 	char *hdr = NULL;
 	unsigned long long devsize = 0;
 	int permMask;
@@ -693,7 +697,7 @@ static int parse_options(struct swap_prop *props, const char *options)
 	assert(props);
 	assert(options);
 
-	if (mnt_optstr_get_option(options, "nofail", NULL, 0) == 0)
+	if (mnt_optstr_get_option(options, "nofail", NULL, NULL) == 0)
 		props->no_fail = 1;
 
 	if (mnt_optstr_get_option(options, "discard", &arg, &argsz) == 0) {
@@ -781,9 +785,11 @@ static int swapon_all(struct swapon_ctl *ctl)
 }
 
 
-static void __attribute__ ((__noreturn__)) usage(FILE * out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	size_t i;
+
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options] [<spec>]\n"), program_invocation_short_name);
 
@@ -805,8 +811,7 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fputs(_(" -v, --verbose            verbose mode\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
+	printf(USAGE_HELP_OPTIONS(26));
 
 	fputs(_("\nThe <spec> parameter:\n" \
 		" -L <label>             synonym for LABEL=<label>\n"
@@ -823,12 +828,12 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 		" pages   : freed pages are discarded before they are reused\n"
 		"If no policy is selected, both discard types are enabled (default).\n"), out);
 
-	fputs(_("\nAvailable columns (for --show):\n"), out);
+	fputs(USAGE_COLUMNS, out);
 	for (i = 0; i < ARRAY_SIZE(infos); i++)
 		fprintf(out, " %-5s  %s\n", infos[i].name, _(infos[i].help));
 
-	fprintf(out, USAGE_MAN_TAIL("swapon(8)"));
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	printf(USAGE_MAN_TAIL("swapon(8)"));
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char *argv[])
@@ -841,28 +846,30 @@ int main(int argc, char *argv[])
 		BYTES_OPTION = CHAR_MAX + 1,
 		NOHEADINGS_OPTION,
 		RAW_OPTION,
-		SHOW_OPTION
+		SHOW_OPTION,
+		OPT_LIST_TYPES
 	};
 
 	static const struct option long_opts[] = {
-		{ "priority", 1, 0, 'p' },
-		{ "discard",  2, 0, 'd' },
-		{ "ifexists", 0, 0, 'e' },
-		{ "options",  2, 0, 'o' },
-		{ "summary",  0, 0, 's' },
-		{ "fixpgsz",  0, 0, 'f' },
-		{ "all",      0, 0, 'a' },
-		{ "help",     0, 0, 'h' },
-		{ "verbose",  0, 0, 'v' },
-		{ "version",  0, 0, 'V' },
-		{ "show",     2, 0, SHOW_OPTION },
-		{ "noheadings", 0, 0, NOHEADINGS_OPTION },
-		{ "raw",      0, 0, RAW_OPTION },
-		{ "bytes",    0, 0, BYTES_OPTION },
-		{ NULL, 0, 0, 0 }
+		{ "priority",   required_argument, NULL, 'p'               },
+		{ "discard",    optional_argument, NULL, 'd'               },
+		{ "ifexists",   no_argument,       NULL, 'e'               },
+		{ "options",    optional_argument, NULL, 'o'               },
+		{ "summary",    no_argument,       NULL, 's'               },
+		{ "fixpgsz",    no_argument,       NULL, 'f'               },
+		{ "all",        no_argument,       NULL, 'a'               },
+		{ "help",       no_argument,       NULL, 'h'               },
+		{ "verbose",    no_argument,       NULL, 'v'               },
+		{ "version",    no_argument,       NULL, 'V'               },
+		{ "show",       optional_argument, NULL, SHOW_OPTION       },
+		{ "output-all", no_argument,       NULL, OPT_LIST_TYPES    },
+		{ "noheadings", no_argument,       NULL, NOHEADINGS_OPTION },
+		{ "raw",        no_argument,       NULL, RAW_OPTION        },
+		{ "bytes",      no_argument,       NULL, BYTES_OPTION      },
+		{ NULL, 0, NULL, 0 }
 	};
 
-	static const ul_excl_t excl[] = {       /* rows and cols in in ASCII order */
+	static const ul_excl_t excl[] = {       /* rows and cols in ASCII order */
 		{ 'a','o','s', SHOW_OPTION },
 		{ 'a','o', BYTES_OPTION },
 		{ 'a','o', NOHEADINGS_OPTION },
@@ -894,7 +901,7 @@ int main(int argc, char *argv[])
 			ctl.all = 1;
 			break;
 		case 'h':		/* help */
-			usage(stdout);
+			usage();
 			break;
 		case 'o':
 			options = optarg;
@@ -946,6 +953,10 @@ int main(int argc, char *argv[])
 			}
 			ctl.show = 1;
 			break;
+		case OPT_LIST_TYPES:
+			for (ctl.ncolumns = 0; (size_t)ctl.ncolumns < ARRAY_SIZE(infos); ctl.ncolumns++)
+				ctl.columns[ctl.ncolumns] = ctl.ncolumns;
+			break;
 		case NOHEADINGS_OPTION:
 			ctl.no_heading = 1;
 			break;
@@ -960,9 +971,8 @@ int main(int argc, char *argv[])
 			return EXIT_SUCCESS;
 		case 0:
 			break;
-		case '?':
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 	argv += optind;
@@ -980,8 +990,10 @@ int main(int argc, char *argv[])
 		return status;
 	}
 
-	if (ctl.props.no_fail && !ctl.all)
-		usage(stderr);
+	if (ctl.props.no_fail && !ctl.all) {
+		warnx(_("bad usage"));
+		errtryhelp(EXIT_FAILURE);
+	}
 
 	if (ctl.all)
 		status |= swapon_all(&ctl);

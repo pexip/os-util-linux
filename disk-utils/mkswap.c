@@ -82,7 +82,7 @@ static void init_signature_page(struct mkswap_control *ctl)
 		if (ctl->user_pagesize != kernel_pagesize)
 			warnx(_("Using user-specified page size %d, "
 				"instead of the system value %d"),
-				ctl->pagesize, kernel_pagesize);
+				ctl->user_pagesize, kernel_pagesize);
 		ctl->pagesize = ctl->user_pagesize;
 	} else
 		ctl->pagesize = kernel_pagesize;
@@ -104,7 +104,7 @@ static void set_signature(const struct mkswap_control *ctl)
 	char *sp = (char *) ctl->signature_page;
 
 	assert(sp);
-	strncpy(sp + ctl->pagesize - SWAP_SIGNATURE_SZ, SWAP_SIGNATURE, SWAP_SIGNATURE_SZ);
+	memcpy(sp + ctl->pagesize - SWAP_SIGNATURE_SZ, SWAP_SIGNATURE, SWAP_SIGNATURE_SZ);
 }
 
 static void set_uuid_and_label(const struct mkswap_control *ctl)
@@ -132,7 +132,7 @@ static void set_uuid_and_label(const struct mkswap_control *ctl)
 			printf(_("no label, "));
 #ifdef HAVE_LIBUUID
 		if (ctl->uuid) {
-			char uuid_string[37];
+			char uuid_string[UUID_STR_LEN];
 			uuid_unparse(ctl->uuid, uuid_string);
 			printf("UUID=%s\n", uuid_string);
 		} else
@@ -141,8 +141,9 @@ static void set_uuid_and_label(const struct mkswap_control *ctl)
 	}
 }
 
-static void __attribute__ ((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fprintf(out,
 		_("\nUsage:\n"
 		  " %s [options] device [size]\n"),
@@ -159,10 +160,11 @@ static void __attribute__ ((__noreturn__)) usage(FILE *out)
 		" -L, --label LABEL         specify label\n"
 		" -v, --swapversion NUM     specify swap-space version number\n"
 		" -U, --uuid UUID           specify the uuid to use\n"
-		" -V, --version             output version information and exit\n"
-		" -h, --help                display this help and exit\n\n"));
+		));
+	printf(USAGE_HELP_OPTIONS(27));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	printf(USAGE_MAN_TAIL("mkswap(8)"));
+	exit(EXIT_SUCCESS);
 }
 
 static void page_bad(struct mkswap_control *ctl, unsigned int page)
@@ -257,6 +259,8 @@ static void wipe_device(struct mkswap_control *ctl)
 	blkid_probe pr = NULL;
 #endif
 	if (!ctl->force) {
+		const char *v = NULL;
+
 		if (lseek(ctl->fd, 0, SEEK_SET) != 0)
 			errx(EXIT_FAILURE, _("unable to rewind swap-device"));
 
@@ -266,9 +270,8 @@ static void wipe_device(struct mkswap_control *ctl)
 		blkid_probe_enable_superblocks(pr, 0);
 
 		if (blkid_do_fullprobe(pr) == 0 &&
-		    blkid_probe_lookup_value(pr, "PTTYPE",
-				(const char **) &type, NULL) == 0 && type) {
-			type = xstrdup(type);
+		    blkid_probe_lookup_value(pr, "PTTYPE", &v, NULL) == 0 && v) {
+			type = xstrdup(v);
 			zap = 0;
 		}
 #else
@@ -352,15 +355,15 @@ int main(int argc, char **argv)
 	uuid_t uuid_dat;
 #endif
 	static const struct option longopts[] = {
-		{ "check",       no_argument,       0, 'c' },
-		{ "force",       no_argument,       0, 'f' },
-		{ "pagesize",    required_argument, 0, 'p' },
-		{ "label",       required_argument, 0, 'L' },
-		{ "swapversion", required_argument, 0, 'v' },
-		{ "uuid",        required_argument, 0, 'U' },
-		{ "version",     no_argument,       0, 'V' },
-		{ "help",        no_argument,       0, 'h' },
-		{ NULL,          0, 0, 0 }
+		{ "check",       no_argument,       NULL, 'c' },
+		{ "force",       no_argument,       NULL, 'f' },
+		{ "pagesize",    required_argument, NULL, 'p' },
+		{ "label",       required_argument, NULL, 'L' },
+		{ "swapversion", required_argument, NULL, 'v' },
+		{ "uuid",        required_argument, NULL, 'U' },
+		{ "version",     no_argument,       NULL, 'V' },
+		{ "help",        no_argument,       NULL, 'h' },
+		{ NULL,          0, NULL, 0 }
 	};
 
 	setlocale(LC_ALL, "");
@@ -400,9 +403,9 @@ int main(int argc, char **argv)
 			printf(UTIL_LINUX_VERSION);
 			exit(EXIT_SUCCESS);
 		case 'h':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
@@ -412,7 +415,7 @@ int main(int argc, char **argv)
 		block_count = argv[optind++];
 	if (optind != argc) {
 		warnx(_("only one device argument is currently supported"));
-		usage(stderr);
+		errtryhelp(EXIT_FAILURE);
 	}
 
 #ifdef HAVE_LIBUUID
@@ -428,7 +431,7 @@ int main(int argc, char **argv)
 
 	if (!ctl.devname) {
 		warnx(_("error: Nowhere to set up swap on?"));
-		usage(stderr);
+		errtryhelp(EXIT_FAILURE);
 	}
 	if (block_count) {
 		/* this silly user specified the number of blocks explicitly */

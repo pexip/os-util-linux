@@ -34,10 +34,23 @@ static int is_ide_cdrom_or_tape(char *device)
 	return ret;
 }
 
+void list_disk_identifier(struct fdisk_context *cxt)
+{
+	struct fdisk_label *lb = fdisk_get_label(cxt, NULL);
+	char *id = NULL;
+
+	if (fdisk_has_label(cxt))
+		fdisk_info(cxt, _("Disklabel type: %s"),
+				fdisk_label_get_name(lb));
+
+	if (!fdisk_is_details(cxt) && fdisk_get_disklabel_id(cxt, &id) == 0 && id) {
+		fdisk_info(cxt, _("Disk identifier: %s"), id);
+		free(id);
+	}
+}
 
 void list_disk_geometry(struct fdisk_context *cxt)
 {
-	char *id = NULL;
 	struct fdisk_label *lb = fdisk_get_label(cxt, NULL);
 	uint64_t bytes = fdisk_get_nsectors(cxt) * fdisk_get_sector_size(cxt);
 	char *strsz = size_to_human_string(SIZE_SUFFIX_SPACE
@@ -49,6 +62,9 @@ void list_disk_geometry(struct fdisk_context *cxt)
 			bytes, (uintmax_t) fdisk_get_nsectors(cxt));
 	color_disable();
 	free(strsz);
+
+	if (fdisk_get_devmodel(cxt))
+		fdisk_info(cxt, _("Disk model: %s"), fdisk_get_devmodel(cxt));
 
 	if (lb && (fdisk_label_require_geometry(lb) || fdisk_use_cylinders(cxt)))
 		fdisk_info(cxt, _("Geometry: %d heads, %llu sectors/track, %llu cylinders"),
@@ -71,14 +87,8 @@ void list_disk_geometry(struct fdisk_context *cxt)
 	if (fdisk_get_alignment_offset(cxt))
 		fdisk_info(cxt, _("Alignment offset: %lu bytes"),
 				fdisk_get_alignment_offset(cxt));
-	if (fdisk_has_label(cxt))
-		fdisk_info(cxt, _("Disklabel type: %s"),
-				fdisk_label_get_name(lb));
 
-	if (!fdisk_is_details(cxt) && fdisk_get_disklabel_id(cxt, &id) == 0 && id) {
-		fdisk_info(cxt, _("Disk identifier: %s"), id);
-		free(id);
-	}
+	list_disk_identifier(cxt);
 }
 
 void list_disklabel(struct fdisk_context *cxt)
@@ -162,7 +172,10 @@ void list_disklabel(struct fdisk_context *cxt)
 
 			if (fdisk_partition_to_string(pa, cxt, ids[i], &data))
 				continue;
-			scols_line_refer_data(ln, i, data);
+			if (scols_line_refer_data(ln, i, data)) {
+				fdisk_warn(cxt, _("failed to add output data"));
+				goto done;
+			}
 		}
 	}
 
@@ -183,6 +196,13 @@ void list_disklabel(struct fdisk_context *cxt)
 			fdisk_warnx(cxt, _("Partition %zu does not start on physical sector boundary."),
 					  fdisk_partition_get_partno(pa) + 1);
 			post++;
+		}
+		if (fdisk_partition_has_wipe(cxt, pa)) {
+			if (!post)
+				fdisk_info(cxt, ""); /* line break */
+			 fdisk_info(cxt, _("Filesystem/RAID signature on partition %zu will be wiped."),
+					 fdisk_partition_get_partno(pa) + 1);
+			 post++;
 		}
 	}
 
@@ -252,7 +272,10 @@ void list_freespace(struct fdisk_context *cxt)
 		for (i = 0; i < ARRAY_SIZE(colids); i++) {
 			if (fdisk_partition_to_string(pa, cxt, colids[i], &data))
 				continue;
-			scols_line_refer_data(ln, i, data);
+			if (scols_line_refer_data(ln, i, data)) {
+				fdisk_warn(cxt, _("failed to add output data"));
+				goto done;
+			}
 		}
 
 		if (fdisk_partition_has_size(pa))
@@ -310,11 +333,11 @@ char *next_proc_partition(FILE **f)
 		if (sscanf(line, " %*d %*d %*d %128[^\n ]", buf) != 1)
 			continue;
 
-		devno = sysfs_devname_to_devno(buf, NULL);
+		devno = sysfs_devname_to_devno(buf);
 		if (devno <= 0)
 			continue;
 
-		if (sysfs_devno_is_lvm_private(devno) ||
+		if (sysfs_devno_is_dm_private(devno, NULL) ||
 		    sysfs_devno_is_wholedisk(devno) <= 0)
 			continue;
 
@@ -409,7 +432,7 @@ void list_available_columns(FILE *out)
 
 	termwidth = get_terminal_width(80);
 
-	fprintf(out, _("\nAvailable columns (for -o):\n"));
+	fprintf(out, USAGE_COLUMNS);
 
 	while (fdisk_next_label(cxt, &lb) == 0) {
 		size_t width = 6;	/* label name and separators */

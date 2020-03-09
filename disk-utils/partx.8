@@ -68,7 +68,7 @@ Do not use it in newly written scripts.
 Specify the range of partitions.  For backward compatibility also the
 format \fIM\fB\-\fIN\fR is supported.
 The range may contain negative numbers, for example
-.B \-\-nr -\1:\-1
+.B \-\-nr \-1:\-1
 means the last partition, and
 .B \-\-nr \-2:\-1
 means the last two partitions.  Supported range specifications are:
@@ -101,10 +101,13 @@ to get
 of all supported columns.  This option cannot be combined with the
 .BR \-\-add ,
 .BR \-\-delete ,
-.BR \-\-update
+.B \-\-update
 or
 .B \-\-list
 options.
+.TP
+.B \-\-output\-all
+Output all available columns.
 .TP
 .BR \-P , " \-\-pairs"
 List the partitions using the KEY="value" format.
@@ -119,22 +122,16 @@ The output columns can be selected and rearranged with the
 All numbers (except SIZE) are in 512-byte sectors.
 .TP
 .BR \-t , " \-\-type " \fItype
-Specify the partition table type, which can be one of
-.BR aix ,
-.BR bsd ,
-.BR dos ,
-.BR gpt ,
-.BR mac ,
-.BR minix ,
-.BR sgi ,
-.BR solaris_x86 ,
-.BR sun ,
-.BR ultrix ,
-or
-.BR unixware .
+Specify the partition table type.
+.TP
+.B \-\-list\-types
+List supported partition types and exit.
 .TP
 .BR \-u , " \-\-update"
 Update the specified partitions.
+.TP
+.BR \-S , " \-\-sector\-size " \fIsize
+Overwrite default sector size.
 .TP
 .BR \-v , " \-\-verbose"
 Verbose mode.
@@ -193,6 +190,6 @@ Andries E.\& Brouwer
 enables libblkid debug output.
 .SH AVAILABILITY
 The partx command is part of the util-linux package and is available from
-.UR ftp://\:ftp.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
+.UR https://\:www.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
 Linux Kernel Archive
 .UE .

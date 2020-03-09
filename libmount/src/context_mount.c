@@ -1,8 +1,13 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /*
- * Copyright (C) 2010 Karel Zak <kzak@redhat.com>
+ * This file is part of libmount from util-linux project.
  *
- * This file may be redistributed under the terms of the
- * GNU Lesser General Public License.
+ * Copyright (C) 2010-2018 Karel Zak <kzak@redhat.com>
+ *
+ * libmount is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation; either version 2.1 of the License, or
+ * (at your option) any later version.
  */
 
 /**
@@ -73,6 +78,7 @@ static int init_propagation(struct libmnt_context *cxt)
 	char *opts = (char *) mnt_fs_get_vfs_options(cxt->fs);
 	size_t namesz;
 	struct libmnt_optmap const *maps[1];
+	int rec_count = 0;
 
 	if (!opts)
 		return 0;
@@ -86,9 +92,19 @@ static int init_propagation(struct libmnt_context *cxt)
 		struct libmnt_addmount *ad;
 		int rc;
 
-		if (!mnt_optmap_get_entry(maps, 1, name, namesz, &ent)
-		    || !ent
-		    || !(ent->id & MS_PROPAGATION))
+		if (!mnt_optmap_get_entry(maps, 1, name, namesz, &ent) || !ent)
+			continue;
+
+		DBG(CXT, ul_debugobj(cxt, " checking %s", ent->name));
+
+		/* Note that MS_REC may be used for more flags, so we have to keep
+		 * track about number of recursive options to keep the MS_REC in the
+		 * mountflags if necessary.
+		 */
+		if (ent->id & MS_REC)
+			rec_count++;
+
+		if (!(ent->id & MS_PROPAGATION))
 			continue;
 
 		ad = mnt_new_addmount();
@@ -96,33 +112,35 @@ static int init_propagation(struct libmnt_context *cxt)
 			return -ENOMEM;
 
 		ad->mountflags = ent->id;
+		DBG(CXT, ul_debugobj(cxt, " adding extra mount(2) call for %s", ent->name));
 		rc = mnt_context_append_additional_mount(cxt, ad);
 		if (rc)
 			return rc;
 
+		DBG(CXT, ul_debugobj(cxt, " removing %s from primary mount(2) call", ent->name));
 		cxt->mountflags &= ~ent->id;
+
+		if (ent->id & MS_REC)
+			rec_count--;
 	}
+
+	if (rec_count)
+		cxt->mountflags |= MS_REC;
 
 	return 0;
 }
 
 /*
- * add additional mount(2) syscall request to implement "ro,bind", the first regular
- * mount(2) is the "bind" operation, the second is "remount,ro,bind" call.
- *
- * Note that we don't remove "ro" from the first syscall (kernel silently
- * ignores this flags for bind operation) -- maybe one day kernel will support
- * read-only binds in one step and then all will be done by the first mount(2) and the
- * second remount will be noop...
+ * add additional mount(2) syscall request to implement "bind,<flags>", the first regular
+ * mount(2) is the "bind" operation, the second is "remount,bind,<flags>" call.
  */
-static int init_robind(struct libmnt_context *cxt)
+static int init_bind_remount(struct libmnt_context *cxt)
 {
 	struct libmnt_addmount *ad;
 	int rc;
 
 	assert(cxt);
 	assert(cxt->mountflags & MS_BIND);
-	assert(cxt->mountflags & MS_RDONLY);
 	assert(!(cxt->mountflags & MS_REMOUNT));
 
 	DBG(CXT, ul_debugobj(cxt, "mount: initialize additional ro,bind mount"));
@@ -131,9 +149,9 @@ static int init_robind(struct libmnt_context *cxt)
 	if (!ad)
 		return -ENOMEM;
 
-	ad->mountflags = MS_REMOUNT | MS_BIND | MS_RDONLY;
-	if (cxt->mountflags & MS_REC)
-		ad->mountflags |= MS_REC;
+	ad->mountflags = cxt->mountflags;
+	ad->mountflags |= (MS_REMOUNT | MS_BIND);
+
 	rc = mnt_context_append_additional_mount(cxt, ad);
 	if (rc)
 		return rc;
@@ -171,6 +189,7 @@ static int is_option(const char *name, size_t namesz,
 static int fix_optstr(struct libmnt_context *cxt)
 {
 	int rc = 0;
+	struct libmnt_ns *ns_old;
 	char *next;
 	char *name, *val;
 	size_t namesz, valsz;
@@ -254,9 +273,9 @@ static int fix_optstr(struct libmnt_context *cxt)
 			return rc;
 	}
 	if ((cxt->mountflags & MS_BIND)
-	    && (cxt->mountflags & MS_RDONLY)
+	    && (cxt->mountflags & MNT_BIND_SETTABLE)
 	    && !(cxt->mountflags & MS_REMOUNT)) {
-		rc = init_robind(cxt);
+		rc = init_bind_remount(cxt);
 		if (rc)
 			return rc;
 	}
@@ -329,8 +348,17 @@ static int fix_optstr(struct libmnt_context *cxt)
 			goto done;
 	}
 
-	if (!rc && cxt->restricted && (cxt->user_mountflags & MNT_MS_USER))
+
+	if (!rc && cxt->restricted && (cxt->user_mountflags & MNT_MS_USER)) {
+		ns_old = mnt_context_switch_origin_ns(cxt);
+		if (!ns_old)
+			return -MNT_ERR_NAMESPACE;
+
 		rc = mnt_optstr_fix_user(&fs->user_optstr);
+
+		if (!mnt_context_switch_ns(cxt, ns_old))
+			return -MNT_ERR_NAMESPACE;
+	}
 
 	/* refresh merged optstr */
 	free(fs->optstr);
@@ -565,6 +593,10 @@ int mnt_context_mount_setopt(struct libmnt_context *cxt, int c, char *arg)
 		if (arg)
 			rc = mnt_context_set_fstype(cxt, arg);
 		break;
+	case 'N':
+		if (arg)
+			rc = mnt_context_set_target_ns(cxt, arg);
+		break;
 	default:
 		return 1;
 	}
@@ -574,8 +606,10 @@ int mnt_context_mount_setopt(struct libmnt_context *cxt, int c, char *arg)
 
 static int exec_helper(struct libmnt_context *cxt)
 {
-	char *o = NULL;
+	char *o = NULL, *namespace = NULL;
+	struct libmnt_ns *ns_tgt = mnt_context_get_target_ns(cxt);
 	int rc;
+	pid_t pid;
 
 	assert(cxt);
 	assert(cxt->fs);
@@ -588,19 +622,30 @@ static int exec_helper(struct libmnt_context *cxt)
 	if (rc)
 		return -EINVAL;
 
+	if (ns_tgt->fd != -1
+	    && asprintf(&namespace, "/proc/%i/fd/%i",
+			getpid(), ns_tgt->fd) == -1) {
+		free(o);
+		return -ENOMEM;
+	}
+
 	DBG_FLUSH;
 
-	switch (fork()) {
+	pid = fork();
+	switch (pid) {
 	case 0:
 	{
-		const char *args[12], *type;
+		const char *args[14], *type;
 		int i = 0;
 
 		if (setgid(getgid()) < 0)
-			exit(EXIT_FAILURE);
+			_exit(EXIT_FAILURE);
 
 		if (setuid(getuid()) < 0)
-			exit(EXIT_FAILURE);
+			_exit(EXIT_FAILURE);
+
+		if (!mnt_context_switch_origin_ns(cxt))
+			_exit(EXIT_FAILURE);
 
 		type = mnt_fs_get_fstype(cxt->fs);
 
@@ -626,23 +671,33 @@ static int exec_helper(struct libmnt_context *cxt)
 			args[i++] = "-t";		/* 10 */
 			args[i++] = type;		/* 11 */
 		}
-		args[i] = NULL;				/* 12 */
+		if (namespace) {
+			args[i++] = "-N";		/* 11 */
+			args[i++] = namespace;		/* 12 */
+		}
+		args[i] = NULL;				/* 13 */
 		for (i = 0; args[i]; i++)
 			DBG(CXT, ul_debugobj(cxt, "argv[%d] = \"%s\"",
 							i, args[i]));
 		DBG_FLUSH;
 		execv(cxt->helper, (char * const *) args);
-		exit(EXIT_FAILURE);
+		_exit(EXIT_FAILURE);
 	}
 	default:
 	{
 		int st;
-		wait(&st);
-		cxt->helper_status = WIFEXITED(st) ? WEXITSTATUS(st) : -1;
 
-		DBG(CXT, ul_debugobj(cxt, "%s executed [status=%d]",
-					cxt->helper, cxt->helper_status));
-		cxt->helper_exec_status = rc = 0;
+		if (waitpid(pid, &st, 0) == (pid_t) -1) {
+			cxt->helper_status = -1;
+			rc = -errno;
+		} else {
+			cxt->helper_status = WIFEXITED(st) ? WEXITSTATUS(st) : -1;
+			cxt->helper_exec_status = rc = 0;
+		}
+		DBG(CXT, ul_debugobj(cxt, "%s executed [status=%d, rc=%d%s]",
+				cxt->helper,
+				cxt->helper_status, rc,
+				rc ? " waitpid failed" : ""));
 		break;
 	}
 
@@ -743,8 +798,6 @@ static int do_mount(struct libmnt_context *cxt, const char *try_type)
 	}
 	type = try_type ? : mnt_fs_get_fstype(cxt->fs);
 
-	if (!(flags & MS_MGC_MSK))
-		flags |= MS_MGC_VAL;
 	if (try_type)
 		flags |= MS_SILENT;
 
@@ -852,6 +905,7 @@ static int do_mount_by_pattern(struct libmnt_context *cxt, const char *pattern)
 	int neg = pattern && strncmp(pattern, "no", 2) == 0;
 	int rc = -EINVAL;
 	char **filesystems, **fp;
+	struct libmnt_ns *ns_old;
 
 	assert(cxt);
 	assert((cxt->flags & MNT_FL_MOUNTFLAGS_MERGED));
@@ -869,7 +923,12 @@ static int do_mount_by_pattern(struct libmnt_context *cxt, const char *pattern)
 	/*
 	 * Apply pattern to /etc/filesystems and /proc/filesystems
 	 */
+	ns_old = mnt_context_switch_origin_ns(cxt);
+	if (!ns_old)
+		return -MNT_ERR_NAMESPACE;
 	rc = mnt_get_filesystems(&filesystems, neg ? pattern : NULL);
+	if (!mnt_context_switch_ns(cxt, ns_old))
+		return -MNT_ERR_NAMESPACE;
 	if (rc)
 		return rc;
 
@@ -899,6 +958,7 @@ static int do_mount_by_pattern(struct libmnt_context *cxt, const char *pattern)
 int mnt_context_prepare_mount(struct libmnt_context *cxt)
 {
 	int rc = -EINVAL;
+	struct libmnt_ns *ns_old;
 
 	if (!cxt || !cxt->fs || mnt_fs_is_swaparea(cxt->fs))
 		return -EINVAL;
@@ -911,6 +971,10 @@ int mnt_context_prepare_mount(struct libmnt_context *cxt)
 	assert(cxt->syscall_status == 1);
 
 	cxt->action = MNT_ACT_MOUNT;
+
+	ns_old = mnt_context_switch_target_ns(cxt);
+	if (!ns_old)
+		return -MNT_ERR_NAMESPACE;
 
 	DBG(CXT, ul_debugobj(cxt, "mount: preparing"));
 
@@ -931,9 +995,14 @@ int mnt_context_prepare_mount(struct libmnt_context *cxt)
 		rc = mnt_context_prepare_helper(cxt, "mount", NULL);
 	if (rc) {
 		DBG(CXT, ul_debugobj(cxt, "mount: preparing failed"));
-		return rc;
+		goto end;
 	}
 	cxt->flags |= MNT_FL_PREPARED;
+
+end:
+	if (!mnt_context_switch_ns(cxt, ns_old))
+		return -MNT_ERR_NAMESPACE;
+
 	return rc;
 }
 
@@ -953,8 +1022,9 @@ int mnt_context_prepare_mount(struct libmnt_context *cxt)
  * WARNING: non-zero return code does not mean that mount(2) syscall or
  *          mount.type helper wasn't successfully called.
  *
- *          Check mnt_context_get_status() after error!
-*
+ * Check mnt_context_get_status() after error! See mnt_context_mount() for more
+ * details about errors and warnings.
+ *
  * Returns: 0 on success;
  *         >0 in case of mount(2) error (returns syscall errno),
  *         <0 in case of other errors.
@@ -963,6 +1033,7 @@ int mnt_context_do_mount(struct libmnt_context *cxt)
 {
 	const char *type;
 	int res;
+	struct libmnt_ns *ns_old;
 
 	assert(cxt);
 	assert(cxt->fs);
@@ -977,6 +1048,10 @@ int mnt_context_do_mount(struct libmnt_context *cxt)
 	if (!(cxt->flags & MNT_FL_MOUNTDATA))
 		cxt->mountdata = (char *) mnt_fs_get_fs_options(cxt->fs);
 
+	ns_old = mnt_context_switch_target_ns(cxt);
+	if (!ns_old)
+		return -MNT_ERR_NAMESPACE;
+
 	type = mnt_fs_get_fstype(cxt->fs);
 	if (type) {
 		if (strchr(type, ','))
@@ -987,10 +1062,16 @@ int mnt_context_do_mount(struct libmnt_context *cxt)
 	} else
 		res = do_mount_by_pattern(cxt, cxt->fstype_pattern);
 
-#if USE_LIBMOUNT_SUPPORT_MTAB
+#ifdef USE_LIBMOUNT_SUPPORT_MTAB
 	if (mnt_context_get_status(cxt)
 	    && !mnt_context_is_fake(cxt)
-	    && !cxt->helper) {
+	    && !cxt->helper
+	    && mnt_context_mtab_writable(cxt)) {
+
+		int is_rdonly = -1;
+
+		DBG(CXT, ul_debugobj(cxt, "checking for RDONLY mismatch"));
+
 		/*
 		 * Mounted by mount(2), do some post-mount checks
 		 *
@@ -999,11 +1080,13 @@ int mnt_context_do_mount(struct libmnt_context *cxt)
 		 * avoid 'ro' in mtab and 'rw' in /proc/mounts.
 		 */
 		if ((cxt->mountflags & MS_BIND)
-		    && (cxt->mountflags & MS_RDONLY)
-		    && !mnt_is_readonly(mnt_context_get_target(cxt)))
+		    && (cxt->mountflags & MS_RDONLY)) {
 
-			mnt_context_set_mflags(cxt,
-					cxt->mountflags & ~MS_RDONLY);
+			if (is_rdonly < 0)
+				is_rdonly = mnt_is_readonly(mnt_context_get_target(cxt));
+			if (!is_rdonly)
+				mnt_context_set_mflags(cxt, cxt->mountflags & ~MS_RDONLY);
+		}
 
 
 		/* Kernel can silently add MS_RDONLY flag when mounting file
@@ -1011,13 +1094,17 @@ int mnt_context_do_mount(struct libmnt_context *cxt)
 		 * 'ro' in /proc/mounts and 'rw' in mtab.
 		 */
 		if (!(cxt->mountflags & (MS_RDONLY | MS_MOVE))
-		    && !mnt_context_propagation_only(cxt)
-		    && mnt_is_readonly(mnt_context_get_target(cxt)))
+		    && !mnt_context_propagation_only(cxt)) {
 
-			mnt_context_set_mflags(cxt,
-					cxt->mountflags | MS_RDONLY);
+			if (is_rdonly < 0)
+				is_rdonly = mnt_is_readonly(mnt_context_get_target(cxt));
+			if (is_rdonly)
+				mnt_context_set_mflags(cxt, cxt->mountflags | MS_RDONLY);
+		}
 	}
 #endif
+	if (!mnt_context_switch_ns(cxt, ns_old))
+		return -MNT_ERR_NAMESPACE;
 
 	return res;
 }
@@ -1042,7 +1129,7 @@ int mnt_context_finalize_mount(struct libmnt_context *cxt)
 
 	rc = mnt_context_prepare_update(cxt);
 	if (!rc)
-		rc = mnt_context_update_tabs(cxt);;
+		rc = mnt_context_update_tabs(cxt);
 	return rc;
 }
 
@@ -1068,7 +1155,32 @@ int mnt_context_finalize_mount(struct libmnt_context *cxt)
  * WARNING: non-zero return code does not mean that mount(2) syscall or
  *          mount.type helper wasn't successfully called.
  *
- *          Check mnt_context_get_status() after error!
+ * Always use mnt_context_get_status():
+ *
+ * <informalexample>
+ *   <programlisting>
+ *       rc = mnt_context_mount(cxt);
+ *
+ *       if (mnt_context_helper_executed(cxt))
+ *               return mnt_context_get_helper_status(cxt);
+ *       if (rc == 0 && mnt_context_get_status(cxt) == 1)
+ *               return MNT_EX_SUCCESS;
+ *       return MNT_EX_FAIL;
+ *   </programlisting>
+ * </informalexample>
+ *
+ * or mnt_context_get_excode() to generate mount(8) compatible error
+ * or warning message:
+ *
+ * <informalexample>
+ *   <programlisting>
+ *       rc = mnt_context_mount(cxt);
+ *       rc = mnt_context_get_excode(cxt, rc, buf, sizeof(buf));
+ *       if (buf)
+ *               warnx(_("%s: %s"), mnt_context_get_target(cxt), buf);
+ *	 return rc;   // MNT_EX_*
+ *   </programlisting>
+ * </informalexample>
  *
  * Returns: 0 on success;
  *         >0 in case of mount(2) error (returns syscall errno),
@@ -1077,12 +1189,18 @@ int mnt_context_finalize_mount(struct libmnt_context *cxt)
 int mnt_context_mount(struct libmnt_context *cxt)
 {
 	int rc;
+	struct libmnt_ns *ns_old;
 
 	assert(cxt);
 	assert(cxt->fs);
 	assert(cxt->helper_exec_status == 1);
 	assert(cxt->syscall_status == 1);
 
+	ns_old = mnt_context_switch_target_ns(cxt);
+	if (!ns_old)
+		return -MNT_ERR_NAMESPACE;
+
+again:
 	rc = mnt_context_prepare_mount(cxt);
 	if (!rc)
 		rc = mnt_context_prepare_update(cxt);
@@ -1090,6 +1208,34 @@ int mnt_context_mount(struct libmnt_context *cxt)
 		rc = mnt_context_do_mount(cxt);
 	if (!rc)
 		rc = mnt_context_update_tabs(cxt);
+
+	/*
+	 * Read-only device; try mount filesystem read-only
+	 */
+	if ((rc == -EROFS && !mnt_context_syscall_called(cxt))	/* before syscall; rdonly loopdev */
+	     || mnt_context_get_syscall_errno(cxt) == EROFS	/* syscall failed with EROFS */
+	     || mnt_context_get_syscall_errno(cxt) == EACCES)	/* syscall failed with EACCES */
+	{
+		unsigned long mflags = 0;
+
+		mnt_context_get_mflags(cxt, &mflags);
+
+		if (!(mflags & MS_RDONLY)			/* not yet RDONLY */
+		    && !(mflags & MS_REMOUNT)			/* not remount */
+		    && !(mflags & MS_BIND)			/* not bin mount */
+		    && !mnt_context_is_rwonly_mount(cxt)) {	/* no explicit read-write */
+
+			assert(!(cxt->flags & MNT_FL_FORCED_RDONLY));
+			DBG(CXT, ul_debugobj(cxt, "write-protected source, trying RDONLY."));
+
+			mnt_context_reset_status(cxt);
+			mnt_context_set_mflags(cxt, mflags | MS_RDONLY);
+			cxt->flags |= MNT_FL_FORCED_RDONLY;
+			goto again;
+		}
+	}
+	if (!mnt_context_switch_ns(cxt, ns_old))
+		return -MNT_ERR_NAMESPACE;
 	return rc;
 }
 
@@ -1118,6 +1264,8 @@ int mnt_context_mount(struct libmnt_context *cxt)
  * Use also mnt_context_get_status() to check if the filesystem was
  * successfully mounted.
  *
+ * See mnt_context_mount() for more details about errors and warnings.
+ *
  * Returns: 0 on success,
  *         <0 in case of error (!= mount(2) errors)
  *          1 at the end of the list.
@@ -1130,6 +1278,7 @@ int mnt_context_next_mount(struct libmnt_context *cxt,
 {
 	struct libmnt_table *fstab, *mtab;
 	const char *o, *tgt;
+	char *pattern;
 	int rc, mounted = 0;
 
 	if (ignored)
@@ -1209,7 +1358,18 @@ int mnt_context_next_mount(struct libmnt_context *cxt,
 
 	rc = mnt_context_set_fs(cxt, *fs);
 	if (!rc) {
+		/*
+		 * "-t <pattern>" is used to filter out fstab entries, but for ordinary
+		 * mount operation -t means "-t <type>". We have to zeroize the pattern
+		 * to avoid misinterpretation.
+		 */
+		pattern = cxt->fstype_pattern;
+		cxt->fstype_pattern = NULL;
+
 		rc = mnt_context_mount(cxt);
+
+		cxt->fstype_pattern = pattern;
+
 		if (mntrc)
 			*mntrc = rc;
 	}
@@ -1217,8 +1377,372 @@ int mnt_context_next_mount(struct libmnt_context *cxt,
 	if (mnt_context_is_child(cxt)) {
 		DBG(CXT, ul_debugobj(cxt, "next-mount: child exit [rc=%d]", rc));
 		DBG_FLUSH;
-		exit(rc);
+		_exit(rc);
 	}
 	return 0;
+}
+
+/*
+ * Returns 1 if @dir parent is shared
+ */
+static int is_shared_tree(struct libmnt_context *cxt, const char *dir)
+{
+	struct libmnt_table *tb = NULL;
+	struct libmnt_fs *fs;
+	unsigned long mflags = 0;
+	char *mnt = NULL, *p;
+	int rc = 0;
+	struct libmnt_ns *ns_old;
+
+	ns_old = mnt_context_switch_target_ns(cxt);
+	if (!ns_old)
+		return -MNT_ERR_NAMESPACE;
+
+	if (!dir)
+		return 0;
+	if (mnt_context_get_mtab(cxt, &tb) || !tb)
+		goto done;
+
+	mnt = strdup(dir);
+	if (!mnt)
+		goto done;
+	p = strrchr(mnt, '/');
+	if (!p)
+		goto done;
+	if (p > mnt)
+		*p = '\0';
+	fs = mnt_table_find_mountpoint(tb, mnt, MNT_ITER_BACKWARD);
+
+	rc = fs && mnt_fs_is_kernel(fs)
+		&& mnt_fs_get_propagation(fs, &mflags) == 0
+		&& (mflags & MS_SHARED);
+done:
+	free(mnt);
+	if (!mnt_context_switch_ns(cxt, ns_old))
+		return -MNT_ERR_NAMESPACE;
+	return rc;
+}
+
+int mnt_context_get_mount_excode(
+			struct libmnt_context *cxt,
+			int rc,
+			char *buf,
+			size_t bufsz)
+{
+	int syserr;
+	struct stat st;
+	unsigned long uflags = 0, mflags = 0;
+
+	int restricted = mnt_context_is_restricted(cxt);
+	const char *tgt = mnt_context_get_target(cxt);
+	const char *src = mnt_context_get_source(cxt);
+
+	if (mnt_context_helper_executed(cxt)) {
+		/*
+		 * /sbin/mount.<type> called, return status
+		 */
+		if (rc == -MNT_ERR_APPLYFLAGS && buf)
+			snprintf(buf, bufsz, _("WARNING: failed to apply propagation flags"));
+
+		return mnt_context_get_helper_status(cxt);
+	}
+
+	if (rc == 0 && mnt_context_get_status(cxt) == 1) {
+		/*
+		 * Libmount success && syscall success.
+		 */
+		if (buf && mnt_context_forced_rdonly(cxt))
+			snprintf(buf, bufsz, _("WARNING: device write-protected, mounted read-only"));
+		return MNT_EX_SUCCESS;
+	}
+
+	mnt_context_get_mflags(cxt, &mflags);		/* mount(2) flags */
+	mnt_context_get_user_mflags(cxt, &uflags);	/* userspace flags */
+
+	if (!mnt_context_syscall_called(cxt)) {
+		/*
+		 * libmount errors (extra library checks)
+		 */
+		switch (rc) {
+		case -EPERM:
+			if (buf)
+				snprintf(buf, bufsz, _("operation permitted for root only"));
+			return MNT_EX_USAGE;
+		case -EBUSY:
+			if (buf)
+				snprintf(buf, bufsz, _("%s is already mounted"), src);
+			return MNT_EX_USAGE;
+		case -MNT_ERR_NOFSTAB:
+			if (!buf)
+				return MNT_EX_USAGE;
+			if (mnt_context_is_swapmatch(cxt))
+				snprintf(buf, bufsz, _("can't find in %s"),
+						mnt_get_fstab_path());
+			else if (tgt)
+				snprintf(buf, bufsz, _("can't find mount point in %s"),
+						mnt_get_fstab_path());
+			else if (src)
+				snprintf(buf, bufsz, _("can't find mount source %s in %s"),
+						src, mnt_get_fstab_path());
+			return MNT_EX_USAGE;
+		case -MNT_ERR_AMBIFS:
+			if (buf)
+				snprintf(buf, bufsz, _("more filesystems detected on %s; use -t <type> or wipefs(8)"), src);
+			return MNT_EX_USAGE;
+		case -MNT_ERR_NOFSTYPE:
+			if (buf)
+				snprintf(buf, bufsz, restricted ?
+						_("failed to determine filesystem type") :
+						_("no filesystem type specified"));
+			return MNT_EX_USAGE;
+		case -MNT_ERR_NOSOURCE:
+			if (uflags & MNT_MS_NOFAIL)
+				return MNT_EX_SUCCESS;
+			if (buf) {
+				if (src)
+					snprintf(buf, bufsz, _("can't find %s"), src);
+				else
+					snprintf(buf, bufsz, _("no mount source specified"));
+			}
+			return MNT_EX_USAGE;
+		case -MNT_ERR_MOUNTOPT:
+			if (buf)
+				snprintf(buf, bufsz, errno ?
+						_("failed to parse mount options: %m") :
+						_("failed to parse mount options"));
+			return MNT_EX_USAGE;
+		case -MNT_ERR_LOOPDEV:
+			if (buf)
+				snprintf(buf, bufsz, _("failed to setup loop device for %s"), src);
+			return MNT_EX_FAIL;
+		case -MNT_ERR_LOOPOVERLAP:
+			if (buf)
+				snprintf(buf, bufsz, _("overlapping loop device exists for %s"), src);
+			return MNT_EX_FAIL;
+		case -MNT_ERR_LOCK:
+			if (buf)
+				snprintf(buf, bufsz, _("locking failed"));
+			return MNT_EX_FILEIO;
+		case -MNT_ERR_NAMESPACE:
+			if (buf)
+				snprintf(buf, bufsz, _("failed to switch namespace"));
+			return MNT_EX_SYSERR;
+		default:
+			return mnt_context_get_generic_excode(rc, buf, bufsz, _("mount failed: %m"));
+		}
+
+	} else if (mnt_context_get_syscall_errno(cxt) == 0) {
+		/*
+		 * mount(2) syscall success, but something else failed
+		 * (probably error in mtab processing).
+		 */
+		if (rc == -MNT_ERR_LOCK) {
+			if (buf)
+				snprintf(buf, bufsz, _("filesystem was mounted, but failed to update userspace mount table"));
+			return MNT_EX_FILEIO;
+		} else if (rc == -MNT_ERR_NAMESPACE) {
+			if (buf)
+				snprintf(buf, bufsz, _("filesystem was mounted, but failed to switch namespace back"));
+			return MNT_EX_SYSERR;
+
+		} else if (rc < 0)
+			return mnt_context_get_generic_excode(rc, buf, bufsz,
+				_("filesystem was mounted, but any subsequent operation failed: %m"));
+
+		return MNT_EX_SOFTWARE;	/* internal error */
+
+	}
+
+	/*
+	 * mount(2) errors
+	 */
+	syserr = mnt_context_get_syscall_errno(cxt);
+
+
+	switch(syserr) {
+	case EPERM:
+		if (!buf)
+			break;
+		if (geteuid() == 0) {
+			if (stat(tgt, &st) || !S_ISDIR(st.st_mode))
+				snprintf(buf, bufsz, _("mount point is not a directory"));
+			else
+				snprintf(buf, bufsz, _("permission denied"));
+		} else
+			snprintf(buf, bufsz, _("must be superuser to use mount"));
+		break;
+
+	case EBUSY:
+	{
+		struct libmnt_table *tb;
+
+		if (!buf)
+			break;
+		if (mflags & MS_REMOUNT) {
+			snprintf(buf, bufsz, _("mount point is busy"));
+			break;
+		}
+		if (src && mnt_context_get_mtab(cxt, &tb) == 0) {
+			struct libmnt_iter itr;
+			struct libmnt_fs *fs;
+
+			mnt_reset_iter(&itr, MNT_ITER_FORWARD);
+			while (mnt_table_next_fs(tb, &itr, &fs) == 0) {
+				const char *s = mnt_fs_get_srcpath(fs),
+					   *t = mnt_fs_get_target(fs);
+
+				if (t && s && mnt_fs_streq_srcpath(fs, src)) {
+					snprintf(buf, bufsz, _("%s already mounted on %s"), s, t);
+					break;
+				}
+			}
+		}
+		if (!*buf)
+			snprintf(buf, bufsz, _("%s already mounted or mount point busy"), src);
+		break;
+	}
+	case ENOENT:
+		if (tgt && lstat(tgt, &st)) {
+			if (buf)
+				snprintf(buf, bufsz, _("mount point does not exist"));
+		} else if (tgt && stat(tgt, &st)) {
+			if (buf)
+				snprintf(buf, bufsz, _("mount point is a symbolic link to nowhere"));
+		} else if (src && stat(src, &st)) {
+			if (uflags & MNT_MS_NOFAIL)
+				return MNT_EX_SUCCESS;
+			if (buf)
+				snprintf(buf, bufsz, _("special device %s does not exist"), src);
+		} else if (buf) {
+			errno = syserr;
+			snprintf(buf, bufsz, _("mount(2) system call failed: %m"));
+		}
+		break;
+
+	case ENOTDIR:
+		if (stat(tgt, &st) || ! S_ISDIR(st.st_mode)) {
+			if (buf)
+				snprintf(buf, bufsz, _("mount point is not a directory"));
+		} else if (src && stat(src, &st) && errno == ENOTDIR) {
+			if (uflags & MNT_MS_NOFAIL)
+				return MNT_EX_SUCCESS;
+			if (buf)
+				snprintf(buf, bufsz, _("special device %s does not exist "
+					 "(a path prefix is not a directory)"), src);
+		} else if (buf) {
+			errno = syserr;
+			snprintf(buf, bufsz, _("mount(2) system call failed: %m"));
+		}
+		break;
+
+	case EINVAL:
+		if (!buf)
+			break;
+		if (mflags & MS_REMOUNT)
+			snprintf(buf, bufsz, _("mount point not mounted or bad option"));
+		else if (rc == -MNT_ERR_APPLYFLAGS)
+			snprintf(buf, bufsz, _("not mount point or bad option"));
+		else if ((mflags & MS_MOVE) && is_shared_tree(cxt, src))
+			snprintf(buf, bufsz,
+				_("bad option; moving a mount "
+				  "residing under a shared mount is unsupported"));
+		else if (mnt_fs_is_netfs(mnt_context_get_fs(cxt)))
+			snprintf(buf, bufsz,
+				_("bad option; for several filesystems (e.g. nfs, cifs) "
+				  "you might need a /sbin/mount.<type> helper program"));
+		else
+			snprintf(buf, bufsz,
+				_("wrong fs type, bad option, bad superblock on %s, "
+				  "missing codepage or helper program, or other error"),
+				src);
+		break;
+
+	case EMFILE:
+		if (buf)
+			snprintf(buf, bufsz, _("mount table full"));
+		break;
+
+	case EIO:
+		if (buf)
+			snprintf(buf, bufsz, _("can't read superblock on %s"), src);
+		break;
+
+	case ENODEV:
+		if (!buf)
+			break;
+		if (mnt_context_get_fstype(cxt))
+			snprintf(buf, bufsz, _("unknown filesystem type '%s'"),
+					mnt_context_get_fstype(cxt));
+		else
+			snprintf(buf, bufsz, _("unknown filesystem type"));
+		break;
+
+	case ENOTBLK:
+		if (uflags & MNT_MS_NOFAIL)
+			return MNT_EX_SUCCESS;
+		if (!buf)
+			break;
+		if (src && stat(src, &st))
+			snprintf(buf, bufsz, _("%s is not a block device, and stat(2) fails?"), src);
+		else if (src && S_ISBLK(st.st_mode))
+			snprintf(buf, bufsz,
+				_("the kernel does not recognize %s as a block device; "
+				  "maybe \"modprobe driver\" is necessary"), src);
+		else if (src && S_ISREG(st.st_mode))
+			snprintf(buf, bufsz, _("%s is not a block device; try \"-o loop\""), src);
+		else
+			snprintf(buf, bufsz, _("%s is not a block device"), src);
+		break;
+
+	case ENXIO:
+		if (uflags & MNT_MS_NOFAIL)
+			return MNT_EX_SUCCESS;
+		if (buf)
+			snprintf(buf, bufsz, _("%s is not a valid block device"), src);
+		break;
+
+	case EACCES:
+	case EROFS:
+		if (!buf)
+			break;
+		if (mflags & MS_RDONLY)
+			snprintf(buf, bufsz, _("cannot mount %s read-only"), src);
+		else if (mnt_context_is_rwonly_mount(cxt))
+			snprintf(buf, bufsz, _("%s is write-protected but explicit read-write mode requested"), src);
+		else if (mflags & MS_REMOUNT)
+			snprintf(buf, bufsz, _("cannot remount %s read-write, is write-protected"), src);
+		else if (mflags & MS_BIND)
+			snprintf(buf, bufsz, _("bind %s failed"), src);
+		else {
+			errno = syserr;
+			snprintf(buf, bufsz, _("mount(2) system call failed: %m"));
+		}
+		break;
+
+	case ENOMEDIUM:
+		if (uflags & MNT_MS_NOFAIL)
+			return MNT_EX_SUCCESS;
+		if (buf)
+			snprintf(buf, bufsz, _("no medium found on %s"), src);
+		break;
+
+	case EBADMSG:
+		/* Bad CRC for classic filesystems (e.g. extN or XFS) */
+		if (buf && src && stat(src, &st) == 0
+		    && (S_ISBLK(st.st_mode) || S_ISREG(st.st_mode))) {
+			snprintf(buf, bufsz, _("cannot mount; probably corrupted filesystem on %s"), src);
+			break;
+		}
+		/* fallthrough */
+
+	default:
+		if (buf) {
+			errno = syserr;
+			snprintf(buf, bufsz, _("mount(2) system call failed: %m"));
+		}
+		break;
+	}
+
+	return MNT_EX_FAIL;
 }
 

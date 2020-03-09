@@ -1,8 +1,13 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /*
- * Copyright (C) 2008-2009 Karel Zak <kzak@redhat.com>
+ * This file is part of libmount from util-linux project.
  *
- * This file may be redistributed under the terms of the
- * GNU Lesser General Public License.
+ * Copyright (C) 2008-2018 Karel Zak <kzak@redhat.com>
+ *
+ * libmount is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation; either version 2.1 of the License, or
+ * (at your option) any later version.
  */
 
 /**
@@ -112,8 +117,8 @@ int mnt_parse_offset(const char *str, size_t len, uintmax_t *res)
 /* used as a callback by bsearch in mnt_fstype_is_pseudofs() */
 static int fstype_cmp(const void *v1, const void *v2)
 {
-	const char *s1 = *(const char **)v1;
-	const char *s2 = *(const char **)v2;
+	const char *s1 = *(char * const *)v1;
+	const char *s2 = *(char * const *)v2;
 
 	return strcmp(s1, s2);
 }
@@ -121,7 +126,7 @@ static int fstype_cmp(const void *v1, const void *v2)
 int mnt_stat_mountpoint(const char *target, struct stat *st)
 {
 #ifdef AT_NO_AUTOMOUNT
-	return fstatat(-1, target, st, AT_NO_AUTOMOUNT);
+	return fstatat(AT_FDCWD, target, st, AT_NO_AUTOMOUNT);
 #else
 	return stat(target, st);
 #endif
@@ -216,6 +221,8 @@ int mnt_is_readonly(const char *path)
 	{
 		struct timespec times[2];
 
+		DBG(UTILS, ul_debug(" doing utimensat() based write test"));
+
 		times[0].tv_nsec = UTIME_NOW;	/* atime */
 		times[1].tv_nsec = UTIME_OMIT;	/* mtime */
 
@@ -282,6 +289,7 @@ int mnt_fstype_is_pseudofs(const char *type)
 		"mqueue",
 		"nfsd",
 		"none",
+		"nsfs",
 		"overlay",
 		"pipefs",
 		"proc",
@@ -428,98 +436,6 @@ const char *mnt_statfs_get_fstype(struct statfs *vfs)
 int mnt_match_fstype(const char *type, const char *pattern)
 {
 	return match_fstype(type, pattern);
-}
-
-
-/* Returns 1 if needle found or noneedle not found in haystack
- * Otherwise returns 0
- */
-static int check_option(const char *haystack, size_t len,
-			const char *needle, size_t needle_len)
-{
-	const char *p;
-	int no = 0;
-
-	if (needle_len >= 1 && *needle == '+') {
-		needle++;
-		needle_len--;
-	} else if (needle_len >= 2 && !strncmp(needle, "no", 2)) {
-		no = 1;
-		needle += 2;
-		needle_len -= 2;
-	}
-
-	for (p = haystack; p && p < haystack + len; p++) {
-		char *sep = strchr(p, ',');
-		size_t plen = sep ? (size_t) (sep - p) :
-				    len - (p - haystack);
-
-		if (plen == needle_len && !strncmp(p, needle, plen))
-			return !no;	/* foo or nofoo was found */
-		p += plen;
-	}
-
-	return no;  /* foo or nofoo was not found */
-}
-
-/**
- * mnt_match_options:
- * @optstr: options string
- * @pattern: comma delimited list of options
- *
- * The "no" could be used for individual items in the @options list. The "no"
- * prefix does not have a global meaning.
- *
- * Unlike fs type matching, nonetdev,user and nonetdev,nouser have
- * DIFFERENT meanings; each option is matched explicitly as specified.
- *
- * The "no" prefix interpretation could be disabled by the "+" prefix, for example
- * "+noauto" matches if @optstr literally contains the "noauto" string.
- *
- * "xxx,yyy,zzz" : "nozzz"	-> False
- *
- * "xxx,yyy,zzz" : "xxx,noeee"	-> True
- *
- * "bar,zzz"     : "nofoo"      -> True
- *
- * "nofoo,bar"   : "+nofoo"     -> True
- *
- * "bar,zzz"     : "+nofoo"     -> False
- *
- *
- * Returns: 1 if pattern is matching, else 0. This function also returns 0
- *          if @pattern is NULL and @optstr is non-NULL.
- */
-int mnt_match_options(const char *optstr, const char *pattern)
-{
-	const char *p;
-	size_t len, optstr_len = 0;
-
-	if (!pattern && !optstr)
-		return 1;
-	if (!pattern)
-		return 0;
-
-	len = strlen(pattern);
-	if (optstr)
-		optstr_len = strlen(optstr);
-
-	for (p = pattern; p < pattern + len; p++) {
-		char *sep = strchr(p, ',');
-		size_t plen = sep ? (size_t) (sep - p) :
-				    len - (p - pattern);
-
-		if (!plen)
-			continue; /* if two ',' appear in a row */
-
-		if (!check_option(optstr, optstr_len, p, plen))
-			return 0; /* any match failure means failure */
-
-		p += plen;
-	}
-
-	/* no match failures in list means success */
-	return 1;
 }
 
 void mnt_free_filesystems(char **filesystems)
@@ -737,20 +653,45 @@ done:
 	return rc;
 }
 
-static int try_write(const char *filename)
+static int try_write(const char *filename, const char *directory)
 {
-	int fd;
+	int rc = 0;
 
 	if (!filename)
 		return -EINVAL;
 
-	fd = open(filename, O_RDWR|O_CREAT|O_CLOEXEC,
-			    S_IWUSR|S_IRUSR|S_IRGRP|S_IROTH);
-	if (fd >= 0) {
-		close(fd);
+	DBG(UTILS, ul_debug("try write %s dir: %s", filename, directory));
+
+#ifdef HAVE_EACCESS
+	/* Try eaccess() first, because open() is overkill, may be monitored by
+	 * audit and we don't want to fill logs by our checks...
+	 */
+	if (eaccess(filename, R_OK|W_OK) == 0) {
+		DBG(UTILS, ul_debug(" access OK"));
 		return 0;
+	} else if (errno != ENOENT) {
+		DBG(UTILS, ul_debug(" access FAILED"));
+		return -errno;
+	} else if (directory) {
+		/* file does not exist; try if directory is writable */
+		if (eaccess(directory, R_OK|W_OK) != 0)
+			rc = -errno;
+
+		DBG(UTILS, ul_debug(" access %s [%s]", rc ? "FAILED" : "OK", directory));
+		return rc;
+	} else
+#endif
+	{
+		DBG(UTILS, ul_debug(" doing open-write test"));
+
+		int fd = open(filename, O_RDWR|O_CREAT|O_CLOEXEC,
+			    S_IWUSR|S_IRUSR|S_IRGRP|S_IROTH);
+		if (fd < 0)
+			rc = -errno;
+		else
+			close(fd);
 	}
-	return -errno;
+	return rc;
 }
 
 /**
@@ -783,7 +724,7 @@ int mnt_has_regular_mtab(const char **mtab, int *writable)
 		/* file exists */
 		if (S_ISREG(st.st_mode)) {
 			if (writable)
-				*writable = !try_write(filename);
+				*writable = !try_write(filename, NULL);
 			DBG(UTILS, ul_debug("%s: writable", filename));
 			return 1;
 		}
@@ -792,7 +733,7 @@ int mnt_has_regular_mtab(const char **mtab, int *writable)
 
 	/* try to create the file */
 	if (writable) {
-		*writable = !try_write(filename);
+		*writable = !try_write(filename, NULL);
 		if (*writable) {
 			DBG(UTILS, ul_debug("%s: writable", filename));
 			return 1;
@@ -832,7 +773,7 @@ int mnt_has_regular_utab(const char **utab, int *writable)
 		/* file exists */
 		if (S_ISREG(st.st_mode)) {
 			if (writable)
-				*writable = !try_write(filename);
+				*writable = !try_write(filename, NULL);
 			return 1;
 		}
 		goto done;	/* it's not a regular file */
@@ -849,11 +790,13 @@ int mnt_has_regular_utab(const char **utab, int *writable)
 		rc = mkdir(dirname, S_IWUSR|
 				    S_IRUSR|S_IRGRP|S_IROTH|
 				    S_IXUSR|S_IXGRP|S_IXOTH);
-		free(dirname);
-		if (rc && errno != EEXIST)
+		if (rc && errno != EEXIST) {
+			free(dirname);
 			goto done;			/* probably EACCES */
+		}
 
-		*writable = !try_write(filename);
+		*writable = !try_write(filename, dirname);
+		free(dirname);
 		if (*writable)
 			return 1;
 	}

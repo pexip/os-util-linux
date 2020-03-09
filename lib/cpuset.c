@@ -29,23 +29,21 @@ static inline int val_to_char(int v)
 {
 	if (v >= 0 && v < 10)
 		return '0' + v;
-	else if (v >= 10 && v < 16)
+	if (v >= 10 && v < 16)
 		return ('a' - 10) + v;
-	else
-		return -1;
+	return -1;
 }
 
 static inline int char_to_val(int c)
 {
 	int cl;
 
-	cl = tolower(c);
 	if (c >= '0' && c <= '9')
 		return c - '0';
-	else if (cl >= 'a' && cl <= 'f')
+	cl = tolower(c);
+	if (cl >= 'a' && cl <= 'f')
 		return cl + (10 - 'a');
-	else
-		return -1;
+	return -1;
 }
 
 static const char *nexttoken(const char *q,  int sep)
@@ -255,7 +253,6 @@ int cpumask_parse(const char *str, cpu_set_t *set, size_t setsize)
 			CPU_SET_S(cpu + 2, setsize, set);
 		if (val & 8)
 			CPU_SET_S(cpu + 3, setsize, set);
-		len--;
 		ptr--;
 		cpu += 4;
 	}
@@ -321,7 +318,7 @@ int cpulist_parse(const char *str, cpu_set_t *set, size_t setsize, int fail)
 	return 0;
 }
 
-#ifdef TEST_PROGRAM
+#ifdef TEST_PROGRAM_CPUSET
 
 #include <getopt.h>
 
@@ -333,10 +330,10 @@ int main(int argc, char *argv[])
 	int ncpus = 2048, rc, c;
 
 	static const struct option longopts[] = {
-	    { "ncpus", 1, 0, 'n' },
-	    { "mask",  1, 0, 'm' },
-	    { "range", 1, 0, 'r' },
-	    { NULL,    0, 0, 0 }
+	    { "ncpus", 1, NULL, 'n' },
+	    { "mask",  1, NULL, 'm' },
+	    { "range", 1, NULL, 'r' },
+	    { NULL,    0, NULL, 0 }
 	};
 
 	while ((c = getopt_long(argc, argv, "n:m:r:", longopts, NULL)) != -1) {
