@@ -25,7 +25,7 @@ XSBC-Pexip-Original-Uploaders: LaMont Jones <lamont@debian.org>,
 Standards-Version: 3.9.8
 Vcs-Browser: https://anonscm.debian.org/cgit/collab-maint/pkg-util-linux.git/
 Vcs-Git: git://anonscm.debian.org/collab-maint/pkg-util-linux.git
-XS-Pexip-Upstream: http://ftp.debian.org/debian/ stretch
+XS-Pexip-Upstream: http://ftp.debian.org/debian/ buster
 
 Package: util-linux
 Architecture: any
