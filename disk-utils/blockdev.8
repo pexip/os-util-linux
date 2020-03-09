@@ -17,13 +17,14 @@ blockdev \- call block device ioctls from the command line
 .B blockdev
 .B \-\-report
 .RI [ device \&...\&]
+.br
+.B blockdev
+.RB \-h | \-V
 .SH DESCRIPTION
 The utility
 .B blockdev
 allows one to call block device ioctls from the command line.
 .SH OPTIONS
-.IP "\fB\-V\fP"
-Print version and exit.
 .IP "\fB\-q\fP"
 Be quiet.
 .IP "\fB\-v\fP"
@@ -32,6 +33,10 @@ Be verbose.
 Print a report for the specified device. It is possible to give multiple
 devices. If none is given, all devices which appear in /proc/partitions are
 shown. Note that the partition StartSec is in 512-byte sectors.
+.IP "\fB\-h\fR, \fB\-\-help\fR"
+Display help text and exit.
+.IP "\fB\-V\fR, \fB\-\-version\fR"
+Print version and exit.
 .SH COMMANDS
 It is possible to give multiple devices and multiple commands.
 .IP "\fB\-\-flushbufs\fP"
@@ -61,7 +66,7 @@ Print device size in bytes.
 .IP "\fB\-\-getsize\fP"
 Print device size (32-bit!) in sectors. Deprecated in favor of the \-\-getsz option.
 .IP "\fB\-\-getss\fP"
-Print sector size in bytes \(en usually 512.
+Print logical sector size in bytes \(en usually 512.
 .IP "\fB\-\-getsz\fP"
 Get size in 512-byte sectors.
 .IP "\fB\-\-rereadpt\fP"
@@ -75,11 +80,12 @@ Set filesystem readahead (same like \-\-setra on 2.6 kernels).
 .IP "\fB\-\-setra\fP \fIsectors\fP"
 Set readahead (in 512-byte sectors).
 .IP "\fB\-\-setro\fP"
-Set read-only.
+Set read-only. The currently active access to the device may not be affected by the change. For example
+filesystem already mounted in read-write mode will not be affected. The change applies after remount.
 .IP "\fB\-\-setrw\fP"
 Set read-write.
 .SH AUTHOR
 blockdev was written by Andries E.\& Brouwer and rewritten by Karel Zak.
 .SH AVAILABILITY
 The blockdev command is part of the util-linux package and is available from
-ftp://ftp.kernel.org/pub/linux/utils/util-linux/.
+https://www.kernel.org/pub/linux/utils/util-linux/.

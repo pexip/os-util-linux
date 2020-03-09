@@ -56,8 +56,10 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-#include <utmp.h>
+#include <utmpx.h>
 #include <getopt.h>
+#include <sys/types.h>
+#include <grp.h>
 
 #include "nls.h"
 #include "xalloc.h"
@@ -76,8 +78,9 @@
 static char *makemsg(char *fname, char **mvec, int mvecsz,
 		    size_t *mbufsize, int print_banner);
 
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
 	      _(" %s [options] [<file> | <message>]\n"), program_invocation_short_name);
@@ -86,24 +89,101 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(_("Write a message to all users.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
+	fputs(_(" -g, --group <group>     only send message to group\n"), out);
 	fputs(_(" -n, --nobanner          do not print banner, works only for root\n"), out);
 	fputs(_(" -t, --timeout <timeout> write timeout in seconds\n"), out);
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
-	fprintf(out, USAGE_MAN_TAIL("wall(1)"));
+	printf(USAGE_HELP_OPTIONS(25));
+	printf(USAGE_MAN_TAIL("wall(1)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
+}
+
+struct group_workspace {
+	gid_t	requested_group;
+	int	ngroups;
+
+/* getgrouplist() on OSX takes int* not gid_t* */
+#ifdef __APPLE__
+	int	*groups;
+#else
+	gid_t	*groups;
+#endif
+};
+
+static gid_t get_group_gid(const char *optarg)
+{
+	struct group *gr;
+	gid_t gid;
+
+	if ((gr = getgrnam(optarg)))
+		return gr->gr_gid;
+
+	gid = strtou32_or_err(optarg, _("invalid group argument"));
+	if (!getgrgid(gid))
+		errx(EXIT_FAILURE, _("%s: unknown gid"), optarg);
+
+	return gid;
+}
+
+static struct group_workspace *init_group_workspace(const char *optarg)
+{
+	struct group_workspace *buf = xmalloc(sizeof(struct group_workspace));
+
+	buf->requested_group = get_group_gid(optarg);
+	buf->ngroups = sysconf(_SC_NGROUPS_MAX) + 1;  /* room for the primary gid */
+	buf->groups = xcalloc(sizeof(*buf->groups), buf->ngroups);
+
+	return buf;
+}
+
+static void free_group_workspace(struct group_workspace *buf)
+{
+	if (!buf)
+		return;
+
+	free(buf->groups);
+	free(buf);
+}
+
+static int is_gr_member(const char *login, const struct group_workspace *buf)
+{
+	struct passwd *pw;
+	int ngroups = buf->ngroups;
+	int rc;
+
+	pw = getpwnam(login);
+	if (!pw)
+		return 0;
+
+	if (buf->requested_group == pw->pw_gid)
+		return 1;
+
+	rc = getgrouplist(login, pw->pw_gid, buf->groups, &ngroups);
+	if (rc < 0) {
+		/* buffer too small, not sure how this can happen, since
+		   we used sysconf to get the size... */
+		errx(EXIT_FAILURE,
+			_("getgrouplist found more groups than sysconf allows"));
+	}
+
+	for (; ngroups >= 0; --ngroups) {
+		if (buf->requested_group == (gid_t) buf->groups[ngroups])
+			return 1;
+	}
+
+	return 0;
 }
 
 int main(int argc, char **argv)
 {
 	int ch;
 	struct iovec iov;
-	struct utmp *utmpptr;
+	struct utmpx *utmpptr;
 	char *p;
 	char line[sizeof(utmpptr->ut_line) + 1];
 	int print_banner = TRUE;
+	struct group_workspace *group_buf = NULL;
 	char *mbuf, *fname = NULL;
 	size_t mbufsize;
 	unsigned timeout = WRITE_TIME_OUT;
@@ -111,11 +191,12 @@ int main(int argc, char **argv)
 	int mvecsz = 0;
 
 	static const struct option longopts[] = {
-		{ "nobanner",	no_argument,		0, 'n' },
-		{ "timeout",	required_argument,	0, 't' },
-		{ "version",	no_argument,		0, 'V' },
-		{ "help",	no_argument,		0, 'h' },
-		{ NULL,	0, 0, 0 }
+		{ "nobanner",	no_argument,		NULL, 'n' },
+		{ "timeout",	required_argument,	NULL, 't' },
+		{ "group",	required_argument,	NULL, 'g' },
+		{ "version",	no_argument,		NULL, 'V' },
+		{ "help",	no_argument,		NULL, 'h' },
+		{ NULL,	0, NULL, 0 }
 	};
 
 	setlocale(LC_ALL, "");
@@ -123,7 +204,7 @@ int main(int argc, char **argv)
 	textdomain(PACKAGE);
 	atexit(close_stdout);
 
-	while ((ch = getopt_long(argc, argv, "nt:Vh", longopts, NULL)) != -1) {
+	while ((ch = getopt_long(argc, argv, "nt:g:Vh", longopts, NULL)) != -1) {
 		switch (ch) {
 		case 'n':
 			if (geteuid() == 0)
@@ -136,13 +217,16 @@ int main(int argc, char **argv)
 			if (timeout < 1)
 				errx(EXIT_FAILURE, _("invalid timeout argument: %s"), optarg);
 			break;
+		case 'g':
+			group_buf = init_group_workspace(optarg);
+			break;
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
 			exit(EXIT_SUCCESS);
 		case 'h':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 	argc -= optind;
@@ -159,7 +243,7 @@ int main(int argc, char **argv)
 
 	iov.iov_base = mbuf;
 	iov.iov_len = mbufsize;
-	while((utmpptr = getutent())) {
+	while((utmpptr = getutxent())) {
 		if (!utmpptr->ut_user[0])
 			continue;
 #ifdef USER_PROCESS
@@ -172,12 +256,16 @@ int main(int argc, char **argv)
 		if (utmpptr->ut_line[0] == ':')
 			continue;
 
-		xstrncpy(line, utmpptr->ut_line, sizeof(utmpptr->ut_line));
+		if (group_buf && !is_gr_member(utmpptr->ut_user, group_buf))
+			continue;
+
+		mem2strcpy(line, utmpptr->ut_line, sizeof(utmpptr->ut_line), sizeof(line));
 		if ((p = ttymsg(&iov, 1, line, timeout)) != NULL)
 			warnx("%s", p);
 	}
-	endutent();
+	endutxent();
 	free(mbuf);
+	free_group_workspace(group_buf);
 	exit(EXIT_SUCCESS);
 }
 
@@ -221,7 +309,7 @@ static void buf_printf(struct buffer *bs, const char *fmt, ...)
 		buf_enlarge(bs, (size_t)rc + 1);
 		limit = bs->sz - bs->used;
 		va_start(ap, fmt);
-		rc = vsnprintf(bs->data  + bs->used, limit, fmt, ap);;
+		rc = vsnprintf(bs->data  + bs->used, limit, fmt, ap);
 		va_end(ap);
 	}
 

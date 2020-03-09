@@ -59,13 +59,21 @@
 #include <signal.h>
 #include <setjmp.h>
 
-#ifdef HAVE_NCURSES_H
-# include <ncurses.h>
+#if defined(HAVE_NCURSESW_NCURSES_H)
+# include <ncursesw/ncurses.h>
 #elif defined(HAVE_NCURSES_NCURSES_H)
 # include <ncurses/ncurses.h>
+#elif defined(HAVE_NCURSES_H)
+# include <ncurses.h>
 #endif
 
-#include <term.h>
+#if defined(HAVE_NCURSESW_TERM_H)
+# include <ncursesw/term.h>
+#elif defined(HAVE_NCURSES_TERM_H)
+# include <ncurses/term.h>
+#elif defined(HAVE_TERM_H)
+# include <term.h>
+#endif
 
 #include "nls.h"
 #include "xalloc.h"
@@ -96,7 +104,7 @@ enum {
 };
 
 /* Current command */
-struct {
+static struct {
 	char cmdline[CMDBUF];
 	size_t cmdlen;
 	int count;
@@ -106,42 +114,42 @@ struct {
 } cmd;
 
 /* Position of file arguments on argv[] to main() */
-struct {
+static struct {
 	int first;
 	int current;
 	int last;
 } files;
 
-void (*oldint) (int);		/* old SIGINT handler */
-void (*oldquit) (int);		/* old SIGQUIT handler */
-void (*oldterm) (int);		/* old SIGTERM handler */
-char *tty;			/* result of ttyname(1) */
-unsigned ontty;			/* whether running on tty device */
-unsigned exitstatus;		/* exit status */
-int pagelen = 23;		/* lines on a single screen page */
-int ttycols = 79;		/* screen columns (starting at 0) */
-struct termios otio;		/* old termios settings */
-int tinfostat = -1;		/* terminfo routines initialized */
-int searchdisplay = TOP;	/* matching line position */
-regex_t re;			/* regular expression to search for */
-int remembered;			/* have a remembered search string */
-int cflag;			/* clear screen before each page */
-int eflag;			/* suppress (EOF) */
-int fflag;			/* do not split lines */
-int nflag;			/* no newline for commands required */
-int rflag;			/* "restricted" pg */
-int sflag;			/* use standout mode */
-const char *pstring = ":";	/* prompt string */
-char *searchfor;		/* search pattern from argv[] */
-int havepagelen;		/* page length is manually defined */
-long startline;			/* start line from argv[] */
-int nextfile = 1;		/* files to advance */
-jmp_buf jmpenv;			/* jump from signal handlers */
-int canjump;			/* jmpenv is valid */
-wchar_t wbuf[READBUF];		/* used in several widechar routines */
+static void (*oldint) (int);		/* old SIGINT handler */
+static void (*oldquit) (int);		/* old SIGQUIT handler */
+static void (*oldterm) (int);		/* old SIGTERM handler */
+static char *tty;			/* result of ttyname(1) */
+static unsigned ontty;			/* whether running on tty device */
+static unsigned exitstatus;		/* exit status */
+static int pagelen = 23;		/* lines on a single screen page */
+static int ttycols = 79;		/* screen columns (starting at 0) */
+static struct termios otio;		/* old termios settings */
+static int tinfostat = -1;		/* terminfo routines initialized */
+static int searchdisplay = TOP;	/* matching line position */
+static regex_t re;			/* regular expression to search for */
+static int remembered;			/* have a remembered search string */
+static int cflag;			/* clear screen before each page */
+static int eflag;			/* suppress (EOF) */
+static int fflag;			/* do not split lines */
+static int nflag;			/* no newline for commands required */
+static int rflag;			/* "restricted" pg */
+static int sflag;			/* use standout mode */
+static const char *pstring = ":";	/* prompt string */
+static char *searchfor;		/* search pattern from argv[] */
+static int havepagelen;		/* page length is manually defined */
+static long startline;			/* start line from argv[] */
+static int nextfile = 1;		/* files to advance */
+static jmp_buf jmpenv;			/* jump from signal handlers */
+static int canjump;			/* jmpenv is valid */
+static wchar_t wbuf[READBUF];		/* used in several widechar routines */
 
-char *copyright;
-const char *helpscreen = N_("\
+static char *copyright;
+static const char *helpscreen = N_("\
 -------------------------------------------------------\n\
   h                       this screen\n\
   q or Q                  quit program\n\
@@ -215,8 +223,9 @@ static void __attribute__((__noreturn__)) quit(int status)
 }
 
 /* Usage message and similar routines. */
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
 		_(" %s [options] [+line] [+/pattern/] [files]\n"),
@@ -238,23 +247,22 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(_(" +/pattern/   start at the line containing pattern\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
+	printf(USAGE_HELP_OPTIONS(16));
 
-	fprintf(out, USAGE_MAN_TAIL("pg(1)"));
-	quit(out == stderr ? 2 : 0);
+	printf(USAGE_MAN_TAIL("pg(1)"));
+	exit(0);
 }
 
 static void __attribute__((__noreturn__)) needarg(const char *s)
 {
 	warnx(_("option requires an argument -- %s"), s);
-	usage(stderr);
+	errtryhelp(2);
 }
 
 static void __attribute__((__noreturn__)) invopt(const char *s)
 {
 	warnx(_("illegal option -- %s"), s);
-	usage(stderr);
+	errtryhelp(2);
 }
 
 #ifdef HAVE_WIDECHAR
@@ -651,7 +659,7 @@ static void prompt(long long pageno)
 					break;
 				case SEARCH_FIN:
 					state = SEARCH;
-					/* FALLTHRU */
+					/* fallthrough */
 				case SEARCH:
 					if (cmd.cmdline[cmd.cmdlen - 1] == '\\') {
 						escape = 1;
@@ -730,7 +738,7 @@ static void prompt(long long pageno)
 					continue;
 				}
 				state = COUNT;
-				/* FALLTHRU */
+				/* fallthrough */
 			case COUNT:
 				break;
 			case ADDON_FIN:
@@ -1372,9 +1380,8 @@ static void pgfile(FILE *f, const char *name)
 						my_sigset(SIGTERM, oldterm);
 						execl(sh, sh, "-c",
 						      cmd.cmdline + 1, NULL);
-						warn(_("failed to execute %s"), sh);
-						_exit(0177);
-						/* NOTREACHED */
+						errexec(sh);
+						break;
 					}
 					case -1:
 						mesg(_("fork() failed, "
@@ -1559,7 +1566,7 @@ int main(int argc, char **argv)
 		argc--;
 
 		if (!strcmp(argv[arg], "--help")) {
-		    usage(stdout);
+		    usage();
 		}
 
 		if (!strcmp(argv[arg], "--version")) {
@@ -1615,7 +1622,7 @@ int main(int argc, char **argv)
 				sflag = 1;
 				break;
 			case 'h':
-				usage(stdout);
+				usage();
 			case 'V':
 				printf(UTIL_LINUX_VERSION);
 				return EXIT_SUCCESS;

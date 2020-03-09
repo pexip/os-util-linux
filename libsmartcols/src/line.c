@@ -146,6 +146,35 @@ int scols_line_alloc_cells(struct libscols_line *ln, size_t n)
 	return 0;
 }
 
+int scols_line_move_cells(struct libscols_line *ln, size_t newn, size_t oldn)
+{
+	struct libscols_cell ce;
+
+	if (!ln || newn >= ln->ncells || oldn >= ln->ncells)
+		return -EINVAL;
+	if (oldn == newn)
+		return 0;
+
+	DBG(LINE, ul_debugobj(ln, "move cells[%zu] -> cells[%zu]", oldn, newn));
+
+	/* remember data from old position */
+	memcpy(&ce, &ln->cells[oldn], sizeof(struct libscols_cell));
+
+	/* remove old position (move data behind oldn to oldn) */
+	if (oldn + 1 < ln->ncells)
+		memmove(ln->cells + oldn, ln->cells + oldn + 1,
+			(ln->ncells - oldn - 1) * sizeof(struct libscols_cell));
+
+	/* create a space for new position */
+	if (newn + 1 < ln->ncells)
+		memmove(ln->cells + newn + 1, ln->cells + newn,
+			(ln->ncells - newn - 1) * sizeof(struct libscols_cell));
+
+	/* copy original data to new position */
+	memcpy(&ln->cells[newn], &ce, sizeof(struct libscols_cell));
+	return 0;
+}
+
 /**
  * scols_line_set_userdata:
  * @ln: a pointer to a struct libscols_line instance
@@ -188,7 +217,7 @@ int scols_line_remove_child(struct libscols_line *ln, struct libscols_line *chil
 	if (!ln || !child)
 		return -EINVAL;
 
-	DBG(LINE, ul_debugobj(ln, "remove child %p", child));
+	DBG(LINE, ul_debugobj(ln, "remove child"));
 
 	list_del_init(&child->ln_children);
 	child->parent = NULL;
@@ -212,7 +241,7 @@ int scols_line_add_child(struct libscols_line *ln, struct libscols_line *child)
 	if (!ln || !child)
 		return -EINVAL;
 
-	DBG(LINE, ul_debugobj(ln, "add child %p", child));
+	DBG(LINE, ul_debugobj(ln, "add child"));
 	scols_ref_line(child);
 	scols_ref_line(ln);
 
@@ -278,6 +307,29 @@ int scols_line_next_child(struct libscols_line *ln,
 	}
 
 	return rc;
+}
+
+
+/**
+ * scols_line_is_ancestor:
+ * @ln: line
+ * @parent: potential parent
+ *
+ * The function is designed to detect circular dependencies between @ln and
+ * @parent. It checks if @ln is not any (grand) parent in the @parent's tree.
+ *
+ * Since: 2.30
+ *
+ * Returns: 0 or 1
+ */
+int scols_line_is_ancestor(struct libscols_line *ln, struct libscols_line *parent)
+{
+	while (parent) {
+		if (parent == ln)
+			return 1;
+		parent = scols_line_get_parent(parent);
+	};
+	return 0;
 }
 
 /**
@@ -451,7 +503,7 @@ struct libscols_line *scols_copy_line(const struct libscols_line *ln)
 	ret->ncells   = ln->ncells;
 	ret->seqnum   = ln->seqnum;
 
-	DBG(LINE, ul_debugobj(ln, "copy to %p", ret));
+	DBG(LINE, ul_debugobj(ln, "copy"));
 
 	for (i = 0; i < ret->ncells; ++i) {
 		if (scols_cell_copy_content(&ret->cells[i], &ln->cells[i]))

@@ -1,8 +1,14 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
+
 /*
- * Copyright (C) 2009-2011 Karel Zak <kzak@redhat.com>
+ * This file is part of libmount from util-linux project.
  *
- * This file may be redistributed under the terms of the
- * GNU Lesser General Public License.
+ * Copyright (C) 2009-2018 Karel Zak <kzak@redhat.com>
+ *
+ * libmount is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation; either version 2.1 of the License, or
+ * (at your option) any later version.
  */
 
 /**
@@ -85,7 +91,7 @@ struct libmnt_cache *mnt_new_cache(void)
  * @cache: pointer to struct libmnt_cache instance
  *
  * Deallocates the cache. This function does not care about reference count. Don't
- * use this function directly -- it's better to use use mnt_unref_cache().
+ * use this function directly -- it's better to use mnt_unref_cache().
  */
 void mnt_free_cache(struct libmnt_cache *cache)
 {
@@ -489,9 +495,9 @@ char *mnt_get_fstype(const char *devname, int *ambi, struct libmnt_cache *cache)
 static char *canonicalize_path_and_cache(const char *path,
 						struct libmnt_cache *cache)
 {
-	char *p = NULL;
-	char *key = NULL;
-	char *value = NULL;
+	char *p;
+	char *key;
+	char *value;
 
 	DBG(CACHE, ul_debugobj(cache, "canonicalize path %s", path));
 	p = canonicalize_path(path);

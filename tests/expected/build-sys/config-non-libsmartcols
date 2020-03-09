@@ -15,19 +15,20 @@ swaplabel:  libblkid libuuid
 umount:  libblkid libmount librt libuuid 
 uuidd:  librt libsystemd libuuid 
 uuidgen:  libuuid 
-wipefs:  libblkid libuuid 
 agetty:  
 blkdiscard:  librt 
+blkzone:  
 blockdev:  
-cal:  libncursesw libtinfo 
+cal:  libtinfo 
 chcpu:  
-chfn:  libpam libpam_misc libpthread libuser 
+chfn:  libpam libpam_misc libpthread libreadline libuser 
+chmem:  
+choom:  
 chrt:  
-chsh:  libpam libpam_misc libpthread libuser 
+chsh:  libpam libpam_misc libpthread libreadline libuser 
 col:  
 colcrt:  
 colrm:  
-column:  
 ctrlaltdel:  
 dmesg:  librt libtinfo 
 fallocate:  
@@ -38,7 +39,7 @@ fsck.minix:
 fsfreeze:  
 getopt:  
 hexdump:  libtinfo 
-hwclock:  
+hwclock:  libm 
 ionice:  
 ipcmk:  
 ipcrm:  
@@ -67,17 +68,16 @@ rename:
 renice:  
 rev:  
 rtcwake:  
-runuser:  libpam libpam_misc 
+runuser:  libpam libpam_misc libutil 
 script:  librt libutil 
 scriptreplay:  
 setarch:  
 setpriv:  ap-ng 
 setsid:  
 setterm:  libtinfo 
-su:  libpam libpam_misc 
+su:  libpam libpam_misc libutil 
 sulogin:  rypt 
 switch_root:  
-tailf:  
 taskset:  
 ul:  libtinfo 
 unshare:  

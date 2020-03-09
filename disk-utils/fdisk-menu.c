@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "c.h"
+#include "rpmatch.h"
 #include "fdisk.h"
 #include "pt-sun.h"
 #include "pt-mbr.h"
@@ -87,9 +88,10 @@ DECLARE_MENU_CB(generic_menu_cb);
 
 #define MENU_ENT_NEST(k, t, l, p)	{ .title = t, .key = k, .normal = 1, .label = l, .parent = p }
 #define MENU_XENT_NEST(k, t, l, p)	{ .title = t, .key = k, .expert = 1, .label = l, .parent = p }
+#define MENU_BENT_NEST(k, t, l, p)	{ .title = t, .key = k, .expert = 1, .normal = 1, .label = l, .parent = p }
 
 /* Generic menu */
-struct menu menu_generic = {
+static const struct menu menu_generic = {
 	.callback	= generic_menu_cb,
 	.entries	= {
 		MENU_BSEP(N_("Generic")),
@@ -127,7 +129,7 @@ struct menu menu_generic = {
 	}
 };
 
-struct menu menu_createlabel = {
+static const struct menu menu_createlabel = {
 	.callback = createlabel_menu_cb,
 	.exclude = FDISK_DISKLABEL_BSD,
 	.nonested = 1,
@@ -145,11 +147,11 @@ struct menu menu_createlabel = {
 	}
 };
 
-struct menu menu_geo = {
+static const struct menu menu_geo = {
 	.callback = geo_menu_cb,
 	.exclude = FDISK_DISKLABEL_GPT | FDISK_DISKLABEL_BSD,
 	.entries = {
-		MENU_XSEP(N_("Geometry")),
+		MENU_XSEP(N_("Geometry (for the current label)")),
 		MENU_XENT('c', N_("change number of cylinders")),
 		MENU_XENT('h', N_("change number of heads")),
 		MENU_XENT('s', N_("change number of sectors/track")),
@@ -157,16 +159,16 @@ struct menu menu_geo = {
 	}
 };
 
-struct menu menu_gpt = {
+static const struct menu menu_gpt = {
 	.callback = gpt_menu_cb,
 	.label = FDISK_DISKLABEL_GPT,
 	.entries = {
-		MENU_XSEP(N_("GPT")),
+		MENU_BSEP(N_("GPT")),
 		MENU_XENT('i', N_("change disk GUID")),
 		MENU_XENT('n', N_("change partition name")),
 		MENU_XENT('u', N_("change partition UUID")),
 		MENU_XENT('l', N_("change table length")),
-		MENU_XENT('M', N_("enter protective/hybrid MBR")),
+		MENU_BENT('M', N_("enter protective/hybrid MBR")),
 
 		MENU_XSEP(""),
 		MENU_XENT('A', N_("toggle the legacy BIOS bootable flag")),
@@ -178,7 +180,7 @@ struct menu menu_gpt = {
 	}
 };
 
-struct menu menu_sun = {
+static const struct menu menu_sun = {
 	.callback = sun_menu_cb,
 	.label = FDISK_DISKLABEL_SUN,
 	.entries = {
@@ -195,7 +197,7 @@ struct menu menu_sun = {
 	}
 };
 
-struct menu menu_sgi = {
+static const struct menu menu_sgi = {
 	.callback = sgi_menu_cb,
 	.label = FDISK_DISKLABEL_SGI,
 	.entries = {
@@ -208,7 +210,7 @@ struct menu menu_sgi = {
 	}
 };
 
-struct menu menu_dos = {
+static const struct menu menu_dos = {
 	.callback = dos_menu_cb,
 	.label = FDISK_DISKLABEL_DOS,
 	.entries = {
@@ -220,13 +222,13 @@ struct menu menu_dos = {
 		MENU_XENT('b', N_("move beginning of data in a partition")),
 		MENU_XENT('i', N_("change the disk identifier")),
 
-		MENU_XENT_NEST('M', N_("return from protective/hybrid MBR to GPT"),
+		MENU_BENT_NEST('M', N_("return from protective/hybrid MBR to GPT"),
 					FDISK_DISKLABEL_DOS, FDISK_DISKLABEL_GPT),
 		{ 0, NULL }
 	}
 };
 
-struct menu menu_bsd = {
+static const struct menu menu_bsd = {
 	.callback = bsd_menu_cb,
 	.label = FDISK_DISKLABEL_BSD,
 	.entries = {
@@ -423,11 +425,24 @@ int process_fdisk_menu(struct fdisk_context **cxt0)
 		prompt = _("Command (m for help): ");
 
 	fputc('\n',stdout);
-	rc = get_user_reply(cxt, prompt, buf, sizeof(buf));
-	if (rc)
-		return rc;
+	rc = get_user_reply(prompt, buf, sizeof(buf));
 
-	key = buf[0];
+	if (rc == -ECANCELED) {
+		/* Map ^C and ^D in main menu to 'q' */
+		if (is_interactive
+		    && fdisk_label_is_changed(fdisk_get_label(cxt, NULL))) {
+			rc = get_user_reply(
+				_("\nDo you really want to quit? "),
+				buf, sizeof(buf));
+			if (rc || !rpmatch(buf))
+				return 0;
+		}
+		key = 'q';
+	} else if (rc) {
+		return rc;
+	} else
+		key = buf[0];
+
 	ent = get_fdisk_menu_entry(cxt, key, &menu);
 	if (!ent) {
 		fdisk_warnx(cxt, _("%c: unknown command"), key);
@@ -465,9 +480,15 @@ static int script_read(struct fdisk_context *cxt)
 		fdisk_warn(cxt, _("Cannot open %s"), filename);
 	else if (!sc)
 		fdisk_warnx(cxt, _("Failed to parse script file %s"), filename);
-	else if (fdisk_apply_script(cxt, sc) != 0)
+	else if (fdisk_apply_script(cxt, sc) != 0) {
 		fdisk_warnx(cxt, _("Failed to apply script %s"), filename);
-	else
+		fdisk_warnx(cxt, _("Resetting fdisk!"));
+		rc = fdisk_reassign_device(cxt);
+                if (rc == 0 && !fdisk_has_label(cxt)) {
+                        fdisk_info(cxt, _("Device does not contain a recognized partition table."));
+                        fdisk_create_disklabel(cxt, NULL);
+		}
+	} else
 		fdisk_info(cxt, _("Script successfully applied."));
 
 	fdisk_unref_script(sc);
@@ -576,7 +597,11 @@ static int generic_menu_cb(struct fdisk_context **cxt0,
 		if (fdisk_get_parent(cxt))
 			break; /* nested PT, don't leave */
 		fdisk_info(cxt, _("The partition table has been altered."));
-		rc = fdisk_reread_partition_table(cxt);
+
+		if (device_is_used)
+			rc = fdisk_reread_changes(cxt, original_layout);
+		else
+			rc = fdisk_reread_partition_table(cxt);
 		if (!rc)
 			rc = fdisk_deassign_device(cxt, 0);
 		/* fallthrough */
@@ -625,8 +650,10 @@ static int generic_menu_cb(struct fdisk_context **cxt0,
 	switch (ent->key) {
 	case 'd':
 		rc = fdisk_ask_partnum(cxt, &n, FALSE);
-		if (!rc)
-			rc = fdisk_delete_partition(cxt, n);
+		if (rc)
+			break; /* no partitions yet (or ENOMEM, ...) */
+
+		rc = fdisk_delete_partition(cxt, n);
 		if (rc)
 			fdisk_warnx(cxt, _("Could not delete partition %zu"), n + 1);
 		else
@@ -715,7 +742,8 @@ static int gpt_menu_cb(struct fdisk_context **cxt0,
 			if (!mbr)
 				return -ENOMEM;
 			*cxt0 = cxt = mbr;
-			fdisk_enable_details(cxt, 1);	/* keep us in expert mode */
+			if (fdisk_is_details(cxt))
+				fdisk_enable_details(cxt, 1);	/* keep us in expert mode */
 			fdisk_info(cxt, _("Entering protective/hybrid MBR disklabel."));
 			return 0;
 		}
@@ -978,32 +1006,50 @@ static int bsd_menu_cb(struct fdisk_context **cxt0,
 	return rc;
 }
 
-/* C/H/S commands */
+/* C/H/S commands
+ *
+ * The geometry setting from this dialog is not persistent and maybe reset by
+ * fdisk_reset_device_properties() (for example when you create a new disk
+ * label). Note that on command line specified -C/-H/-S setting is persistent
+ * as it's based on fdisk_save_user_geometry().
+ */
 static int geo_menu_cb(struct fdisk_context **cxt0,
 		       const struct menu *menu __attribute__((__unused__)),
 		       const struct menu_entry *ent)
 {
 	struct fdisk_context *cxt = *cxt0;
+	struct fdisk_label *lb = fdisk_get_label(cxt, NULL);
 	int rc = -EINVAL;
 	uintmax_t c = 0, h = 0, s = 0;
+	fdisk_sector_t mi, ma;
 
 	DBG(MENU, ul_debug("enter GEO menu"));
 
 	assert(cxt);
 	assert(ent);
 
+	/* default */
+	if (!lb)
+		lb = fdisk_get_label(cxt, "dos");
+
 	switch (ent->key) {
 	case 'c':
-		rc =  fdisk_ask_number(cxt, 1, fdisk_get_geom_cylinders(cxt),
-				1048576, _("Number of cylinders"), &c);
+		fdisk_label_get_geomrange_cylinders(lb, &mi, &ma);
+		rc =  fdisk_ask_number(cxt, mi, fdisk_get_geom_cylinders(cxt),
+				ma, _("Number of cylinders"), &c);
 		break;
 	case 'h':
-		rc =  fdisk_ask_number(cxt, 1, fdisk_get_geom_heads(cxt),
-				256, _("Number of heads"), &h);
+	{
+		unsigned int i, a;
+		fdisk_label_get_geomrange_heads(lb, &i, &a);
+		rc =  fdisk_ask_number(cxt, i, fdisk_get_geom_heads(cxt),
+				a, _("Number of heads"), &h);
 		break;
+	}
 	case 's':
-		rc =  fdisk_ask_number(cxt, 1, fdisk_get_geom_sectors(cxt),
-				63, _("Number of sectors"), &s);
+		fdisk_label_get_geomrange_sectors(lb, &mi, &ma);
+		rc =  fdisk_ask_number(cxt, mi, fdisk_get_geom_sectors(cxt),
+				ma, _("Number of sectors"), &s);
 		break;
 	}
 
@@ -1032,22 +1078,25 @@ static int createlabel_menu_cb(struct fdisk_context **cxt0,
 			rc = fdisk_create_disklabel(cxt, "sgi");
 			break;
 		}
-		return rc;
+	} else {
+		switch (ent->key) {
+			case 'g':
+				rc = fdisk_create_disklabel(cxt, "gpt");
+				break;
+			case 'G':
+				rc = fdisk_create_disklabel(cxt, "sgi");
+				break;
+			case 'o':
+				rc = fdisk_create_disklabel(cxt, "dos");
+				break;
+			case 's':
+				rc = fdisk_create_disklabel(cxt, "sun");
+				break;
+		}
 	}
 
-	switch (ent->key) {
-		case 'g':
-			fdisk_create_disklabel(cxt, "gpt");
-			break;
-		case 'G':
-			fdisk_create_disklabel(cxt, "sgi");
-			break;
-		case 'o':
-			fdisk_create_disklabel(cxt, "dos");
-			break;
-		case 's':
-			fdisk_create_disklabel(cxt, "sun");
-			break;
-	}
+	if (rc == 0 && fdisk_get_collision(cxt))
+		follow_wipe_mode(cxt);
+
 	return rc;
 }

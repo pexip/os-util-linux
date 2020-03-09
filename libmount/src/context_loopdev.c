@@ -1,8 +1,13 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /*
- * Copyright (C) 2011 Karel Zak <kzak@redhat.com>
+ * This file is part of libmount from util-linux project.
  *
- * This file may be redistributed under the terms of the
- * GNU Lesser General Public License.
+ * Copyright (C) 2011-2018 Karel Zak <kzak@redhat.com>
+ *
+ * libmount is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation; either version 2.1 of the License, or
+ * (at your option) any later version.
  */
 
 /*
@@ -10,6 +15,7 @@
  */
 
 #include <blkid.h>
+#include <stdbool.h>
 
 #include "mountP.h"
 #include "loopdev.h"
@@ -88,6 +94,7 @@ is_mounted_same_loopfile(struct libmnt_context *cxt,
 	struct libmnt_cache *cache;
 	const char *bf;
 	int rc = 0;
+	struct libmnt_ns *ns_old;
 
 	assert(cxt);
 	assert(cxt->fs);
@@ -95,6 +102,10 @@ is_mounted_same_loopfile(struct libmnt_context *cxt,
 
 	if (mnt_context_get_mtab(cxt, &tb))
 		return 0;
+
+	ns_old = mnt_context_switch_target_ns(cxt);
+	if (!ns_old)
+		return -MNT_ERR_NAMESPACE;
 
 	DBG(LOOP, ul_debugobj(cxt, "checking if %s mounted on %s",
 				backing_file, target));
@@ -131,6 +142,9 @@ is_mounted_same_loopfile(struct libmnt_context *cxt,
 	}
 	if (rc)
 		DBG(LOOP, ul_debugobj(cxt, "%s already mounted", backing_file));
+
+	if (!mnt_context_switch_ns(cxt, ns_old))
+		return -MNT_ERR_NAMESPACE;
 	return rc;
 }
 
@@ -142,6 +156,7 @@ int mnt_context_setup_loopdev(struct libmnt_context *cxt)
 	struct loopdev_cxt lc;
 	int rc = 0, lo_flags = 0;
 	uint64_t offset = 0, sizelimit = 0;
+	bool reuse = FALSE;
 
 	assert(cxt);
 	assert(cxt->fs);
@@ -223,12 +238,12 @@ int mnt_context_setup_loopdev(struct libmnt_context *cxt)
 		rc = loopcxt_find_overlap(&lc, backing_file, offset, sizelimit);
 		switch (rc) {
 		case 0: /* not found */
-			DBG(LOOP, ul_debugobj(cxt, "not found overlaping loopdev"));
+			DBG(LOOP, ul_debugobj(cxt, "not found overlapping loopdev"));
 			loopcxt_deinit(&lc);
 			break;
 
 		case 1:	/* overlap */
-			DBG(LOOP, ul_debugobj(cxt, "overlaping %s detected",
+			DBG(LOOP, ul_debugobj(cxt, "overlapping %s detected",
 						loopcxt_get_device(&lc)));
 			rc = -MNT_ERR_LOOPOVERLAP;
 			goto done;
@@ -259,7 +274,14 @@ int mnt_context_setup_loopdev(struct libmnt_context *cxt)
 				goto done;
 			}
 			rc = 0;
-			goto success;
+			/* loop= used with argument. Conflict will occur. */
+			if (loopval) {
+				rc = -MNT_ERR_LOOPOVERLAP;
+				goto done;
+			} else {
+				reuse = TRUE;
+				goto success;
+			}
 		}
 		default: /* error */
 			goto done;
@@ -334,8 +356,8 @@ success:
 		/* success */
 		cxt->flags |= MNT_FL_LOOPDEV_READY;
 
-		if ((cxt->user_mountflags & MNT_MS_LOOP) &&
-		    loopcxt_is_autoclear(&lc)) {
+		if (reuse || ( (cxt->user_mountflags & MNT_MS_LOOP) &&
+		    loopcxt_is_autoclear(&lc))) {
 			/*
 			 * autoclear flag accepted by the kernel, don't store
 			 * the "loop=" option to mtab.

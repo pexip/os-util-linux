@@ -29,12 +29,11 @@ struct hlpPath
 
 #define DEF_HLPPATH(_p)		{ #_p, _p }
 
-struct hlpPath paths[] =
+static struct hlpPath paths[] =
 {
 	DEF_HLPPATH(_PATH_DEFPATH),
 	DEF_HLPPATH(_PATH_DEFPATH_ROOT),
 	DEF_HLPPATH(_PATH_DEV_LOOP),
-	DEF_HLPPATH(_PATH_WTMPLOCK),
 	DEF_HLPPATH(_PATH_HUSHLOGIN),
 	DEF_HLPPATH(_PATH_MAILDIR),
 	DEF_HLPPATH(_PATH_MOTDFILE),

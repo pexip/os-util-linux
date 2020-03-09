@@ -45,6 +45,14 @@ appropriate for such suspend modes.
 .PP
 Note that alarm functionality depends on hardware; not every RTC is able to setup 
 an alarm up to 24 hours in the future.
+.PP
+The suspend setup maybe be interrupted by active hardware; for example wireless USB
+input devices that continue to send events for some fraction of a second after the
+return key is pressed.
+.B rtcwake
+tries to avoid this problem and it waits to terminal to settle down before
+entering a system sleep.
+
 .SH OPTIONS
 .TP
 .BR \-A , " \-\-adjfile " \fIfile
@@ -58,10 +66,10 @@ stores that information.  This is the default.
 .TP
 .BR \-\-date " \fItimestamp"
 Set the wakeup time to the value of the timestamp.  Format of the
-timestmap can be any of the following:
+timestamp can be any of the following:
 .TS
 tab(|);
-left l2 l.
+l2 l.
 YYYYMMDDhhmmss
 YYYY-MM-DD hh:mm:ss
 YYYY-MM-DD hh:mm|(seconds will be set to 00)
@@ -176,6 +184,6 @@ There is NO WARRANTY, to the extent permitted by law.
 .BR date (1)
 .SH AVAILABILITY
 The rtcwake command is part of the util-linux package and is available from the
-.UR ftp://\:ftp.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
+.UR https://\:www.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
 Linux Kernel Archive
 .UE .

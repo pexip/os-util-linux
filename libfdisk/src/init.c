@@ -43,13 +43,17 @@ void fdisk_init_debug(int mask)
 	if (libfdisk_debug_mask)
 		return;
 
-	__UL_INIT_DEBUG(libfdisk, LIBFDISK_DEBUG_, mask, LIBFDISK_DEBUG);
+	__UL_INIT_DEBUG_FROM_ENV(libfdisk, LIBFDISK_DEBUG_, mask, LIBFDISK_DEBUG);
 
 
 	if (libfdisk_debug_mask != LIBFDISK_DEBUG_INIT
 	    && libfdisk_debug_mask != (LIBFDISK_DEBUG_HELP|LIBFDISK_DEBUG_INIT)) {
+		const char *ver = NULL;
+
+		fdisk_get_library_version(&ver);
 
 		DBG(INIT, ul_debug("library debug mask: 0x%04x", libfdisk_debug_mask));
+		DBG(INIT, ul_debug("library version: %s", ver));
 	}
 
 	ON_DBG(HELP, ul_debug_print_masks("LIBFDISK_DEBUG",

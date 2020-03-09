@@ -1,8 +1,14 @@
+
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /*
- * Copyright (C) 2008-2010 Karel Zak <kzak@redhat.com>
+ * This file is part of libmount from util-linux project.
  *
- * This file may be redistributed under the terms of the
- * GNU Lesser General Public License.
+ * Copyright (C) 2008-2018 Karel Zak <kzak@redhat.com>
+ *
+ * libmount is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation; either version 2.1 of the License, or
+ * (at your option) any later version.
  */
 
 /**
@@ -150,7 +156,7 @@ void mnt_unref_table(struct libmnt_table *tb)
  * @tb: tab pointer
  *
  * Deallocates the table. This function does not care about reference count. Don't
- * use this function directly -- it's better to use use mnt_unref_table().
+ * use this function directly -- it's better to use mnt_unref_table().
  *
  * The table entries (filesystems) are unreferenced by mnt_reset_table() and
  * cache by mnt_unref_cache().
@@ -936,6 +942,8 @@ struct libmnt_fs *mnt_table_find_target(struct libmnt_table *tb, const char *pat
  * The 2nd, 3rd and 4th iterations are not performed when the @tb cache is not
  * set (see mnt_table_set_cache()).
  *
+ * For btrfs returns tab entry for default id.
+ *
  * Note that NULL is a valid source path; it will be replaced with "none". The
  * "none" is used in /proc/{mounts,self/mountinfo} for pseudo filesystems.
  *
@@ -958,9 +966,33 @@ struct libmnt_fs *mnt_table_find_srcpath(struct libmnt_table *tb, const char *pa
 
 	/* native paths */
 	mnt_reset_iter(&itr, direction);
+
 	while(mnt_table_next_fs(tb, &itr, &fs) == 0) {
-		if (mnt_fs_streq_srcpath(fs, path))
+
+		if (mnt_fs_streq_srcpath(fs, path)) {
+#ifdef HAVE_BTRFS_SUPPORT
+			if (fs->fstype && !strcmp(fs->fstype, "btrfs")) {
+				uint64_t default_id = btrfs_get_default_subvol_id(mnt_fs_get_target(fs));
+				char *val;
+				size_t len;
+
+				if (default_id == UINT64_MAX)
+					DBG(TAB, ul_debug("not found btrfs volume setting"));
+
+				else if (mnt_fs_get_option(fs, "subvolid", &val, &len) == 0) {
+					uint64_t subvol_id;
+
+					if (mnt_parse_offset(val, len, &subvol_id)) {
+						DBG(TAB, ul_debugobj(tb, "failed to parse subvolid="));
+						continue;
+					}
+					if (subvol_id != default_id)
+						continue;
+				}
+			}
+#endif /* HAVE_BTRFS_SUPPORT */
 			return fs;
+		}
 		if (mnt_fs_get_tag(fs, NULL, NULL) == 0)
 			ntags++;
 	}
@@ -1396,15 +1428,12 @@ struct libmnt_fs *mnt_table_get_fs_root(struct libmnt_table *tb,
 {
 	char *root = NULL;
 	const char *mnt = NULL;
-	const char *fstype;
 	struct libmnt_fs *src_fs = NULL;
 
 	assert(fs);
 	assert(fsroot);
 
 	DBG(TAB, ul_debug("lookup fs-root for '%s'", mnt_fs_get_source(fs)));
-
-	fstype = mnt_fs_get_fstype(fs);
 
 	if (tb && (mountflags & MS_BIND)) {
 		const char *src, *src_root;
@@ -1470,7 +1499,8 @@ struct libmnt_fs *mnt_table_get_fs_root(struct libmnt_table *tb,
 	/*
 	 * btrfs-subvolume mount -- get subvolume name and use it as a root-fs path
 	 */
-	else if (tb && fstype && (!strcmp(fstype, "btrfs") || !strcmp(fstype, "auto"))) {
+	else if (tb && fs->fstype &&
+		 (!strcmp(fs->fstype, "btrfs") || !strcmp(fs->fstype, "auto"))) {
 		if (get_btrfs_fs_root(tb, fs, &root) < 0)
 			goto err;
 	}
@@ -1518,6 +1548,7 @@ int mnt_table_is_fs_mounted(struct libmnt_table *tb, struct libmnt_fs *fstab_fs)
 	struct libmnt_fs *fs;
 
 	char *root = NULL;
+	char *src2 = NULL;
 	const char *src = NULL, *tgt = NULL;
 	char *xtgt = NULL;
 	int rc = 0;
@@ -1537,12 +1568,22 @@ int mnt_table_is_fs_mounted(struct libmnt_table *tb, struct libmnt_fs *fstab_fs)
 		struct libmnt_fs *rootfs;
 		int flags = 0;
 
-		if (mnt_fs_get_option(fstab_fs, "bind", NULL, NULL) == 0)
+		if (mnt_fs_get_option(fstab_fs, "bind", NULL, NULL) == 0 ||
+		    mnt_fs_get_option(fstab_fs, "rbind", NULL, NULL) == 0)
 			flags = MS_BIND;
 
 		rootfs = mnt_table_get_fs_root(tb, fstab_fs, flags, &root);
-		if (rootfs)
+		if (rootfs) {
+			const char *fstype = mnt_fs_get_fstype(rootfs);
+
 			src = mnt_fs_get_srcpath(rootfs);
+			if (fstype && strncmp(fstype, "nfs", 3) == 0 && root) {
+				/* NFS stores the root at the end of the source */
+				src = src2 = strappend(src, root);
+				free(root);
+				root = NULL;
+			}
+		}
 	}
 
 	if (!src)
@@ -1642,6 +1683,7 @@ done:
 	free(root);
 
 	DBG(TAB, ul_debugobj(tb, "mnt_table_is_fs_mounted: %s [rc=%d]", src, rc));
+	free(src2);
 	return rc;
 }
 

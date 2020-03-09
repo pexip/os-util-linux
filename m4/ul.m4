@@ -433,7 +433,7 @@ AC_DEFUN([UL_DEFAULT_ENABLE], [
 dnl UL_ENABLE_ALIAS(NAME, MASTERNAME)
 dnl
 dnl Initializes $enable_<name> variable according to $enable_<mastername>. This
-dnl is usefull for example if you want to use one --enable-mastername option
+dnl is useful for example if you want to use one --enable-mastername option
 dnl for group of programs.
 dnl
 AC_DEFUN([UL_ENABLE_ALIAS], [
@@ -454,14 +454,6 @@ dnl
 AC_DEFUN([UL_NCURSES_CHECK], [
   m4_define([suffix], $1)
   m4_define([SUFFIX], m4_toupper($1))
-
-  # pkg-config (not supported by ncurses upstream by default)
-  #
-  PKG_CHECK_MODULES(SUFFIX, [$1], [
-    have_[]suffix=yes
-    NCURSES_LIBS=${SUFFIX[]_LIBS}
-    NCURSES_CFLAGS=${SUFFIX[]_CFLAGS}
-  ],[have_[]suffix=no])
 
   # ncurses6-config
   #
@@ -489,12 +481,47 @@ AC_DEFUN([UL_NCURSES_CHECK], [
     fi
   ])
 
+  # pkg-config (not supported by ncurses upstream by default)
+  #
+  AS_IF([test "x$have_[]suffix" = xno], [
+    PKG_CHECK_MODULES(SUFFIX, [$1], [
+      have_[]suffix=yes
+      NCURSES_LIBS=${SUFFIX[]_LIBS}
+      NCURSES_CFLAGS=${SUFFIX[]_CFLAGS}
+    ],[have_[]suffix=no])
+  ])
+
   # classic autoconf way
   #
   AS_IF([test "x$have_[]suffix" = xno], [
-    AS_IF([test "x$have_[]suffix" = xno], [
-      AC_CHECK_LIB([$1], [initscr], [have_[]suffix=yes], [have_[]suffix=no])
-      AS_IF([test "x$have_[]suffix" = xyes], [NCURSES_LIBS="-l[]suffix"])
-    ])
+    AC_CHECK_LIB([$1], [initscr], [have_[]suffix=yes], [have_[]suffix=no])
+    AS_IF([test "x$have_[]suffix" = xyes], [NCURSES_LIBS="-l[]suffix"])
+  ])
+])
+
+dnl
+dnl UL_TINFO_CHECK(NAME)
+dnl
+dnl Initializes $have_<name>, TINFO_LIBS and TINFO_CFLAGS variables.
+dnl
+dnl The expected <name> is tinfow or tinfo.
+dnl
+AC_DEFUN([UL_TINFO_CHECK], [
+  m4_define([suffix], $1)
+  m4_define([SUFFIX], m4_toupper($1))
+
+  PKG_CHECK_MODULES(SUFFIX, [$1], [
+    dnl pkg-config success
+    have_[]suffix=yes
+    TINFO_LIBS=${SUFFIX[]_LIBS}
+    TINFO_CFLAGS=${SUFFIX[]_CFLAGS}
+    UL_PKG_STATIC([TINFO_LIBS_STATIC], [$1])
+  ],[
+    dnl If pkg-config failed, fall back to classic searching.
+    AC_CHECK_LIB([$1], [tgetent], [
+       have_[]suffix=yes
+       TINFO_LIBS="-l[]suffix"
+       TINFO_LIBS_STATIC="-l[]suffix"
+       TINFO_CFLAGS=""])
   ])
 ])

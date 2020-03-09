@@ -3,7 +3,7 @@
 lscpu \- display information about the CPU architecture
 .SH SYNOPSIS
 .B lscpu
-.RB [ \-a | \-b | \-c "] [" \-x "] [" \-y "] [" \-s " \fIdirectory\fP] [" \-e [=\fIlist\fP]| \-p [=\fIlist\fP]]
+.RB [ \-a | \-b | \-c | \-J "] [" \-x "] [" \-y "] [" \-s " \fIdirectory\fP] [" \-e [=\fIlist\fP]| \-p [=\fIlist\fP]]
 .br
 .B lscpu
 .BR \-h | \-V
@@ -123,6 +123,9 @@ Examples: '\fB-e=cpu,node\fP' or '\fB--extended=cpu,node\fP'.
 .BR \-h , " \-\-help"
 Display help text and exit.
 .TP
+.BR \-J , " \-\-json"
+Use JSON output format for the default summary or extended output (see \fB\-\-extended\fP).
+.TP
 .BR \-p , " \-\-parse" [=\fIlist\fP]
 Optimize the command output for easy parsing.
 
@@ -157,6 +160,10 @@ The CPU logical numbers are not affected by this option.
 .TP
 .BR \-V , " \-\-version"
 Display version information and exit.
+.TP
+.B \-\-output\-all
+Output all available columns.  This option must be combined with either
+.BR \-\-extended " or " \-\-parse .
 .SH BUGS
 The basic overview of CPU family, model, etc. is always based on the first
 CPU only.
@@ -174,4 +181,4 @@ Heiko Carstens <heiko.carstens@de.ibm.com>
 .BR chcpu (8)
 .SH AVAILABILITY
 The lscpu command is part of the util-linux package and is available from
-ftp://ftp.kernel.org/pub/linux/utils/util-linux/.
+https://www.kernel.org/pub/linux/utils/util-linux/.

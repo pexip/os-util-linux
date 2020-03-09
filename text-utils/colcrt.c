@@ -75,8 +75,9 @@ struct colcrt_control {
 			half_lines:1;
 };
 
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options] [<file>...]\n"), program_invocation_short_name);
 
@@ -88,12 +89,11 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(_(" -2, --half-lines        print all half-lines\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
+	printf(USAGE_HELP_OPTIONS(25));
 
-	fprintf(out, USAGE_MAN_TAIL("colcrt(1)"));
+	printf(USAGE_MAN_TAIL("colcrt(1)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 static void trim_trailing_spaces(wchar_t *s)
@@ -224,7 +224,7 @@ static void colcrt(struct colcrt_control *ctl)
 
 int main(int argc, char **argv)
 {
-	struct colcrt_control ctl = { 0 };
+	struct colcrt_control ctl = { NULL };
 	int opt;
 	enum { NO_UL_OPTION = CHAR_MAX + 1 };
 
@@ -264,9 +264,9 @@ int main(int argc, char **argv)
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'h':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 

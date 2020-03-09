@@ -48,14 +48,15 @@
 #include "c.h"
 #include "closestream.h"
 
-const char *idtype[] = {
+static const char *idtype[] = {
 	[PRIO_PROCESS]	= N_("process ID"),
 	[PRIO_PGRP]	= N_("process group ID"),
 	[PRIO_USER]	= N_("user ID"),
 };
 
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
 	      _(" %1$s [-n] <priority> [-p|--pid] <pid>...\n"
@@ -72,10 +73,9 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(_(" -g, --pgrp <id>        interpret argument as process group ID\n"), out);
 	fputs(_(" -u, --user <name>|<id> interpret argument as username or user ID\n"), out);
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
-	fprintf(out, USAGE_MAN_TAIL("renice(1)"));
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	printf(USAGE_HELP_OPTIONS(24));
+	printf(USAGE_MAN_TAIL("renice(1)"));
+	exit(EXIT_SUCCESS);
 }
 
 static int getprio(const int which, const int who, int *prio)
@@ -127,7 +127,7 @@ int main(int argc, char **argv)
 	if (argc == 1) {
 		if (strcmp(*argv, "-h") == 0 ||
 		    strcmp(*argv, "--help") == 0)
-			usage(stdout);
+			usage();
 
 		if (strcmp(*argv, "-v") == 0 ||
 		    strcmp(*argv, "-V") == 0 ||
@@ -142,13 +142,16 @@ int main(int argc, char **argv)
 		argv++;
 	}
 
-	if (argc < 2)
-		usage(stderr);
+	if (argc < 2) {
+		warnx(_("not enough arguments"));
+		errtryhelp(EXIT_FAILURE);
+	}
 
 	prio = strtol(*argv, &endptr, 10);
-	if (*endptr)
-		usage(stderr);
-
+	if (*endptr) {
+		warnx(_("invalid priority '%s'"), *argv);
+		errtryhelp(EXIT_FAILURE);
+	}
 	argc--;
 	argv++;
 

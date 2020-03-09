@@ -77,8 +77,9 @@ static void print_stats(int act, char *path, uint64_t stats[])
 	}
 }
 
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
 	      _(" %s [options] <device>\n"), program_invocation_short_name);
@@ -95,11 +96,10 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 	fputs(_(" -v, --verbose       print aligned length and offset\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
+	printf(USAGE_HELP_OPTIONS(21));
 
-	fprintf(out, USAGE_MAN_TAIL("blkdiscard(8)"));
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	printf(USAGE_MAN_TAIL("blkdiscard(8)"));
+	exit(EXIT_SUCCESS);
 }
 
 
@@ -113,15 +113,15 @@ int main(int argc, char **argv)
 	int act = ACT_DISCARD;
 
 	static const struct option longopts[] = {
-	    { "help",      0, 0, 'h' },
-	    { "version",   0, 0, 'V' },
-	    { "offset",    1, 0, 'o' },
-	    { "length",    1, 0, 'l' },
-	    { "step",      1, 0, 'p' },
-	    { "secure",    0, 0, 's' },
-	    { "verbose",   0, 0, 'v' },
-	    { "zeroout",   0, 0, 'z' },
-	    { NULL,        0, 0, 0 }
+	    { "help",      no_argument,       NULL, 'h' },
+	    { "version",   no_argument,       NULL, 'V' },
+	    { "offset",    required_argument, NULL, 'o' },
+	    { "length",    required_argument, NULL, 'l' },
+	    { "step",      required_argument, NULL, 'p' },
+	    { "secure",    no_argument,       NULL, 's' },
+	    { "verbose",   no_argument,       NULL, 'v' },
+	    { "zeroout",   no_argument,       NULL, 'z' },
+	    { NULL, 0, NULL, 0 }
 	};
 
 	setlocale(LC_ALL, "");
@@ -136,7 +136,7 @@ int main(int argc, char **argv)
 	while ((c = getopt_long(argc, argv, "hVsvo:l:p:z", longopts, NULL)) != -1) {
 		switch(c) {
 		case 'h':
-			usage(stdout);
+			usage();
 			break;
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
@@ -163,8 +163,7 @@ int main(int argc, char **argv)
 			act = ACT_ZEROOUT;
 			break;
 		default:
-			usage(stderr);
-			break;
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
@@ -175,7 +174,7 @@ int main(int argc, char **argv)
 
 	if (optind != argc) {
 		warnx(_("unexpected number of arguments"));
-		usage(stderr);
+		errtryhelp(EXIT_FAILURE);
 	}
 
 	fd = open(path, O_WRONLY);

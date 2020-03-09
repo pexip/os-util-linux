@@ -165,6 +165,8 @@ static unsigned char *search_fat_label(blkid_probe pr,
 		if ((ent->attr & (FAT_ATTR_VOLUME_ID | FAT_ATTR_DIR)) ==
 		    FAT_ATTR_VOLUME_ID) {
 			DBG(LOWPROBE, ul_debug("\tfound fs LABEL at entry %d", i));
+			if (ent->name[0] == 0x05)
+				ent->name[0] = 0xE5;
 			return ent->name;
 		}
 	}
@@ -197,8 +199,10 @@ static int fat_valid_superblock(blkid_probe pr,
 		 * FAT-like pseudo-header.
 		 */
 		if ((memcmp(ms->ms_magic, "JFS     ", 8) == 0) ||
-		    (memcmp(ms->ms_magic, "HPFS    ", 8) == 0))
+		    (memcmp(ms->ms_magic, "HPFS    ", 8) == 0)) {
+			DBG(LOWPROBE, ul_debug("\tJFS/HPFS detected"));
 			return 0;
+		}
 	}
 
 	/* fat counts(Linux kernel expects at least 1 FAT table) */
@@ -252,13 +256,20 @@ static int fat_valid_superblock(blkid_probe pr,
 		 * etc..) before MBR. Let's make sure that there is no MBR with
 		 * usable partition. */
 		unsigned char *buf = (unsigned char *) ms;
+
 		if (mbr_is_valid_magic(buf)) {
 			struct dos_partition *p0 = mbr_get_partition(buf, 0);
+
 			if (dos_partition_get_size(p0) != 0 &&
-			    (p0->boot_ind == 0 || p0->boot_ind == 0x80))
+			    (p0->boot_ind == 0 || p0->boot_ind == 0x80)) {
+				DBG(LOWPROBE, ul_debug("\tMBR detected"));
 				return 0;
+			}
 		}
 	}
+
+	if (blkid_probe_is_bitlocker(pr))
+		return 0;
 
 	return 1;	/* valid */
 }
@@ -299,7 +310,8 @@ static int probe_vfat(blkid_probe pr, const struct blkid_idmag *mag)
 {
 	struct vfat_super_block *vs;
 	struct msdos_super_block *ms;
-	const unsigned char *vol_label = 0;
+	const unsigned char *vol_label = NULL;
+	const unsigned char *boot_label = NULL;
 	unsigned char *vol_serno = NULL, vol_label_buf[11];
 	uint16_t sector_size = 0, reserved;
 	uint32_t cluster_count, fat_size;
@@ -330,8 +342,7 @@ static int probe_vfat(blkid_probe pr, const struct blkid_idmag *mag)
 			vol_label = vol_label_buf;
 		}
 
-		if (!vol_label || !memcmp(vol_label, no_name, 11))
-			vol_label = ms->ms_label;
+		boot_label = ms->ms_label;
 		vol_serno = ms->ms_serno;
 
 		blkid_probe_set_value(pr, "SEC_TYPE", (unsigned char *) "msdos",
@@ -385,8 +396,7 @@ static int probe_vfat(blkid_probe pr, const struct blkid_idmag *mag)
 
 		version = "FAT32";
 
-		if (!vol_label || !memcmp(vol_label, no_name, 11))
-			vol_label = vs->vs_label;
+		boot_label = vs->vs_label;
 		vol_serno = vs->vs_serno;
 
 		/*
@@ -415,8 +425,11 @@ static int probe_vfat(blkid_probe pr, const struct blkid_idmag *mag)
 		}
 	}
 
-	if (vol_label && memcmp(vol_label, no_name, 11))
-		blkid_probe_set_label(pr, (unsigned char *) vol_label, 11);
+	if (boot_label && memcmp(boot_label, no_name, 11))
+		blkid_probe_set_id_label(pr, "LABEL_FATBOOT", boot_label, 11);
+
+	if (vol_label)
+		blkid_probe_set_label(pr, vol_label, 11);
 
 	/* We can't just print them as %04X, because they are unaligned */
 	if (vol_serno)

@@ -19,14 +19,12 @@
 #include <errno.h>
 #include <getopt.h>
 
+#define OUTPUT_FULL		(1 << 0)
 #define OUTPUT_VALUE_ONLY	(1 << 1)
 #define OUTPUT_DEVICE_ONLY	(1 << 2)
 #define OUTPUT_PRETTY_LIST	(1 << 3)		/* deprecated */
 #define OUTPUT_UDEV_LIST	(1 << 4)		/* deprecated */
 #define OUTPUT_EXPORT_LIST	(1 << 5)
-
-#define LOWPROBE_TOPOLOGY	(1 << 1)
-#define LOWPROBE_SUPERBLOCKS	(1 << 2)
 
 #define BLKID_EXIT_NOTFOUND	2	/* token or device not found */
 #define BLKID_EXIT_OTHER	4	/* bad usage or other error */
@@ -36,64 +34,78 @@
 
 #include "ismounted.h"
 
-#define STRTOXX_EXIT_CODE	BLKID_EXIT_OTHER	/* strtoxx_or_err() */
 #include "strutils.h"
 #define OPTUTILS_EXIT_CODE	BLKID_EXIT_OTHER	/* exclusive_option() */
 #include "optutils.h"
 #define CLOSE_EXIT_CODE		BLKID_EXIT_OTHER	/* close_stdout() */
 #include "closestream.h"
 
+#include "nls.h"
 #include "ttyutils.h"
+
+#define XALLOC_EXIT_CODE    BLKID_EXIT_OTHER    /* x.*alloc(), xstrndup() */
 #include "xalloc.h"
 
-int raw_chars;
+struct blkid_control {
+	int output;
+	uintmax_t offset;
+	uintmax_t size;
+	char *show[128];
+	unsigned int
+		eval:1,
+		gc:1,
+		lookup:1,
+		lowprobe:1,
+		lowprobe_superblocks:1,
+		lowprobe_topology:1,
+		raw_chars:1;
+};
 
 static void print_version(FILE *out)
 {
-	fprintf(out, "%s from %s  (libblkid %s, %s)\n",
+	fprintf(out, _("%s from %s  (libblkid %s, %s)\n"),
 		program_invocation_short_name, PACKAGE_STRING,
 		LIBBLKID_VERSION, LIBBLKID_DATE);
 }
 
-static void usage(int error)
+static void __attribute__((__noreturn__)) usage(void)
 {
-	FILE *out = error ? stderr : stdout;
+	FILE *out = stdout;
 
-	print_version(out);
-	fprintf(out,
-		"Usage:\n"
-		" %1$s -L <label> | -U <uuid>\n\n"
-		" %1$s [-c <file>] [-ghlLv] [-o <format>] [-s <tag>] \n"
-		"       [-t <token>] [<dev> ...]\n\n"
-		" %1$s -p [-s <tag>] [-O <offset>] [-S <size>] \n"
-		"       [-o <format>] <dev> ...\n\n"
-		" %1$s -i [-s <tag>] [-o <format>] <dev> ...\n\n"
-		"Options:\n"
-		" -c <file>   read from <file> instead of reading from the default\n"
-		"               cache file (-c /dev/null means no cache)\n"
-		" -d          don't encode non-printing characters\n"
-		" -h          print this usage message and exit\n"
-		" -g          garbage collect the blkid cache\n"
-		" -o <format> output format; can be one of:\n"
-		"               value, device, export or full; (default: full)\n"
-		" -k          list all known filesystems/RAIDs and exit\n"
-		" -s <tag>    show specified tag(s) (default show all tags)\n"
-		" -t <token>  find device with a specific token (NAME=value pair)\n"
-		" -l          look up only first device with token specified by -t\n"
-		" -L <label>  convert LABEL to device name\n"
-		" -U <uuid>   convert UUID to device name\n"
-		" -V          print version and exit\n"
-		" <dev>       specify device(s) to probe (default: all devices)\n\n"
-		"Low-level probing options:\n"
-		" -p          low-level superblocks probing (bypass cache)\n"
-		" -i          gather information about I/O limits\n"
-		" -S <size>   overwrite device size\n"
-		" -O <offset> probe at the given offset\n"
-		" -u <list>   filter by \"usage\" (e.g. -u filesystem,raid)\n"
-		" -n <list>   filter by filesystem type (e.g. -n vfat,ext3)\n"
-		"\n", program_invocation_short_name);
+	fputs(USAGE_HEADER, out);
+	fprintf(out, _(	" %s --label <label> | --uuid <uuid>\n\n"), program_invocation_short_name);
+	fprintf(out, _(	" %s [--cache-file <file>] [-ghlLv] [--output <format>] [--match-tag <tag>] \n"
+			"       [--match-token <token>] [<dev> ...]\n\n"), program_invocation_short_name);
+	fprintf(out, _(	" %s -p [--match-tag <tag>] [--offset <offset>] [--size <size>] \n"
+			"       [--output <format>] <dev> ...\n\n"), program_invocation_short_name);
+	fprintf(out, _(	" %s -i [--match-tag <tag>] [--output <format>] <dev> ...\n"), program_invocation_short_name);
+	fputs(USAGE_OPTIONS, out);
+	fputs(_(	" -c, --cache-file <file>    read from <file> instead of reading from the default\n"
+			"                              cache file (-c /dev/null means no cache)\n"), out);
+	fputs(_(	" -d, --no-encoding          don't encode non-printing characters\n"), out);
+	fputs(_(	" -g, --garbage-collect      garbage collect the blkid cache\n"), out);
+	fputs(_(	" -o, --output <format>      output format; can be one of:\n"
+			"                              value, device, export or full; (default: full)\n"), out);
+	fputs(_(	" -k, --list-filesystems     list all known filesystems/RAIDs and exit\n"), out);
+	fputs(_(	" -s, --match-tag <tag>      show specified tag(s) (default show all tags)\n"), out);
+	fputs(_(	" -t, --match-token <token>  find device with a specific token (NAME=value pair)\n"), out);
+	fputs(_(	" -l, --list-one             look up only first device with token specified by -t\n"), out);
+	fputs(_(	" -L, --label <label>        convert LABEL to device name\n"), out);
+	fputs(_(	" -U, --uuid <uuid>          convert UUID to device name\n"), out);
+	fputs(_(	" <dev>                      specify device(s) to probe (default: all devices)\n"), out);
+	fputs(          "\n", out);
+	fputs(_(	"Low-level probing options:\n"), out);
+	fputs(_(	" -p, --probe                low-level superblocks probing (bypass cache)\n"), out);
+	fputs(_(	" -i, --info                 gather information about I/O limits\n"), out);
+	fputs(_(	" -S, --size <size>          overwrite device size\n"), out);
+	fputs(_(	" -O, --offset <offset>      probe at the given offset\n"), out);
+	fputs(_(	" -u, --usages <list>        filter by \"usage\" (e.g. -u filesystem,raid)\n"), out);
+	fputs(_(	" -n, --match-types <list>   filter by filesystem type (e.g. -n vfat,ext3)\n"), out);
 
-	exit(error);
+	fputs(USAGE_SEPARATOR, out);
+	printf(USAGE_HELP_OPTIONS(28));
+	printf(USAGE_MAN_TAIL("blkid(8)"));
+	exit(EXIT_SUCCESS);
 }
 
 /*
@@ -102,7 +114,8 @@ static void usage(int error)
  *
  * If 'esc' is defined then escape all chars from esc by \.
  */
-static void safe_print(const char *cp, int len, const char *esc)
+static void safe_print(const struct blkid_control *ctl, const char *cp, int len,
+		       const char *esc)
 {
 	unsigned char	ch;
 
@@ -111,7 +124,7 @@ static void safe_print(const char *cp, int len, const char *esc)
 
 	while (len--) {
 		ch = *cp++;
-		if (!raw_chars) {
+		if (!ctl->raw_chars) {
 			if (ch >= 128) {
 				fputs("M-", stdout);
 				ch -= 128;
@@ -139,9 +152,9 @@ static int pretty_print_word(const char *str, int max_len,
 		len = 0;
 	} else if (len > max_len)
 		ret = len - max_len;
-	do
+	do {
 		fputc(' ', stdout);
-	while (len++ < max_len);
+	} while (len++ < max_len);
 	return ret;
 }
 
@@ -219,11 +232,11 @@ static void pretty_print_dev(blkid_dev dev)
 	if (retval == 0) {
 		if (mount_flags & MF_MOUNTED) {
 			if (!mtpt[0])
-				strcpy(mtpt, "(mounted, mtpt unknown)");
+				strcpy(mtpt, _("(mounted, mtpt unknown)"));
 		} else if (mount_flags & MF_BUSY)
-			strcpy(mtpt, "(in use)");
+			strcpy(mtpt, _("(in use)"));
 		else
-			strcpy(mtpt, "(not mounted)");
+			strcpy(mtpt, _("(not mounted)"));
 	}
 
 	pretty_print_line(devname, fs_type, label, mtpt, uuid);
@@ -241,7 +254,7 @@ static void print_udev_format(const char *name, const char *value)
 		printf("ID_FS_%s=%s\n", name, enc);
 
 	} else if (!strcmp(name, "UUID") ||
-		 !strcmp(name, "LABEL") ||
+		 !strncmp(name, "LABEL", 5) ||
 		 !strcmp(name, "UUID_SUB")) {
 
 		blkid_safe_string(value, safe, sizeof(safe));
@@ -274,32 +287,33 @@ static void print_udev_format(const char *name, const char *value)
 		printf("ID_FS_%s=%s\n", name, value);
 }
 
-static int has_item(char *ary[], const char *item)
+static int has_item(const struct blkid_control *ctl, const char *item)
 {
-	char **p;
+	char * const *p;
 
-	for (p = ary; *p != NULL; p++)
+	for (p = ctl->show; *p != NULL; p++)
 		if (!strcmp(item, *p))
 			return 1;
 	return 0;
 }
 
-static void print_value(int output, int num, const char *devname,
-			const char *value, const char *name, size_t valsz)
+static void print_value(const struct blkid_control *ctl, int num,
+			const char *devname, const char *value,
+			const char *name, size_t valsz)
 {
-	if (output & OUTPUT_VALUE_ONLY) {
+	if (ctl->output & OUTPUT_VALUE_ONLY) {
 		fputs(value, stdout);
 		fputc('\n', stdout);
 
-	} else if (output & OUTPUT_UDEV_LIST) {
+	} else if (ctl->output & OUTPUT_UDEV_LIST) {
 		print_udev_format(name, value);
 
-	} else if (output & OUTPUT_EXPORT_LIST) {
+	} else if (ctl->output & OUTPUT_EXPORT_LIST) {
 		if (num == 1 && devname)
 			printf("DEVNAME=%s\n", devname);
 		fputs(name, stdout);
 		fputs("=", stdout);
-		safe_print(value, valsz, " \\\"'$`<>");
+		safe_print(ctl, value, valsz, " \\\"'$`<>");
 		fputs("\n", stdout);
 
 	} else {
@@ -308,12 +322,12 @@ static void print_value(int output, int num, const char *devname,
 		fputs(" ", stdout);
 		fputs(name, stdout);
 		fputs("=\"", stdout);
-		safe_print(value, valsz, "\"\\");
+		safe_print(ctl, value, valsz, "\"\\");
 		fputs("\"", stdout);
 	}
 }
 
-static void print_tags(blkid_dev dev, char *show[], int output)
+static void print_tags(const struct blkid_control *ctl, blkid_dev dev)
 {
 	blkid_tag_iterate	iter;
 	const char		*type, *value, *devname;
@@ -323,34 +337,34 @@ static void print_tags(blkid_dev dev, char *show[], int output)
 	if (!dev)
 		return;
 
-	if (output & OUTPUT_PRETTY_LIST) {
+	if (ctl->output & OUTPUT_PRETTY_LIST) {
 		pretty_print_dev(dev);
 		return;
 	}
 
 	devname = blkid_dev_devname(dev);
 
-	if (output & OUTPUT_DEVICE_ONLY) {
+	if (ctl->output & OUTPUT_DEVICE_ONLY) {
 		printf("%s\n", devname);
 		return;
 	}
 
 	iter = blkid_tag_iterate_begin(dev);
 	while (blkid_tag_next(iter, &type, &value) == 0) {
-		if (show[0] && !has_item(show, type))
+		if (ctl->show[0] && !has_item(ctl, type))
 			continue;
 
 		if (num == 1 && !first &&
-		    (output & (OUTPUT_UDEV_LIST | OUTPUT_EXPORT_LIST)))
+		    (ctl->output & (OUTPUT_UDEV_LIST | OUTPUT_EXPORT_LIST)))
 			/* add extra line between output from more devices */
 			fputc('\n', stdout);
 
-		print_value(output, num++, devname, value, type, strlen(value));
+		print_value(ctl, num++, devname, value, type, strlen(value));
 	}
 	blkid_tag_iterate_end(iter);
 
 	if (num > 1) {
-		if (!(output & (OUTPUT_VALUE_ONLY | OUTPUT_UDEV_LIST |
+		if (!(ctl->output & (OUTPUT_VALUE_ONLY | OUTPUT_UDEV_LIST |
 						OUTPUT_EXPORT_LIST)))
 			printf("\n");
 		first = 0;
@@ -474,8 +488,7 @@ static int lowprobe_topology(blkid_probe pr)
 }
 
 static int lowprobe_device(blkid_probe pr, const char *devname,
-			int chain, char *show[], int output,
-			uint64_t offset, uint64_t size)
+			   struct blkid_control *ctl)
 {
 	const char *data;
 	const char *name;
@@ -487,15 +500,15 @@ static int lowprobe_device(blkid_probe pr, const char *devname,
 
 	fd = open(devname, O_RDONLY|O_CLOEXEC);
 	if (fd < 0) {
-		fprintf(stderr, "error: %s: %m\n", devname);
+		warn(_("error: %s"), devname);
 		return BLKID_EXIT_NOTFOUND;
 	}
-	if (blkid_probe_set_device(pr, fd, offset, size))
+	if (blkid_probe_set_device(pr, fd, ctl->offset, ctl->size))
 		goto done;
 
-	if (chain & LOWPROBE_TOPOLOGY)
+	if (ctl->lowprobe_topology)
 		rc = lowprobe_topology(pr);
-	if (rc >= 0 && (chain & LOWPROBE_SUPERBLOCKS))
+	if (rc >= 0 && ctl->lowprobe_superblocks)
 		rc = lowprobe_superblocks(pr);
 	if (rc < 0)
 		goto done;
@@ -503,11 +516,11 @@ static int lowprobe_device(blkid_probe pr, const char *devname,
 	if (!rc)
 		nvals = blkid_probe_numof_values(pr);
 
-	if (nvals && !first && output & (OUTPUT_UDEV_LIST | OUTPUT_EXPORT_LIST))
+	if (nvals && !first && ctl->output & (OUTPUT_UDEV_LIST | OUTPUT_EXPORT_LIST))
 		/* add extra line between output from devices */
 		fputc('\n', stdout);
 
-	if (nvals && (output & OUTPUT_DEVICE_ONLY)) {
+	if (nvals && (ctl->output & OUTPUT_DEVICE_ONLY)) {
 		printf("%s\n", devname);
 		goto done;
 	}
@@ -515,26 +528,26 @@ static int lowprobe_device(blkid_probe pr, const char *devname,
 	for (n = 0; n < nvals; n++) {
 		if (blkid_probe_get_value(pr, n, &name, &data, &len))
 			continue;
-		if (show[0] && !has_item(show, name))
+		if (ctl->show[0] && !has_item(ctl, name))
 			continue;
-		len = strnlen((char *) data, len);
-		print_value(output, num++, devname, (char *) data, name, len);
+		len = strnlen(data, len);
+		print_value(ctl, num++, devname, data, name, len);
 	}
 
 	if (first)
 		first = 0;
-	if (nvals >= 1 && !(output & (OUTPUT_VALUE_ONLY |
+
+	if (nvals >= 1 && !(ctl->output & (OUTPUT_VALUE_ONLY |
 					OUTPUT_UDEV_LIST | OUTPUT_EXPORT_LIST)))
 		printf("\n");
 done:
 	if (rc == -2) {
-		if (output & OUTPUT_UDEV_LIST)
+		if (ctl->output & OUTPUT_UDEV_LIST)
 			print_udev_ambivalent(pr);
 		else
-			fprintf(stderr,
-				"%s: ambivalent result (probably more "
+			warnx(_("%s: ambivalent result (probably more "
 				"filesystems on the device, use wipefs(8) "
-				"to see more details)\n",
+				"to see more details)"),
 				devname);
 	}
 	close(fd);
@@ -578,7 +591,7 @@ static int list_to_usage(const char *list, int *flag)
 	return mask;
 err:
 	*flag = 0;
-	fprintf(stderr, "unknown keyword in -u <list> argument: '%s'\n",
+	warnx(_("unknown keyword in -u <list> argument: '%s'"),
 			word ? word : list);
 	exit(BLKID_EXIT_OTHER);
 }
@@ -595,7 +608,7 @@ static char **list_to_types(const char *list, int *flag)
 		p += 2;
 	}
 	if (!p || !*p) {
-		fprintf(stderr, "error: -u <list> argument is empty\n");
+		warnx(_("error: -u <list> argument is empty"));
 		goto err;
 	}
 	for (i = 1; p && (p = strchr(p, ',')); i++, p++);
@@ -632,49 +645,68 @@ static void free_types_list(char *list[])
 
 int main(int argc, char **argv)
 {
+	struct blkid_control ctl = { .output = OUTPUT_FULL, 0 };
 	blkid_cache cache = NULL;
 	char **devices = NULL;
-	char *show[128] = { NULL, };
 	char *search_type = NULL, *search_value = NULL;
 	char *read = NULL;
 	int fltr_usage = 0;
 	char **fltr_type = NULL;
 	int fltr_flag = BLKID_FLTR_ONLYIN;
 	unsigned int numdev = 0, numtag = 0;
-	int version = 0;
 	int err = BLKID_EXIT_OTHER;
 	unsigned int i;
-	int output_format = 0;
-	int lookup = 0, gc = 0, lowprobe = 0, eval = 0;
 	int c;
-	uintmax_t offset = 0, size = 0;
 
-	static const ul_excl_t excl[] = {       /* rows and cols in in ASCII order */
+	static const struct option longopts[] = {
+		{ "cache-file",	      required_argument, NULL, 'c' },
+		{ "no-encoding",      no_argument,	 NULL, 'd' },
+		{ "garbage-collect",  no_argument,	 NULL, 'g' },
+		{ "output",	      required_argument, NULL, 'o' },
+		{ "list-filesystems", no_argument,	 NULL, 'k' },
+		{ "match-tag",	      required_argument, NULL, 's' },
+		{ "match-token",      required_argument, NULL, 't' },
+		{ "list-one",	      no_argument,	 NULL, 'l' },
+		{ "label",	      required_argument, NULL, 'L' },
+		{ "uuid",	      required_argument, NULL, 'U' },
+		{ "probe",	      no_argument,	 NULL, 'p' },
+		{ "info",	      no_argument,	 NULL, 'i' },
+		{ "size",	      required_argument, NULL, 'S' },
+		{ "offset",	      required_argument, NULL, 'O' },
+		{ "usages",	      required_argument, NULL, 'u' },
+		{ "match-types",      required_argument, NULL, 'n' },
+		{ "version",	      no_argument,	 NULL, 'V' },
+		{ "help",	      no_argument,       NULL, 'h' },
+		{ NULL, 0, NULL, 0 }
+	};
+
+	static const ul_excl_t excl[] = {       /* rows and cols in ASCII order */
 		{ 'n','u' },
 		{ 0 }
 	};
 	int excl_st[ARRAY_SIZE(excl)] = UL_EXCL_STATUS_INIT;
 
-	show[0] = NULL;
+	setlocale(LC_ALL, "");
+	bindtextdomain(PACKAGE, LOCALEDIR);
+	textdomain(PACKAGE);
 	atexit(close_stdout);
 
-	while ((c = getopt (argc, argv,
-			    "c:df:ghilL:n:ko:O:ps:S:t:u:U:w:Vv")) != EOF) {
+	strutils_set_exitcode(BLKID_EXIT_OTHER);
+
+	while ((c = getopt_long (argc, argv,
+			    "c:dghilL:n:ko:O:ps:S:t:u:U:w:Vv", longopts, NULL)) != -1) {
 
 		err_exclusive_options(c, NULL, excl, excl_st);
 
 		switch (c) {
 		case 'c':
-			if (optarg && !*optarg)
-				read = NULL;
-			else
-				read = optarg;
+			read = optarg;
 			break;
 		case 'd':
-			raw_chars = 1;
+			ctl.raw_chars = 1;
 			break;
 		case 'L':
-			eval++;
+			ctl.eval = 1;
 			search_value = xstrdup(optarg);
 			search_type = xstrdup("LABEL");
 			break;
@@ -685,18 +717,18 @@ int main(int argc, char **argv)
 			fltr_usage = list_to_usage(optarg, &fltr_flag);
 			break;
 		case 'U':
-			eval++;
+			ctl.eval = 1;
 			search_value = xstrdup(optarg);
 			search_type = xstrdup("UUID");
 			break;
 		case 'i':
-			lowprobe |= LOWPROBE_TOPOLOGY;
+			ctl.lowprobe_topology = 1;
 			break;
 		case 'l':
-			lookup++;
+			ctl.lookup = 1;
 			break;
 		case 'g':
-			gc = 1;
+			ctl.gc = 1;
 			break;
 		case 'k':
 		{
@@ -709,69 +741,67 @@ int main(int argc, char **argv)
 		}
 		case 'o':
 			if (!strcmp(optarg, "value"))
-				output_format = OUTPUT_VALUE_ONLY;
+				ctl.output = OUTPUT_VALUE_ONLY;
 			else if (!strcmp(optarg, "device"))
-				output_format = OUTPUT_DEVICE_ONLY;
+				ctl.output = OUTPUT_DEVICE_ONLY;
 			else if (!strcmp(optarg, "list"))
-				output_format = OUTPUT_PRETTY_LIST;	/* deprecated */
+				ctl.output = OUTPUT_PRETTY_LIST;	/* deprecated */
 			else if (!strcmp(optarg, "udev"))
-				output_format = OUTPUT_UDEV_LIST;
+				ctl.output = OUTPUT_UDEV_LIST;
 			else if (!strcmp(optarg, "export"))
-				output_format = OUTPUT_EXPORT_LIST;
+				ctl.output = OUTPUT_EXPORT_LIST;
 			else if (!strcmp(optarg, "full"))
-				output_format = 0;
-			else {
-				fprintf(stderr, "Invalid output format %s. "
-					"Choose from value,\n\t"
-					"device, list, udev or full\n", optarg);
-				exit(BLKID_EXIT_OTHER);
-			}
+				ctl.output = 0;
+			else
+				errx(BLKID_EXIT_OTHER, _("unsupported output format %s"), optarg);
 			break;
 		case 'O':
-			offset = strtosize_or_err(optarg, "invalid offset argument");
+			ctl.offset = strtosize_or_err(optarg, _("invalid offset argument"));
 			break;
 		case 'p':
-			lowprobe |= LOWPROBE_SUPERBLOCKS;
+			ctl.lowprobe_superblocks = 1;
 			break;
 		case 's':
-			if (numtag + 1 >= sizeof(show) / sizeof(*show)) {
-				fprintf(stderr, "Too many tags specified\n");
-				usage(err);
+			if (numtag + 1 >= sizeof(ctl.show) / sizeof(*ctl.show)) {
+				warnx(_("Too many tags specified"));
+				errtryhelp(err);
 			}
-			show[numtag++] = optarg;
-			show[numtag] = NULL;
+			ctl.show[numtag++] = optarg;
 			break;
 		case 'S':
-			size = strtosize_or_err(optarg, "invalid size argument");
+			ctl.size = strtosize_or_err(optarg, _("invalid size argument"));
 			break;
 		case 't':
 			if (search_type) {
-				fprintf(stderr, "Can only search for "
-						"one NAME=value pair\n");
-				usage(err);
+				warnx(_("Can only search for "
+					"one NAME=value pair"));
+				errtryhelp(err);
 			}
 			if (blkid_parse_tag_string(optarg,
 						   &search_type,
 						   &search_value)) {
-				fprintf(stderr, "-t needs NAME=value pair\n");
-				usage(err);
+				warnx(_("-t needs NAME=value pair"));
+				errtryhelp(err);
 			}
 			break;
 		case 'V':
 		case 'v':
-			version = 1;
-			break;
+			print_version(stdout);
+			err = 0;
+			goto exit;
 		case 'w':
 			/* ignore - backward compatibility */
 			break;
 		case 'h':
-			err = 0;
-			/* fallthrough */
+			usage();
+			break;
 		default:
-			usage(err);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 
+	if (ctl.lowprobe_topology || ctl.lowprobe_superblocks)
+		ctl.lowprobe = 1;
 
 	/* The rest of the args are device names */
 	if (optind < argc) {
@@ -780,82 +810,73 @@ int main(int argc, char **argv)
 			devices[numdev++] = argv[optind++];
 	}
 
-	if (version) {
-		print_version(stdout);
-		goto exit;
-	}
-
 	/* convert LABEL/UUID lookup to evaluate request */
-	if (lookup && output_format == OUTPUT_DEVICE_ONLY && search_type &&
+	if (ctl.lookup && ctl.output == OUTPUT_DEVICE_ONLY && search_type &&
 	    (!strcmp(search_type, "LABEL") || !strcmp(search_type, "UUID"))) {
-		eval++;
-		lookup = 0;
+		ctl.eval = 1;
+		ctl.lookup = 0;
 	}
 
-	if (!lowprobe && !eval && blkid_get_cache(&cache, read) < 0)
+	if (!ctl.lowprobe && !ctl.eval && blkid_get_cache(&cache, read) < 0)
 		goto exit;
 
-	if (gc) {
+	if (ctl.gc) {
 		blkid_gc_cache(cache);
 		err = 0;
 		goto exit;
 	}
 	err = BLKID_EXIT_NOTFOUND;
 
-	if (eval == 0 && (output_format & OUTPUT_PRETTY_LIST)) {
-		if (lowprobe) {
-			fprintf(stderr, "The low-level probing mode does not "
-					"support 'list' output format\n");
-			exit(BLKID_EXIT_OTHER);
-		}
+	if (ctl.eval == 0 && (ctl.output & OUTPUT_PRETTY_LIST)) {
+		if (ctl.lowprobe)
+			errx(BLKID_EXIT_OTHER,
+			     _("The low-level probing mode does not "
+			       "support 'list' output format"));
 		pretty_print_dev(NULL);
 	}
 
-	if (lowprobe) {
+	if (ctl.lowprobe) {
 		/*
 		 * Low-level API
 		 */
 		blkid_probe pr;
 
-		if (!numdev) {
-			fprintf(stderr, "The low-level probing mode "
-					"requires a device\n");
-			exit(BLKID_EXIT_OTHER);
-		}
+		if (!numdev)
+			errx(BLKID_EXIT_OTHER,
+			     _("The low-level probing mode "
+			       "requires a device"));
 
 		/* automatically enable 'export' format for I/O Limits */
-		if (!output_format  && (lowprobe & LOWPROBE_TOPOLOGY))
-			output_format = OUTPUT_EXPORT_LIST;
+		if (!ctl.output  && ctl.lowprobe_topology)
+			ctl.output = OUTPUT_EXPORT_LIST;
 
 		pr = blkid_new_probe();
 		if (!pr)
 			goto exit;
 
-		if (lowprobe & LOWPROBE_SUPERBLOCKS) {
+		if (ctl.lowprobe_superblocks) {
 			blkid_probe_set_superblocks_flags(pr,
 				BLKID_SUBLKS_LABEL | BLKID_SUBLKS_UUID |
 				BLKID_SUBLKS_TYPE | BLKID_SUBLKS_SECTYPE |
 				BLKID_SUBLKS_USAGE | BLKID_SUBLKS_VERSION);
 
-			if (fltr_usage && blkid_probe_filter_superblocks_usage(
-						pr, fltr_flag, fltr_usage))
+
+			if (fltr_usage &&
+			    blkid_probe_filter_superblocks_usage(pr, fltr_flag, fltr_usage))
 				goto exit;
 
-			else if (fltr_type && blkid_probe_filter_superblocks_type(
-						pr, fltr_flag, fltr_type))
+			else if (fltr_type &&
+				 blkid_probe_filter_superblocks_type(pr, fltr_flag, fltr_type))
 				goto exit;
 		}
 
 		for (i = 0; i < numdev; i++) {
-			err = lowprobe_device(pr, devices[i], lowprobe, show,
-					output_format,
-					(uint64_t) offset,
-					(uint64_t) size);
+			err = lowprobe_device(pr, devices[i], &ctl);
 			if (err)
 				break;
 		}
 		blkid_free_probe(pr);
-	} else if (eval) {
+	} else if (ctl.eval) {
 		/*
 		 * Evaluate API
 		 */
@@ -864,24 +885,23 @@ int main(int argc, char **argv)
 			err = 0;
 			printf("%s\n", res);
 		}
-	} else if (lookup) {
+	} else if (ctl.lookup) {
 		/*
 		 * Classic (cache based) API
 		 */
 		blkid_dev dev;
 
-		if (!search_type) {
-			fprintf(stderr, "The lookup option requires a "
-				"search type specified using -t\n");
-			exit(BLKID_EXIT_OTHER);
-		}
+		if (!search_type)
+			errx(BLKID_EXIT_OTHER,
+			     _("The lookup option requires a "
+			       "search type specified using -t"));
 		/* Load any additional devices not in the cache */
 		for (i = 0; i < numdev; i++)
 			blkid_get_dev(cache, devices[i], BLKID_DEV_NORMAL);
 
 		if ((dev = blkid_find_dev_with_tag(cache, search_type,
 						   search_value))) {
-			print_tags(dev, show, output_format);
+			print_tags(&ctl, dev);
 			err = 0;
 		}
 	/* If we didn't specify a single device, show all available devices */
@@ -897,7 +917,7 @@ int main(int argc, char **argv)
 			dev = blkid_verify(cache, dev);
 			if (!dev)
 				continue;
-			print_tags(dev, show, output_format);
+			print_tags(&ctl, dev);
 			err = 0;
 		}
 		blkid_dev_iterate_end(iter);
@@ -911,7 +931,7 @@ int main(int argc, char **argv)
 			    !blkid_dev_has_tag(dev, search_type,
 					       search_value))
 				continue;
-			print_tags(dev, show, output_format);
+			print_tags(&ctl, dev);
 			err = 0;
 		}
 	}
@@ -920,7 +940,7 @@ exit:
 	free(search_type);
 	free(search_value);
 	free_types_list(fltr_type);
-	if (!lowprobe && !eval)
+	if (!ctl.lowprobe && !ctl.eval)
 		blkid_put_cache(cache);
 	free(devices);
 	return err;

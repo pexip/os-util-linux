@@ -157,3 +157,28 @@ global:
 	scols_wrapnl_chunksize;
 	scols_wrapnl_nextchunk;
 } SMARTCOLS_2.28;
+
+
+SMARTCOLS_2.30 {
+global:
+	scols_cell_get_alignment;
+	scols_table_move_column;
+	scols_sort_table_by_tree;
+	scols_line_is_ancestor;
+} SMARTCOLS_2.29;
+
+
+SMARTCOLS_2.31 {
+	scols_table_set_termheight;
+	scols_table_get_termheight;
+	scols_table_is_header_repeat;
+	scols_table_enable_header_repeat;
+	scols_table_enable_noencoding;
+	scols_table_is_noencoding;
+} SMARTCOLS_2.30;
+
+
+SMARTCOLS_2.33 {
+	scols_column_set_json_type;
+	scols_column_get_json_type;
+} SMARTCOLS_2.31;

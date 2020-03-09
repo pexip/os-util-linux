@@ -48,7 +48,8 @@ struct item {
 
 static struct item *list = NULL;
 
-void (*logindefs_load_defaults)(void) = NULL;
+static void (*logindefs_loader)(void *) = NULL;
+static void *logindefs_loader_data = NULL;
 
 void free_getlogindefs_data(void)
 {
@@ -144,10 +145,16 @@ void logindefs_load_file(const char *filename)
 	fclose(f);
 }
 
+void logindefs_set_loader(void (*loader)(void *data), void *data)
+{
+	logindefs_loader = loader;
+	logindefs_loader_data = data;
+}
+
 static void load_defaults(void)
 {
-	if (logindefs_load_defaults)
-		logindefs_load_defaults();
+	if (logindefs_loader)
+		logindefs_loader(logindefs_loader_data);
 	else
 		logindefs_load_file(_PATH_LOGINDEFS);
 }
@@ -344,7 +351,8 @@ int get_hushlogin_status(struct passwd *pwd, int force_check)
 				continue;	/* ignore errors... */
 
 			while (ok == 0 && fgets(buf, sizeof(buf), f)) {
-				buf[strlen(buf) - 1] = '\0';
+				if (buf[0] != '\0')
+					buf[strlen(buf) - 1] = '\0';
 				ok = !strcmp(buf, *buf == '/' ? pwd->pw_shell :
 								pwd->pw_name);
 			}

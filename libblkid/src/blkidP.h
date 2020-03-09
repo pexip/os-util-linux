@@ -23,6 +23,12 @@
 #include <stdarg.h>
 #include <stdint.h>
 
+#ifdef HAVE_LIBUUID
+# include <uuid.h>
+#else
+# define UUID_STR_LEN   37
+#endif
+
 #include "c.h"
 #include "bitops.h"	/* $(top_srcdir)/include/ */
 #include "blkdev.h"
@@ -115,6 +121,11 @@ struct blkid_chaindrv {
 	int		(*safeprobe)(blkid_probe, struct blkid_chain *);
 	void		(*free_data)(blkid_probe, void *);
 };
+
+/* chains */
+extern const struct blkid_chaindrv superblocks_drv;
+extern const struct blkid_chaindrv topology_drv;
+extern const struct blkid_chaindrv partitions_drv;
 
 /*
  * Low-level probe result
@@ -210,6 +221,7 @@ struct blkid_struct_probe
 #define BLKID_FL_TINY_DEV	(1 << 2)	/* <= 1.47MiB (floppy or so) */
 #define BLKID_FL_CDROM_DEV	(1 << 3)	/* is a CD/DVD drive */
 #define BLKID_FL_NOSCAN_DEV	(1 << 4)	/* do not scan this device */
+#define BLKID_FL_MODIF_BUFF	(1 << 5)	/* cached bufferes has been modified */
 
 /* private per-probing flags */
 #define BLKID_PROBE_FL_IGNORE_PT (1 << 1)	/* ignore partition table */
@@ -325,6 +337,9 @@ struct blkid_struct_cache
 UL_DEBUG_DECLARE_MASK(libblkid);
 #define DBG(m, x)	__UL_DBG(libblkid, BLKID_DEBUG_, m, x)
 #define ON_DBG(m, x)    __UL_DBG_CALL(libblkid, BLKID_DEBUG_, m, x)
+
+#define UL_DEBUG_CURRENT_MASK	UL_DEBUG_MASK(libblkid)
+#include "debugobj.h"
 
 extern void blkid_debug_dump_dev(blkid_dev dev);
 
@@ -469,10 +484,10 @@ extern void *blkid_probe_get_binary_data(blkid_probe pr, struct blkid_chain *chn
 extern struct blkid_prval *blkid_probe_new_val(void)
 			__attribute__((warn_unused_result));
 extern int blkid_probe_set_value(blkid_probe pr, const char *name,
-				unsigned char *data, size_t len)
+				const unsigned char *data, size_t len)
 			__attribute__((nonnull));
 extern int blkid_probe_value_set_data(struct blkid_prval *v,
-				unsigned char *data, size_t len)
+				const unsigned char *data, size_t len)
 			__attribute__((nonnull));
 
 extern int blkid_probe_vsprintf_value(blkid_probe pr, const char *name,
@@ -485,7 +500,7 @@ extern int blkid_probe_sprintf_value(blkid_probe pr, const char *name,
 			__attribute__ ((__format__ (__printf__, 3, 4)));
 
 extern int blkid_probe_set_magic(blkid_probe pr, uint64_t offset,
-				size_t len, unsigned char *magic)
+				size_t len, const unsigned char *magic)
 			__attribute__((nonnull));
 
 extern int blkid_probe_verify_csum(blkid_probe pr, uint64_t csum, uint64_t expected)
@@ -538,5 +553,6 @@ extern size_t blkid_encode_to_utf8(int enc, unsigned char *dest, size_t len,
 
 #define BLKID_ENC_UTF16BE	0
 #define BLKID_ENC_UTF16LE	1
+#define BLKID_ENC_LATIN1	2
 
 #endif /* _BLKID_BLKIDP_H */

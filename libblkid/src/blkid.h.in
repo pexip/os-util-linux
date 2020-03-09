@@ -149,7 +149,7 @@ extern const char *blkid_dev_devname(blkid_dev dev)
 
 extern blkid_dev_iterate blkid_dev_iterate_begin(blkid_cache cache);
 extern int blkid_dev_set_search(blkid_dev_iterate iter,
-				char *search_type, char *search_value);
+				const char *search_type, const char *search_value);
 extern int blkid_dev_next(blkid_dev_iterate iterate, blkid_dev *dev);
 extern void blkid_dev_iterate_end(blkid_dev_iterate iterate);
 
@@ -223,6 +223,8 @@ extern blkid_probe blkid_new_probe_from_filename(const char *filename)
 extern void blkid_free_probe(blkid_probe pr);
 
 extern void blkid_reset_probe(blkid_probe pr);
+extern int blkid_probe_reset_buffers(blkid_probe pr);
+extern int blkid_probe_hide_range(blkid_probe pr, uint64_t off, uint64_t len);
 
 extern int blkid_probe_set_device(blkid_probe pr, int fd,
 	                blkid_loff_t off, blkid_loff_t size)
@@ -242,6 +244,8 @@ extern blkid_loff_t blkid_probe_get_size(blkid_probe pr)
 extern blkid_loff_t blkid_probe_get_offset(blkid_probe pr)
 			__ul_attribute__((nonnull));
 extern unsigned int blkid_probe_get_sectorsize(blkid_probe pr)
+			__ul_attribute__((nonnull));
+extern int blkid_probe_set_sectorsize(blkid_probe pr, unsigned int sz)
 			__ul_attribute__((nonnull));
 extern blkid_loff_t blkid_probe_get_sectors(blkid_probe pr)
 			__ul_attribute__((nonnull));
@@ -324,6 +328,7 @@ extern unsigned long blkid_topology_get_physical_sector_size(blkid_topology tp)
  * partitions probing
  */
 extern int blkid_known_pttype(const char *pttype);
+extern int blkid_partitions_get_name(const size_t idx, const char **name);
 
 extern int blkid_probe_enable_partitions(blkid_probe pr, int enable)
 			__ul_attribute__((nonnull));

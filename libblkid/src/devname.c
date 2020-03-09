@@ -152,7 +152,7 @@ static int is_dm_leaf(const char *devname)
 {
 	struct dirent	*de, *d_de;
 	DIR		*dir, *d_dir;
-	char		path[256];
+	char		path[NAME_MAX + 18 + 1];
 	int		ret = 1;
 
 	if ((dir = opendir("/sys/block")) == NULL)
@@ -201,7 +201,7 @@ static void probe_one(blkid_cache cache, const char *ptname,
 			dev = blkid_verify(cache, tmp);
 			if (dev && (dev->bid_flags & BLKID_BID_FL_VERIFIED))
 				break;
-			dev = 0;
+			dev = NULL;
 		}
 	}
 	if (dev && dev->bid_devno == devno)
@@ -213,7 +213,7 @@ static void probe_one(blkid_cache cache, const char *ptname,
 	if (!strncmp(ptname, "dm-", 3) && isdigit(ptname[3])) {
 		devname = canonicalize_dm_name(ptname);
 		if (!devname)
-			blkid__scan_dir("/dev/mapper", devno, 0, &devname);
+			blkid__scan_dir("/dev/mapper", devno, NULL, &devname);
 		if (devname)
 			goto get_dev;
 	}
@@ -243,7 +243,7 @@ static void probe_one(blkid_cache cache, const char *ptname,
 	}
 	/* Do a short-cut scan of /dev/mapper first */
 	if (!devname)
-		blkid__scan_dir("/dev/mapper", devno, 0, &devname);
+		blkid__scan_dir("/dev/mapper", devno, NULL, &devname);
 	if (!devname) {
 		devname = blkid_devno_to_devname(devno);
 		if (!devname)
@@ -449,7 +449,7 @@ static int probe_all(blkid_cache cache, int only_if_new)
 {
 	FILE *proc;
 	char line[1024];
-	char ptname0[128 + 1], ptname1[128 + 1], *ptname = 0;
+	char ptname0[128 + 1], ptname1[128 + 1], *ptname = NULL;
 	char *ptnames[2];
 	dev_t devs[2];
 	int ma, mi;
@@ -465,7 +465,7 @@ static int probe_all(blkid_cache cache, int only_if_new)
 		return -BLKID_ERR_PARAM;
 
 	if (cache->bic_flags & BLKID_BIC_FL_PROBED &&
-	    time(0) - cache->bic_time < BLKID_PROBE_INTERVAL)
+	    time(NULL) - cache->bic_time < BLKID_PROBE_INTERVAL)
 		return 0;
 
 	blkid_read_cache(cache);
@@ -565,6 +565,7 @@ static int probe_all(blkid_cache cache, int only_if_new)
  */
 static int probe_all_removable(blkid_cache cache)
 {
+	struct path_cxt *pc;
 	DIR *dir;
 	struct dirent *d;
 
@@ -575,8 +576,9 @@ static int probe_all_removable(blkid_cache cache)
 	if (!dir)
 		return -BLKID_ERR_PROC;
 
+	pc = ul_new_path(NULL);
+
 	while((d = readdir(dir))) {
-		struct sysfs_cxt sysfs = UL_SYSFSCXT_EMPTY;
 		int removable = 0;
 		dev_t devno;
 
@@ -589,20 +591,19 @@ static int probe_all_removable(blkid_cache cache)
 		     ((d->d_name[1] == '.') && (d->d_name[2] == 0))))
 			continue;
 
-		devno = sysfs_devname_to_devno(d->d_name, NULL);
+		devno = sysfs_devname_to_devno(d->d_name);
 		if (!devno)
 			continue;
 
-		if (sysfs_init(&sysfs, devno, NULL) == 0) {
-			if (sysfs_read_int(&sysfs, "removable", &removable) != 0)
+		if (sysfs_blkdev_init_path(pc, devno, NULL) == 0
+		    && ul_path_read_s32(pc, &removable, "removable") != 0)
 				removable = 0;
-			sysfs_deinit(&sysfs);
-		}
 
 		if (removable)
 			probe_one(cache, d->d_name, devno, 0, 0, 1);
 	}
 
+	ul_unref_path(pc);
 	closedir(dir);
 	return 0;
 }
@@ -623,7 +624,7 @@ int blkid_probe_all(blkid_cache cache)
 	DBG(PROBE, ul_debug("Begin blkid_probe_all()"));
 	ret = probe_all(cache, 0);
 	if (ret == 0) {
-		cache->bic_time = time(0);
+		cache->bic_time = time(NULL);
 		cache->bic_flags |= BLKID_BIC_FL_PROBED;
 	}
 	DBG(PROBE, ul_debug("End blkid_probe_all() [rc=%d]", ret));

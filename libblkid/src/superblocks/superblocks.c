@@ -109,8 +109,13 @@ static const struct blkid_idinfo *idinfos[] =
 	&lvm1_idinfo,
 	&snapcow_idinfo,
 	&verity_hash_idinfo,
+	&integrity_idinfo,
 	&luks_idinfo,
 	&vmfs_volume_idinfo,
+	&ubi_idinfo,
+	&vdo_idinfo,
+	&stratis_idinfo,
+	&bitlocker_idinfo,
 
 	/* Filesystems */
 	&vfat_idinfo,
@@ -118,6 +123,7 @@ static const struct blkid_idinfo *idinfos[] =
 	&swap_idinfo,
 	&xfs_idinfo,
 	&xfs_log_idinfo,
+	&exfs_idinfo,
 	&ext4dev_idinfo,
 	&ext4_idinfo,
 	&ext3_idinfo,
@@ -156,7 +162,9 @@ static const struct blkid_idinfo *idinfos[] =
 	&befs_idinfo,
 	&nilfs2_idinfo,
 	&exfat_idinfo,
-	&f2fs_idinfo
+	&f2fs_idinfo,
+	&mpool_idinfo,
+	&apfs_idinfo
 };
 
 /*
@@ -336,14 +344,18 @@ static int superblocks_probe(blkid_probe pr, struct blkid_chain *chn)
 
 	blkid_probe_chain_reset_values(pr, chn);
 
-	if (pr->flags & BLKID_FL_NOSCAN_DEV)
+	if (pr->flags & BLKID_FL_NOSCAN_DEV) {
+		DBG(LOWPROBE, ul_debug("*** ignore (noscan flag)"));
 		return BLKID_PROBE_NONE;
+	}
 
-	if (pr->size <= 0 || (pr->size <= 1024 && !S_ISCHR(pr->mode)))
+	if (pr->size <= 0 || (pr->size <= 1024 && !S_ISCHR(pr->mode))) {
 		/* Ignore very very small block devices or regular files (e.g.
 		 * extended partitions). Note that size of the UBI char devices
 		 * is 1 byte */
+		DBG(LOWPROBE, ul_debug("*** ignore (size <= 1024)"));
 		return BLKID_PROBE_NONE;
+	}
 
 	DBG(LOWPROBE, ul_debug("--> starting probing loop [SUBLKS idx=%d]",
 		chn->idx));
@@ -405,7 +417,7 @@ static int superblocks_probe(blkid_probe pr, struct blkid_chain *chn)
 		/* all checks passed */
 		if (chn->flags & BLKID_SUBLKS_TYPE)
 			rc = blkid_probe_set_value(pr, "TYPE",
-				(unsigned char *) id->name,
+				(const unsigned char *) id->name,
 				strlen(id->name) + 1);
 
 		if (!rc)
@@ -413,7 +425,7 @@ static int superblocks_probe(blkid_probe pr, struct blkid_chain *chn)
 
 		if (!rc && mag)
 			rc = blkid_probe_set_magic(pr, off, mag->len,
-					(unsigned char *) mag->magic);
+					(const unsigned char *) mag->magic);
 		if (rc) {
 			blkid_probe_chain_reset_values(pr, chn);
 			DBG(LOWPROBE, ul_debug("failed to set result -- ignore"));
@@ -519,7 +531,8 @@ int blkid_probe_set_version(blkid_probe pr, const char *version)
 
 	if (chn->flags & BLKID_SUBLKS_VERSION)
 		return blkid_probe_set_value(pr, "VERSION",
-			   (unsigned char *) version, strlen(version) + 1);
+				(const unsigned char *) version,
+				strlen(version) + 1);
 	return 0;
 }
 
@@ -562,7 +575,7 @@ static int blkid_probe_set_usage(blkid_probe pr, int usage)
 }
 
 int blkid_probe_set_id_label(blkid_probe pr, const char *name,
-			     unsigned char *data, size_t len)
+			     const unsigned char *data, size_t len)
 {
 	struct blkid_chain *chn = blkid_probe_get_chain(pr);
 	struct blkid_prval *v;
@@ -591,7 +604,7 @@ int blkid_probe_set_id_label(blkid_probe pr, const char *name,
 }
 
 int blkid_probe_set_utf8_id_label(blkid_probe pr, const char *name,
-			     unsigned char *data, size_t len, int enc)
+			     const unsigned char *data, size_t len, int enc)
 {
 	struct blkid_chain *chn = blkid_probe_get_chain(pr);
 	struct blkid_prval *v;
@@ -621,7 +634,7 @@ int blkid_probe_set_utf8_id_label(blkid_probe pr, const char *name,
 	return rc;
 }
 
-int blkid_probe_set_label(blkid_probe pr, unsigned char *label, size_t len)
+int blkid_probe_set_label(blkid_probe pr, const unsigned char *label, size_t len)
 {
 	struct blkid_chain *chn = blkid_probe_get_chain(pr);
 	struct blkid_prval *v;
@@ -649,7 +662,7 @@ int blkid_probe_set_label(blkid_probe pr, unsigned char *label, size_t len)
 	return rc;
 }
 
-int blkid_probe_set_utf8label(blkid_probe pr, unsigned char *label,
+int blkid_probe_set_utf8label(blkid_probe pr, const unsigned char *label,
 				size_t len, int enc)
 {
 	struct blkid_chain *chn = blkid_probe_get_chain(pr);
@@ -681,7 +694,7 @@ int blkid_probe_set_utf8label(blkid_probe pr, unsigned char *label,
 	return rc;
 }
 
-int blkid_probe_sprintf_uuid(blkid_probe pr, unsigned char *uuid,
+int blkid_probe_sprintf_uuid(blkid_probe pr, const unsigned char *uuid,
 				size_t len, const char *fmt, ...)
 {
 	struct blkid_chain *chn = blkid_probe_get_chain(pr);
@@ -706,7 +719,7 @@ int blkid_probe_sprintf_uuid(blkid_probe pr, unsigned char *uuid,
 }
 
 /* function to set UUIDs that are in superblocks stored as strings */
-int blkid_probe_strncpy_uuid(blkid_probe pr, unsigned char *str, size_t len)
+int blkid_probe_strncpy_uuid(blkid_probe pr, const unsigned char *str, size_t len)
 {
 	struct blkid_chain *chn = blkid_probe_get_chain(pr);
 	struct blkid_prval *v;
@@ -716,7 +729,7 @@ int blkid_probe_strncpy_uuid(blkid_probe pr, unsigned char *str, size_t len)
 		return -EINVAL;
 
 	if (!len)
-		len = strlen((char *) str);
+		len = strlen((const char *) str);
 
 	if ((chn->flags & BLKID_SUBLKS_UUIDRAW) &&
 	    (rc = blkid_probe_set_value(pr, "UUID_RAW", str, len)) < 0)
@@ -741,7 +754,7 @@ int blkid_probe_strncpy_uuid(blkid_probe pr, unsigned char *str, size_t len)
 }
 
 /* default _set_uuid function to set DCE UUIDs */
-int blkid_probe_set_uuid_as(blkid_probe pr, unsigned char *uuid, const char *name)
+int blkid_probe_set_uuid_as(blkid_probe pr, const unsigned char *uuid, const char *name)
 {
 	struct blkid_chain *chn = blkid_probe_get_chain(pr);
 	struct blkid_prval *v;
@@ -765,7 +778,7 @@ int blkid_probe_set_uuid_as(blkid_probe pr, unsigned char *uuid, const char *nam
 	if (!v)
 		return -ENOMEM;
 
-	v->len = 37;
+	v->len = UUID_STR_LEN;
 	v->data = calloc(1, v->len);
 	if (!v->data)
 		rc = -ENOMEM;
@@ -779,7 +792,7 @@ int blkid_probe_set_uuid_as(blkid_probe pr, unsigned char *uuid, const char *nam
 	return rc;
 }
 
-int blkid_probe_set_uuid(blkid_probe pr, unsigned char *uuid)
+int blkid_probe_set_uuid(blkid_probe pr, const unsigned char *uuid)
 {
 	return blkid_probe_set_uuid_as(pr, uuid, NULL);
 }

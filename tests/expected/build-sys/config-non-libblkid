@@ -1,5 +1,7 @@
 cfdisk:  libfdisk libncursesw libsmartcols libtinfo libuuid 
+column:  libsmartcols 
 fdisk:  libfdisk libreadline libsmartcols libtinfo libuuid 
+fincore:  libsmartcols 
 libfdisk.so.1.1.0:  libuuid 
 libsmartcols.so.1.1.0:  
 libuuid.so.1.3.0:  
@@ -7,26 +9,30 @@ losetup:  libsmartcols
 lscpu:  libsmartcols 
 lsipc:  libsmartcols 
 lslogins:  libsmartcols libsystemd 
-lsns:  libsmartcols 
+lsmem:  libsmartcols 
 mkswap:  libuuid 
 prlimit:  libsmartcols 
+rfkill:  libsmartcols 
 sfdisk:  libfdisk libreadline libsmartcols libtinfo libuuid 
 uuidd:  librt libsystemd libuuid 
 uuidgen:  libuuid 
+uuidparse:  libsmartcols libuuid 
 wdctl:  libsmartcols 
 zramctl:  libsmartcols 
 agetty:  
 blkdiscard:  librt 
+blkzone:  
 blockdev:  
-cal:  libncursesw libtinfo 
+cal:  libtinfo 
 chcpu:  
-chfn:  libpam libpam_misc libpthread libuser 
+chfn:  libpam libpam_misc libpthread libreadline libuser 
+chmem:  
+choom:  
 chrt:  
-chsh:  libpam libpam_misc libpthread libuser 
+chsh:  libpam libpam_misc libpthread libreadline libuser 
 col:  
 colcrt:  
 colrm:  
-column:  
 ctrlaltdel:  
 dmesg:  librt libtinfo 
 fallocate:  
@@ -37,7 +43,7 @@ fsck.minix:
 fsfreeze:  
 getopt:  
 hexdump:  libtinfo 
-hwclock:  
+hwclock:  libm 
 ionice:  
 ipcmk:  
 ipcrm:  
@@ -66,17 +72,16 @@ rename:
 renice:  
 rev:  
 rtcwake:  
-runuser:  libpam libpam_misc 
+runuser:  libpam libpam_misc libutil 
 script:  librt libutil 
 scriptreplay:  
 setarch:  
 setpriv:  ap-ng 
 setsid:  
 setterm:  libtinfo 
-su:  libpam libpam_misc 
+su:  libpam libpam_misc libutil 
 sulogin:  rypt 
 switch_root:  
-tailf:  
 taskset:  
 ul:  libtinfo 
 unshare:  

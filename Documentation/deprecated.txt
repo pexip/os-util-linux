@@ -2,9 +2,21 @@ The following is a list of commands or features that are deprecated.  All
 deprecated utils are in maintenance mode and we keep them in source tree for
 backward compatibility only.
 
+what:  hwclock --debug
+why:   renamed to --verbose, and may be repurposed later.
+since: v2.32
 
-what:  tailf
-why:   "tail -f" is better nowadays, tailf has unfixed bugs
+--------------------------
+
+what:  hwclock -v for version
+why:   renamed to -V
+since: v2.20 (was repurposed to verbose in v2.32)
+
+--------------------------
+
+what:  column --columns
+why:   renamed to --output-width
+since: v2.30
 
 --------------------------
 
@@ -50,7 +62,7 @@ Why:    udevd links libblkid directly; the 'list' is unnecessary, use lsblk(8)
 --------------------------
 
 What:   line(1) command
-Why:    useless, nobody uses this command, head(1) is better
+Why:    use the read(1) command
 
 --------------------------
 
@@ -60,7 +72,7 @@ Why:    use less(1) or more(1)
 --------------------------
 
 What:   CHS stuff in fdisk (except SUN where are partitions addresses by cylinders only)
-Why:    use addresssing by sectors, CHS does not work with modern disks,
+Why:    use addressing by sectors, CHS does not work with modern disks,
         confusing for users...
 
 --------------------------
@@ -90,11 +102,6 @@ What:   losetup output format without --list
 
 What:	tunelp
 Why:	parallel port printers are probably almost extinct devices
-
-----------------------------
-
-What:	reset
-Why:	ncurses has better reset(1)
 
 ----------------------------
 

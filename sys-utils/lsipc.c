@@ -233,6 +233,19 @@ static int column_name_to_id(const char *name, size_t namesz)
 	return -1;
 }
 
+static int get_column_id(int num)
+{
+	assert(num >= 0);
+	assert((size_t) num < ncolumns);
+	assert((size_t) columns[num] < ARRAY_SIZE(coldescs));
+	return columns[num];
+}
+
+static const struct lsipc_coldesc *get_column_desc(int num)
+{
+	return &coldescs[ get_column_id(num) ];
+}
+
 static char *get_username(struct passwd **pw, uid_t id)
 {
 	if (!*pw || (*pw)->pw_uid != id)
@@ -269,8 +282,9 @@ static int parse_time_mode(const char *s)
 	errx(EXIT_FAILURE, _("unknown time format: %s"), s);
 }
 
-static void __attribute__ ((__noreturn__)) usage(FILE * out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	size_t i;
 
 	fputs(USAGE_HEADER, out);
@@ -303,8 +317,7 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	fputs(_(" -t, --time               show attach, detach and change times\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(USAGE_HELP, out);
-	fputs(USAGE_VERSION, out);
+	printf(USAGE_HELP_OPTIONS(26));
 
 	fprintf(out, _("\nGeneric columns:\n"));
 	for (i = COLDESC_IDX_GEN_FIRST; i <= COLDESC_IDX_GEN_LAST; i++)
@@ -326,8 +339,8 @@ static void __attribute__ ((__noreturn__)) usage(FILE * out)
 	for (i = COLDESC_IDX_SUM_FIRST; i <= COLDESC_IDX_SUM_LAST; i++)
 		fprintf(out, " %14s  %s\n", coldescs[i].name, _(coldescs[i].help));
 
-	fprintf(out, USAGE_MAN_TAIL("lsipc(1)"));
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	printf(USAGE_MAN_TAIL("lsipc(1)"));
+	exit(EXIT_SUCCESS);
 }
 
 static struct libscols_table *new_table(struct lsipc_control *ctl)
@@ -335,7 +348,8 @@ static struct libscols_table *new_table(struct lsipc_control *ctl)
 	struct libscols_table *table = scols_new_table();
 
 	if (!table)
-		errx(EXIT_FAILURE, _("failed to initialize output table"));
+		err(EXIT_FAILURE, _("failed to allocate output table"));
+
 	if (ctl->noheadings)
 		scols_table_enable_noheadings(table, 1);
 
@@ -367,15 +381,12 @@ static struct libscols_table *setup_table(struct lsipc_control *ctl)
 	size_t n;
 
 	for (n = 0; n < ncolumns; n++) {
-		int flags = coldescs[columns[n]].flag;
+		const struct lsipc_coldesc *desc = get_column_desc(n);
+		int flags = desc->flag;
 
 		if (ctl->notrunc)
 			flags &= ~SCOLS_FL_TRUNC;
-
-		if (!scols_table_new_column(table,
-				coldescs[columns[n]].name,
-				coldescs[columns[n]].whint,
-				flags))
+		if (!scols_table_new_column(table, desc->name, desc->whint, flags))
 			goto fail;
 	}
 	return table;
@@ -398,7 +409,7 @@ static int print_pretty(struct libscols_table *table)
 
 		data = scols_line_get_cell(ln, n);
 
-		hstr = N_(coldescs[columns[n]].pretty_name);
+		hstr = N_(get_column_desc(n)->pretty_name);
 		dstr = scols_cell_get_data(data);
 
 		if (dstr)
@@ -450,7 +461,7 @@ static char *make_time(int mode, time_t time)
 		strtime_short(&time, &now, 0, buf, sizeof(buf));
 		break;
 	case TIME_ISO:
-		strtime_iso(&time, ISO_8601_DATE|ISO_8601_TIME|ISO_8601_TIMEZONE, buf, sizeof(buf));
+		strtime_iso(&time, ISO_TIMESTAMP_T, buf, sizeof(buf));
 		break;
 	default:
 		errx(EXIT_FAILURE, _("unsupported time type"));
@@ -466,13 +477,13 @@ static void global_set_data(struct libscols_table *tb, const char *resource,
 
 	ln = scols_table_new_line(tb, NULL);
 	if (!ln)
-		err_oom();
+		err(EXIT_FAILURE, _("failed to allocate output line"));
 
 	for (n = 0; n < ncolumns; n++) {
 		int rc = 0;
 		char *arg = NULL;
 
-		switch (columns[n]) {
+		switch (get_column_id(n)) {
 		case COL_RESOURCE:
 			rc = scols_line_set_data(ln, n, resource);
 			break;
@@ -500,7 +511,7 @@ static void global_set_data(struct libscols_table *tb, const char *resource,
 		}
 
 		if (rc != 0)
-			err(EXIT_FAILURE, _("failed to set data"));
+			err(EXIT_FAILURE, _("failed to add output data"));
 	}
 }
 
@@ -538,11 +549,14 @@ static void do_sem(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 	}
 	for (semdsp = semds;  semdsp->next != NULL || id > -1; semdsp = semdsp->next) {
 		size_t n;
+
 		ln = scols_table_new_line(tb, NULL);
+		if (!ln)
+			err(EXIT_FAILURE, _("failed to allocate output line"));
 
 		for (n = 0; n < ncolumns; n++) {
 			int rc = 0;
-			switch (columns[n]) {
+			switch (get_column_id(n)) {
 			case COL_KEY:
 				xasprintf(&arg, "0x%08x",semdsp->sem_perm.key);
 				rc = scols_line_refer_data(ln, n, arg);
@@ -622,7 +636,7 @@ static void do_sem(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 				break;
 			}
 			if (rc != 0)
-				err(EXIT_FAILURE, _("failed to set data"));
+				err(EXIT_FAILURE, _("failed to add output data"));
 			arg = NULL;
 		}
 
@@ -638,6 +652,9 @@ static void do_sem(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 			for (i = 0; i < semds->sem_nsems; i++) {
 				struct sem_elem *e = &semds->elements[i];
 				struct libscols_line *sln = scols_table_new_line(sub, NULL);
+
+				if (!sln)
+					err(EXIT_FAILURE, _("failed to allocate output line"));
 
 				/* SEMNUM */
 				xasprintf(&arg, "%zu", i);
@@ -728,6 +745,9 @@ static void do_msg(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 		size_t n;
 		ln = scols_table_new_line(tb, NULL);
 
+		if (!ln)
+			err(EXIT_FAILURE, _("failed to allocate output line"));
+
 		/* no need to call getpwuid() for the same user */
 		if (!(pw && pw->pw_uid == msgdsp->msg_perm.uid))
 			pw = getpwuid(msgdsp->msg_perm.uid);
@@ -739,7 +759,7 @@ static void do_msg(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 		for (n = 0; n < ncolumns; n++) {
 			int rc = 0;
 
-			switch (columns[n]) {
+			switch (get_column_id(n)) {
 			case COL_KEY:
 				xasprintf(&arg, "0x%08x",msgdsp->msg_perm.key);
 				rc = scols_line_refer_data(ln, n, arg);
@@ -885,13 +905,14 @@ static void do_shm(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 	for (shmdsp = shmds; shmdsp->next != NULL || id > -1 ; shmdsp = shmdsp->next) {
 		size_t n;
 		ln = scols_table_new_line(tb, NULL);
+
 		if (!ln)
-			err_oom();
+			err(EXIT_FAILURE, _("failed to allocate output line"));
 
 		for (n = 0; n < ncolumns; n++) {
 			int rc = 0;
 
-			switch (columns[n]) {
+			switch (get_column_id(n)) {
 			case COL_KEY:
 				xasprintf(&arg, "0x%08x",shmdsp->shm_perm.key);
 				rc = scols_line_refer_data(ln, n, arg);
@@ -1081,27 +1102,26 @@ int main(int argc, char *argv[])
 	};
 
 	static const struct option longopts[] = {
-		{ "bytes",          no_argument,        0, 'b' },
-		{ "creator",        no_argument,	0, 'c' },
-		{ "export",         no_argument,	0, 'e' },
-		{ "global",         no_argument,	0, 'g' },
-		{ "help",           no_argument,	0, 'h' },
-		{ "id",             required_argument,	0, 'i' },
-		{ "json",           no_argument,	0, 'J' },
-		{ "list",           no_argument,        0, 'l' },
-		{ "newline",        no_argument,	0, 'n' },
-		{ "noheadings",     no_argument,	0, OPT_NOHEAD },
-		{ "notruncate",     no_argument,	0, OPT_NOTRUNC },
-		{ "numeric-perms",  no_argument,	0, 'P' },
-		{ "output",         required_argument,	0, 'o' },
-		{ "pid",            no_argument,	0, 'p' },
-		{ "queues",         no_argument,	0, 'q' },
-		{ "raw",            no_argument,	0, 'r' },
-		{ "semaphores",     no_argument,	0, 's' },
-		{ "shmems",         no_argument,	0, 'm' },
-		{ "time",           no_argument,	0, 't' },
-		{ "time-format",    required_argument,	0, OPT_TIME_FMT },
-		{ "version",        no_argument,	0, 'V' },
+		{ "bytes",          no_argument,        NULL, 'b' },
+		{ "creator",        no_argument,	NULL, 'c' },
+		{ "export",         no_argument,	NULL, 'e' },
+		{ "global",         no_argument,	NULL, 'g' },
+		{ "help",           no_argument,	NULL, 'h' },
+		{ "id",             required_argument,	NULL, 'i' },
+		{ "json",           no_argument,	NULL, 'J' },
+		{ "list",           no_argument,        NULL, 'l' },
+		{ "newline",        no_argument,	NULL, 'n' },
+		{ "noheadings",     no_argument,	NULL, OPT_NOHEAD },
+		{ "notruncate",     no_argument,	NULL, OPT_NOTRUNC },
+		{ "numeric-perms",  no_argument,	NULL, 'P' },
+		{ "output",         required_argument,	NULL, 'o' },
+		{ "queues",         no_argument,	NULL, 'q' },
+		{ "raw",            no_argument,	NULL, 'r' },
+		{ "semaphores",     no_argument,	NULL, 's' },
+		{ "shmems",         no_argument,	NULL, 'm' },
+		{ "time",           no_argument,	NULL, 't' },
+		{ "time-format",    required_argument,	NULL, OPT_TIME_FMT },
+		{ "version",        no_argument,	NULL, 'V' },
 		{NULL, 0, NULL, 0}
 	};
 
@@ -1123,7 +1143,7 @@ int main(int argc, char *argv[])
 
 	scols_init_debug(0);
 
-	while ((opt = getopt_long(argc, argv, "bceghi:Jlmno:PqrstuV", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "bceghi:Jlmno:PqrstV", longopts, NULL)) != -1) {
 
 		err_exclusive_options(opt, longopts, excl, excl_st);
 
@@ -1213,12 +1233,12 @@ int main(int argc, char *argv[])
 			show_creat = 1;
 			break;
 		case 'h':
-			usage(stdout);
+			usage();
 		case 'V':
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 	}
 

@@ -111,21 +111,22 @@ void flush_lines(int);
 void flush_blanks(void);
 LINE *alloc_line(void);
 
-CSET last_set;			/* char_set of last char printed */
-LINE *lines;
-int compress_spaces;		/* if doing space -> tab conversion */
-int fine;			/* if `fine' resolution (half lines) */
-unsigned max_bufd_lines;	/* max # lines to keep in memory */
-int nblank_lines;		/* # blanks after last flushed line */
-int no_backspaces;		/* if not to output any backspaces */
-int pass_unknown_seqs;		/* whether to pass unknown control sequences */
+static CSET last_set;			/* char_set of last char printed */
+static LINE *lines;
+static int compress_spaces;		/* if doing space -> tab conversion */
+static int fine;			/* if `fine' resolution (half lines) */
+static unsigned max_bufd_lines;		/* max # lines to keep in memory */
+static int nblank_lines;		/* # blanks after last flushed line */
+static int no_backspaces;		/* if not to output any backspaces */
+static int pass_unknown_seqs;		/* whether to pass unknown control sequences */
 
 #define	PUTC(ch) \
 	if (putwchar(ch) == WEOF) \
 		wrerr();
 
-static void __attribute__((__noreturn__)) usage(FILE *out)
+static void __attribute__((__noreturn__)) usage(void)
 {
+	FILE *out = stdout;
 	fprintf(out, _(
 		"\nUsage:\n"
 		" %s [options]\n"), program_invocation_short_name);
@@ -141,15 +142,17 @@ static void __attribute__((__noreturn__)) usage(FILE *out)
 		" -h, --tabs             convert spaces to tabs\n"
 		" -x, --spaces           convert tabs to spaces\n"
 		" -l, --lines NUM        buffer at least NUM lines\n"
-		" -V, --version          output version information and exit\n"
-		" -H, --help             display this help and exit\n\n"));
+		));
+	printf( " -H, --help             %s\n", USAGE_OPTSTR_HELP);
+	printf( " -V, --version          %s\n", USAGE_OPTSTR_VERSION);
 
+	fputs(USAGE_SEPARATOR, out);
 	fprintf(out, _(
 		"%s reads from standard input and writes to standard output\n\n"),
 		program_invocation_short_name);
 
-	fprintf(out, USAGE_MAN_TAIL("col(1)"));
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	printf(USAGE_MAN_TAIL("col(1)"));
+	exit(EXIT_SUCCESS);
 }
 
 static void __attribute__((__noreturn__)) wrerr(void)
@@ -160,7 +163,7 @@ static void __attribute__((__noreturn__)) wrerr(void)
 int main(int argc, char **argv)
 {
 	register wint_t ch;
-	CHAR *c;
+	CHAR *c = NULL;
 	CSET cur_set;			/* current character set */
 	LINE *l;			/* current line */
 	int extra_lines;		/* # of lines above first line */
@@ -173,15 +176,15 @@ int main(int argc, char **argv)
 	int ret = EXIT_SUCCESS;
 
 	static const struct option longopts[] = {
-		{ "no-backspaces", no_argument,		0, 'b' },
-		{ "fine",	   no_argument,		0, 'f' },
-		{ "pass",	   no_argument,		0, 'p' },
-		{ "tabs",	   no_argument,		0, 'h' },
-		{ "spaces",	   no_argument,		0, 'x' },
-		{ "lines",	   required_argument,	0, 'l' },
-		{ "version",	   no_argument,		0, 'V' },
-		{ "help",	   no_argument,		0, 'H' },
-		{ NULL, 0, 0, 0 }
+		{ "no-backspaces", no_argument,		NULL, 'b' },
+		{ "fine",	   no_argument,		NULL, 'f' },
+		{ "pass",	   no_argument,		NULL, 'p' },
+		{ "tabs",	   no_argument,		NULL, 'h' },
+		{ "spaces",	   no_argument,		NULL, 'x' },
+		{ "lines",	   required_argument,	NULL, 'l' },
+		{ "version",	   no_argument,		NULL, 'V' },
+		{ "help",	   no_argument,		NULL, 'H' },
+		{ NULL, 0, NULL, 0 }
 	};
 
 	setlocale(LC_ALL, "");
@@ -221,13 +224,15 @@ int main(int argc, char **argv)
 			printf(UTIL_LINUX_VERSION);
 			return EXIT_SUCCESS;
 		case 'H':
-			usage(stdout);
+			usage();
 		default:
-			usage(stderr);
+			errtryhelp(EXIT_FAILURE);
 		}
 
-	if (optind != argc)
-		usage(stderr);
+	if (optind != argc) {
+		warnx(_("bad usage"));
+		errtryhelp(EXIT_FAILURE);
+	}
 
 	adjust = cur_col = extra_lines = warned = 0;
 	cur_line = max_line = nflushd_lines = this_line = 0;
@@ -248,7 +253,10 @@ int main(int argc, char **argv)
 			case BS:		/* can't go back further */
 				if (cur_col == 0)
 					continue;
-				--cur_col;
+				if (c)
+					cur_col -= c->c_width;
+				else
+					cur_col--;
 				continue;
 			case CR:
 				cur_col = 0;
@@ -369,7 +377,10 @@ int main(int argc, char **argv)
 		c = &l->l_line[l->l_line_len++];
 		c->c_char = ch;
 		c->c_set = cur_set;
-		c->c_column = cur_col;
+		if (0 < cur_col)
+			c->c_column = cur_col;
+		else
+			c->c_column = 0;
 		c->c_width = wcwidth(ch);
 		/*
 		 * If things are put in out of order, they will need sorting
@@ -385,6 +396,8 @@ int main(int argc, char **argv)
 	/* goto the last line that had a character on it */
 	for (; l->l_next; l = l->l_next)
 		this_line++;
+	if (max_line == 0)
+		return EXIT_SUCCESS;	/* no lines, so just exit */
 	flush_lines(this_line - nflushd_lines + extra_lines + 1);
 
 	/* make sure we leave things in a sane state */
