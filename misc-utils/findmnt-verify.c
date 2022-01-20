@@ -28,7 +28,8 @@ struct verify_context {
 	int	nwarnings;
 	int	nerrors;
 
-	unsigned int	target_printed : 1;
+	unsigned int	target_printed : 1,
+			no_fsck : 1;
 };
 
 static void verify_mesg(struct verify_context *vfy, char type, const char *fmt, va_list ap)
@@ -97,7 +98,9 @@ static int verify_order(struct verify_context *vfy)
 
 	/* set iterator position to 'fs' */
 	mnt_table_set_iter(vfy->tb, itr, vfy->fs);
-	mnt_table_next_fs(vfy->tb, itr, &next);
+
+	if (mnt_table_next_fs(vfy->tb, itr, &next) != 0)
+		goto done;
 
 	/* scan all next filesystems */
 	while (mnt_table_next_fs(vfy->tb, itr, &next) == 0) {
@@ -404,10 +407,12 @@ static int verify_fstype(struct verify_context *vfy)
 		    && mnt_fs_get_option(vfy->fs, "move", NULL, NULL) == 1)
 			return verify_warn(vfy, _("\"none\" FS type is recommended for bind or move oprations only"));
 
-		else if (strcmp(type, "auto") == 0)
+		if (strcmp(type, "auto") == 0)
 			isauto = 1;
 		else if (strcmp(type, "swap") == 0)
 			isswap = 1;
+		else if (strcmp(type, "xfs") == 0)
+			vfy->no_fsck = 1;
 
 		if (!isswap && !isauto && !none && !is_supported_filesystem(vfy, type))
 			verify_warn(vfy, _("%s seems unsupported by the current kernel"), type);
@@ -422,6 +427,7 @@ static int verify_fstype(struct verify_context *vfy)
 
 	if (realtype) {
 		isswap = strcmp(realtype, "swap") == 0;
+		vfy->no_fsck = strcmp(realtype, "xfs") == 0;
 
 		if (type && !isauto && strcmp(type, realtype) != 0)
 			return verify_err(vfy, _("%s does not match with on-disk %s"), type, realtype);
@@ -440,7 +446,7 @@ static int verify_passno(struct verify_context *vfy)
 	int passno = mnt_fs_get_passno(vfy->fs);
 	const char *tgt = mnt_fs_get_target(vfy->fs);
 
-	if (tgt && strcmp("/", tgt) == 0 && passno != 1)
+	if (tgt && strcmp("/", tgt) == 0 && passno != 1 && !vfy->no_fsck)
 		return verify_warn(vfy, _("recommended root FS passno is 1 (current is %d)"), passno);
 
 	return 0;
@@ -463,7 +469,7 @@ static int verify_filesystem(struct verify_context *vfy)
 	if (!rc)
 		rc = verify_fstype(vfy);
 	if (!rc)
-		rc = verify_passno(vfy);
+		rc = verify_passno(vfy);	/* depends on verify_fstype() */
 
 	return rc;
 }
@@ -492,6 +498,8 @@ int verify_table(struct libmnt_table *tb)
 
 	while (rc == 0 && (vfy.fs = get_next_fs(tb, itr))) {
 		vfy.target_printed = 0;
+		vfy.no_fsck = 0;
+
 		if (check_order)
 			rc = verify_order(&vfy);
 		if (!rc)

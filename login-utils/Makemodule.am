@@ -19,7 +19,8 @@ dist_man_MANS += login-utils/sulogin.8
 sulogin_SOURCES = \
 	login-utils/sulogin.c \
 	login-utils/sulogin-consoles.c \
-	login-utils/sulogin-consoles.h
+	login-utils/sulogin-consoles.h \
+	lib/plymouth-ctrl.c
 sulogin_LDADD = $(LDADD) libcommon.la
 
 if HAVE_LIBCRYPT
@@ -52,6 +53,9 @@ login_LDADD += -laudit
 endif
 if HAVE_SELINUX
 login_LDADD += -lselinux
+endif
+if HAVE_ECONF
+login_LDADD += -leconf
 endif
 endif # BUILD_LOGIN
 
@@ -123,6 +127,9 @@ chfn_SOURCES = \
 chfn_CFLAGS = $(chfn_chsh_cflags)
 chfn_LDFLAGS = $(chfn_chsh_ldflags)
 chfn_LDADD = $(LDADD) $(chfn_chsh_ldadd)
+if HAVE_ECONF
+chfn_LDADD += -leconf
+endif
 
 chsh_SOURCES = login-utils/chsh.c $(chfn_chsh_sources)
 chsh_CFLAGS = $(chfn_chsh_cflags)
@@ -146,8 +153,14 @@ su_LDADD = $(LDADD) libcommon.la -lpam
 if HAVE_LINUXPAM
 su_LDADD += -lpam_misc
 endif
-if HAVE_UTIL
-su_LDADD += -lutil
+if HAVE_PTY
+su_SOURCES += lib/pty-session.c \
+      include/pty-session.h \
+      lib/monotonic.c
+su_LDADD += -lutil $(REALTIME_LIBS)
+endif
+if HAVE_ECONF
+su_LDADD += -leconf
 endif
 endif # BUILD_SU
 
@@ -165,8 +178,14 @@ runuser_LDADD = $(LDADD) libcommon.la -lpam
 if HAVE_LINUXPAM
 runuser_LDADD += -lpam_misc
 endif
-if HAVE_UTIL
-runuser_LDADD += -lutil
+if HAVE_PTY
+runuser_SOURCES += lib/pty-session.c \
+	include/pty-session.h \
+	lib/monotonic.c
+runuser_LDADD += -lutil $(REALTIME_LIBS)
+endif
+if HAVE_ECONF
+runuser_LDADD += -leconf
 endif
 endif # BUILD_RUNUSER
 
@@ -198,6 +217,9 @@ endif
 if HAVE_SYSTEMD
 lslogins_LDADD += $(SYSTEMD_LIBS) $(SYSTEMD_JOURNAL_LIBS)
 lslogins_CFLAGS += $(SYSTEMD_CFLAGS) $(SYSTEMD_JOURNAL_CFLAGS)
+endif
+if HAVE_ECONF
+lslogins_LDADD += -leconf
 endif
 endif # BUILD_LSLOGINS
 
@@ -231,6 +253,10 @@ test_logindefs_SOURCES = \
 	login-utils/logindefs.c \
 	login-utils/logindefs.h
 test_logindefs_CPPFLAGS = -DTEST_PROGRAM $(AM_CPPFLAGS)
+test_logindefs_LDADD = $(LDADD) libcommon.la
+if HAVE_ECONF
+test_logindefs_LDADD += -leconf
+endif
 
 
 install-exec-hook:

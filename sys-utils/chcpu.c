@@ -262,7 +262,7 @@ static void __attribute__((__noreturn__)) usage(void)
 int main(int argc, char *argv[])
 {
 	struct path_cxt *sys = NULL;	/* _PATH_SYS_CPU handler */
-	cpu_set_t *cpu_set;
+	cpu_set_t *cpu_set = NULL;
 	size_t setsize;
 	int cmd = -1;
 	int c, rc;
@@ -288,7 +288,7 @@ int main(int argc, char *argv[])
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	ul_path_init_debug();
 	sys = ul_new_path(_PATH_SYS_CPU);
@@ -301,11 +301,12 @@ int main(int argc, char *argv[])
 
 	if (ul_path_access(sys, F_OK, "online") == 0)
 		ul_path_readf_cpulist(sys, &cpu_set, maxcpus, "online");
-
-	setsize = CPU_ALLOC_SIZE(maxcpus);
-	cpu_set = CPU_ALLOC(maxcpus);
+	else
+		cpu_set = CPU_ALLOC(maxcpus);
 	if (!cpu_set)
 		err(EXIT_FAILURE, _("cpuset_alloc failed"));
+
+	setsize = CPU_ALLOC_SIZE(maxcpus);
 
 	while ((c = getopt_long(argc, argv, "c:d:e:g:hp:rV", longopts, NULL)) != -1) {
 
@@ -328,8 +329,6 @@ int main(int argc, char *argv[])
 			cmd = CMD_CPU_DECONFIGURE;
 			cpu_parse(argv[optind - 1], cpu_set, setsize);
 			break;
-		case 'h':
-			usage();
 		case 'p':
 			if (strcmp("horizontal", argv[optind - 1]) == 0)
 				cmd = CMD_CPU_DISPATCH_HORIZONTAL;
@@ -342,9 +341,11 @@ int main(int argc, char *argv[])
 		case 'r':
 			cmd = CMD_CPU_RESCAN;
 			break;
+
+		case 'h':
+			usage();
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}

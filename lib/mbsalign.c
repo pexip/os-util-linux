@@ -16,8 +16,6 @@
 
 /* Written by Pádraig Brady.  */
 
-#include <config.h>
-
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -30,9 +28,67 @@
 #include "strutils.h"
 #include "widechar.h"
 
-/* Replace non printable chars.
-   Note \t and \n etc. are non printable.
-   Return 1 if replacement made, 0 otherwise.  */
+/*
+ * Counts number of cells in multibyte string. All control and
+ * non-printable chars are ignored.
+ *
+ * Returns: number of cells.
+ */
+size_t mbs_nwidth(const char *buf, size_t bufsz)
+{
+	const char *p = buf, *last = buf;
+	size_t width = 0;
+
+#ifdef HAVE_WIDECHAR
+	mbstate_t st;
+	memset(&st, 0, sizeof(st));
+#endif
+	if (p && *p && bufsz)
+		last = p + (bufsz - 1);
+
+	while (p && *p && p <= last) {
+		if (iscntrl((unsigned char) *p)) {
+			p++;
+
+			/* try detect "\e[x;ym" and skip on success */
+			if (*p && *p == '[') {
+				const char *e = p;
+				while (*e && e < last && *e != 'm')
+					e++;
+				if (*e == 'm')
+					p = e + 1;
+			}
+			continue;
+		}
+#ifdef HAVE_WIDECHAR
+		wchar_t wc;
+		size_t len = mbrtowc(&wc, p, MB_CUR_MAX, &st);
+
+		if (len == 0)
+			break;
+		if (len > 0 && iswprint(wc)) {
+			int x = wcwidth(wc);
+			if (x > 0)
+				width += x;
+		} else if (len == (size_t) -1 || len == (size_t) -2)
+			len = 1;
+		p += len;
+#else
+		if (isprint((unsigned char) *p))
+			width++;
+		p++;
+#endif
+	}
+
+	return width;
+}
+
+size_t mbs_width(const char *s)
+{
+	if (!s || !*s)
+		return 0;
+	return mbs_nwidth(s, strlen(s));
+}
 
 /*
  * Counts number of cells in multibyte string. For all control and
@@ -349,9 +405,6 @@ wc_truncate (wchar_t *wc, size_t width)
   return cells;
 }
 
-/* FIXME: move this function to gnulib as it's missing on:
-   OpenBSD 3.8, IRIX 5.3, Solaris 2.5.1, mingw, BeOS  */
-
 static int
 rpl_wcswidth (const wchar_t *s, size_t n)
 {
@@ -413,8 +466,6 @@ done:
 static char*
 mbs_align_pad (char *dest, const char* dest_end, size_t n_spaces, int padchar)
 {
-  /* FIXME: Should we pad with "figure space" (\u2007)
-     if non ascii data present?  */
   for (/* nothing */; n_spaces && (dest < dest_end); n_spaces--)
     *dest++ = padchar;
   *dest = '\0';

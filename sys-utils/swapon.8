@@ -110,7 +110,7 @@ may also be used to skip non-existing device.
 .BR \-f , " \-\-fixpgsz"
 Reinitialize (exec mkswap) the swap space if its page size does not
 match that of the current running kernel.
-.BR mkswap (2)
+.BR mkswap (8)
 initializes the whole device and does not check for bad blocks.
 .TP
 .BR \-h , " \-\-help"
@@ -129,7 +129,7 @@ For example:
 .RS
 .RS
 .sp
-.B "swapon -o pri=1,discard=pages,nofail /dev/sda2"
+.B "swapon \-o pri=1,discard=pages,nofail /dev/sda2"
 .sp
 .RE
 The \fIopts\fP string is evaluated last and overrides all other
@@ -147,7 +147,7 @@ for a full description of swap priorities.  Add
 to the option field of
 .I /etc/fstab
 for use with
-.BR "swapon -a" .
+.BR "swapon \-a" .
 When no priority is defined, it defaults to \-1.
 .TP
 .BR \-s , " \-\-summary"
@@ -187,44 +187,35 @@ Be verbose.
 .TP
 .BR \-V , " \-\-version"
 Display version information and exit.
-.SH NOTES
-You should not use \fBswapon\fR on a file with holes.
-This can be seen in the system log as
-.RS
-.sp
-.B "swapon: swapfile has holes."
-.sp
-.RE
-The swap file implementation in the kernel expects to be able to write to the
-file directly, without the assistance of the filesystem.  This is a problem on
-preallocated files (e.g.
-.BR fallocate (1))
-on filesystems like \fBXFS\fR or \fBext4\fR, and on copy-on-write
-filesystems like \fBbtrfs\fR.
-.PP
-It is recommended to use
-.BR dd (1)
-and
-.I /dev/zero
-to avoid holes on XFS and ext4.
-.PP
-.B swapon
-may not work correctly when using a swap file with some versions of
-\fBbtrfs\fR.  This is due to btrfs being a copy-on-write filesystem: the
-file location may not be static and corruption can result.  Btrfs actively
-disallows the use of swap files on its filesystems by refusing to map the file.
-.PP
-One possible workaround is to map the swap
-file to a loopback device.  This will allow the filesystem to determine the
-mapping properly but may come with a performance impact.
-.PP
-Swap over \fBNFS\fR may not work.
-.PP
-.B swapon
-automatically detects and rewrites a swap space signature with old software
-suspend data (e.g. S1SUSPEND, S2SUSPEND, ...). The problem is that if we don't
-do it, then we get data corruption the next time an attempt at unsuspending is
-made.
+.SH EXIT STATUS
+.B swapoff
+has the following exit status values since v2.36:
+.TP
+.B 0
+success
+.TP
+.B 2
+system has insufficient memory to stop swapping (OOM)
+.TP
+.B 4
+swapoff syscall failed for another reason
+.TP
+.B 8
+non-swapoff syscall system error (out of memory, ...)
+.TP
+.B 16
+usage or syntax error
+.TP
+.B 32
+all swapoff failed on \fB\-\-all\fR
+.TP
+.B 64
+some swapoff succeeded on \fB\-\-all\fR
+
+The command \fBswapoff \-\-all\fR returns 0 (all succeeded), 32 (all failed), or 64 (some
+failed, some succeeded).
+
+The old versions before v2.36 has no documented exit status, 0 means success in all versions.
 
 .SH ENVIRONMENT
 .IP LIBMOUNT_DEBUG=all
@@ -232,25 +223,58 @@ enables libmount debug output.
 .IP LIBBLKID_DEBUG=all
 enables libblkid debug output.
 
-.SH SEE ALSO
-.BR swapoff (2),
-.BR swapon (2),
-.BR fstab (5),
-.BR init (8),
-.BR mkswap (8),
-.BR mount (8),
-.BR rc (8)
 .SH FILES
-.br
 .I /dev/sd??
 standard paging devices
 .br
 .I /etc/fstab
 ascii filesystem description table
+.SH NOTES
+.SS Files with holes
+The swap file implementation in the kernel expects to be able to write to the
+file directly, without the assistance of the filesystem.  This is a problem on
+files with holes or on copy-on-write files on filesystems like Btrfs.
+.sp
+Commands like
+.BR cp (1)
+or
+.BR truncate (1)
+create files with holes.  These files will be rejected by swapon.
+.sp
+Preallocated files created by
+.BR fallocate (1)
+may be interpreted as files with holes too depending of the filesystem.
+Preallocated swap files are supported on XFS since Linux 4.18.
+.sp
+The most portable solution to create a swap file is to use
+.BR dd (1)
+and /dev/zero.
+.SS Btrfs
+Swap files on Btrfs are supported since Linux 5.0 on files with nocow attribute.
+See the
+.BR btrfs (5)
+manual page for more details.
+.SS NFS
+Swap over \fBNFS\fR may not work.
+.SS Suspend
+.B swapon
+automatically detects and rewrites a swap space signature with old software
+suspend data (e.g., S1SUSPEND, S2SUSPEND, ...). The problem is that if we don't
+do it, then we get data corruption the next time an attempt at unsuspending is
+made.
 .SH HISTORY
 The
 .B swapon
 command appeared in 4.0BSD.
+.SH SEE ALSO
+.BR swapoff (2),
+.BR swapon (2),
+.BR fstab (5),
+.BR init (8),
+.BR fallocate (1),
+.BR mkswap (8),
+.BR mount (8),
+.BR rc (8)
 .SH AVAILABILITY
 The swapon command is part of the util-linux package and is available from
 https://www.kernel.org/pub/linux/utils/util-linux/.

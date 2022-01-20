@@ -70,6 +70,18 @@ static struct fdisk_parttype dos_parttypes[] = {
 	#include "pt-mbr-partnames.h"
 };
 
+static const struct fdisk_shortcut dos_parttype_cuts[] =
+{
+	{ .shortcut = "L", .alias = "linux",    .data = "83" },
+	{ .shortcut = "S", .alias = "swap",     .data = "82" },
+	{ .shortcut = "E", .alias = "extended", .data = "05", .deprecated = 1 }, /* collision with 0x0e type */
+	{ .shortcut = "Ex",.alias = "extended", .data = "05" }, /* MBR extended */
+	{ .shortcut = "U", .alias = "uefi",     .data = "EF" }, /* UEFI system */
+	{ .shortcut = "R", .alias = "raid",     .data = "FD" }, /* Linux RAID */
+	{ .shortcut = "V", .alias = "lvm",      .data = "8E" }, /* LVM */
+	{ .shortcut = "X", .alias = "linuxex",  .data = "85" }  /* Linux extended */
+};
+
 #define set_hsc(h,s,c,sector) { \
 		s = sector % cxt->geom.sectors + 1;			\
 		sector /= cxt->geom.sectors;				\
@@ -669,7 +681,7 @@ static int dos_create_disklabel(struct fdisk_context *cxt)
 
 		if (s) {
 			errno = 0;
-			id = strtol(s, &end, 16);
+			id = strtoul(s, &end, 16);
 			if (!errno && end && s < end) {
 				has_id = 1;
 				DBG(LABEL, ul_debug("DOS: re-use ID from script (0x%08x)", id));
@@ -681,7 +693,7 @@ static int dos_create_disklabel(struct fdisk_context *cxt)
 	/* random disk signature */
 	if (!has_id) {
 		DBG(LABEL, ul_debug("DOS: generate new ID"));
-		random_get_bytes(&id, sizeof(id));
+		ul_random_get_bytes(&id, sizeof(id));
 	}
 
 	if (fdisk_has_protected_bootbits(cxt))
@@ -707,12 +719,12 @@ static int dos_create_disklabel(struct fdisk_context *cxt)
 	return 0;
 }
 
-static int dos_set_disklabel_id(struct fdisk_context *cxt)
+static int dos_set_disklabel_id(struct fdisk_context *cxt, const char *str)
 {
-	char *end = NULL, *str = NULL;
+	char *buf = NULL;
 	unsigned int id, old;
 	struct fdisk_dos_label *l;
-	int rc;
+	int rc = 0;
 
 	assert(cxt);
 	assert(cxt->label);
@@ -722,18 +734,26 @@ static int dos_set_disklabel_id(struct fdisk_context *cxt)
 
 	l = self_label(cxt);
 	old = mbr_get_id(cxt->firstsector);
-	rc = fdisk_ask_string(cxt,
-			_("Enter the new disk identifier"), &str);
-	if (rc)
-		return rc;
 
-	errno = 0;
-	id = strtoul(str, &end, 0);
-	if (errno || str == end || (end && *end)) {
-		fdisk_warnx(cxt, _("Incorrect value."));
-		return -EINVAL;
+	if (!str) {
+		rc = fdisk_ask_string(cxt,
+			_("Enter the new disk identifier"), &buf);
+		str = buf;
+	}
+	if (!rc) {
+		char *end = NULL;
+
+		errno = 0;
+		id = strtoul(str, &end, 0);
+		if (errno || str == end || (end && *end)) {
+			fdisk_warnx(cxt, _("Incorrect value."));
+			rc = -EINVAL;
+		}
 	}
 
+	free(buf);
+	if (rc)
+		return -EINVAL;
 
 	mbr_set_id(cxt->firstsector, id);
 	l->non_pt_changed = 1;
@@ -812,6 +832,12 @@ static int dos_probe_label(struct fdisk_context *cxt)
 		return 0;
 
 	if (!mbr_is_valid_magic(cxt->firstsector))
+		return 0;
+
+	/* ignore disks with FAT */
+	if (cxt->collision &&
+	    (strcmp(cxt->collision, "vfat") == 0 ||
+	     strcmp(cxt->collision, "ntfs") == 0))
 		return 0;
 
 	dos_init(cxt);
@@ -907,46 +933,6 @@ static void set_partition(struct fdisk_context *cxt,
 	partition_set_changed(cxt, i, 1);
 }
 
-static fdisk_sector_t get_unused_start(struct fdisk_context *cxt,
-				 int part_n, fdisk_sector_t start,
-				 fdisk_sector_t first[], fdisk_sector_t last[])
-{
-	size_t i;
-
-	for (i = 0; i < cxt->label->nparts_max; i++) {
-		fdisk_sector_t lastplusoff;
-		struct pte *pe = self_pte(cxt, i);
-
-		assert(pe);
-		if (start == pe->offset)
-			start += cxt->first_lba;
-		lastplusoff = last[i] + ((part_n < 4) ? 0 : cxt->first_lba);
-		if (start >= first[i] && start <= lastplusoff)
-			start = lastplusoff + 1;
-	}
-
-	return start;
-}
-
-static void fill_bounds(struct fdisk_context *cxt,
-			fdisk_sector_t *first, fdisk_sector_t *last)
-{
-	size_t i;
-	struct pte *pe = self_pte(cxt, 0);
-	struct dos_partition *p;
-
-	assert(pe);
-	for (i = 0; i < cxt->label->nparts_max; pe++,i++) {
-		p = pe->pt_entry;
-		if (is_cleared_partition(p) || IS_EXTENDED (p->sys_ind)) {
-			first[i] = 0xffffffff;
-			last[i] = 0;
-		} else {
-			first[i] = get_abs_partition_start(pe);
-			last[i]  = get_abs_partition_end(pe);
-		}
-	}
-}
 
 static int get_start_from_user(	struct fdisk_context *cxt,
 				fdisk_sector_t *start,
@@ -1002,75 +988,207 @@ static int get_start_from_user(	struct fdisk_context *cxt,
 	return 0;
 }
 
-static fdisk_sector_t get_possible_last(struct fdisk_context *cxt, size_t n)
+/* Returns last available sector in the free space pointed to by start. */
+static int find_last_free(
+			struct fdisk_context *cxt,
+			int logical,
+			fdisk_sector_t begin,
+			fdisk_sector_t stop,
+			fdisk_sector_t *result)
 {
-	fdisk_sector_t limit;
+	fdisk_sector_t last = stop;
 
-	if (n >= 4) {
+	size_t i = logical ? 4 : 0;
+
+	for ( ; i < cxt->label->nparts_max; i++) {
+		struct pte *pe = self_pte(cxt, i);
+
+		assert(pe);
+		fdisk_sector_t p_start = get_abs_partition_start(pe);
+		fdisk_sector_t p_end = get_abs_partition_end(pe);
+
+		if (is_cleared_partition(pe->pt_entry))
+			continue;
+		/* count EBR and begin of the logical partition as used area */
+		if (pe->offset)
+			p_start -= cxt->first_lba;
+
+		if ((p_start >= begin && p_start <= last) ||
+		    (p_end >= begin && p_end <= last)) {
+			last = p_start - 1;
+		}
+		if (last < begin) {
+			DBG(LABEL, ul_debug("no free space <%ju,%ju>",
+					(uintmax_t) begin, (uintmax_t) stop));
+			return -ENOSPC;
+		}
+	}
+
+	if (last == begin)
+		last = stop;
+
+	DBG(LABEL, ul_debug("DOS: last free sector  <%ju,%ju>: %ju",
+			(uintmax_t) begin, (uintmax_t) stop, (uintmax_t) last));
+
+	*result = last;
+	return 0;
+}
+
+static int find_last_free_sector_in_range(
+			struct fdisk_context *cxt,
+			int logical,
+			fdisk_sector_t begin,
+			fdisk_sector_t end,
+			fdisk_sector_t *result)
+{
+	int last_moved;
+	fdisk_sector_t last = end;
+
+	do {
+		size_t i = logical ? 4 : 0;
+
+		last_moved = 0;
+		for ( ; i < cxt->label->nparts_max; i++) {
+			struct pte *pe = self_pte(cxt, i);
+
+			assert(pe);
+			fdisk_sector_t p_start = get_abs_partition_start(pe);
+			fdisk_sector_t p_end = get_abs_partition_end(pe);
+
+			if (is_cleared_partition(pe->pt_entry))
+				continue;
+
+			/* count EBR and begin of the logical partition as used area */
+			if (pe->offset)
+				p_start -= cxt->first_lba;
+
+			if (last >= p_start && last <= p_end) {
+				last = p_start - 1;
+				last_moved = 1;
+
+				if (last < begin) {
+					DBG(LABEL, ul_debug("DOS: last free out of range <%ju,%ju>: %ju",
+						(uintmax_t) begin, (uintmax_t) end, (uintmax_t) last));
+
+					return -ENOSPC;
+				}
+			}
+		}
+	} while (last_moved == 1);
+
+	DBG(LABEL, ul_debug("DOS: last unused sector in range <%ju,%ju>: %ju",
+			(uintmax_t) begin, (uintmax_t) end, (uintmax_t) last));
+
+	*result = last;
+	return 0;
+}
+
+static int find_first_free_sector_in_range(
+			struct fdisk_context *cxt,
+			int logical,
+			fdisk_sector_t begin,
+			fdisk_sector_t end,
+			fdisk_sector_t *result)
+{
+	int first_moved = 0;
+	fdisk_sector_t first = begin;
+
+	do {
+		size_t i = logical ? 4 : 0;
+
+		first_moved = 0;
+		for (; i < cxt->label->nparts_max; i++) {
+			struct pte *pe = self_pte(cxt, i);
+
+			assert(pe);
+			fdisk_sector_t p_start = get_abs_partition_start(pe);
+			fdisk_sector_t p_end = get_abs_partition_end(pe);
+
+			if (is_cleared_partition(pe->pt_entry))
+				continue;
+			/* count EBR and begin of the logical partition as used area */
+			if (pe->offset)
+				p_start -= cxt->first_lba;
+			if (first < p_start)
+				continue;
+			if (first <= p_end) {
+				first = p_end + 1 + (logical ? cxt->first_lba : 0);
+				first_moved = 1;
+
+				if (first > end) {
+					DBG(LABEL, ul_debug("DOS: first free out of range <%ju,%ju>: %ju",
+						(uintmax_t) begin, (uintmax_t) end, (uintmax_t) first));
+					return -ENOSPC;
+				}
+			}
+		}
+	} while (first_moved == 1);
+
+	DBG(LABEL, ul_debug("DOS: first unused sector in range <%ju,%ju>: %ju",
+			(uintmax_t) begin, (uintmax_t) end, (uintmax_t) first));
+	*result = first;
+	return 0;
+}
+
+static int get_disk_ranges(struct fdisk_context *cxt, int logical,
+			   fdisk_sector_t *first, fdisk_sector_t *last)
+{
+	if (logical) {
 		/* logical partitions */
 		struct fdisk_dos_label *l = self_label(cxt);
 		struct pte *ext_pe = l->ext_offset ? self_pte(cxt, l->ext_index) : NULL;
 
 		if (!ext_pe)
-			return 0;
-		limit = get_abs_partition_end(ext_pe);
+			return -EINVAL;
+
+		*first = l->ext_offset + cxt->first_lba;
+		*last = get_abs_partition_end(ext_pe);
+
 	} else {
 		/* primary partitions */
 		if (fdisk_use_cylinders(cxt) || !cxt->total_sectors)
-			limit = cxt->geom.heads * cxt->geom.sectors * cxt->geom.cylinders - 1;
+			*last = cxt->geom.heads * cxt->geom.sectors * cxt->geom.cylinders - 1;
 		else
-			limit = cxt->total_sectors - 1;
+			*last = cxt->total_sectors - 1;
 
-		if (limit > UINT_MAX)
-			limit = UINT_MAX;
+		if (*last > UINT_MAX)
+			*last = UINT_MAX;
+		*first = cxt->first_lba;
 	}
 
-	DBG(LABEL, ul_debug("DOS: last possible sector for #%zu is %ju",
-				n, (uintmax_t) limit));
-	return limit;
+	return 0;
 }
 
-/* returns last free sector for area addressed by @start, the first[] and
- * last[] are fill_bounds() results */
-static fdisk_sector_t get_unused_last(struct fdisk_context *cxt, size_t n,
+/* first free sector on disk */
+static int find_first_free_sector(struct fdisk_context *cxt,
+				int logical,
 				fdisk_sector_t start,
-				fdisk_sector_t first[])
+				fdisk_sector_t *result)
 {
-	size_t i;
-	fdisk_sector_t limit = get_possible_last(cxt, n);
+	fdisk_sector_t first, last;
+	int rc;
 
-	for (i = 0; i < cxt->label->nparts_max; i++) {
-		struct pte *pe = self_pte(cxt, i);
+	rc = get_disk_ranges(cxt, logical, &first, &last);
+	if (rc)
+		return rc;
 
-		assert(pe);
-		if (start < pe->offset && limit >= pe->offset)
-			limit = pe->offset - 1;
-		if (start < first[i] && limit >= first[i])
-			limit = first[i] - 1;
-	}
-
-	DBG(LABEL, ul_debug("DOS: unused sector for #%zu is %ju",
-				n, (uintmax_t) limit));
-	return limit;
+	return find_first_free_sector_in_range(cxt, logical, start, last, result);
 }
 
 static int add_partition(struct fdisk_context *cxt, size_t n,
 			 struct fdisk_partition *pa)
 {
-	int sys, read = 0, rc, isrel = 0;
-	size_t i;
+	int sys, read = 0, rc, isrel = 0, is_logical;
 	struct fdisk_dos_label *l = self_label(cxt);
 	struct dos_partition *p = self_partition(cxt, n);
-	struct pte *ext_pe = l->ext_offset ? self_pte(cxt, l->ext_index) : NULL;
 	struct fdisk_ask *ask = NULL;
 
-	fdisk_sector_t start, stop = 0, limit, temp,
-		first[cxt->label->nparts_max],
-		last[cxt->label->nparts_max];
+	fdisk_sector_t start, stop, limit, temp;
 
 	DBG(LABEL, ul_debug("DOS: adding partition %zu", n));
 
 	sys = pa && pa->type ? pa->type->code : MBR_LINUX_DATA_PARTITION;
+	is_logical = n >= 4;
 
 	if (p && is_used_partition(p)) {
 		fdisk_warnx(cxt, _("Partition %zu is already defined.  "
@@ -1078,42 +1196,30 @@ static int add_partition(struct fdisk_context *cxt, size_t n,
 				n + 1);
 		return -EINVAL;
 	}
-	fill_bounds(cxt, first, last);
-	limit = get_possible_last(cxt, n);
 
-	if (n < 4) {
-		if (cxt->parent && fdisk_is_label(cxt->parent, GPT))
-			start = 1;		/* Bad boy modifies hybrid MBR */
-		else {
-			if (cxt->script && pa && fdisk_partition_has_start(pa)
-			    && pa->start < cxt->first_lba
-			    && pa->start >= 1)
-				fdisk_set_first_lba(cxt, 1);
+	rc = get_disk_ranges(cxt, is_logical, &start, &stop);
+	if (rc)
+		return rc;
 
-			start = cxt->first_lba;
-		}
+	if (!is_logical && cxt->parent && fdisk_is_label(cxt->parent, GPT))
+		start = 1;		/* Bad boy modifies hybrid MBR */
 
-		if (l->ext_offset) {
-			assert(ext_pe);
-			first[l->ext_index] = l->ext_offset;
-			last[l->ext_index] = get_abs_partition_end(ext_pe);
-		}
-	} else {
-		assert(ext_pe);
+	rc = find_last_free_sector_in_range(cxt, is_logical, start, stop, &limit);
+	if (rc == -ENOSPC)
+		fdisk_warnx(cxt, _("No free sectors available."));
+	if (rc)
+		return rc;
 
-		if (cxt->script && pa && fdisk_partition_has_start(pa)
-		    && pa->start >= l->ext_offset
-		    && pa->start < l->ext_offset + cxt->first_lba)
-			fdisk_set_first_lba(cxt, 1);
+	if ((is_logical || !cxt->parent || !fdisk_is_label(cxt->parent, GPT))
+	    && cxt->script && pa && fdisk_partition_has_start(pa)
+	    && pa->start >= (is_logical ? l->ext_offset : 1)
+	    && pa->start < start) {
+		fdisk_set_first_lba(cxt, 1);
 
-		start = l->ext_offset + cxt->first_lba;
+		rc = get_disk_ranges(cxt, is_logical, &start, &stop);
+		if (rc) /* won't happen, but checking to be proper */
+			return rc;
 	}
-
-	if (fdisk_use_cylinders(cxt))
-		for (i = 0; i < cxt->label->nparts_max; i++) {
-			first[i] = (fdisk_cround(cxt, first[i]) - 1)
-				* fdisk_get_units_per_sector(cxt);
-		}
 
 	/*
 	 * Ask for first sector
@@ -1122,7 +1228,14 @@ static int add_partition(struct fdisk_context *cxt, size_t n,
 		fdisk_sector_t dflt, aligned;
 
 		temp = start;
-		dflt = start = get_unused_start(cxt, n, start, first, last);
+
+		DBG(LABEL, ul_debug("DOS: >>> search for first free from %ju", start));
+		rc = find_first_free_sector(cxt, is_logical, start, &dflt);
+		if (rc == -ENOSPC)
+			fdisk_warnx(cxt, _("No free sectors available."));
+		if (rc)
+			return rc;
+		start = dflt;
 
 		if (n >= 4 && pa && fdisk_partition_has_start(pa) && cxt->script
 		    && cxt->first_lba > 1
@@ -1134,7 +1247,7 @@ static int add_partition(struct fdisk_context *cxt, size_t n,
 		/* the default sector should be aligned and unused */
 		do {
 			aligned = fdisk_align_lba_in_range(cxt, dflt, dflt, limit);
-			dflt = get_unused_start(cxt, n, aligned, first, last);
+			find_first_free_sector(cxt, is_logical, aligned, &dflt);
 		} while (dflt != aligned && dflt > aligned && dflt < limit);
 
 		if (dflt >= limit)
@@ -1143,12 +1256,11 @@ static int add_partition(struct fdisk_context *cxt, size_t n,
 			break;
 		if (start >= temp + fdisk_get_units_per_sector(cxt)
 		    && read) {
-			fdisk_info(cxt, _("Sector %llu is already allocated."),
-					temp);
+			if (!pa || !pa->start_follow_default)
+				fdisk_info(cxt, _("Sector %llu is already allocated."), temp);
 			temp = start;
 			read = 0;
-			if (pa && (fdisk_partition_has_start(pa) ||
-				   pa->start_follow_default))
+			if (pa && fdisk_partition_has_start(pa))
 				break;
 		}
 
@@ -1158,6 +1270,30 @@ static int add_partition(struct fdisk_context *cxt, size_t n,
 				return rc;
 			read = 1;
 		}
+		if (pa && fdisk_partition_has_size(pa)) {
+			fdisk_sector_t last;
+
+			rc = find_last_free(cxt, is_logical, start, limit, &last);
+			if (rc == 0 && last - start + 1 < fdisk_partition_get_size(pa)) {
+				DBG(LABEL, ul_debug("DOS: area <%ju,%ju> too small [wanted=%ju aval=%ju]",
+							(uintmax_t) start, (uintmax_t) last,
+							fdisk_partition_get_size(pa),
+							last - start));
+
+				if (fdisk_partition_has_start(pa)
+				    && fdisk_partition_get_start(pa) <= last)
+					rc = -ENOSPC;
+				else {
+					start = last + 1;
+					continue;
+				}
+			}
+			if (rc == -ENOSPC) {
+				fdisk_warnx(cxt, _("No free sectors available."));
+				return rc;
+			}
+		}
+
 	} while (start != temp || !read);
 
 	if (n == 4) {
@@ -1171,7 +1307,11 @@ static int add_partition(struct fdisk_context *cxt, size_t n,
 		struct pte *pe = self_pte(cxt, n);
 
 		assert(pe);
+		assert(start >= cxt->first_lba);
+
 		pe->offset = start - cxt->first_lba;
+		DBG(LABEL, ul_debug("DOS: setting EBR offset to %ju [start=%ju]", pe->offset, start));
+
 		if (pe->offset == l->ext_offset) { /* must be corrected */
 			pe->offset++;
 			if (cxt->first_lba == 1)
@@ -1179,12 +1319,12 @@ static int add_partition(struct fdisk_context *cxt, size_t n,
 		}
 	}
 
-	limit = get_unused_last(cxt, n, start, first);
-
-	if (start > limit) {
+	rc = find_last_free(cxt, is_logical, start, limit, &stop);
+	if (rc == -ENOSPC)
 		fdisk_warnx(cxt, _("No free sectors available."));
-		return -ENOSPC;
-	}
+	if (rc)
+		return rc;
+	limit = stop;
 
 	/*
 	 * Ask for last sector
@@ -1251,8 +1391,6 @@ static int add_partition(struct fdisk_context *cxt, size_t n,
 	if (isrel && stop - start < (cxt->grain / fdisk_get_sector_size(cxt))) {
 		/* Don't try to be smart on very small partitions and don't align so small sizes */
 		isrel = 0;
-		if (stop > start)
-			stop -= 1;
 		DBG(LABEL, ul_debug("DOS: don't align end of tiny partition [start=%ju, stop=%ju, grain=%lu]",
 			    (uintmax_t)start,  (uintmax_t)stop, cxt->grain));
 	}
@@ -1265,7 +1403,7 @@ static int add_partition(struct fdisk_context *cxt, size_t n,
 		 */
 		stop = fdisk_align_lba_in_range(cxt, stop, start, limit);
 		if (stop > start)
-			stop -= 1;
+			stop -= 1;	/* end one sector before aligned offset */
 		if (stop > limit)
 			stop = limit;
 		DBG(LABEL, ul_debug("DOS: aligned stop: %ju", (uintmax_t) stop));
@@ -1274,7 +1412,6 @@ static int add_partition(struct fdisk_context *cxt, size_t n,
 	set_partition(cxt, n, 0, start, stop, sys, fdisk_partition_is_bootable(pa));
 	if (n > 4) {
 		struct pte *pe = self_pte(cxt, n);
-
 		assert(pe);
 		set_partition(cxt, n - 1, 1, pe->offset, stop,
 					MBR_DOS_EXTENDED_PARTITION, 0);
@@ -1463,6 +1600,26 @@ static void check_consistency(struct fdisk_context *cxt, struct dos_partition *p
 	}
 }
 
+static void fill_bounds(struct fdisk_context *cxt,
+			fdisk_sector_t *first, fdisk_sector_t *last)
+{
+	size_t i;
+	struct pte *pe = self_pte(cxt, 0);
+	struct dos_partition *p;
+
+	assert(pe);
+	for (i = 0; i < cxt->label->nparts_max; pe++,i++) {
+		p = pe->pt_entry;
+		if (is_cleared_partition(p) || IS_EXTENDED (p->sys_ind)) {
+			first[i] = SIZE_MAX;
+			last[i] = 0;
+		} else {
+			first[i] = get_abs_partition_start(pe);
+			last[i]  = get_abs_partition_end(pe);
+		}
+	}
+}
+
 static int dos_verify_disklabel(struct fdisk_context *cxt)
 {
 	size_t i, j;
@@ -1471,6 +1628,7 @@ static int dos_verify_disklabel(struct fdisk_context *cxt)
 		       last[cxt->label->nparts_max];
 	struct dos_partition *p;
 	struct fdisk_dos_label *l = self_label(cxt);
+	int nerrors = 0;
 
 	assert(fdisk_is_label(cxt, DOS));
 
@@ -1482,10 +1640,12 @@ static int dos_verify_disklabel(struct fdisk_context *cxt)
 		if (p && is_used_partition(p) && !IS_EXTENDED(p->sys_ind)) {
 			check_consistency(cxt, p, i);
 			assert(pe);
-			if (get_abs_partition_start(pe) < first[i])
+			if (get_abs_partition_start(pe) < first[i]) {
 				fdisk_warnx(cxt, _(
 					"Partition %zu: bad start-of-data."),
 					 i + 1);
+				nerrors++;
+			}
 
 			check(cxt, i + 1, p->eh, p->es, p->ec, last[i]);
 			total += last[i] + 1 - first[i];
@@ -1500,6 +1660,7 @@ static int dos_verify_disklabel(struct fdisk_context *cxt)
 					fdisk_warnx(cxt, _("Partition %zu: "
 						"overlaps partition %zu."),
 						j + 1, i + 1);
+					nerrors++;
 
 					total += first[i] >= first[j] ?
 						first[i] : first[j];
@@ -1523,28 +1684,37 @@ static int dos_verify_disklabel(struct fdisk_context *cxt)
 			assert(p);
 
 			if (!p->sys_ind) {
-				if (i != 4 || i + 1 < cxt->label->nparts_max)
+				if (i != 4 || i + 1 < cxt->label->nparts_max) {
 					fdisk_warnx(cxt,
 						_("Partition %zu: empty."),
 						i + 1);
+					nerrors++;
+				}
 			} else if (first[i] < l->ext_offset
 				   || last[i] > e_last) {
 
 				fdisk_warnx(cxt, _("Logical partition %zu: "
 					"not entirely in partition %zu."),
 					i + 1, l->ext_index + 1);
+				nerrors++;
 			}
 		}
 	}
 
-	if (total > n_sectors)
-		fdisk_warnx(cxt, _("Total allocated sectors %llu greater "
-			"than the maximum %llu."), total, n_sectors);
-	else if (total < n_sectors)
-		fdisk_warnx(cxt, _("Remaining %lld unallocated %ld-byte "
-			"sectors."), n_sectors - total, cxt->sector_size);
+	if (!nerrors) {
+		fdisk_info(cxt, _("No errors detected."));
+		if (total > n_sectors)
+			fdisk_info(cxt, _("Total allocated sectors %llu greater "
+				"than the maximum %llu."), total, n_sectors);
+		else if (total < n_sectors)
+			fdisk_info(cxt, _("Remaining %lld unallocated %ld-byte "
+				"sectors."), n_sectors - total, cxt->sector_size);
+	} else
+		fdisk_warnx(cxt,
+			P_("%d error detected.", "%d errors detected.", nerrors),
+			nerrors);
 
-	return 0;
+	return nerrors;
 }
 
 /*
@@ -1557,7 +1727,8 @@ static int dos_add_partition(struct fdisk_context *cxt,
 			     struct fdisk_partition *pa,
 			     size_t *partno)
 {
-	size_t i, free_primary = 0, free_sectors = 0;
+	size_t i;
+	uint8_t free_primary = 0, free_sectors = 0;
 	fdisk_sector_t last = 0, grain;
 	int rc = 0;
 	struct fdisk_dos_label *l;
@@ -1571,6 +1742,13 @@ static int dos_add_partition(struct fdisk_context *cxt,
 	DBG(LABEL, ul_debug("DOS: new partition wanted"));
 
 	l = self_label(cxt);
+
+	if (cxt->label->nparts_max >= MAXIMUM_PARTS) {
+		fdisk_warnx(cxt, _("The maximum number of partitions has "
+				  "been created."));
+		return -EINVAL;
+	}
+
 	ext_pe = l->ext_offset ? self_pte(cxt, l->ext_index) : NULL;
 
 	/*
@@ -1631,7 +1809,9 @@ static int dos_add_partition(struct fdisk_context *cxt,
 		if (!ext_pe) {
 			fdisk_warnx(cxt, _("Extended partition does not exists. Failed to add logical partition."));
 			return -EINVAL;
-		} else if (fdisk_partition_has_start(pa)
+		}
+
+		if (fdisk_partition_has_start(pa)
 			   && pa->start < l->ext_offset
 			   && pa->start > get_abs_partition_end(ext_pe)) {
 			DBG(LABEL, ul_debug("DOS: pa template specifies partno>=4, but start out of extended"));
@@ -1649,6 +1829,12 @@ static int dos_add_partition(struct fdisk_context *cxt,
 	grain = cxt->grain > cxt->sector_size ? cxt->grain / cxt->sector_size : 1;
 	last = cxt->first_lba;
 
+	if (cxt->parent && fdisk_is_label(cxt->parent, GPT)) {
+		/* modifying a hybrid MBR, which throws out the rules */
+		grain = 1;
+		last = 1;
+	}
+
 	for (i = 0; i < 4; i++) {
 		struct dos_partition *p = self_partition(cxt, i);
 
@@ -1664,12 +1850,6 @@ static int dos_add_partition(struct fdisk_context *cxt,
 	if (last + grain < cxt->total_sectors - 1)
 		free_sectors = 1;
 
-	if (!free_primary && cxt->label->nparts_max >= MAXIMUM_PARTS) {
-		fdisk_info(cxt, _("The maximum number of partitions has "
-				  "been created."));
-		return -EINVAL;
-	}
-	rc = 1;
 
 	if (!free_primary || !free_sectors) {
 		DBG(LABEL, ul_debug("DOS: primary impossible, add logical"));
@@ -1686,8 +1866,8 @@ static int dos_add_partition(struct fdisk_context *cxt,
 				if (pa && fdisk_partition_has_start(pa)) {
 					fdisk_warnx(cxt, msg);
 					return -EINVAL;
-				} else
-					fdisk_info(cxt, msg);
+				}
+				fdisk_info(cxt, msg);
 			}
 			rc = add_logical(cxt, pa, &res);
 		} else {
@@ -1699,16 +1879,10 @@ static int dos_add_partition(struct fdisk_context *cxt,
 					  "a primary with an extended partition."));
 			return -EINVAL;
 		}
-	} else if (cxt->label->nparts_max >= MAXIMUM_PARTS) {
-		fdisk_info(cxt, _("All logical partitions are in use. "
-				  "Adding a primary partition."));
-		rc = get_partition_unused_primary(cxt, pa, &res);
-		if (rc == 0)
-			rc = add_partition(cxt, res, pa);
 	} else {
 		char hint[BUFSIZ];
 		struct fdisk_ask *ask;
-		int c;
+		int c = 0;
 
 		/* the default layout for scripts is to create primary partitions */
 		if (cxt->script || !fdisk_has_dialogs(cxt)) {
@@ -1726,7 +1900,7 @@ static int dos_add_partition(struct fdisk_context *cxt,
 		fdisk_ask_menu_set_default(ask, free_primary == 1
 						&& !l->ext_offset ? 'e' : 'p');
 		snprintf(hint, sizeof(hint),
-				_("%zu primary, %d extended, %zu free"),
+				_("%u primary, %d extended, %u free"),
 				4 - (l->ext_offset ? 1 : 0) - free_primary,
 				l->ext_offset ? 1 : 0,
 				free_primary);
@@ -2479,8 +2653,12 @@ struct fdisk_label *fdisk_new_dos_label(struct fdisk_context *cxt __attribute__ 
 	lb->name = "dos";
 	lb->id = FDISK_DISKLABEL_DOS;
 	lb->op = &dos_operations;
+
 	lb->parttypes = dos_parttypes;
 	lb->nparttypes = ARRAY_SIZE(dos_parttypes) - 1;
+	lb->parttype_cuts = dos_parttype_cuts;
+	lb->nparttype_cuts = ARRAY_SIZE(dos_parttype_cuts);
+
 	lb->fields = dos_fields;
 	lb->nfields = ARRAY_SIZE(dos_fields);
 

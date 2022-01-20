@@ -326,6 +326,8 @@ extern const char *mnt_get_mtab_path(void);
 extern int mnt_has_regular_mtab(const char **mtab, int *writable);
 extern char *mnt_get_mountpoint(const char *path)
 			__ul_attribute__((warn_unused_result));
+extern int mnt_guess_system_root(dev_t devno, struct libmnt_cache *cache, char **path)
+			__ul_attribute__((nonnull(3)));
 
 /* cache.c */
 extern struct libmnt_cache *mnt_new_cache(void)
@@ -437,6 +439,7 @@ extern int mnt_fs_set_userdata(struct libmnt_fs *fs, void *data);
 extern const char *mnt_fs_get_source(struct libmnt_fs *fs);
 extern int mnt_fs_set_source(struct libmnt_fs *fs, const char *source);
 extern const char *mnt_fs_get_srcpath(struct libmnt_fs *fs);
+extern int mnt_fs_get_table(struct libmnt_fs *fs, struct libmnt_table **tb);
 
 extern int mnt_fs_get_tag(struct libmnt_fs *fs, const char **name,
 			  const char **value);
@@ -558,6 +561,11 @@ extern int mnt_table_append_trailing_comment(struct libmnt_table *tb, const char
 extern int mnt_table_set_cache(struct libmnt_table *tb, struct libmnt_cache *mpc);
 extern struct libmnt_cache *mnt_table_get_cache(struct libmnt_table *tb);
 extern int mnt_table_add_fs(struct libmnt_table *tb, struct libmnt_fs *fs);
+extern int mnt_table_find_fs(struct libmnt_table *tb, struct libmnt_fs *fs);
+extern int mnt_table_insert_fs(struct libmnt_table *tb, int before,
+				struct libmnt_fs *pos, struct libmnt_fs *fs);
+extern int mnt_table_move_fs(struct libmnt_table *src, struct libmnt_table *dst,
+                      int before, struct libmnt_fs *pos, struct libmnt_fs *fs);
 extern int mnt_table_remove_fs(struct libmnt_table *tb, struct libmnt_fs *fs);
 extern int mnt_table_first_fs(struct libmnt_table *tb, struct libmnt_fs **fs);
 extern int mnt_table_last_fs(struct libmnt_table *tb, struct libmnt_fs **fs);
@@ -697,6 +705,7 @@ extern void mnt_free_context(struct libmnt_context *cxt);
 extern int mnt_reset_context(struct libmnt_context *cxt);
 extern int mnt_context_is_restricted(struct libmnt_context *cxt)
 			__ul_attribute__((nonnull));
+extern int mnt_context_force_unrestricted(struct libmnt_context *cxt);
 
 extern int mnt_context_init_helper(struct libmnt_context *cxt,
 				   int action, int flags);
@@ -764,10 +773,12 @@ extern struct libmnt_fs *mnt_context_get_fs(struct libmnt_context *cxt);
 extern int mnt_context_set_source(struct libmnt_context *cxt, const char *source);
 extern int mnt_context_set_target(struct libmnt_context *cxt, const char *target);
 extern int mnt_context_set_fstype(struct libmnt_context *cxt, const char *fstype);
+extern int mnt_context_set_target_prefix(struct libmnt_context *cxt, const char *path);
 
 extern const char *mnt_context_get_source(struct libmnt_context *cxt);
 extern const char *mnt_context_get_target(struct libmnt_context *cxt);
 extern const char *mnt_context_get_fstype(struct libmnt_context *cxt);
+extern const char *mnt_context_get_target_prefix(struct libmnt_context *cxt);
 
 extern void *mnt_context_get_mtab_userdata(struct libmnt_context *cxt);
 extern void *mnt_context_get_fstab_userdata(struct libmnt_context *cxt);
@@ -847,6 +858,12 @@ extern int mnt_context_next_mount(struct libmnt_context *cxt,
 				struct libmnt_fs **fs,
 				int *mntrc, int *ignored);
 
+extern int mnt_context_next_remount(struct libmnt_context *cxt,
+                           struct libmnt_iter *itr,
+                           struct libmnt_fs **fs,
+                           int *mntrc,
+                           int *ignored);
+
 extern int mnt_context_prepare_mount(struct libmnt_context *cxt)
 			__ul_attribute__((warn_unused_result));
 extern int mnt_context_do_mount(struct libmnt_context *cxt);
@@ -888,6 +905,14 @@ extern int mnt_context_set_syscall_status(struct libmnt_context *cxt, int status
 #define MNT_MS_SIZELIMIT (1 << 15)
 #define MNT_MS_ENCRYPTION (1 << 16)
 #define MNT_MS_XFSTABCOMM (1 << 17)
+#define MNT_MS_HASH_DEVICE (1 << 18)
+#define MNT_MS_ROOT_HASH (1 << 19)
+#define MNT_MS_HASH_OFFSET (1 << 20)
+#define MNT_MS_ROOT_HASH_FILE (1 << 21)
+#define MNT_MS_FEC_DEVICE (1 << 22)
+#define MNT_MS_FEC_OFFSET (1 << 23)
+#define MNT_MS_FEC_ROOTS (1 << 24)
+#define MNT_MS_ROOT_HASH_SIG (1 << 25)
 
 /*
  * mount(2) MS_* masks (MNT_MAP_LINUX map)
@@ -915,6 +940,9 @@ extern int mnt_context_set_syscall_status(struct libmnt_context *cxt, int status
 #endif
 #ifndef MS_DIRSYNC
 #define MS_DIRSYNC	128	/* Directory modifications are synchronous */
+#endif
+#ifndef MS_NOSYMFOLLOW
+#define MS_NOSYMFOLLOW	256	/* Don't follow symlinks */
 #endif
 #ifndef MS_NOATIME
 #define MS_NOATIME	0x400	/* 1024: Do not update access times. */

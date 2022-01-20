@@ -204,6 +204,8 @@ static int lock_simplelock(struct libmnt_lock *ml)
 {
 	const char *lfile;
 	int rc;
+	struct stat sb;
+	const mode_t lock_mask = S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH;
 
 	assert(ml);
 	assert(ml->simplelock);
@@ -225,10 +227,19 @@ static int lock_simplelock(struct libmnt_lock *ml)
 		rc = -errno;
 		goto err;
 	}
-	rc = fchmod(ml->lockfile_fd, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
+
+	rc = fstat(ml->lockfile_fd, &sb);
 	if (rc < 0) {
 		rc = -errno;
 		goto err;
+	}
+
+	if ((sb.st_mode & lock_mask) != lock_mask) {
+		rc = fchmod(ml->lockfile_fd, lock_mask);
+		if (rc < 0) {
+			rc = -errno;
+			goto err;
+		}
 	}
 
 	while (flock(ml->lockfile_fd, LOCK_EX) < 0) {
@@ -474,25 +485,25 @@ static int lock_mtab(struct libmnt_lock *ml)
 				/* proceed, since it was us who created the lockfile anyway */
 			}
 			break;
-		} else {
-			/* Someone else made the link. Wait. */
-			int err = mnt_wait_mtab_lock(ml, &flock, maxtime.tv_sec);
-
-			if (err == 1) {
-				DBG(LOCKS, ul_debugobj(ml,
-					"%s: can't create link: time out (perhaps "
-					"there is a stale lock file?)", lockfile));
-				rc = -ETIMEDOUT;
-				goto failed;
-
-			} else if (err < 0) {
-				rc = err;
-				goto failed;
-			}
-			nanosleep(&waittime, NULL);
-			close(ml->lockfile_fd);
-			ml->lockfile_fd = -1;
 		}
+
+		/* Someone else made the link. Wait. */
+		int err = mnt_wait_mtab_lock(ml, &flock, maxtime.tv_sec);
+
+		if (err == 1) {
+			DBG(LOCKS, ul_debugobj(ml,
+				"%s: can't create link: time out (perhaps "
+				"there is a stale lock file?)", lockfile));
+			rc = -ETIMEDOUT;
+			goto failed;
+
+		} else if (err < 0) {
+			rc = err;
+			goto failed;
+		}
+		nanosleep(&waittime, NULL);
+		close(ml->lockfile_fd);
+		ml->lockfile_fd = -1;
 	}
 	DBG(LOCKS, ul_debugobj(ml, "%s: (%d) successfully locked",
 					lockfile, getpid()));

@@ -8,6 +8,8 @@ libfdisk.so.1 libfdisk1 #MINVER#
  FDISK_2.31@FDISK_2.31 2.31.1
  FDISK_2.32@FDISK_2.32 2.32
  FDISK_2.33@FDISK_2.33 2.33
+ FDISK_2.35@FDISK_2.35 2.35
+ FDISK_2.36@FDISK_2.36 2.36
  fdisk_add_partition@FDISK_2.26 2.26.2
  fdisk_align_lba@FDISK_2.26 2.26.2
  fdisk_align_lba_in_range@FDISK_2.26 2.26.2
@@ -43,6 +45,7 @@ libfdisk.so.1 libfdisk1 #MINVER#
  fdisk_ask_yesno_get_result@FDISK_2.26 2.26.2
  fdisk_ask_yesno_set_result@FDISK_2.26 2.26.2
  fdisk_assign_device@FDISK_2.26 2.26.2
+ fdisk_assign_device_by_fd@FDISK_2.35 2.35.1
  fdisk_bsd_edit_disklabel@FDISK_2.26 2.26.2
  fdisk_bsd_link_partition@FDISK_2.26 2.26.2
  fdisk_bsd_write_bootstrap@FDISK_2.26 2.26.2
@@ -97,6 +100,8 @@ libfdisk.so.1 libfdisk1 #MINVER#
  fdisk_get_size_unit@FDISK_2.26 2.28~rc1
  fdisk_get_unit@FDISK_2.26 2.26.2
  fdisk_get_units_per_sector@FDISK_2.26 2.26.2
+ fdisk_gpt_disable_relocation@FDISK_2.36 2.36
+ fdisk_gpt_enable_minimize@FDISK_2.36 2.36
  fdisk_gpt_get_partition_attrs@FDISK_2.27 2.27~rc1
  fdisk_gpt_is_hybrid@FDISK_2.26 2.26.2
  fdisk_gpt_set_npartitions@FDISK_2.29 2.29~rc2
@@ -116,6 +121,7 @@ libfdisk.so.1 libfdisk1 #MINVER#
  fdisk_is_readonly@FDISK_2.26 2.26.2
  fdisk_is_regfile@FDISK_2.30 2.30.2
  fdisk_iter_get_direction@FDISK_2.26 2.26.2
+ fdisk_label_advparse_parttype@FDISK_2.36 2.36
  fdisk_label_get_field@FDISK_2.26 2.26.2
  fdisk_label_get_field_by_name@FDISK_2.26 2.26.2
  fdisk_label_get_fields_ids@FDISK_2.26 2.26.2
@@ -128,8 +134,10 @@ libfdisk.so.1 libfdisk1 #MINVER#
  fdisk_label_get_parttype@FDISK_2.26 2.26.2
  fdisk_label_get_parttype_from_code@FDISK_2.26 2.26.2
  fdisk_label_get_parttype_from_string@FDISK_2.26 2.26.2
+ fdisk_label_get_parttype_shortcut@FDISK_2.36 2.36
  fdisk_label_get_type@FDISK_2.26 2.26.2
  fdisk_label_has_code_parttypes@FDISK_2.26 2.26.2
+ fdisk_label_has_parttypes_shortcuts@FDISK_2.36 2.36
  fdisk_label_is_changed@FDISK_2.26 2.26.2
  fdisk_label_is_disabled@FDISK_2.26 2.26.2
  fdisk_label_parse_parttype@FDISK_2.26 2.26.2
@@ -237,10 +245,12 @@ libfdisk.so.1 libfdisk1 #MINVER#
  fdisk_script_read_line@FDISK_2.26 2.26.2
  fdisk_script_set_fgets@FDISK_2.27 2.27~rc1
  fdisk_script_set_header@FDISK_2.26 2.26.2
+ fdisk_script_set_table@FDISK_2.35 2.35.1
  fdisk_script_set_userdata@FDISK_2.27 2.27~rc1
  fdisk_script_write_file@FDISK_2.26 2.26.2
  fdisk_set_ask@FDISK_2.26 2.26.2
  fdisk_set_disklabel_id@FDISK_2.26 2.26.2
+ fdisk_set_disklabel_id_from_string@FDISK_2.36 2.36
  fdisk_set_first_lba@FDISK_2.26 2.26.2
  fdisk_set_last_lba@FDISK_2.26 2.26.2
  fdisk_set_partition@FDISK_2.26 2.26.2

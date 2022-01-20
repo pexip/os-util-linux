@@ -10,6 +10,7 @@ libblkid.so.1 libblkid1 #MINVER#
  BLKID_2.25@BLKID_2.25 2.25
  BLKID_2.30@BLKID_2.30 2.30.2
  BLKID_2_31@BLKID_2_31 2.31.1
+ BLKID_2_36@BLKID_2_36 2.36
  blkid_dev_devname@BLKID_1.0 2.16
  blkid_dev_has_tag@BLKID_1.0 2.16
  blkid_dev_iterate_begin@BLKID_1.0 2.16
@@ -111,6 +112,7 @@ libblkid.so.1 libblkid1 #MINVER#
  blkid_tag_iterate_end@BLKID_1.0 2.16
  blkid_tag_next@BLKID_1.0 2.16
  blkid_topology_get_alignment_offset@BLKID_2.17 2.17.2
+ blkid_topology_get_dax@BLKID_2_36 2.36
  blkid_topology_get_logical_sector_size@BLKID_2.17 2.17.2
  blkid_topology_get_minimum_io_size@BLKID_2.17 2.17.2
  blkid_topology_get_optimal_io_size@BLKID_2.17 2.17.2

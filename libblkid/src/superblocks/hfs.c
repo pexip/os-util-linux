@@ -191,7 +191,7 @@ static int probe_hfsplus(blkid_probe pr, const struct blkid_idmag *mag)
 	unsigned int off = 0;
 	unsigned int blocksize;
 	unsigned int cat_block;
-	unsigned int ext_block_start;
+	unsigned int ext_block_start = 0;
 	unsigned int ext_block_count;
 	unsigned int record_count;
 	unsigned int leaf_node_head;
@@ -240,6 +240,8 @@ static int probe_hfsplus(blkid_probe pr, const struct blkid_idmag *mag)
 	blocksize = be32_to_cpu(hfsplus->blocksize);
 	if (blocksize < HFSPLUS_SECTOR_SIZE)
 		return 1;
+
+	blkid_probe_set_block_size(pr, blocksize);
 
 	memcpy(extents, hfsplus->cat_file.extents, sizeof(extents));
 	cat_block = be32_to_cpu(extents[0].start_block);
@@ -303,7 +305,7 @@ static int probe_hfsplus(blkid_probe pr, const struct blkid_idmag *mag)
 
 	blkid_probe_set_utf8label(pr, key->unicode,
 			be16_to_cpu(key->unicode_len) * 2,
-			BLKID_ENC_UTF16BE);
+			UL_ENCODE_UTF16BE);
 	return 0;
 }
 

@@ -60,6 +60,9 @@ static int mnt_context_append_additional_mount(struct libmnt_context *cxt,
 	assert(cxt);
 	assert(ad);
 
+	if (!list_empty(&ad->mounts))
+		return -EINVAL;
+
 	DBG(CXT, ul_debugobj(cxt,
 			"mount: add additional flag: 0x%08lx",
 			ad->mountflags));
@@ -222,9 +225,11 @@ static int fix_optstr(struct libmnt_context *cxt)
 	if (!cxt->fs || (cxt->flags & MNT_FL_MOUNTOPTS_FIXED))
 		return 0;
 
-	DBG(CXT, ul_debugobj(cxt, "mount: fixing optstr"));
-
 	fs = cxt->fs;
+
+	DBG(CXT, ul_debugobj(cxt, "mount: fixing options, current "
+		"vfs: '%s' fs: '%s' user: '%s', optstr: '%s'",
+		fs->vfs_optstr, fs->fs_optstr, fs->user_optstr, fs->optstr));
 
 	/*
 	 * The "user" options is our business (so we can modify the option),
@@ -288,8 +293,8 @@ static int fix_optstr(struct libmnt_context *cxt)
 		se_rem = 1;
 	else if (cxt->mountflags & MS_REMOUNT)
 		/*
-		 * Linux kernel < 2.6.39 does not allow to remount with any
-		 * selinux specific mount options.
+		 * Linux kernel < 2.6.39 does not support remount operation
+		 * with any selinux specific mount options.
 		 *
 		 * Kernel 2.6.39 commits:  ff36fe2c845cab2102e4826c1ffa0a6ebf487c65
 		 *                         026eb167ae77244458fa4b4b9fc171209c079ba7
@@ -349,7 +354,7 @@ static int fix_optstr(struct libmnt_context *cxt)
 	}
 
 
-	if (!rc && cxt->restricted && (cxt->user_mountflags & MNT_MS_USER)) {
+	if (!rc && mnt_context_is_restricted(cxt) && (cxt->user_mountflags & MNT_MS_USER)) {
 		ns_old = mnt_context_switch_origin_ns(cxt);
 		if (!ns_old)
 			return -MNT_ERR_NAMESPACE;
@@ -417,6 +422,8 @@ static int generate_helper_optstr(struct libmnt_context *cxt, char **optstr)
 			mnt_optstr_append_option(optstr, "suid", NULL);
 		if (!(cxt->mountflags & MS_NODEV))
 			mnt_optstr_append_option(optstr, "dev", NULL);
+		if (!(cxt->mountflags & MS_NOSYMFOLLOW))
+			mnt_optstr_append_option(optstr, "symfollow", NULL);
 	}
 
 
@@ -988,9 +995,9 @@ int mnt_context_prepare_mount(struct libmnt_context *cxt)
 	if (!rc)
 		rc = mnt_context_prepare_srcpath(cxt);
 	if (!rc)
-		rc = mnt_context_prepare_target(cxt);
-	if (!rc)
 		rc = mnt_context_guess_fstype(cxt);
+	if (!rc)
+		rc = mnt_context_prepare_target(cxt);
 	if (!rc)
 		rc = mnt_context_prepare_helper(cxt, "mount", NULL);
 	if (rc) {
@@ -1075,7 +1082,7 @@ int mnt_context_do_mount(struct libmnt_context *cxt)
 		/*
 		 * Mounted by mount(2), do some post-mount checks
 		 *
-		 * Kernel allows to use MS_RDONLY for bind mounts, but the
+		 * Kernel can be used to use MS_RDONLY for bind mounts, but the
 		 * read-only request could be silently ignored. Check it to
 		 * avoid 'ro' in mtab and 'rw' in /proc/mounts.
 		 */
@@ -1103,10 +1110,57 @@ int mnt_context_do_mount(struct libmnt_context *cxt)
 		}
 	}
 #endif
+
+	/* Cleanup will be immediate on failure, and deferred to umount on success */
+	if (mnt_context_is_veritydev(cxt))
+		mnt_context_deferred_delete_veritydev(cxt);
+
 	if (!mnt_context_switch_ns(cxt, ns_old))
 		return -MNT_ERR_NAMESPACE;
 
 	return res;
+}
+
+/*
+ * Returns mountinfo FS entry of context source patch if the source is already
+ * mounted. This function is used for "already mounted" message or to get FS of
+ * re-used loop device.
+ */
+static struct libmnt_fs *get_already_mounted_source(struct libmnt_context *cxt)
+{
+	const char *src;
+	struct libmnt_table *tb;
+
+	assert(cxt);
+
+	src = mnt_fs_get_srcpath(cxt->fs);
+
+	if (src && mnt_context_get_mtab(cxt, &tb) == 0) {
+		struct libmnt_iter itr;
+		struct libmnt_fs *fs;
+
+		mnt_reset_iter(&itr, MNT_ITER_FORWARD);
+		while (mnt_table_next_fs(tb, &itr, &fs) == 0) {
+			const char *s = mnt_fs_get_srcpath(fs),
+				   *t = mnt_fs_get_target(fs);
+
+			if (t && s && mnt_fs_streq_srcpath(fs, src))
+				return fs;
+		}
+	}
+	return NULL;
+}
+
+/*
+ * Checks if source filesystem superblock is already ro-mounted. Note that we
+ * care about FS superblock as VFS node is irrelevant here.
+ */
+static int is_source_already_rdonly(struct libmnt_context *cxt)
+{
+	struct libmnt_fs *fs = get_already_mounted_source(cxt);
+	const char *opts = fs ? mnt_fs_get_fs_options(fs) : NULL;
+
+	return opts && mnt_optstr_get_option(opts, "ro", NULL, NULL) == 0;
 }
 
 /**
@@ -1210,11 +1264,14 @@ again:
 		rc = mnt_context_update_tabs(cxt);
 
 	/*
-	 * Read-only device; try mount filesystem read-only
+	 * Read-only device or already read-only mounted FS.
+	 * Try mount the filesystem read-only.
 	 */
 	if ((rc == -EROFS && !mnt_context_syscall_called(cxt))	/* before syscall; rdonly loopdev */
 	     || mnt_context_get_syscall_errno(cxt) == EROFS	/* syscall failed with EROFS */
-	     || mnt_context_get_syscall_errno(cxt) == EACCES)	/* syscall failed with EACCES */
+	     || mnt_context_get_syscall_errno(cxt) == EACCES	/* syscall failed with EACCES */
+	     || (mnt_context_get_syscall_errno(cxt) == EBUSY	/* already ro-mounted FS */
+		 && is_source_already_rdonly(cxt)))
 	{
 		unsigned long mflags = 0;
 
@@ -1278,7 +1335,6 @@ int mnt_context_next_mount(struct libmnt_context *cxt,
 {
 	struct libmnt_table *fstab, *mtab;
 	const char *o, *tgt;
-	char *pattern;
 	int rc, mounted = 0;
 
 	if (ignored)
@@ -1288,11 +1344,6 @@ int mnt_context_next_mount(struct libmnt_context *cxt,
 
 	if (!cxt || !fs || !itr)
 		return -EINVAL;
-
-	mtab = cxt->mtab;
-	cxt->mtab = NULL;		/* do not reset mtab */
-	mnt_reset_context(cxt);
-	cxt->mtab = mtab;
 
 	rc = mnt_context_get_fstab(cxt, &fstab);
 	if (rc)
@@ -1344,6 +1395,23 @@ int mnt_context_next_mount(struct libmnt_context *cxt,
 		return 0;
 	}
 
+	/* Save mount options, etc. -- this is effective for the first
+	 * mnt_context_next_mount() call only. Make sure that cxt has not set
+	 * source, target or fstype.
+	 */
+	if (!mnt_context_has_template(cxt)) {
+		mnt_context_set_source(cxt, NULL);
+		mnt_context_set_target(cxt, NULL);
+		mnt_context_set_fstype(cxt, NULL);
+		mnt_context_save_template(cxt);
+	}
+
+	/* reset context, but protect mtab */
+	mtab = cxt->mtab;
+	cxt->mtab = NULL;
+	mnt_reset_context(cxt);
+	cxt->mtab = mtab;
+
 	if (mnt_context_is_fork(cxt)) {
 		rc = mnt_fork_context(cxt);
 		if (rc)
@@ -1354,16 +1422,19 @@ int mnt_context_next_mount(struct libmnt_context *cxt,
 		}
 	}
 
-	/* child or non-forked */
+	/*
+	 * child or non-forked
+	 */
 
-	rc = mnt_context_set_fs(cxt, *fs);
+	/* copy stuff from fstab to context */
+	rc = mnt_context_apply_fs(cxt, *fs);
 	if (!rc) {
 		/*
 		 * "-t <pattern>" is used to filter out fstab entries, but for ordinary
 		 * mount operation -t means "-t <type>". We have to zeroize the pattern
 		 * to avoid misinterpretation.
 		 */
-		pattern = cxt->fstype_pattern;
+		char *pattern = cxt->fstype_pattern;
 		cxt->fstype_pattern = NULL;
 
 		rc = mnt_context_mount(cxt);
@@ -1380,6 +1451,130 @@ int mnt_context_next_mount(struct libmnt_context *cxt,
 		_exit(rc);
 	}
 	return 0;
+}
+
+
+/**
+ * mnt_context_next_remount:
+ * @cxt: context
+ * @itr: iterator
+ * @fs: returns the current filesystem
+ * @mntrc: returns the return code from mnt_context_mount()
+ * @ignored: returns 1 for non-matching
+ *
+ * This function tries to remount the next mounted filesystem (as returned by
+ * mnt_context_get_mtab()).
+ *
+ * You can filter out filesystems by:
+ *	mnt_context_set_options_pattern() to simulate mount -a -O pattern
+ *	mnt_context_set_fstype_pattern()  to simulate mount -a -t pattern
+ *
+ * If the filesystem does not match defined criteria, then the
+ * mnt_context_next_remount() function returns zero, but the @ignored is
+ * non-zero.
+ *
+ * IMPORTANT -- the mount operation is performed in the current context.
+ * The context is reset before the next mount (see mnt_reset_context()).
+ * The context setting related to the filesystem (e.g. mount options,
+ * etc.) are protected.
+
+ * If mount(2) syscall or mount.type helper failed, then the
+ * mnt_context_next_mount() function returns zero, but the @mntrc is non-zero.
+ * Use also mnt_context_get_status() to check if the filesystem was
+ * successfully mounted.
+ *
+ * See mnt_context_mount() for more details about errors and warnings.
+ *
+ * Returns: 0 on success,
+ *         <0 in case of error (!= mount(2) errors)
+ *          1 at the end of the list.
+ *
+ * Since: 2.34
+ */
+int mnt_context_next_remount(struct libmnt_context *cxt,
+			   struct libmnt_iter *itr,
+			   struct libmnt_fs **fs,
+			   int *mntrc,
+			   int *ignored)
+{
+	struct libmnt_table *mtab;
+	const char *tgt;
+	int rc;
+
+	if (ignored)
+		*ignored = 0;
+	if (mntrc)
+		*mntrc = 0;
+
+	if (!cxt || !fs || !itr)
+		return -EINVAL;
+
+	rc = mnt_context_get_mtab(cxt, &mtab);
+	if (rc)
+		return rc;
+
+	rc = mnt_table_next_fs(mtab, itr, fs);
+	if (rc != 0)
+		return rc;	/* more filesystems (or error) */
+
+	tgt = mnt_fs_get_target(*fs);
+
+	DBG(CXT, ul_debugobj(cxt, "next-remount: trying %s", tgt));
+
+	/* ignore filesystems which don't match options patterns */
+	if ((cxt->fstype_pattern && !mnt_fs_match_fstype(*fs,
+					cxt->fstype_pattern)) ||
+
+	/* ignore filesystems which don't match type patterns */
+	   (cxt->optstr_pattern && !mnt_fs_match_options(*fs,
+					cxt->optstr_pattern))) {
+		if (ignored)
+			*ignored = 1;
+		DBG(CXT, ul_debugobj(cxt, "next-remount: not-match "
+				"[fstype: %s, t-pattern: %s, options: %s, O-pattern: %s]",
+				mnt_fs_get_fstype(*fs),
+				cxt->fstype_pattern,
+				mnt_fs_get_options(*fs),
+				cxt->optstr_pattern));
+		return 0;
+	}
+
+	/* Save mount options, etc. -- this is effective for the first
+	 * mnt_context_next_remount() call only. Make sure that cxt has not set
+	 * source, target or fstype.
+	 */
+	if (!mnt_context_has_template(cxt)) {
+		mnt_context_set_source(cxt, NULL);
+		mnt_context_set_target(cxt, NULL);
+		mnt_context_set_fstype(cxt, NULL);
+		mnt_context_save_template(cxt);
+	}
+
+	/* restore original, but protect mtab */
+	cxt->mtab = NULL;
+	mnt_reset_context(cxt);
+	cxt->mtab = mtab;
+
+	rc = mnt_context_set_target(cxt, tgt);
+	if (!rc) {
+		/*
+		 * "-t <pattern>" is used to filter out fstab entries, but for ordinary
+		 * mount operation -t means "-t <type>". We have to zeroize the pattern
+		 * to avoid misinterpretation.
+		 */
+		char *pattern = cxt->fstype_pattern;
+		cxt->fstype_pattern = NULL;
+
+		rc = mnt_context_mount(cxt);
+
+		cxt->fstype_pattern = pattern;
+
+		if (mntrc)
+			*mntrc = rc;
+		rc = 0;
+	}
+
+	return rc;
 }
 
 /*
@@ -1452,7 +1647,7 @@ int mnt_context_get_mount_excode(
 		 * Libmount success && syscall success.
 		 */
 		if (buf && mnt_context_forced_rdonly(cxt))
-			snprintf(buf, bufsz, _("WARNING: device write-protected, mounted read-only"));
+			snprintf(buf, bufsz, _("WARNING: source write-protected, mounted read-only"));
 		return MNT_EX_SUCCESS;
 	}
 
@@ -1540,12 +1735,16 @@ int mnt_context_get_mount_excode(
 			if (buf)
 				snprintf(buf, bufsz, _("filesystem was mounted, but failed to update userspace mount table"));
 			return MNT_EX_FILEIO;
-		} else if (rc == -MNT_ERR_NAMESPACE) {
+		}
+
+		if (rc == -MNT_ERR_NAMESPACE) {
 			if (buf)
 				snprintf(buf, bufsz, _("filesystem was mounted, but failed to switch namespace back"));
 			return MNT_EX_SYSERR;
 
-		} else if (rc < 0)
+		}
+
+		if (rc < 0)
 			return mnt_context_get_generic_excode(rc, buf, bufsz,
 				_("filesystem was mounted, but any subsequent operation failed: %m"));
 
@@ -1564,7 +1763,7 @@ int mnt_context_get_mount_excode(
 		if (!buf)
 			break;
 		if (geteuid() == 0) {
-			if (stat(tgt, &st) || !S_ISDIR(st.st_mode))
+			if (mnt_stat_mountpoint(tgt, &st) || !S_ISDIR(st.st_mode))
 				snprintf(buf, bufsz, _("mount point is not a directory"));
 			else
 				snprintf(buf, bufsz, _("permission denied"));
@@ -1573,39 +1772,27 @@ int mnt_context_get_mount_excode(
 		break;
 
 	case EBUSY:
-	{
-		struct libmnt_table *tb;
-
 		if (!buf)
 			break;
 		if (mflags & MS_REMOUNT) {
 			snprintf(buf, bufsz, _("mount point is busy"));
 			break;
 		}
-		if (src && mnt_context_get_mtab(cxt, &tb) == 0) {
-			struct libmnt_iter itr;
-			struct libmnt_fs *fs;
+		if (src) {
+			struct libmnt_fs *fs = get_already_mounted_source(cxt);
 
-			mnt_reset_iter(&itr, MNT_ITER_FORWARD);
-			while (mnt_table_next_fs(tb, &itr, &fs) == 0) {
-				const char *s = mnt_fs_get_srcpath(fs),
-					   *t = mnt_fs_get_target(fs);
-
-				if (t && s && mnt_fs_streq_srcpath(fs, src)) {
-					snprintf(buf, bufsz, _("%s already mounted on %s"), s, t);
-					break;
-				}
-			}
+			if (fs && mnt_fs_get_target(fs))
+				snprintf(buf, bufsz, _("%s already mounted on %s"),
+						src, mnt_fs_get_target(fs));
 		}
 		if (!*buf)
 			snprintf(buf, bufsz, _("%s already mounted or mount point busy"), src);
 		break;
-	}
 	case ENOENT:
-		if (tgt && lstat(tgt, &st)) {
+		if (tgt && mnt_lstat_mountpoint(tgt, &st)) {
 			if (buf)
 				snprintf(buf, bufsz, _("mount point does not exist"));
-		} else if (tgt && stat(tgt, &st)) {
+		} else if (tgt && mnt_stat_mountpoint(tgt, &st)) {
 			if (buf)
 				snprintf(buf, bufsz, _("mount point is a symbolic link to nowhere"));
 		} else if (src && stat(src, &st)) {
@@ -1620,7 +1807,7 @@ int mnt_context_get_mount_excode(
 		break;
 
 	case ENOTDIR:
-		if (stat(tgt, &st) || ! S_ISDIR(st.st_mode)) {
+		if (mnt_stat_mountpoint(tgt, &st) || ! S_ISDIR(st.st_mode)) {
 			if (buf)
 				snprintf(buf, bufsz, _("mount point is not a directory"));
 		} else if (src && stat(src, &st) && errno == ENOTDIR) {

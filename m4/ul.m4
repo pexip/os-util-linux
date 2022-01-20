@@ -105,8 +105,8 @@ AC_DEFUN([UL_CHECK_SYSCALL], [
       [syscall=SYS_$1],
       [dnl Our libc failed use, so see if we can get the kernel
       dnl headers to play ball ...
-      _UL_SYSCALL_CHECK_DECL([_NR_$1],
-	[syscall=_NR_$1],
+      _UL_SYSCALL_CHECK_DECL([__NR_$1],
+	[syscall=__NR_$1],
 	[
 	  syscall=no
 	  if test "x$linux_os" = xyes; then
@@ -155,7 +155,7 @@ dnl UL_REQUIRES_LINUX(NAME, [VARSUFFIX = $1])
 dnl
 dnl Modifies $build_<name>  variable according to $enable_<name> and OS type. The
 dnl $enable_<name> could be "yes", "no" and "check". If build_<name> is "no" then
-dnl all checks are skiped.
+dnl all checks are skipped.
 dnl
 dnl The default <name> for $build_ and $enable_ could be overwrited by option $2.
 dnl
@@ -184,7 +184,7 @@ dnl UL_EXCLUDE_ARCH(NAME, ARCH, [VARSUFFIX = $1])
 dnl
 dnl Modifies $build_<name>  variable according to $enable_<name> and $host. The
 dnl $enable_<name> could be "yes", "no" and "check". If build_<name> is "no" then
-dnl all checks are skiped.
+dnl all checks are skipped.
 dnl
 dnl The default <name> for $build_ and $enable_ could be overwrited by option $3.
 dnl
@@ -200,6 +200,46 @@ AC_DEFUN([UL_EXCLUDE_ARCH], [
     yes:*)
       [build_]suffix=yes ;;
     check:$2)
+      AC_MSG_WARN([excluded for $host architecture; not building $1])
+      [build_]suffix=no ;;
+    check:*)
+      [build_]suffix=yes ;;
+    esac
+  fi
+])
+
+
+
+dnl UL_REQUIRES_ARCH(NAME, ARCH, [VARSUFFIX = $1])
+dnl
+dnl Modifies $build_<name>  variable according to $enable_<name> and $host. The
+dnl $enable_<name> could be "yes", "no" and "check". If build_<name> is "no" then
+dnl all checks are skipped.
+dnl
+dnl The <arch> maybe a list, then at least one of the patterns in the list
+dnl have to match.
+dnl
+dnl The default <name> for $build_ and $enable_ could be overwrited by option $3.
+dnl
+AC_DEFUN([UL_REQUIRES_ARCH], [
+  m4_define([suffix], m4_default([$3],$1))
+  if test "x$[build_]suffix" != xno; then
+    AC_REQUIRE([AC_CANONICAL_HOST])
+    [ul_archone_]suffix=no
+    m4_foreach([onearch], [$2],  [
+      case "$host" in #(
+      onearch)
+        [ul_archone_]suffix=yes ;;
+      esac
+    ])dnl
+    case $[enable_]suffix:$[ul_archone_]suffix in #(
+    no:*)
+      [build_]suffix=no ;;
+    yes:no)
+      AC_MSG_ERROR([$1 selected for unsupported architecture]);;
+    yes:*)
+      [build_]suffix=yes ;;
+    check:no)
       AC_MSG_WARN([excluded for $host architecture; not building $1])
       [build_]suffix=no ;;
     check:*)
@@ -248,10 +288,10 @@ AC_DEFUN([UL_REQUIRES_HAVE], [
   fi
 ])
 
-dnl UL_REQUIRES_HAVE(NAME, PROGRAM_PROLOGUE, PROGRAM_BODY, DESC, [VARSUFFIX=$1])
+dnl UL_REQUIRES_COMPILE(NAME, PROGRAM_PROLOGUE, PROGRAM_BODY, DESC, [VARSUFFIX=$1])
 dnl
 dnl Modifies $build_<name> variable according to $enable_<name> and
-dnl ability compile AC_LANG_PROGRAM(<program_prologue>, <program_body>).  
+dnl ability compile AC_LANG_PROGRAM(<program_prologue>, <program_body>).
 dnl
 dnl The <desc> is description used for warning/error dnl message (e.g. "foo support").
 dnl
@@ -346,7 +386,7 @@ dnl UL_REQUIRES_SYSCALL_CHECK(NAME, SYSCALL-TEST, [SYSCALLNAME=$1], [VARSUFFIX=$
 dnl
 dnl Modifies $build_<name> variable according to $enable_<name> and SYSCALL-TEST
 dnl result. The $enable_<name> variable could be "yes", "no" and "check". If build_<name>
-dnl is "no" then all checks are skiped.
+dnl is "no" then all checks are skipped.
 dnl
 dnl Note that SYSCALL-TEST has to define $ul_cv_syscall_<name> variable, see
 dnl also UL_CHECK_SYSCALL().

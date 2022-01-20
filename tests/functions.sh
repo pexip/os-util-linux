@@ -75,9 +75,25 @@ function ts_report {
 }
 
 function ts_check_test_command {
-	if [ ! -x "$1" ]; then
-		ts_skip "${1##*/} not found"
-	fi
+	case "$1" in
+	*/*)
+		# paths
+		if [ ! -x "$1" ]; then
+			ts_skip "${1##*/} not found"
+		fi
+		;;
+	*)
+		# just command names (e.g. --use-system-commands)
+		local cmd=$1
+		type "$cmd" >/dev/null 2>&1
+	        if [ $? -ne 0 ]; then
+			if [ "$TS_NOSKIP_COMMANDS" = "yes" ]; then
+				ts_failed "missing in PATH: $cmd"
+			fi
+			ts_skip "missing in PATH: $cmd"
+		fi
+		;;
+	esac
 }
 
 function ts_check_prog {
@@ -158,6 +174,17 @@ function ts_log {
 	[ "$TS_VERBOSE" == "yes" ] && echo "$1"
 }
 
+function ts_logerr {
+	echo "$1" >> $TS_ERRLOG
+	[ "$TS_VERBOSE" == "yes" ] && echo "$1"
+}
+
+function ts_log_both {
+	echo "$1" >> $TS_OUTPUT
+	echo "$1" >> $TS_ERRLOG
+	[ "$TS_VERBOSE" == "yes" ] && echo "$1"
+}
+
 function ts_has_option {
 	NAME="$1"
 	ALL="$2"
@@ -201,24 +228,28 @@ function ts_init_core_env {
 	TS_SUBNAME=""
 	TS_NS="$TS_COMPONENT/$TS_TESTNAME"
 	TS_OUTPUT="$TS_OUTDIR/$TS_TESTNAME"
+	TS_ERRLOG="$TS_OUTDIR/$TS_TESTNAME.err"
 	TS_VGDUMP="$TS_OUTDIR/$TS_TESTNAME.vgdump"
 	TS_DIFF="$TS_DIFFDIR/$TS_TESTNAME"
 	TS_EXPECTED="$TS_TOPDIR/expected/$TS_NS"
+	TS_EXPECTED_ERR="$TS_TOPDIR/expected/$TS_NS.err"
 	TS_MOUNTPOINT="$TS_OUTDIR/${TS_TESTNAME}-mnt"
 }
 
 function ts_init_core_subtest_env {
 	TS_NS="$TS_COMPONENT/$TS_TESTNAME-$TS_SUBNAME"
 	TS_OUTPUT="$TS_OUTDIR/$TS_TESTNAME-$TS_SUBNAME"
+	TS_ERRLOG="$TS_OUTDIR/$TS_TESTNAME-$TS_SUBNAME.err"
 	TS_VGDUMP="$TS_OUTDIR/$TS_TESTNAME-$TS_SUBNAME.vgdump"
 	TS_DIFF="$TS_DIFFDIR/$TS_TESTNAME-$TS_SUBNAME"
 	TS_EXPECTED="$TS_TOPDIR/expected/$TS_NS"
+	TS_EXPECTED_ERR="$TS_TOPDIR/expected/$TS_NS.err"
 	TS_MOUNTPOINT="$TS_OUTDIR/${TS_TESTNAME}-${TS_SUBNAME}-mnt"
 
-	rm -f $TS_OUTPUT $TS_VGDUMP
+	rm -f $TS_OUTPUT $TS_ERRLOG $TS_VGDUMP
 	[ -d "$TS_OUTDIR" ]  || mkdir -p "$TS_OUTDIR"
 
-	touch $TS_OUTPUT
+	touch $TS_OUTPUT $TS_ERRLOG
 	[ -n "$TS_VALGRIND_CMD" ] && touch $TS_VGDUMP
 }
 
@@ -231,8 +262,9 @@ function ts_init_env {
 	LC_ALL="POSIX"
 	CHARSET="UTF-8"
 	ASAN_OPTIONS="detect_leaks=0"
+	UBSAN_OPTIONS="print_stacktrace=1:print_summary=1:halt_on_error=1"
 
-	export LANG LANGUAGE LC_ALL CHARSET ASAN_OPTIONS
+	export LANG LANGUAGE LC_ALL CHARSET ASAN_OPTIONS UBSAN_OPTIONS
 
 	mydir=$(ts_canonicalize "$mydir")
 
@@ -254,8 +286,20 @@ function ts_init_env {
 	top_srcdir=$(ts_abspath $top_srcdir)
 	top_builddir=$(ts_abspath $top_builddir)
 
-	# some ul commands search other ul commands in $PATH
-	export PATH="$top_builddir:$PATH"
+	# We use helpser always from build tree
+	ts_helpersdir="${top_builddir}/"
+
+	TS_USE_SYSTEM_COMMANDS=$(ts_has_option "use-system-commands" "$*")
+	if [ "$TS_USE_SYSTEM_COMMANDS" == "yes" ]; then
+		# Don't define anything, just follow current PATH
+		ts_commandsdir=""
+	else
+		# The default is to use commands from build tree
+		ts_commandsdir="${top_builddir}/"
+
+		# some ul commands search other ul commands in $PATH
+		export PATH="$ts_commandsdir:$PATH"
+	fi
 
 	TS_SCRIPT="$mydir/$(basename $0)"
 	TS_SUBDIR=$(dirname $TS_SCRIPT)
@@ -279,6 +323,7 @@ function ts_init_env {
 
 	ts_init_core_env
 
+	TS_NOSKIP_COMMANDS=$(ts_has_option "noskip-commands" "$*")
 	TS_VERBOSE=$(ts_has_option "verbose" "$*")
 	TS_SHOWDIFF=$(ts_has_option "show-diff" "$*")
 	TS_PARALLEL=$(ts_has_option "parallel" "$*")
@@ -295,6 +340,10 @@ function ts_init_env {
 	if [ "$tmp" == "yes" ]; then
 		TS_ENABLE_ASAN="yes"
 	fi
+	tmp=$( ts_has_option "memcheck-ubsan" "$*")
+	if [ "$tmp" == "yes" ]; then
+		TS_ENABLE_UBSAN="yes"
+	fi
 
 	BLKID_FILE="$TS_OUTDIR/${TS_TESTNAME}.blkidtab"
 
@@ -310,15 +359,17 @@ function ts_init_env {
 
 	export BLKID_FILE
 
-	rm -f $TS_OUTPUT $TS_VGDUMP
+	rm -f $TS_OUTPUT $TS_ERRLOG $TS_VGDUMP
 	[ -d "$TS_OUTDIR" ]  || mkdir -p "$TS_OUTDIR"
 
-	touch $TS_OUTPUT
+	touch $TS_OUTPUT $TS_ERRLOG
 	[ -n "$TS_VALGRIND_CMD" ] && touch $TS_VGDUMP
 
 	if [ "$TS_VERBOSE" == "yes" ]; then
 		echo
 		echo "     script: $TS_SCRIPT"
+		echo "   commands: $ts_commandsdir"
+		echo "    helpers: $ts_helpersdir"
 		echo "    sub dir: $TS_SUBDIR"
 		echo "    top dir: $TS_TOPDIR"
 		echo "       self: $TS_SELF"
@@ -328,8 +379,9 @@ function ts_init_env {
 		echo "  namespace: $TS_NS"
 		echo "    verbose: $TS_VERBOSE"
 		echo "     output: $TS_OUTPUT"
+		echo "  error log: $TS_ERRLOG"
 		echo "   valgrind: $TS_VGDUMP"
-		echo "   expected: $TS_EXPECTED"
+		echo "   expected: $TS_EXPECTED{.err}"
 		echo " mountpoint: $TS_MOUNTPOINT"
 		echo
 	fi
@@ -389,54 +441,88 @@ function ts_init_py {
 }
 
 function ts_run {
+	declare -a args
+	local asan_options="strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1"
+
+	#
+	# ASAN mode
+	#
+	if [ "$TS_ENABLE_ASAN" == "yes" -o "$TS_ENABLE_UBSAN" == "yes" ]; then
+		args+=(env)
+		if [ "$TS_ENABLE_ASAN" == "yes" ]; then
+			# detect_leaks isn't supported on s390x: https://github.com/llvm/llvm-project/blob/master/compiler-rt/lib/lsan/lsan_common.h
+			if [ "$(uname -m)" != "s390x" ]; then
+				asan_options="$asan_options:detect_leaks=1"
+			fi
+			args+=(ASAN_OPTIONS=$asan_options)
+		fi
+		if [ "$TS_ENABLE_UBSAN" == "yes" ]; then
+			args+=(UBSAN_OPTIONS=print_stacktrace=1:print_summary=1:halt_on_error=1)
+		fi
+	fi
+
 	#
 	# valgrind mode
 	#
 	if [ -n "$TS_VALGRIND_CMD" ]; then
-		libtool --mode=execute \
-		$TS_VALGRIND_CMD --tool=memcheck --leak-check=full \
-				 --leak-resolution=high --num-callers=20 \
-				 --log-file="$TS_VGDUMP" "$@"
-	#
-	# ASAN mode
-	#
-	elif [ "$TS_ENABLE_ASAN" == "yes" ]; then
-		ASAN_OPTIONS='detect_leaks=1' "$@"
-
-	#
-	# Default mode
-	#
-	else
-		"$@"
+		args+=(libtool --mode=execute "$TS_VALGRIND_CMD" --tool=memcheck --leak-check=full)
+		args+=(--leak-resolution=high --num-callers=20 --log-file="$TS_VGDUMP")
 	fi
+
+	"${args[@]}" "$@"
+}
+
+function ts_gen_diff_from {
+	local res=0
+	local expected="$1"
+	local output="$2"
+	local difffile="$3"
+
+	diff -u $expected $output > $difffile
+
+	if [ $? -ne 0 ] || [ -s $difffile ]; then
+		res=1
+		if [ "$TS_SHOWDIFF" == "yes" -a "$TS_KNOWN_FAIL" != "yes" ]; then
+			echo
+			echo "diff-{{{"
+			cat $difffile
+			echo "}}}-diff"
+			echo
+		fi
+	else
+		rm -f $difffile;
+	fi
+
+	return $res
 }
 
 function ts_gen_diff {
-	local res=0
+	local status_out=0
+	local status_err=0
 
 	[ -f "$TS_OUTPUT" ] || return 1
 	[ -f "$TS_EXPECTED" ] || TS_EXPECTED=/dev/null
 
 	# remove libtool lt- prefixes
 	sed --in-place 's/^lt\-\(.*\: \)/\1/g' $TS_OUTPUT
+	sed --in-place 's/^lt\-\(.*\: \)/\1/g' $TS_ERRLOG
 
 	[ -d "$TS_DIFFDIR" ] || mkdir -p "$TS_DIFFDIR"
-	diff -u $TS_EXPECTED $TS_OUTPUT > $TS_DIFF
 
-	if [ $? -ne 0 ] || [ -s $TS_DIFF ]; then
-		res=1
-		if [ "$TS_SHOWDIFF" == "yes" ]; then
-			echo
-			echo "diff-{{{"
-			cat $TS_DIFF
-			echo "}}}-diff"
-			echo
-		fi
-	else
-		rm -f $TS_DIFF;
+	ts_gen_diff_from $TS_EXPECTED $TS_OUTPUT $TS_DIFF
+	status_out=$?
+
+	# error log is fully optional
+	[ -f "$TS_EXPECTED_ERR" ] || TS_EXPECTED_ERR=/dev/null
+	[ -f "$TS_ERRLOG" ] || TS_ERRLOG=/dev/null
+
+	ts_gen_diff_from $TS_EXPECTED_ERR $TS_ERRLOG $TS_DIFF.err
+	status_err=$?
+
+	if [ $status_out -ne 0 -o $status_err -ne 0 ]; then
+		return 1
 	fi
-
-	return $res
+	return 0
 }
 
 function tt_gen_mem_report {
@@ -695,18 +781,19 @@ function ts_fdisk_clean {
 
 	# remove non comparable parts of fdisk output
 	if [ -n "${DEVNAME}" ]; then
-		sed -i -e "s@${DEVNAME}@<removed>@;" $TS_OUTPUT
+		sed -i -e "s@${DEVNAME}@<removed>@;" $TS_OUTPUT $TS_ERRLOG
 	fi
 
 	sed -i \
 		-e 's/Disk identifier:.*/Disk identifier: <removed>/' \
-		-e 's/Created a new.*/Created a new <removed>./' \
+		-e 's/Created a new partition.*/Created a new partition <removed>./' \
+		-e 's/Created a new .* disklabel .*/Created a new disklabel./' \
 		-e 's/^Device[[:blank:]]*Start/Device             Start/' \
 		-e 's/^Device[[:blank:]]*Boot/Device     Boot/' \
 		-e 's/Welcome to fdisk.*/Welcome to fdisk <removed>./' \
 		-e 's/typescript file.*/typescript file <removed>./' \
 		-e 's@^\(I/O size (minimum/op.* bytes /\) [1-9][0-9]* @\1 <removed> @' \
-		$TS_OUTPUT
+		$TS_OUTPUT $TS_ERRLOG
 }
 
 
@@ -946,4 +1033,3 @@ function ts_has_ncurses_support {
 		echo "no"
 	fi
 }
-

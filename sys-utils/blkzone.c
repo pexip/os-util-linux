@@ -44,14 +44,29 @@
 #include "sysfs.h"
 #include "optutils.h"
 
+/*
+ * These ioctls are defined in linux/blkzoned.h starting with kernel 5.5.
+ */
+#ifndef BLKOPENZONE
+#define BLKOPENZONE	_IOW(0x12, 134, struct blk_zone_range)
+#endif
+#ifndef BLKCLOSEZONE
+#define BLKCLOSEZONE	_IOW(0x12, 135, struct blk_zone_range)
+#endif
+#ifndef BLKFINISHZONE
+#define BLKFINISHZONE	_IOW(0x12, 136, struct blk_zone_range)
+#endif
+
 struct blkzone_control;
 
 static int blkzone_report(struct blkzone_control *ctl);
-static int blkzone_reset(struct blkzone_control *ctl);
+static int blkzone_action(struct blkzone_control *ctl);
 
 struct blkzone_command {
 	const char *name;
 	int (*handler)(struct blkzone_control *);
+	unsigned long ioctl_cmd;
+	const char *ioctl_name;
 	const char *help;
 };
 
@@ -66,12 +81,40 @@ struct blkzone_control {
 	uint64_t length;
 	uint32_t count;
 
+	unsigned int force : 1;
 	unsigned int verbose : 1;
 };
 
 static const struct blkzone_command commands[] = {
-	{ "report",	blkzone_report, N_("Report zone information about the given device") },
-	{ "reset",	blkzone_reset,  N_("Reset a range of zones.") }
+	{
+		.name = "report",
+		.handler = blkzone_report,
+		.help = N_("Report zone information about the given device")
+	},{
+		.name = "reset",
+		.handler = blkzone_action,
+		.ioctl_cmd = BLKRESETZONE,
+		.ioctl_name = "BLKRESETZONE",
+		.help = N_("Reset a range of zones.")
+	},{
+		.name = "open",
+		.handler = blkzone_action,
+		.ioctl_cmd = BLKOPENZONE,
+		.ioctl_name = "BLKOPENZONE",
+		.help = N_("Open a range of zones.")
+	},{
+		.name = "close",
+		.handler = blkzone_action,
+		.ioctl_cmd = BLKCLOSEZONE,
+		.ioctl_name = "BLKCLOSEZONE",
+		.help = N_("Close a range of zones.")
+	},{
+		.name = "finish",
+		.handler = blkzone_action,
+		.ioctl_cmd = BLKFINISHZONE,
+		.ioctl_name = "BLKFINISHZONE",
+		.help = N_("Set a range of zones to Full.")
+	}
 };
 
 static const struct blkzone_command *name_to_command(const char *name)
@@ -209,13 +252,18 @@ static int blkzone_report(struct blkzone_control *ctl)
 			printf(_("Found %d zones from 0x%"PRIx64"\n"),
 				zi->nr_zones, ctl->offset);
 
-		if (!zi->nr_zones) {
-			nr_zones = 0;
+		if (!zi->nr_zones)
 			break;
-		}
 
 		for (i = 0; i < zi->nr_zones; i++) {
+/*
+ * blk_zone_report hasn't been packed since https://github.com/torvalds/linux/commit/b3e7e7d2d668de0102264302a4d10dd9d4438a42
+ * was merged. See https://github.com/karelzak/util-linux/issues/1083
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
 			const struct blk_zone *entry = &zi->zones[i];
+#pragma GCC diagnostic pop
 			unsigned int type = entry->type;
 			uint64_t start = entry->start;
 			uint64_t wp = entry->wp;
@@ -228,7 +276,7 @@ static int blkzone_report(struct blkzone_control *ctl)
 			}
 
 			printf(_("  start: 0x%09"PRIx64", len 0x%06"PRIx64", wptr 0x%06"PRIx64
-			 	" reset:%u non-seq:%u, zcond:%2u(%s) [type: %u(%s)]\n"),
+				" reset:%u non-seq:%u, zcond:%2u(%s) [type: %u(%s)]\n"),
 				start, len, (type == 0x1) ? 0 : wp - start,
 				entry->reset, entry->non_seq,
 				cond, condition_str[cond & (ARRAY_SIZE(condition_str) - 1)],
@@ -248,9 +296,9 @@ static int blkzone_report(struct blkzone_control *ctl)
 }
 
 /*
- * blkzone reset
+ * blkzone reset, open, close, and finish.
  */
-static int blkzone_reset(struct blkzone_control *ctl)
+static int blkzone_action(struct blkzone_control *ctl)
 {
 	struct blk_zone_range za = { .sector = 0 };
 	unsigned long zonesize;
@@ -261,7 +309,7 @@ static int blkzone_reset(struct blkzone_control *ctl)
 	if (!zonesize)
 		errx(EXIT_FAILURE, _("%s: unable to determine zone size"), ctl->devname);
 
-	fd = init_device(ctl, O_WRONLY);
+	fd = init_device(ctl, O_WRONLY | (ctl->force ? 0 : O_EXCL));
 
 	if (ctl->offset & (zonesize - 1))
 		errx(EXIT_FAILURE, _("%s: offset %" PRIu64 " is not aligned "
@@ -290,11 +338,13 @@ static int blkzone_reset(struct blkzone_control *ctl)
 	za.sector = ctl->offset;
 	za.nr_sectors = zlen;
 
-	if (ioctl(fd, BLKRESETZONE, &za) == -1)
-		err(EXIT_FAILURE, _("%s: BLKRESETZONE ioctl failed"), ctl->devname);
+	if (ioctl(fd, ctl->command->ioctl_cmd, &za) == -1)
+		err(EXIT_FAILURE, _("%s: %s ioctl failed"),
+		    ctl->devname, ctl->command->ioctl_name);
 	else if (ctl->verbose)
-		printf(_("%s: successfully reset in range from %" PRIu64 ", to %" PRIu64),
+		printf(_("%s: successful %s of zones in range from %" PRIu64 ", to %" PRIu64),
 			ctl->devname,
+			ctl->command->name,
 			ctl->offset,
 			ctl->offset + zlen);
 	close(fd);
@@ -320,9 +370,13 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -o, --offset <sector>  start sector of zone to act (in 512-byte sectors)\n"), out);
 	fputs(_(" -l, --length <sectors> maximum sectors to act (in 512-byte sectors)\n"), out);
 	fputs(_(" -c, --count <number>   maximum number of zones\n"), out);
+	fputs(_(" -f, --force            enforce on block devices used by the system\n"), out);
 	fputs(_(" -v, --verbose          display more details\n"), out);
 	fputs(USAGE_SEPARATOR, out);
 	printf(USAGE_HELP_OPTIONS(24));
+
+	fputs(USAGE_ARGUMENTS, out);
+	printf(USAGE_ARG_SIZE(_("<sector> and <sectors>")));
 
 	printf(USAGE_MAN_TAIL("blkzone(8)"));
 	exit(EXIT_SUCCESS);
@@ -332,10 +386,7 @@ int main(int argc, char **argv)
 {
 	int c;
 	struct blkzone_control ctl = {
-		.devname = NULL,
-		.offset = 0,
-		.count = 0,
-		.length = 0
+		.devname = NULL
 	};
 
 	static const struct option longopts[] = {
@@ -343,6 +394,7 @@ int main(int argc, char **argv)
 	    { "count",   required_argument, NULL, 'c' }, /* max #of zones to operate on */
 	    { "length",  required_argument, NULL, 'l' }, /* max of sectors to operate on */
 	    { "offset",  required_argument, NULL, 'o' }, /* starting LBA */
+	    { "force",   no_argument,       NULL, 'f' },
 	    { "verbose", no_argument,       NULL, 'v' },
 	    { "version", no_argument,       NULL, 'V' },
 	    { NULL, 0, NULL, 0 }
@@ -357,7 +409,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	if (argc >= 2 && *argv[1] != '-') {
 		ctl.command = name_to_command(argv[1]);
@@ -367,14 +419,11 @@ int main(int argc, char **argv)
 		argc--;
 	}
 
-	while ((c = getopt_long(argc, argv, "hc:l:o:vV", longopts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "hc:l:o:fvV", longopts, NULL)) != -1) {
 
 		err_exclusive_options(c, longopts, excl, excl_st);
 
 		switch (c) {
-		case 'h':
-			usage();
-			break;
 		case 'c':
 			ctl.count = strtou32_or_err(optarg,
 					_("failed to parse number of zones"));
@@ -387,12 +436,17 @@ int main(int argc, char **argv)
 			ctl.offset = strtosize_or_err(optarg,
 					_("failed to parse zone offset"));
 			break;
+		case 'f':
+			ctl.force = 1;
+			break;
 		case 'v':
 			ctl.verbose = 1;
 			break;
+
+		case 'h':
+			usage();
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}

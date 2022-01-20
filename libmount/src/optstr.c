@@ -351,7 +351,9 @@ int mnt_optstr_deduplicate_option(char **optstr, const char *name)
 			end = ol.end;
 			opt = end && *end ? end + 1 : NULL;
 		}
-	} while (rc == 0 && opt && *opt);
+		if (opt == NULL)
+			break;
+	} while (rc == 0 && *opt);
 
 	return rc < 0 ? rc : begin ? 0 : 1;
 }
@@ -743,7 +745,7 @@ int mnt_optstr_apply_flags(char **optstr, unsigned long flags,
 	if (!optstr || !map)
 		return -EINVAL;
 
-	DBG(CXT, ul_debug("applying 0x%08lu flags to '%s'", flags, *optstr));
+	DBG(CXT, ul_debug("applying 0x%08lx flags to '%s'", flags, *optstr));
 
 	maps[0] = map;
 	next = *optstr;
@@ -981,7 +983,7 @@ int mnt_optstr_fix_uid(char **optstr, char *value, size_t valsz, char **next)
 	    (*(value + 7) == ',' || !*(value + 7)))
 		return set_uint_value(optstr, getuid(), value, end, next);
 
-	else if (!isdigit(*value)) {
+	if (!isdigit(*value)) {
 		uid_t id;
 		int rc;
 		char *p = strndup(value, valsz);
@@ -1029,7 +1031,7 @@ int mnt_optstr_fix_gid(char **optstr, char *value, size_t valsz, char **next)
 	    (*(value + 7) == ',' || !*(value + 7)))
 		return set_uint_value(optstr, getgid(), value, end, next);
 
-	else if (!isdigit(*value)) {
+	if (!isdigit(*value)) {
 		int rc;
 		gid_t id;
 		char *p = strndup(value, valsz);
@@ -1075,7 +1077,7 @@ int mnt_optstr_fix_user(char **optstr)
 	if (!username)
 		return -ENOMEM;
 
-	if (!ol.valsz || (ol.value && strncmp(ol.value, username, ol.valsz))) {
+	if (!ol.valsz || (ol.value && strncmp(ol.value, username, ol.valsz) != 0)) {
 		if (ol.valsz)
 			/* remove old value */
 			mnt_optstr_remove_option_at(optstr, ol.value, ol.end);

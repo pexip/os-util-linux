@@ -3,9 +3,6 @@
 include /usr/share/dpkg/architecture.mk
 include /usr/share/dpkg/pkg-info.mk
 
-CONFOPTS += --libdir=/lib/$(DEB_HOST_MULTIARCH)
-CONFOPTS += --libexecdir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH)
-
 ifeq ($(DEB_HOST_ARCH_OS),linux)
 CONFOPTS += --enable-raw
 CONFOPTS += --with-selinux
@@ -18,6 +15,8 @@ else
 endif
 endif
 
+CONFOPTS += --enable-write
+
 # build static versions of programs used in fdisk-udeb and util-linux-udeb
 CONFOPTS += --enable-static-programs=fdisk,sfdisk,blkid
 
@@ -26,20 +25,16 @@ CONFOPTS += --enable-static-programs=fdisk,sfdisk,blkid
 CONFOPTS += --without-python
 
 # disable utilities shipped by other packages
+# => hardlink
+CONFOPTS += --disable-hardlink
 # => login
 CONFOPTS += --disable-login
 CONFOPTS += --disable-nologin
 # => procps
 CONFOPTS += --disable-kill
-# => eject
-CONFOPTS += --disable-eject
 # => passwd
 CONFOPTS += --disable-chfn-chsh
 # => bsdmainutils
-CONFOPTS += --disable-look
-CONFOPTS += --disable-hexdump
-CONFOPTS += --disable-col --disable-colcrt --disable-colrm --disable-column
-CONFOPTS += --disable-ul
 CONFOPTS += --disable-cal
 
 # Get the list of binary package, except lib* and *-udeb, from
@@ -72,6 +67,10 @@ endif
 	#
 	# remove *.la files
 	rm -f debian/tmp/usr/lib/*/*.la
+	#
+	# Avoid shipping static libraries.
+	# - libblkid.a is used by e2fsprogs.
+	find debian/tmp/usr/lib -name 'lib*.a' \! -name 'libuuid.a' \! -name 'libblkid.a' -delete
 
 override_dh_auto_clean:
 	dh_auto_clean
@@ -105,7 +104,7 @@ override_dh_install:
 		BASENAME=$$(basename $$BINARY); \
 		BCDIR=usr/share/bash-completion/completions/; \
 		BCNAME=$$BCDIR/$$BASENAME ; \
-		if [ "$$BASENAME" != '*' ] && [ -e "debian/tmp/$$BCNAME" ]; \
+		if [ "$$BASENAME" != '*' ] && find "debian/tmp/$$BCNAME" -quit; \
 		then \
 			echo "$$PACKAGE: Installing $$BCNAME"; \
 			[ -d debian/$$PACKAGE/$$BCDIR ] || \
@@ -119,6 +118,9 @@ override_dh_install:
 
 override_dh_installman:
 	dh_installman --language=C
+
+override_dh_missing:
+	dh_missing --list-missing
 
 override_dh_gencontrol:
 ifeq ($(filter stage1,$(DEB_BUILD_PROFILES)),)
@@ -149,38 +151,20 @@ override_dh_installpam:
 	dh_installpam --package=util-linux --name=su
 	dh_installpam --package=util-linux --name=su-l
 
-override_dh_makeshlibs:
-	dh_makeshlibs \
-		-N libsmartcols1 -N libblkid1 \
-		-N libfdisk1 -N libmount1 -N libuuid1
-	dh_makeshlibs -plibsmartcols1 -V \
-		--add-udeb=libsmartcols1-udeb
-	dh_makeshlibs -plibblkid1 -V \
-		--add-udeb=libblkid1-udeb
-	dh_makeshlibs -plibfdisk1 -V \
-		--add-udeb=libfdisk1-udeb
-	dh_makeshlibs -plibmount1 -V \
-		--add-udeb=libmount1-udeb
-	dh_makeshlibs -plibuuid1 -V \
-		--add-udeb=libuuid1-udeb
-
 override_dh_fixperms:
-	dh_fixperms -i -a -Xusr/bin/wall -Xbin/mount -Xbin/umount -Xbin/su
+	dh_fixperms -i -a -Xusr/bin/wall -Xusr/bin/write.ul -Xbin/mount -Xbin/umount -Xbin/su
 
 ifeq (linux,$(DEB_HOST_ARCH_OS))
 override_dh_installsystemd:
-	dh_installsystemd -putil-linux --no-enable --no-start fstrim.timer fstrim.service
+	dh_installsystemd -putil-linux fstrim.timer
+	dh_installsystemd -putil-linux fstrim.service
 	dh_installsystemd --remaining-packages
 endif
 
 override_dh_auto_test:
-ifneq (,$(filter alpha armel armhf arm64,$(DEB_HOST_ARCH)))
-	@echo "WARNING: Making tests non-fatal because of arch $(DEB_HOST_ARCH)"
-	dh_auto_test --max-parallel=1 || true
-else ifeq ($(DEB_HOST_ARCH_OS), linux)
+ifeq ($(DEB_HOST_ARCH_OS), linux)
 	dh_auto_test --max-parallel=1
 else
 	@echo "WARNING: non-linux detected, making tests non-fatal."
 	dh_auto_test --max-parallel=1 || true
 endif
-

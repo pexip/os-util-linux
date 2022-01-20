@@ -74,10 +74,12 @@ static int probe_f2fs(blkid_probe pr, const struct blkid_idmag *mag)
 	if (*((unsigned char *) sb->volume_name))
 		blkid_probe_set_utf8label(pr, (unsigned char *) sb->volume_name,
 						sizeof(sb->volume_name),
-						BLKID_ENC_UTF16LE);
+						UL_ENCODE_UTF16LE);
 
 	blkid_probe_set_uuid(pr, sb->uuid);
 	blkid_probe_sprintf_version(pr, "%u.%u", vermaj, vermin);
+	if (le32_to_cpu(sb->log_blocksize) < 32)
+		blkid_probe_set_block_size(pr, 1U << le32_to_cpu(sb->log_blocksize));
 	return 0;
 }
 

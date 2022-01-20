@@ -42,7 +42,6 @@
 #include <errno.h>
 #include <string.h>
 #include <getopt.h>
-#include <utime.h>
 #include <fcntl.h>
 
 /* We don't use our include/crc32.h, but crc32 from zlib!
@@ -52,6 +51,7 @@
  */
 #include <zlib.h>
 
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
@@ -131,12 +131,15 @@ static int get_superblock_endianness(uint32_t magic)
 	if (magic == CRAMFS_MAGIC) {
 		cramfs_is_big_endian = HOST_IS_BIG_ENDIAN;
 		return 0;
-	} else if (magic ==
+	}
+
+	if (magic ==
 		   u32_toggle_endianness(!HOST_IS_BIG_ENDIAN, CRAMFS_MAGIC)) {
 		cramfs_is_big_endian = !HOST_IS_BIG_ENDIAN;
 		return 0;
-	} else
-		return -1;
+	}
+
+	return -1;
 }
 
 static void test_super(int *start, size_t * length)
@@ -368,7 +371,7 @@ static int uncompress_block(void *src, size_t len)
 	return stream.total_out;
 }
 
-#if !HAVE_LCHOWN
+#ifndef HAVE_LCHOWN
 #define lchown chown
 #endif
 
@@ -416,10 +419,9 @@ static void do_uncompress(char *path, int outfd, unsigned long offset,
 		curr = next;
 	} while (size);
 }
-
 static void change_file_status(char *path, struct cramfs_inode *i)
 {
-	struct utimbuf epoch = { 0, 0 };
+	const struct timeval epoch[] = { {0,0}, {0,0} };
 
 	if (euid == 0) {
 		if (lchown(path, i->uid, i->gid) < 0)
@@ -431,8 +433,8 @@ static void change_file_status(char *path, struct cramfs_inode *i)
 	}
 	if (S_ISLNK(i->mode))
 		return;
-	if (utime(path, &epoch) < 0)
-		err(FSCK_EX_ERROR, _("utime failed: %s"), path);
+	if (utimes(path, epoch) < 0)
+		err(FSCK_EX_ERROR, _("utimes failed: %s"), path);
 }
 
 static void do_directory(char *path, struct cramfs_inode *i)
@@ -660,7 +662,7 @@ int main(int argc, char **argv)
 	setlocale(LC_CTYPE, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	strutils_set_exitcode(FSCK_EX_USAGE);
 
@@ -674,8 +676,7 @@ int main(int argc, char **argv)
 			usage();
 			break;
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return FSCK_EX_OK;
+			print_version(FSCK_EX_OK);
 		case 'x':
 			opt_extract = 1;
 			if(optarg)

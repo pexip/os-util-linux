@@ -24,7 +24,7 @@
 .\"
 .TH UMOUNT 8 "July 2014" "util-linux" "System Administration"
 .SH NAME
-umount \- unmount file systems
+umount \- unmount filesystems
 .SH SYNOPSIS
 .B umount \-a
 .RB [ \-dflnrv ]
@@ -43,37 +43,42 @@ umount \- unmount file systems
 .SH DESCRIPTION
 The
 .B umount
-command detaches the mentioned file system(s) from the file hierarchy.  A
-file system is specified by giving the directory where it has been
-mounted.  Giving the special device on which the file system lives may
+command detaches the mentioned filesystem(s) from the file hierarchy.  A
+filesystem is specified by giving the directory where it has been
+mounted.  Giving the special device on which the filesystem lives may
 also work, but is obsolete, mainly because it will fail in case this
 device was mounted on more than one directory.
 .PP
-Note that a file system cannot be unmounted when it is 'busy' - for
+Note that a filesystem cannot be unmounted when it is 'busy' - for
 example, when there are open files on it, or when some process has its
 working directory there, or when a swap file on it is in use.  The
 offending process could even be
 .B umount
 itself - it opens libc, and libc in its turn may open for example locale
-files.  A lazy unmount avoids this problem, but it may introduce another
+files.  A lazy unmount avoids this problem, but it may introduce other
 issues. See \fB\-\-lazy\fR description below.
 .SH OPTIONS
 .TP
 .BR \-a , " \-\-all"
 All of the filesystems described in
 .I /proc/self/mountinfo
-(or in deprecated /etc/mtab)
+(or in deprecated
+.IR /etc/mtab )
 are unmounted, except the proc, devfs, devpts, sysfs, rpc_pipefs and nfsd
 filesystems. This list of the filesystems may be replaced by \fB\-\-types\fR
 umount option.
 .TP
 .BR \-A , " \-\-all\-targets"
-Unmount all mountpoints in the current namespace for the specified filesystem.
+Unmount all mountpoints in the current mount namespace
+for the specified filesystem.
 The filesystem can be specified by one of the mountpoints or the device name (or
 UUID, etc.).  When this option is used together with \fB\-\-recursive\fR, then
 all nested mounts within the filesystem are recursively unmounted.
-This option is only supported on systems where /etc/mtab is a symlink
-to /proc/mounts.
+This option is only supported on systems where
+.I /etc/mtab
+is a symlink
+to
+.IR /proc/mounts .
 .TP
 .BR \-c , " \-\-no\-canonicalize"
 Do not canonicalize paths.  The paths canonicalization is based on
@@ -123,25 +128,32 @@ anymore.
 
 A system reboot would be expected in near future if you're going to use this
 option for network filesystem or local filesystem with submounts.  The
-recommended use-case for \fBumount -l\fR is to prevent hangs on shutdown due to
+recommended use-case for \fBumount \-l\fR is to prevent hangs on shutdown due to
 an unreachable network share where a normal umount will hang due to a downed
 server or a network partition. Remounts of the share will not be possible.
 
 .TP
 .BR \-N , " \-\-namespace " \fIns
-Perform umount in namespace specified by \fIns\fR.
+Perform umount in the mount namespace specified by \fIns\fR.
 \fIns\fR is either PID of process running in that namespace
 or special file representing that namespace.
 .sp
 .BR umount (8)
-switches to the namespace when it reads /etc/fstab, writes /etc/mtab (or writes to /run/mount) and calls
+switches to the namespace when it reads
+.IR /etc/fstab ,
+writes
+.I /etc/mtab
+(or writes to
+.IR /run/mount )
+and calls
 .BR umount (2)
-system call, otherwise it runs in the original namespace. It means that the target namespace does not have
-to contain any libraries or another requirements necessary to execute
+system call, otherwise it runs in the original namespace.
+It means that the target mount namespace does not have
+to contain any libraries or other requirements necessary to execute
 .BR umount (2)
 command.
 .sp
-See \fBnamespaces\fR(7) for more information.
+See \fBmount_namespaces\fR(7) for more information.
 .TP
 .BR \-n , " \-\-no\-mtab"
 Unmount without writing in
@@ -161,7 +173,9 @@ Suppress "not mounted" error messages.
 .BR \-R , " \-\-recursive"
 Recursively unmount each specified directory.  Recursion for each directory will
 stop if any unmount operation in the chain fails for any reason.  The relationship
-between mountpoints is determined by /proc/self/mountinfo entries.  The filesystem
+between mountpoints is determined by
+.I /proc/self/mountinfo
+entries.  The filesystem
 must be specified by mountpoint path; a recursive unmount by device name (or UUID)
 is unsupported.
 .TP
@@ -179,8 +193,9 @@ to indicate that no action should be taken for all of the mentioned types.
 Note that
 .B umount
 reads information about mounted filesystems from kernel (/proc/mounts) and
-filesystem names may be different than filesystem names used in the /etc/fstab
-(e.g. "nfs4" vs. "nfs").
+filesystem names may be different than filesystem names used in the
+.I /etc/fstab
+(e.g., "nfs4" vs. "nfs").
 .TP
 .BR \-v , " \-\-verbose"
 Verbose mode.
@@ -190,17 +205,39 @@ Display version information and exit.
 .TP
 .BR \-h , " \-\-help"
 Display help text and exit.
-.SH "LOOP DEVICE"
+.SH NON-SUPERUSER UMOUNTS
+Normally, only the superuser can umount filesystems.
+However, when
+.I fstab
+contains the
+.B user
+option on a line, anybody can umount the corresponding filesystem.  For more details see
+.BR mount (8)
+man page.
+.PP
+Since version 2.34 the \fBumount\fR command can be used to
+perform umount operation also
+for fuse filesystems if kernel mount table contains user's ID.  In this case fstab
+user= mount option is not required.
+.PP
+Since version 2.35 \fBumount\fR command does not exit when user permissions are
+inadequate by internal libmount security rules.  It drops suid permissions
+and continue as regular non-root user.
+This can be used to support use-cases where
+root permissions are not necessary (e.g., fuse filesystems, user namespaces,
+etc).
+.SH LOOP DEVICE
 The
 .B umount
 command will automatically detach loop device previously initialized by
 .BR mount (8)
-command independently of /etc/mtab.
+command independently of
+.IR /etc/mtab .
 
 In this case the device is initialized with "autoclear" flag (see
 .BR losetup (8)
 output for more details), otherwise it's necessary to use the option \fB \-\-detach\-loop\fR
-or call \fBlosetup -d <device>\fR. The autoclear feature is supported since Linux 2.6.25.
+or call \fBlosetup \-d <device>\fR. The autoclear feature is supported since Linux 2.6.25.
 .SH EXTERNAL HELPERS
 The syntax of external unmount helpers is:
 .PP
@@ -232,19 +269,8 @@ A \fBhelper=\fItype\fR marker in the mtab file will redirect
 all unmount requests
 to the \fB/sbin/umount.\fItype\fR helper independently of UID.
 .PP
-Note that \fI/etc/mtab\fR is currently deprecated and helper= and another
+Note that \fI/etc/mtab\fR is currently deprecated and helper= and other
 userspace mount options are maintained by libmount.
-.SH FILES
-.TP
-.I /etc/mtab
-table of mounted filesystems (deprecated and usually replaced by
-symlink to /proc/mounts)
-.TP
-.I /etc/fstab
-table of known filesystems
-.TP
-.I /proc/self/mountinfo
-table of mounted filesystems generated by kernel.
 .SH ENVIRONMENT
 .IP LIBMOUNT_FSTAB=<path>
 overrides the default location of the fstab file (ignored for suid)
@@ -252,14 +278,27 @@ overrides the default location of the fstab file (ignored for suid)
 overrides the default location of the mtab file (ignored for suid)
 .IP LIBMOUNT_DEBUG=all
 enables libmount debug output
-.SH "SEE ALSO"
-.BR umount (2),
-.BR losetup (8),
-.BR mount (8)
+.SH FILES
+.TP
+.I /etc/mtab
+table of mounted filesystems (deprecated and usually replaced by
+symlink to
+.IR /proc/mounts )
+.TP
+.I /etc/fstab
+table of known filesystems
+.TP
+.I /proc/self/mountinfo
+table of mounted filesystems generated by kernel.
 .SH HISTORY
 A
 .B umount
 command appeared in Version 6 AT&T UNIX.
+.SH SEE ALSO
+.BR umount (2),
+.BR losetup (8),
+.BR mount_namespaces (7)
+.BR mount (8)
 .SH AVAILABILITY
 The umount command is part of the util-linux package and is available from
 .UR https://\:www.kernel.org\:/pub\:/linux\:/utils\:/util-linux/

@@ -225,6 +225,9 @@ int fdisk_table_add_partition(struct fdisk_table *tb, struct fdisk_partition *pa
 	if (!tb || !pa)
 		return -EINVAL;
 
+	if (!list_empty(&pa->parts))
+		return -EBUSY;
+
 	fdisk_ref_partition(pa);
 	list_add_tail(&pa->parts, &tb->parts);
 	tb->nents++;
@@ -300,7 +303,7 @@ int fdisk_table_remove_partition(struct fdisk_table *tb, struct fdisk_partition 
  * @tb: returns table
  *
  * This function adds partitions from disklabel to @table, it allocates a new
- * table if if @table points to NULL.
+ * table if @table points to NULL.
  *
  * Returns: 0 on success, otherwise, a corresponding error.
  */
@@ -575,7 +578,7 @@ done:
  *
  * Note that free space smaller than grain (see fdisk_get_grain_size()) is
  * ignored.
-
+ *
  * Returns: 0 on success, otherwise, a corresponding error.
  */
 int fdisk_get_freespaces(struct fdisk_context *cxt, struct fdisk_table **tb)
@@ -621,10 +624,12 @@ int fdisk_get_freespaces(struct fdisk_context *cxt, struct fdisk_table **tb)
 					(uintmax_t) fdisk_partition_get_end(pa)));
 
 		/* We ignore small free spaces (smaller than grain) to keep partitions
-		 * aligned, the exception is space before the first partition where
-		 * we assume that cxt->first_lba is aligned. */
+		 * aligned, the exception is space before the first partition when
+		 * cxt->first_lba is aligned. */
 		if (last + grain < pa->start
-		    || (last < pa->start && nparts == 0)) {
+		    || (nparts == 0 &&
+		        (fdisk_align_lba(cxt, last, FDISK_ALIGN_UP) <
+			 pa->start))) {
 			rc = table_add_freespace(cxt, *tb,
 				last + (nparts == 0 ? 0 : 1),
 				pa->start - 1, NULL);
@@ -632,13 +637,18 @@ int fdisk_get_freespaces(struct fdisk_context *cxt, struct fdisk_table **tb)
 		/* add gaps between logical partitions */
 		if (fdisk_partition_is_container(pa))
 			rc = check_container_freespace(cxt, parts, *tb, pa);
-		last = fdisk_partition_get_end(pa);
+
+		if (fdisk_partition_has_end(pa)) {
+			fdisk_sector_t pa_end = fdisk_partition_get_end(pa);
+			if (pa_end > last)
+				last = fdisk_partition_get_end(pa);
+		}
 		nparts++;
 	}
 
 	/* add free-space behind last partition to the end of the table (so
 	 * don't use table_add_freespace()) */
-	if (rc == 0 && last + grain < cxt->total_sectors - 1) {
+	if (rc == 0 && last + grain < cxt->last_lba - 1) {
 		DBG(CXT, ul_debugobj(cxt, "freespace behind last partition detected"));
 		rc = new_freespace(cxt,
 			last + (last > cxt->first_lba || nparts ? 1 : 0),
@@ -720,7 +730,7 @@ int fdisk_diff_tables(struct fdisk_table *a, struct fdisk_table *b,
 		      struct fdisk_iter *itr,
 		      struct fdisk_partition **res, int *change)
 {
-	struct fdisk_partition *pa, *pb;
+	struct fdisk_partition *pa = NULL, *pb;
 	int rc = 1;
 
 	assert(itr);

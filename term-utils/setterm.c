@@ -3,7 +3,7 @@
  * Copyright (C) 1990 Gordon Irlam (gordoni@cs.ua.oz.au).  Conditions of use,
  * modification, and redistribution are contained in the file COPYRIGHT that
  * forms part of this distribution.
- * 
+ *
  * Adaption to Linux by Peter MacDonald.
  *
  * Enhancements by Mika Liljeberg (liljeber@cs.Helsinki.FI)
@@ -231,10 +231,13 @@ static int parse_ulhb_color(char **av, int *oi)
 	color = parse_color(color_name);
 	if (color < 0)
 		color = strtos32_or_err(color_name, _("argument error"));
-	if (!is_valid_color(color))
+	if (!is_valid_color(color) || color == DEFAULT)
 		errx(EXIT_FAILURE, "%s: %s", _("argument error"), color_name);
 	if (bright && (color == BLACK || color == GREY))
 		errx(EXIT_FAILURE, _("argument error: bright %s is not supported"), color_name);
+
+	if (bright)
+		color |= 8;
 
 	return color;
 }
@@ -244,11 +247,11 @@ static char *find_optional_arg(char **av, char *oa, int *oi)
 	char *arg;
 	if (oa)
 		return oa;
-	else {
-		arg = av[*oi];
-		if (!arg || arg[0] == '-')
-			return NULL;
-	}
+
+	arg = av[*oi];
+	if (!arg || arg[0] == '-')
+		return NULL;
+
 	(*oi)++;
 	return arg;
 }
@@ -262,29 +265,28 @@ static int parse_blank(char **av, char *oa, int *oi)
 		return BLANKEDSCREEN;
 	if (!strcmp(arg, "force"))
 		return BLANKSCREEN;
-	else if (!strcmp(arg, "poke"))
+	if (!strcmp(arg, "poke"))
 		return UNBLANKSCREEN;
-	else {
-		int ret;
 
-		ret = strtos32_or_err(arg, _("argument error"));
-		if (ret < 0 || BLANK_MAX < ret)
-			errx(EXIT_FAILURE, "%s: %s", _("argument error"), arg);
-		return ret;
-	}
+	int ret;
+
+	ret = strtos32_or_err(arg, _("argument error"));
+	if (ret < 0 || BLANK_MAX < ret)
+		errx(EXIT_FAILURE, "%s: %s", _("argument error"), arg);
+	return ret;
 }
 
 static int parse_powersave(const char *arg)
 {
 	if (strcmp(arg, "on") == 0)
 		return VESA_BLANK_MODE_SUSPENDV;
-	else if (strcmp(arg, "vsync") == 0)
+	if (strcmp(arg, "vsync") == 0)
 		return VESA_BLANK_MODE_SUSPENDV;
-	else if (strcmp(arg, "hsync") == 0)
+	if (strcmp(arg, "hsync") == 0)
 		return VESA_BLANK_MODE_SUSPENDH;
-	else if (strcmp(arg, "powerdown") == 0)
+	if (strcmp(arg, "powerdown") == 0)
 		return VESA_BLANK_MODE_POWERDOWN;
-	else if (strcmp(arg, "off") == 0)
+	if (strcmp(arg, "off") == 0)
 		return VESA_BLANK_MODE_OFF;
 	errx(EXIT_FAILURE, "%s: %s", _("argument error"), arg);
 }
@@ -382,44 +384,62 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("Set the attributes of a terminal.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
-	fputs(_(" --term          <terminal_name>   override TERM environment variable\n"), out);
-	fputs(_(" --reset                           reset terminal to power-on state\n"), out);
-	fputs(_(" --resize                          reset terminal rows and columns\n"), out);
-	fputs(_(" --initialize                      display init string, and use default settings\n"), out);
-	fputs(_(" --default                         use default terminal settings\n"), out);
-	fputs(_(" --store                           save current terminal settings as default\n"), out);
-	fputs(_(" --cursor        [on|off]          display cursor\n"), out);
-	fputs(_(" --repeat        [on|off]          keyboard repeat\n"), out);
-	fputs(_(" --appcursorkeys [on|off]          cursor key application mode\n"), out);
-	fputs(_(" --linewrap      [on|off]          continue on a new line when a line is full\n"), out);
-	fputs(_(" --inversescreen [on|off]          swap colors for the whole screen\n"), out);
-	fputs(_(" --foreground    default|<color>   set foreground color\n"), out);
-	fputs(_(" --background    default|<color>   set background color\n"), out);
-	fputs(_(" --ulcolor       [bright] <color>  set underlined text color\n"), out);
-	fputs(_(" --hbcolor       [bright] <color>  set bold text color\n"), out);
-	fputs(_("                 <color>: black blue cyan green grey magenta red white yellow\n"), out);
-	fputs(_(" --bold          [on|off]          bold\n"), out);
-	fputs(_(" --half-bright   [on|off]          dim\n"), out);
-	fputs(_(" --blink         [on|off]          blink\n"), out);
-	fputs(_(" --underline     [on|off]          underline\n"), out);
-	fputs(_(" --reverse       [on|off]          swap foreground and background colors\n"), out);
-	fputs(_(" --clear         [all|rest]        clear screen and set cursor position\n"), out);
-	fputs(_(" --tabs          [<number>...]     set these tab stop positions, or show them\n"), out);
-	fputs(_(" --clrtabs       [<number>...]     clear these tab stop positions, or all\n"), out);
-	fputs(_(" --regtabs       [1-160]           set a regular tab stop interval\n"), out);
-	fputs(_(" --blank         [0-60|force|poke] set time of inactivity before screen blanks\n"), out);
-	fputs(_(" --dump          [<number>]        write vcsa<number> console dump to file\n"), out);
-	fputs(_(" --append        [<number>]        append vcsa<number> console dump to file\n"), out);
-	fputs(_(" --file          <filename>        name of the dump file\n"), out);
-	fputs(_(" --msg           [on|off]          send kernel messages to console\n"), out);
-	fputs(_(" --msglevel      0-8               kernel console log level\n"), out);
-	fputs(_(" --powersave     [on|vsync|hsync|powerdown|off]\n"), out);
-	fputs(_("                                   set vesa powersaving features\n"), out);
-	fputs(_(" --powerdown     [0-60]            set vesa powerdown interval in minutes\n"), out);
-	fputs(_(" --blength       [0-2000]          duration of the bell in milliseconds\n"), out);
-	fputs(_(" --bfreq         <number>          bell frequency in Hertz\n"), out);
-	printf( " --help                            %s\n", USAGE_OPTSTR_HELP);
-	printf( " --version                         %s\n", USAGE_OPTSTR_VERSION);
+	fputs(_(" --term <terminal_name>        override TERM environment variable\n"), out);
+	fputs(_(" --reset                       reset terminal to power-on state\n"), out);
+	fputs(_(" --resize                      reset terminal rows and columns\n"), out);
+	fputs(_(" --initialize                  display init string, and use default settings\n"), out);
+	fputs(_(" --default                     use default terminal settings\n"), out);
+	fputs(_(" --store                       save current terminal settings as default\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+
+	fputs(_(" --cursor on|off               display cursor\n"), out);
+	fputs(_(" --repeat on|off               keyboard repeat\n"), out);
+	fputs(_(" --appcursorkeys on|off        cursor key application mode\n"), out);
+	fputs(_(" --linewrap on|off             continue on a new line when a line is full\n"), out);
+	fputs(_(" --inversescreen on|off        swap colors for the whole screen\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+
+	fputs(_(" --msg on|off                  send kernel messages to console\n"), out);
+	fputs(_(" --msglevel <0-8>              kernel console log level\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+
+	fputs(_(" --foreground default|<color>  set foreground color\n"), out);
+	fputs(_(" --background default|<color>  set background color\n"), out);
+	fputs(_(" --ulcolor [bright] <color>    set underlined text color\n"), out);
+	fputs(_(" --hbcolor [bright] <color>    set half-bright text color\n"), out);
+	fputs(_("        <color>: black blue cyan green grey magenta red white yellow\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+
+	fputs(_(" --bold on|off                 bold\n"), out);
+	fputs(_(" --half-bright on|off          dim\n"), out);
+	fputs(_(" --blink on|off                blink\n"), out);
+	fputs(_(" --underline on|off            underline\n"), out);
+	fputs(_(" --reverse  on|off             swap foreground and background colors\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+
+	fputs(_(" --clear[=<all|rest>]          clear screen and set cursor position\n"), out);
+	fputs(_(" --tabs[=<number>...]          set these tab stop positions, or show them\n"), out);
+	fputs(_(" --clrtabs[=<number>...]       clear these tab stop positions, or all\n"), out);
+	fputs(_(" --regtabs[=1-160]             set a regular tab stop interval\n"), out);
+	fputs(_(" --blank[=0-60|force|poke]     set time of inactivity before screen blanks\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+
+	fputs(_(" --dump[=<number>]             write vcsa<number> console dump to file\n"), out);
+	fputs(_(" --append <number>             append vcsa<number> console dump to file\n"), out);
+	fputs(_(" --file <filename>             name of the dump file\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+
+	fputs(_(" --powersave on|vsync|hsync|powerdown|off\n"), out);
+	fputs(_("                               set vesa powersaving features\n"), out);
+	fputs(_(" --powerdown[=<0-60>]          set vesa powerdown interval in minutes\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+
+	fputs(_(" --blength[=<0-2000>]          duration of the bell in milliseconds\n"), out);
+	fputs(_(" --bfreq[=<number>]            bell frequency in Hertz\n"), out);
+
+	fputs(USAGE_SEPARATOR, out);
+	printf( " --help                        %s\n", USAGE_OPTSTR_HELP);
+	printf( " --version                     %s\n", USAGE_OPTSTR_VERSION);
 
 	printf(USAGE_MAN_TAIL("setterm(1)"));
 	exit(EXIT_SUCCESS);
@@ -494,7 +514,7 @@ static void parse_option(struct setterm_control *ctl, int ac, char **av)
 		{"reverse", required_argument, NULL, OPT_REVERSE},
 		{"underline", required_argument, NULL, OPT_UNDERLINE},
 		{"store", no_argument, NULL, OPT_STORE},
-		{"clear", required_argument, NULL, OPT_CLEAR},
+		{"clear", optional_argument, NULL, OPT_CLEAR},
 		{"tabs", optional_argument, NULL, OPT_TABS},
 		{"clrtabs", optional_argument, NULL, OPT_CLRTABS},
 		{"regtabs", optional_argument, NULL, OPT_REGTABS},
@@ -610,8 +630,11 @@ static void parse_option(struct setterm_control *ctl, int ac, char **av)
 			break;
 		case OPT_CLEAR:
 			ctl->opt_clear = set_opt_flag(ctl->opt_clear);
-			ctl->opt_cl_all = parse_switch(optarg, _("argument error"),
-						"all", "reset", NULL);
+			if (optarg)
+				ctl->opt_cl_all = parse_switch(optarg, _("argument error"),
+						"all", "rest", NULL);
+			else
+				ctl->opt_cl_all = 1;
 			break;
 		case OPT_TABS:
 			ctl->opt_tabs = set_opt_flag(ctl->opt_tabs);
@@ -670,9 +693,9 @@ static void parse_option(struct setterm_control *ctl, int ac, char **av)
 			ctl->opt_bfreq = set_opt_flag(ctl->opt_bfreq);
 			ctl->opt_bfreq_f = parse_bfreq(av, optarg, &optind);
 			break;
+
 		case OPT_VERSION:
-			printf(UTIL_LINUX_VERSION);
-			exit(EXIT_SUCCESS);
+			print_version(EXIT_SUCCESS);
 		case OPT_HELP:
 			usage();
 		default:
@@ -755,7 +778,6 @@ static void set_blanking(struct setterm_control *ctl)
 	default:		/* should be impossible to reach */
 		abort();
 	}
-	return;
 }
 
 static void screendump(struct setterm_control *ctl)
@@ -809,7 +831,6 @@ static void screendump(struct setterm_control *ctl)
 	free(ctl->in_device);
 	if (close_stream(out) != 0)
 		errx(EXIT_FAILURE, _("write error"));
-	return;
 }
 
 /* Some options are applicable when terminal is virtual console. */
@@ -861,7 +882,7 @@ static int select_wait(void)
 
 static int resizetty(void)
 {
-	/* 
+	/*
 	 * \e7        Save current state (cursor coordinates, attributes,
 	 *                character sets pointed at by G0, G1).
 	 * \e[r       Set scrolling region; parameters are top and bottom row.
@@ -973,11 +994,11 @@ static void perform_sequence(struct setterm_control *ctl)
 	if (ctl->opt_background)
 		printf("\033[4%c%s", '0' + ctl->opt_ba_color, "m");
 
-	/* -ulcolor black|red|green|yellow|blue|magenta|cyan|white|default. */
+	/* -ulcolor [bright] black|red|green|yellow|blue|magenta|cyan|white. */
 	if (ctl->opt_ulcolor && vc_only(ctl, "--ulcolor"))
 		printf("\033[1;%d]", ctl->opt_ul_color);
 
-	/* -hbcolor black|red|green|yellow|blue|magenta|cyan|white|default. */
+	/* -hbcolor [bright] black|red|green|yellow|blue|magenta|cyan|white. */
 	if (ctl->opt_hbcolor)
 		printf("\033[2;%d]", ctl->opt_hb_color);
 
@@ -1170,7 +1191,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	if (argc < 2) {
 		warnx(_("bad usage"));

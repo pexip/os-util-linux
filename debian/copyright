@@ -26,8 +26,8 @@ Copyright:      Michal Luscon <mluscon@redhat.com>
            2000 Werner Almesberger
            2004-2006 Michael Holzt, kju -at- fqdn.org
            2005 Adrian Bunk
-           2007-2014 Karel Zak <kzak@redhat.com>
-           2007, 2011 SuSE LINUX Products GmbH
+           2007-2020 Karel Zak <kzak@redhat.com>
+           2007, 2011, 2012, 2016 SuSE LINUX Products GmbH
            2008 Cai Qian <qcai@redhat.com>
            2008 Hayden A. James (hayden.james@gmail.com)
            2008 James Youngman <jay@gnu.org>
@@ -238,14 +238,104 @@ License: LGPL-3+
 Files: libsmartcols/*
 Copyright:  2009-2014 Karel Zak <kzak@redhat.com>
             2014 Ondrej Oprala <ooprala@redhat.com>
-License: LGPL
+License: LGPL-2.1+
 
 Files: debian/*
-Copyright:      Guy Maor <maor@debian.org>
-                Sean 'Shaleh' Perry <shaleh@debian.org>
-                Adrian Bunk <bunk@stusta.de>
-                LaMont Jones <lamont@debian.org>
-           2014 Andreas Henriksson <andreas@fatal.se>
+Copyright:           Guy Maor <maor@debian.org>
+                     Sean 'Shaleh' Perry <shaleh@debian.org>
+                     Adrian Bunk <bunk@stusta.de>
+                     LaMont Jones <lamont@debian.org>
+           1996-2003 Martin Mitchell (martin@debian.org)
+           2008-2012 Frank Lichtenheld (djpig@debian.org)
+           2014      Andreas Henriksson <andreas@fatal.se>
+           2017-2020 Michael Biebl <biebl@debian.org>
+           2019      Petter Reinholdtsen <pere@debian.org>
+           2017-2020 Chris Hofstaedtler <zeha@debian.org>
+License: GPL-2+
+
+Files: debian/po/*
+Copyright:           Aiet Kolkhi <aietkolkhi@gmail.com>
+                     Anton Gladky <gladky.anton@gmail.com>
+                     Arief S F (arief@gurame.fisika.ui.ac.id>
+                     Armin Beširović <armin@linux.org.ba>
+                     astur <malditoastur@gmail.com>
+                     Axel Bojer <axelb@skolelinux.no>
+                     Bart Cornelis <cobaco@skolelinux.no>
+                     Bartosz Fe�ski <fenio@o2.pl>
+                     Basil Shubin <bashu@surgut.ru>
+                     Baurzhan Muftakhidinov <baurthefirst@gmail.com>
+                     Bjorn Steensrud <bjornst@powertech.no>
+                     Claus Hindsgaul <claus_h@image.dk>
+                     Clytie Siddall <clytie@riverland.net.au>
+                     Dafydd Tomos <l10n@da.fydd.org>
+                     Damyan Ivanov <dam@modsoftsys.com>
+                     Daniel Franganillo <dfranganillo@gmail.com>
+                     Daniel Nylander <po@danielnylander.se>
+                     Danishka Navin <danishka@gmail.com>
+                     Dauren Sarsenov <daur88@inbox.ru>
+                     Dominik Zablotny <dominz@wp.pl>
+                     Dr.T.Vasudevan <agnihot3@gmail.com>
+                     Eddy Petrisor <eddy.petrisor@gmail.com>
+                     Eder L. Marques <frolic@debian-ce.org>
+                     Elian Myftiu <elian.myftiu@gmail.com>
+                     Emmanuel Galatoulas <galas@tee.gr>
+                     Esko Arajärvi <edu@iki.fi>
+                     Frank Lichtenheld <djpig@debian.org>
+                     Frédéric Bothamy <frederic.bothamy@free.fr>
+                     Gabor Burjan <buga@buvoshetes.hu>
+                     George Papamichelakis <george@step.gr>
+                     Hans Fredrik Nordhaug <hans@nordhaug.priv.no>
+                     Håvard Korsvoll <korsvoll@gmail.com>
+                     Hideki Yamane <henrich@samba.gr.jp>
+                     Hleb Rubanau <g.rubanau@gmail.com>
+                     I Gede Wijaya S <gwijayas@yahoo.com>
+                     Ivan Masár <helix84@centrum.sk>
+                     Jacobo Tarrio <jtarrio@debian.org>
+                     Jamil Ahmed <jamil@ankur.org.bd>
+                     Janos Guljas <janos@resenje.org>
+                     Jordi Mallach <jordi@debian.org>
+                     Josip Rodin <joy+ditrans@linux.hr>
+                     Karolina Kalic <karolina@resenje.org>
+                     Kartik Mistry <kartik.mistry@gmail.com>
+                     Kęstutis Biliūnas <kebil@kaunas.init.lt>
+                     Kevin Scannell <kscanne@gmail.com>
+                     Khoem Sokhem <khoemsokhem@khmeros.info>
+                     Klaus Ade Johnstad <klaus@skolelinux.no>
+                     Knut Yrvin <knuty@skolelinux.no>
+                     Konstantinos Margaritis <markos@debian.org>
+                     Kostas Papadimas <pkst@gnome.org>
+                     Kumar Appaiah <a.kumar@alumni.iitm.ac.in>
+                     Lior Kaplan <kaplan@debian.org>
+                     Luiz Portella <lfpor@lujz.org>
+                     Mallikarjuna <Mallikarjunasj@gmail.com>
+                     Mert Dirik <mertdirik@gmail.com>
+                     Milo Casagrande <milo@ubuntu.com>
+                     Ming Hua <minghua@ubuntu.com>
+                     Miroslav Kure <kurem@debian.cz>
+                     Mouhamadou Mamoune Mbacke <mouhamadoumamoune@gmail.com>
+                     Nabin Gautam <nabin@mpp.org.np>
+                     Ossama M. Khayat <okhayat@yahoo.com>
+                     Ovidiu Damian <deelerious@gmail.com>
+                     Parlin Imanuel Toh <parlin_i@yahoo.com>
+                     Pavel Piatruk <berserker@neolocation.com>
+                     Piarres Beobide <pi@beobide.net>
+                     Praveen|പ്രവീണ്‍ A|എ <pravi.a@gmail.com>
+                     Rūdolfs Mazurs <rudolfs.mazurs@gmail.com>
+                     Sahran <Sahran.ug@gmail.com>
+                     Sampada Nakhare <sampadanakhare@gmail.com>
+                     Setyo Nugroho <setyo@gmx.net>
+                     Simão Pedro Cardoso <pthell@gmail.com>
+                     Stefano Melchior <stefano.melchior@openlabs.it>
+                     Sunjae Park <darehanl@gmail.com>
+                     Sveinn í Felli <sveinki@nett.is>
+                     Tetralet <tetralet@gmail.com>
+                     Theppitak Karoonboonyanan <thep@linux.thai.net>
+                     Tshewang Norbu <bumthap2006@hotmail.com>
+                     Vahid Ghaderi <vahid_male1384@yahoo.com>
+                     Vanja Cvelbar <cvelbar@gmail.com>
+                     Veeven <veeven@gmail.com>
+                     Vikram Vincent <vincentvikram@gmail.com>
+                     Yoppy Hidayanto <yoppy.hidayanto@gmail.com>
 License: GPL-2+
 
 
@@ -357,8 +447,8 @@ License: BSD-4-clause
     documentation and/or other materials provided with the distribution.
  3. All advertising materials mentioning features or use of this software
     must display the following acknowledgement:
-	This product includes software developed by the University of
-	California, Berkeley and its contributors.
+    This product includes software developed by the University of
+    California, Berkeley and its contributors.
  4. Neither the name of the University nor the names of its contributors
     may be used to endorse or promote products derived from this software
     without specific prior written permission.
@@ -454,4 +544,3 @@ License: MIT
  ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
  CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  SOFTWARE.
-

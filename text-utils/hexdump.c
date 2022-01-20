@@ -82,6 +82,13 @@ parse_args(int argc, char **argv, struct hexdump *hex)
 		{NULL, no_argument, NULL, 0}
 	};
 
+	if (!strcmp(program_invocation_short_name, "hd")) {
+		/* Canonical format */
+		add_fmt("\"%08.8_Ax\n\"", hex);
+		add_fmt("\"%08.8_ax  \" 8/1 \"%02x \" \"  \" 8/1 \"%02x \" ", hex);
+		add_fmt("\"  |\" 16/1 \"%_p\" \"|\\n\"", hex);
+	}
+
 	while ((ch = getopt_long(argc, argv, "bcCde:f:L::n:os:vxhV", longopts, NULL)) != -1) {
 		switch (ch) {
 		case 'b':
@@ -130,12 +137,11 @@ parse_args(int argc, char **argv, struct hexdump *hex)
 			add_fmt(hex_offt, hex);
 			add_fmt("\"%07.7_ax \" 8/2 \"   %04x \" \"\\n\"", hex);
 			break;
+
 		case 'h':
 			usage();
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			exit(EXIT_SUCCESS);
-			break;
+			print_version(EXIT_SUCCESS);
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}
@@ -173,10 +179,14 @@ void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -n, --length <length>     interpret only length bytes of input\n"), out);
 	fputs(_(" -s, --skip <offset>       skip offset bytes from the beginning\n"), out);
 	fputs(_(" -v, --no-squeezing        output identical lines\n"), out);
+
 	fputs(USAGE_SEPARATOR, out);
 	printf(USAGE_HELP_OPTIONS(27));
-	printf(USAGE_MAN_TAIL("hexdump(1)"));
 
+	fputs(USAGE_ARGUMENTS, out);
+	printf(USAGE_ARG_SIZE(_("<length> and <offset>")));
+
+	printf(USAGE_MAN_TAIL("hexdump(1)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -193,7 +203,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	argv += parse_args(argc, argv, hex);
 

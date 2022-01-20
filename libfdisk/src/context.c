@@ -9,6 +9,7 @@
 #include "loopdev.h"
 #include "fdiskP.h"
 
+#include "strutils.h"
 
 /**
  * SECTION: context
@@ -17,13 +18,13 @@
  *
  * The library distinguish between three types of partitioning objects.
  *
- * on-disk data
+ * on-disk label data
  *    - disk label specific
  *    - probed and read  by disklabel drivers when assign device to the context
  *      or when switch to another disk label type
  *    - only fdisk_write_disklabel() modify on-disk data
  *
- * in-memory data
+ * in-memory label data
  *    - generic data and disklabel specific data stored in struct fdisk_label
  *    - all partitioning operations are based on in-memory data only
  *
@@ -31,8 +32,12 @@
  *    - provides abstraction to present partitions to users
  *    - fdisk_partition is possible to gather to fdisk_table container
  *    - used as unified template for new partitions
+ *    - used (with fdisk_table) in fdisk scripts
  *    - the struct fdisk_partition is always completely independent object and
  *      any change to the object has no effect to in-memory (or on-disk) label data
+ *
+ * Don't forget to inform kernel about changes by fdisk_reread_partition_table()
+ * or more smart fdisk_reread_changes().
  */
 
 /**
@@ -80,6 +85,8 @@ static int init_nested_from_parent(struct fdisk_context *cxt, int isnew)
 
 	parent = cxt->parent;
 
+	INIT_LIST_HEAD(&cxt->wipes);
+
 	cxt->alignment_offset = parent->alignment_offset;
 	cxt->ask_cb =		parent->ask_cb;
 	cxt->ask_data =		parent->ask_data;
@@ -116,18 +123,7 @@ static int init_nested_from_parent(struct fdisk_context *cxt, int isnew)
 	cxt->dev_model = NULL;
 	cxt->dev_model_probed = 0;
 
-	free(cxt->dev_path);
-	cxt->dev_path = NULL;
-
-	if (parent->dev_path) {
-		cxt->dev_path =	strdup(parent->dev_path);
-		if (!cxt->dev_path)
-			return -ENOMEM;
-	}
-
-	INIT_LIST_HEAD(&cxt->wipes);
-
-	return 0;
+	return strdup_between_structs(cxt, parent, dev_path);
 }
 
 /**
@@ -230,7 +226,8 @@ struct fdisk_label *fdisk_get_label(struct fdisk_context *cxt, const char *name)
 
 	if (!name)
 		return cxt->label;
-	else if (strcasecmp(name, "mbr") == 0)
+
+	if (strcasecmp(name, "mbr") == 0)
 		name = "dos";
 
 	for (i = 0; i < cxt->nlabels; i++)
@@ -338,7 +335,7 @@ int fdisk_has_protected_bootbits(struct fdisk_context *cxt)
  * @enable: 1 or 0
  *
  * The library zeroizes all the first sector when create a new disk label by
- * default.  This function allows to control this behavior. For now it's
+ * default.  This function can be used to control this behavior. For now it's
  * supported for MBR and GPT.
  *
  * Returns: 0 on success, < 0 on error.
@@ -483,7 +480,7 @@ int fdisk_is_ptcollision(struct fdisk_context *cxt)
  * </informalexample>
  *
  * Note that the recommended way to list partitions is to use
- * fdisk_get_partitions() and struct fdisk_table than ask disk driver for each
+ * fdisk_get_partitions() and struct fdisk_table then ask disk driver for each
  * individual partitions.
  *
  * Returns: maximal number of partitions for the current label.
@@ -533,12 +530,15 @@ static void reset_context(struct fdisk_context *cxt)
 
 	if (cxt->parent) {
 		/* the first sector may be independent on parent */
-		if (cxt->parent->firstsector != cxt->firstsector)
+		if (cxt->parent->firstsector != cxt->firstsector) {
+			DBG(CXT, ul_debugobj(cxt, "  firstsector independent on parent (freeing)"));
 			free(cxt->firstsector);
+		}
 	} else {
 		/* we close device only in primary context */
-		if (cxt->dev_fd > -1)
+		if (cxt->dev_fd > -1 && cxt->private_fd)
 			close(cxt->dev_fd);
+		DBG(CXT, ul_debugobj(cxt, "  freeing firstsector"));
 		free(cxt->firstsector);
 	}
 
@@ -555,6 +555,7 @@ static void reset_context(struct fdisk_context *cxt)
 	memset(&cxt->dev_st, 0, sizeof(cxt->dev_st));
 
 	cxt->dev_fd = -1;
+	cxt->private_fd = 0;
 	cxt->firstsector = NULL;
 	cxt->firstsector_bufsz = 0;
 
@@ -568,30 +569,12 @@ static void reset_context(struct fdisk_context *cxt)
 	fdisk_free_wipe_areas(cxt);
 }
 
-/**
- * fdisk_assign_device:
- * @cxt: context
- * @fname: path to the device to be handled
- * @readonly: how to open the device
- *
- * Open the device, discovery topology, geometry, detect disklabel and switch
- * the current label driver to reflect the probing result.
- *
- * Note that this function resets all generic setting in context. If the @cxt
- * is nested context then the device is assigned to the parental context and
- * necessary properties are copied to the @cxt. The change is propagated in
- * child->parent direction only. It's impossible to use a different device for
- * primary and nested contexts.
- *
- * Returns: 0 on success, < 0 on error.
- */
-int fdisk_assign_device(struct fdisk_context *cxt,
-			const char *fname, int readonly)
+/* fdisk_assign_device() body */
+static int fdisk_assign_fd(struct fdisk_context *cxt, int fd,
+			const char *fname, int readonly, int privfd)
 {
-	int fd;
-
-	DBG(CXT, ul_debugobj(cxt, "assigning device %s", fname));
 	assert(cxt);
+	assert(fd >= 0);
 
 	/* redirect request to parent */
 	if (cxt->parent) {
@@ -602,7 +585,7 @@ int fdisk_assign_device(struct fdisk_context *cxt,
 		 * unwanted extra warnings. */
 		fdisk_enable_listonly(cxt->parent, fdisk_is_listonly(cxt));
 
-		rc = fdisk_assign_device(cxt->parent, fname, readonly);
+		rc = fdisk_assign_fd(cxt->parent, fd, fname, readonly, privfd);
 		fdisk_enable_listonly(cxt->parent, org);
 
 		if (!rc)
@@ -614,16 +597,13 @@ int fdisk_assign_device(struct fdisk_context *cxt,
 
 	reset_context(cxt);
 
-	fd = open(fname, (readonly ? O_RDONLY : O_RDWR ) | O_CLOEXEC);
-	if (fd < 0)
-		goto fail;
-
 	if (fstat(fd, &cxt->dev_st) != 0)
 		goto fail;
 
 	cxt->readonly = readonly;
 	cxt->dev_fd = fd;
-	cxt->dev_path = strdup(fname);
+	cxt->private_fd = privfd;
+	cxt->dev_path = fname ? strdup(fname) : NULL;
 	if (!cxt->dev_path)
 		goto fail;
 
@@ -635,15 +615,20 @@ int fdisk_assign_device(struct fdisk_context *cxt,
 	if (fdisk_read_firstsector(cxt) < 0)
 		goto fail;
 
-	fdisk_probe_labels(cxt);
+	/* warn about obsolete stuff on the device if we aren't in list-only */
+	if (!fdisk_is_listonly(cxt) && fdisk_check_collisions(cxt) < 0)
+		goto fail;
 
+	fdisk_probe_labels(cxt);
 	fdisk_apply_label_device_properties(cxt);
 
-	/* warn about obsolete stuff on the device if we aren't in
-	 * list-only mode and there is not PT yet */
-	if (!fdisk_is_listonly(cxt) && !fdisk_has_label(cxt)
-	    && fdisk_check_collisions(cxt) < 0)
-		goto fail;
+	/* Don't report collision if there is already a valid partition table.
+	 * The bootbits are wiped when we create a *new* partition table only. */
+	if (fdisk_is_ptcollision(cxt) && fdisk_has_label(cxt)) {
+		cxt->pt_collision = 0;
+		free(cxt->collision);
+		cxt->collision = NULL;
+	}
 
 	DBG(CXT, ul_debugobj(cxt, "initialized for %s [%s]",
 			      fname, readonly ? "READ-ONLY" : "READ-WRITE"));
@@ -651,20 +636,89 @@ int fdisk_assign_device(struct fdisk_context *cxt,
 fail:
 	{
 		int rc = -errno;
-		if (fd >= 0)
-			close(fd);
+		cxt->dev_fd = -1;
 		DBG(CXT, ul_debugobj(cxt, "failed to assign device [rc=%d]", rc));
 		return rc;
 	}
 }
 
 /**
+ * fdisk_assign_device:
+ * @cxt: context
+ * @fname: path to the device to be handled
+ * @readonly: how to open the device
+ *
+ * Open the device, discovery topology, geometry, detect disklabel, check for
+ * collisions and switch the current label driver to reflect the probing
+ * result.
+ *
+ * If in standard mode (!= non-listonly mode) then also detects for collisions.
+ * The result is accessible by fdisk_get_collision() and
+ * fdisk_is_ptcollision().  The collision (e.g. old obsolete PT) may be removed
+ * by fdisk_enable_wipe().  Note that new PT and old PT may be on different
+ * locations.
+ *
+ * Note that this function resets all generic setting in context.
+ *
+ * If the @cxt is nested context (necessary for example to edit BSD or PMBR)
+ * then the device is assigned to the parental context and necessary properties
+ * are copied to the @cxt. The change is propagated in child->parent direction
+ * only. It's impossible to use a different device for primary and nested
+ * contexts.
+ *
+ * Returns: 0 on success, < 0 on error.
+ */
+int fdisk_assign_device(struct fdisk_context *cxt,
+			const char *fname, int readonly)
+{
+	int fd, rc;
+
+	DBG(CXT, ul_debugobj(cxt, "assigning device %s", fname));
+	assert(cxt);
+
+	fd = open(fname, (readonly ? O_RDONLY : O_RDWR ) | O_CLOEXEC);
+	if (fd < 0) {
+		rc = -errno;
+		DBG(CXT, ul_debugobj(cxt, "failed to assign device [rc=%d]", rc));
+		return rc;
+	}
+
+	rc = fdisk_assign_fd(cxt, fd, fname, readonly, 1);
+	if (rc)
+		close(fd);
+	return rc;
+}
+
+/**
+ * fdisk_assign_device_by_fd:
+ * @cxt: context
+ * @fd: device file descriptor
+ * @fname: path to the device (used for dialogs, debugging, partition names, ...)
+ * @readonly: how to use the device
+ *
+ * Like fdisk_assign_device(), but caller is responsible to open and close the
+ * device. The library only fsync() the device on fdisk_deassign_device().
+ *
+ * The device has to be open O_RDWR on @readonly=0.
+ *
+ * Returns: 0 on success, < 0 on error.
+ *
+ * Since: 2.35
+ */
+int fdisk_assign_device_by_fd(struct fdisk_context *cxt, int fd,
+			const char *fname, int readonly)
+{
+	return fdisk_assign_fd(cxt, fd, fname, readonly, 0);
+}
+
+/**
  * fdisk_deassign_device:
  * @cxt: context
- * @nosync: disable fsync()
+ * @nosync: disable sync() after close().
  *
- * Close device and call fsync(). If the @cxt is nested context than the
- * request is redirected to the parent.
+ * Call fsync(), close() and than sync(), but for read-only handler close the
+ * device only. If the @cxt is nested context then the request is redirected to
+ * the parent.
  *
  * Returns: 0 on success, < 0 on error.
  */
@@ -683,15 +737,19 @@ int fdisk_deassign_device(struct fdisk_context *cxt, int nosync)
 
 	DBG(CXT, ul_debugobj(cxt, "de-assigning device %s", cxt->dev_path));
 
-	if (cxt->readonly)
+	if (cxt->readonly && cxt->private_fd)
 		close(cxt->dev_fd);
 	else {
-		if (fsync(cxt->dev_fd) || close(cxt->dev_fd)) {
+		if (fsync(cxt->dev_fd)) {
+			fdisk_warn(cxt, _("%s: fsync device failed"),
+					cxt->dev_path);
+			return -errno;
+		}
+		if (cxt->private_fd && close(cxt->dev_fd)) {
 			fdisk_warn(cxt, _("%s: close device failed"),
 					cxt->dev_path);
 			return -errno;
 		}
-
 		if (!nosync) {
 			fdisk_info(cxt, _("Syncing disks."));
 			sync();
@@ -700,7 +758,6 @@ int fdisk_deassign_device(struct fdisk_context *cxt, int nosync)
 
 	free(cxt->dev_path);
 	cxt->dev_path = NULL;
-
 	cxt->dev_fd = -1;
 
 	return 0;
@@ -720,7 +777,7 @@ int fdisk_deassign_device(struct fdisk_context *cxt, int nosync)
 int fdisk_reassign_device(struct fdisk_context *cxt)
 {
 	char *devname;
-	int rdonly, rc;
+	int rdonly, rc, fd, privfd;
 
 	assert(cxt);
 	assert(cxt->dev_fd >= 0);
@@ -732,11 +789,19 @@ int fdisk_reassign_device(struct fdisk_context *cxt)
 		return -ENOMEM;
 
 	rdonly = cxt->readonly;
+	fd = cxt->dev_fd;
+	privfd = cxt->private_fd;
 
 	fdisk_deassign_device(cxt, 1);
-	rc = fdisk_assign_device(cxt, devname, rdonly);
-	free(devname);
 
+	if (privfd)
+		/* reopen and assign */
+		rc = fdisk_assign_device(cxt, devname, rdonly);
+	else
+		/* assign only */
+		rc = fdisk_assign_fd(cxt, fd, devname, rdonly, privfd);
+
+	free(devname);
 	return rc;
 }
 
@@ -757,24 +822,23 @@ int fdisk_reread_partition_table(struct fdisk_context *cxt)
 
 	if (!S_ISBLK(cxt->dev_st.st_mode))
 		return 0;
-	else {
-		DBG(CXT, ul_debugobj(cxt, "calling re-read ioctl"));
-		sync();
+
+	DBG(CXT, ul_debugobj(cxt, "calling re-read ioctl"));
+	sync();
 #ifdef BLKRRPART
-		fdisk_info(cxt, _("Calling ioctl() to re-read partition table."));
-		i = ioctl(cxt->dev_fd, BLKRRPART);
+	fdisk_info(cxt, _("Calling ioctl() to re-read partition table."));
+	i = ioctl(cxt->dev_fd, BLKRRPART);
 #else
-		errno = ENOSYS;
-		i = 1;
+	errno = ENOSYS;
+	i = 1;
 #endif
-	}
 
 	if (i) {
 		fdisk_warn(cxt, _("Re-reading the partition table failed."));
 		fdisk_info(cxt,	_(
 			"The kernel still uses the old table. The "
 			"new table will be used at the next reboot "
-			"or after you run partprobe(8) or kpartx(8)."));
+			"or after you run partprobe(8) or partx(8)."));
 		return -errno;
 	}
 
@@ -807,7 +871,7 @@ static inline int add_to_partitions_array(
  * partition table. The BLKPG_* ioctls are used for individual partitions. The
  * advantage is that unmodified partitions maybe mounted.
  *
- * The function behavies like fdisk_reread_partition_table() on systems where
+ * The function behaves like fdisk_reread_partition_table() on systems where
  * are no available BLKPG_* ioctls.
  *
  * Returns: <0 on error, or 0.
@@ -821,6 +885,7 @@ int fdisk_reread_changes(struct fdisk_context *cxt, struct fdisk_table *org)
 	struct fdisk_partition **rem = NULL, **add = NULL, **upd = NULL;
 	int change, rc = 0, err = 0;
 	size_t nparts, i, nadds = 0, nupds = 0, nrems = 0;
+	unsigned int ssf;
 
 	DBG(CXT, ul_debugobj(cxt, "rereading changes"));
 
@@ -846,12 +911,16 @@ int fdisk_reread_changes(struct fdisk_context *cxt, struct fdisk_table *org)
 			break;
 		case FDISK_DIFF_MOVED:
 			rc = add_to_partitions_array(&rem, pa, &nrems, nparts);
-			rc = add_to_partitions_array(&add, pa, &nadds, nparts);
+			if (!rc)
+				rc = add_to_partitions_array(&add, pa, &nadds, nparts);
 			break;
 		}
 		if (rc != 0)
 			goto done;
 	}
+
+	/* sector size factor -- used to recount from real to 512-byte sectors */
+	ssf = cxt->sector_size / 512;
 
 	for (i = 0; i < nrems; i++) {
 		pa = rem[i];
@@ -864,15 +933,28 @@ int fdisk_reread_changes(struct fdisk_context *cxt, struct fdisk_table *org)
 	for (i = 0; i < nupds; i++) {
 		pa = upd[i];
 		DBG(PART, ul_debugobj(pa, "#%zu calling BLKPG_RESIZE_PARTITION", pa->partno));
-		if (partx_resize_partition(cxt->dev_fd, pa->partno + 1, pa->start, pa->size) != 0) {
+		if (partx_resize_partition(cxt->dev_fd, pa->partno + 1,
+					   pa->start * ssf, pa->size * ssf) != 0) {
 			fdisk_warn(cxt, _("Failed to update system information about partition %zu"), pa->partno + 1);
 			err++;
 		}
 	}
 	for (i = 0; i < nadds; i++) {
+		uint64_t sz;
+
 		pa = add[i];
+		sz = pa->size * ssf;
+
 		DBG(PART, ul_debugobj(pa, "#%zu calling BLKPG_ADD_PARTITION", pa->partno));
-		if (partx_add_partition(cxt->dev_fd, pa->partno + 1, pa->start, pa->size) != 0) {
+
+		if (fdisk_is_label(cxt, DOS) && fdisk_partition_is_container(pa))
+			/* Let's follow the Linux kernel and reduce
+                         * DOS extended partition to 1 or 2 sectors.
+			 */
+			sz = min(sz, (uint64_t) 2);
+
+		if (partx_add_partition(cxt->dev_fd, pa->partno + 1,
+					pa->start * ssf, sz) != 0) {
 			fdisk_warn(cxt, _("Failed to add partition %zu to system"), pa->partno + 1);
 			err++;
 		}
@@ -980,6 +1062,7 @@ void fdisk_unref_context(struct fdisk_context *cxt)
 				cxt->labels[i]->op->free(cxt->labels[i]);
 			else
 				free(cxt->labels[i]);
+			cxt->labels[i] = NULL;
 		}
 
 		fdisk_unref_context(cxt->parent);
@@ -1230,6 +1313,11 @@ fdisk_sector_t fdisk_get_first_lba(struct fdisk_context *cxt)
  * partition tables like GPT protective MBR or hybrid partition tables on
  * bootable media where the first partition may start on very crazy offsets.
  *
+ * Note that this function changes only runtime information. It does not update
+ * any range in on-disk partition table. For example GPT Header contains First
+ * and Last usable LBA fields. These fields are not updated by this function.
+ * Be careful.
+ *
  * Returns: 0 on success, <0 on error.
  */
 fdisk_sector_t fdisk_set_first_lba(struct fdisk_context *cxt, fdisk_sector_t lba)
@@ -1338,6 +1426,8 @@ const char *fdisk_get_devname(struct fdisk_context *cxt)
  * @cxt: context
  *
  * Returns: device number or zero for non-block devices
+ *
+ * Since: 2.33
  */
 dev_t fdisk_get_devno(struct fdisk_context *cxt)
 {
@@ -1350,6 +1440,8 @@ dev_t fdisk_get_devno(struct fdisk_context *cxt)
  * @cxt: context
  *
  * Returns: device model string or NULL.
+ *
+ * Since: 2.33
  */
 #ifdef __linux__
 const char *fdisk_get_devmodel(struct fdisk_context *cxt)

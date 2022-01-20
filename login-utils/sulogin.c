@@ -168,16 +168,17 @@ static void tcinit(struct console *con)
 		tio->c_cc[VMIN]     = 1;
 
 		if (ioctl(fd, TIOCGWINSZ, &ws) == 0) {
-			int set = 0;
+			int update = 0;
+
 			if (ws.ws_row == 0) {
 				ws.ws_row = 24;
-				set++;
+				update++;
 			}
 			if (ws.ws_col == 0) {
 				ws.ws_col = 80;
-				set++;
+				update++;
 			}
-			if (set)
+			if (update)
 				ignore_result( ioctl(fd, TIOCSWINSZ, &ws) );
 		}
 
@@ -788,11 +789,11 @@ static void sushell(struct passwd *pwd)
 		free(level);
 	}
 #endif
-	execl(su_shell, shell, NULL);
+	execl(su_shell, shell, (char *)NULL);
 	warn(_("failed to execute %s"), su_shell);
 
 	xsetenv("SHELL", "/bin/sh", 1);
-	execl("/bin/sh", profile ? "-sh" : "sh", NULL);
+	execl("/bin/sh", profile ? "-sh" : "sh", (char *)NULL);
 	warn(_("failed to execute %s"), "/bin/sh");
 }
 
@@ -815,6 +816,8 @@ static void usage(void)
 	fputs(USAGE_SEPARATOR, out);
 	printf(USAGE_HELP_OPTIONS(26));
 	printf(USAGE_MAN_TAIL("sulogin(8)"));
+
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char **argv)
@@ -853,7 +856,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout); /* XXX */
+	close_stdout_atexit();
 
 	/*
 	 * See if we have a timeout flag.
@@ -870,11 +873,9 @@ int main(int argc, char **argv)
 			opt_e = 1;
 			break;
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		case 'h':
 			usage();
-			return EXIT_SUCCESS;
 		default:
 			/* Do not exit! getopt prints a warning. */
 			break;

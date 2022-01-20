@@ -89,23 +89,23 @@ is set at login time, either by the default terminal type specified in
 or as set during the login process by the user in their
 .B login
 file (see
-.BR setenv (1)).
-.SH SEE ALSO
-.BR colcrt (1),
-.BR login (1),
-.BR man (1),
-.BR nroff (1),
-.BR setenv (1),
-.BR terminfo (5)
+.BR setenv (3)).
+.SH HISTORY
+The
+.B ul
+command appeared in 3.0BSD.
 .SH BUGS
 .B nroff
 usually outputs a series of backspaces and underlines intermixed with the
 text to indicate underlining.  No attempt is made to optimize the backward
 motion.
-.SH HISTORY
-The
-.B ul
-command appeared in 3.0BSD.
+.SH SEE ALSO
+.BR colcrt (1),
+.BR login (1),
+.BR man (1),
+.BR nroff (1),
+.BR setenv (3),
+.BR terminfo (5)
 .SH AVAILABILITY
 The ul command is part of the util-linux package and is available from
 .UR https://\:www.kernel.org\:/pub\:/linux\:/utils\:/util-linux/

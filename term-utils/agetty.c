@@ -42,6 +42,7 @@
 #include "nls.h"
 #include "pathnames.h"
 #include "c.h"
+#include "cctype.h"
 #include "widechar.h"
 #include "ttyutils.h"
 #include "color-names.h"
@@ -341,6 +342,8 @@ static void login_options_to_argv(char *argv[], int *argc, char *str, char *user
 static void reload_agettys(void);
 static void print_issue_file(struct issue *ie, struct options *op, struct termios *tp);
 static void eval_issue_file(struct issue *ie, struct options *op, struct termios *tp);
+static void show_issue(struct options *op);
+
 
 /* Fake hostname for ut_host specified on command line. */
 static char *fakehost;
@@ -577,7 +580,7 @@ static char *replace_u(char *str, char *username)
 		size_t sz;
 		char *tp, *old = entry;
 
-		if (memcmp(p, "\\u", 2)) {
+		if (memcmp(p, "\\u", 2) != 0) {
 			p++;
 			continue;	/* no \u */
 		}
@@ -697,6 +700,7 @@ static void output_version(void)
 static void parse_args(int argc, char **argv, struct options *op)
 {
 	int c;
+	int opt_show_issue = 0;
 
 	enum {
 		VERSION_OPTION = CHAR_MAX + 1,
@@ -708,6 +712,7 @@ static void parse_args(int argc, char **argv, struct options *op)
 		KILL_CHARS_OPTION,
 		RELOAD_OPTION,
 		LIST_SPEEDS_OPTION,
+		ISSUE_SHOW_OPTION,
 	};
 	const struct option longopts[] = {
 		{  "8bits",	     no_argument,	 NULL,  '8'  },
@@ -717,6 +722,7 @@ static void parse_args(int argc, char **argv, struct options *op)
 		{  "delay",	     required_argument,	 NULL,  'd'  },
 		{  "remote",         no_argument,        NULL,  'E'  },
 		{  "issue-file",     required_argument,  NULL,  'f'  },
+		{  "show-issue",     no_argument,        NULL,  ISSUE_SHOW_OPTION },
 		{  "flow-control",   no_argument,	 NULL,  'h'  },
 		{  "host",	     required_argument,  NULL,  'H'  },
 		{  "noissue",	     no_argument,	 NULL,  'i'  },
@@ -863,6 +869,9 @@ static void parse_args(int argc, char **argv, struct options *op)
 		case LIST_SPEEDS_OPTION:
 			list_speeds();
 			exit(EXIT_SUCCESS);
+		case ISSUE_SHOW_OPTION:
+			opt_show_issue = 1;
+			break;
 		case VERSION_OPTION:
 			output_version();
 			exit(EXIT_SUCCESS);
@@ -871,6 +880,11 @@ static void parse_args(int argc, char **argv, struct options *op)
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}
+	}
+
+	if (opt_show_issue) {
+		show_issue(op);
+		exit(EXIT_SUCCESS);
 	}
 
 	debug("after getopt loop\n");
@@ -1270,9 +1284,17 @@ static void termio_init(struct options *op, struct termios *tp)
 		ispeed = cfgetispeed(tp);
 		ospeed = cfgetospeed(tp);
 
-		if (!ispeed) ispeed = TTYDEF_SPEED;
-		if (!ospeed) ospeed = TTYDEF_SPEED;
-
+		/* Save also the original speed to array of the speeds to make
+		 * it possible to return the original after unexpected BREAKs.
+		 */
+		if (op->numspeed)
+			op->speeds[op->numspeed++] = ispeed ? ispeed :
+						     ospeed ? ospeed :
+						     TTYDEF_SPEED;
+		if (!ispeed)
+			ispeed = TTYDEF_SPEED;
+		if (!ospeed)
+			ospeed = TTYDEF_SPEED;
 	} else {
 		ospeed = ispeed = op->speeds[FIRST_SPEED];
 	}
@@ -1284,7 +1306,7 @@ static void termio_init(struct options *op, struct termios *tp)
 	 * later on.
 	 */
 
-	/* The defaul is set c_iflag in termio_final() according to chardata.
+	/* The default is set c_iflag in termio_final() according to chardata.
 	 * Unfortunately, the chardata are not set according to the serial line
 	 * if --autolog is enabled. In this case we do not read from the line
 	 * at all. The best what we can do in this case is to keep c_iflag
@@ -1432,7 +1454,7 @@ static void auto_baud(struct termios *tp)
 	if ((nread = read(STDIN_FILENO, buf, sizeof(buf) - 1)) > 0) {
 		buf[nread] = '\0';
 		for (bp = buf; bp < buf + nread; bp++)
-			if (isascii(*bp) && isdigit(*bp)) {
+			if (c_isascii(*bp) && isdigit(*bp)) {
 				if ((speed = bcode(bp))) {
 					cfsetispeed(tp, speed);
 					cfsetospeed(tp, speed);
@@ -1692,7 +1714,9 @@ static int wait_for_term_input(int fd)
 		if (FD_ISSET(fd, &rfds)) {
 			return 1;
 
-		} else if (netlink_fd >= 0 && FD_ISSET(netlink_fd, &rfds)) {
+		}
+
+		if (netlink_fd >= 0 && FD_ISSET(netlink_fd, &rfds)) {
 			if (!process_netlink())
 				continue;
 
@@ -1721,33 +1745,61 @@ static int issuedir_filter(const struct dirent *d)
 
 	namesz = strlen(d->d_name);
 	if (!namesz || namesz < ISSUEDIR_EXTSIZ + 1 ||
-	    strcmp(d->d_name + (namesz - ISSUEDIR_EXTSIZ), ISSUEDIR_EXT))
+	    strcmp(d->d_name + (namesz - ISSUEDIR_EXTSIZ), ISSUEDIR_EXT) != 0)
 		return 0;
 
 	/* Accept this */
 	return 1;
 }
 
-static FILE *issuedir_next_file(int dd, struct dirent **namelist, int nfiles, int *n)
+
+static int issuefile_read_stream(struct issue *ie, FILE *f, struct options *op, struct termios *tp);
+
+/* returns: 0 on success, 1 cannot open, <0 on error
+ */
+static int issuedir_read(struct issue *ie, const char *dirname,
+			 struct options *op, struct termios *tp)
 {
-	while (*n < nfiles) {
-		struct dirent *d = namelist[*n];
-		struct stat st;
+        int dd, nfiles, i;
+        struct dirent **namelist = NULL;
+
+	dd = open(dirname, O_RDONLY|O_CLOEXEC|O_DIRECTORY);
+	if (dd < 0)
+		return 1;
+
+	nfiles = scandirat(dd, ".", &namelist, issuedir_filter, versionsort);
+	if (nfiles <= 0)
+		goto done;
+
+	ie->do_tcsetattr = 1;
+
+	for (i = 0; i < nfiles; i++) {
+		struct dirent *d = namelist[i];
 		FILE *f;
 
-		(*n)++;
-
-		if (fstatat(dd, d->d_name, &st, 0) ||
-		    !S_ISREG(st.st_mode))
-			continue;
-
 		f = fopen_at(dd, d->d_name, O_RDONLY|O_CLOEXEC, "r" UL_CLOEXECSTR);
-		if (f)
-			return f;
+		if (f) {
+			issuefile_read_stream(ie, f, op, tp);
+			fclose(f);
+		}
 	}
-	return NULL;
+
+	for (i = 0; i < nfiles; i++)
+		free(namelist[i]);
+	free(namelist);
+done:
+	close(dd);
+	return 0;
 }
 
+#else /* !ISSUEDIR_SUPPORT */
+static int issuedir_read(struct issue *ie __attribute__((__unused__)),
+			const char *dirname __attribute__((__unused__)),
+			struct options *op __attribute__((__unused__)),
+			struct termios *tp __attribute__((__unused__)))
+{
+	return 1;
+}
 #endif /* ISSUEDIR_SUPPORT */
 
 #ifndef ISSUE_SUPPORT
@@ -1766,7 +1818,54 @@ static void eval_issue_file(struct issue *ie __attribute__((__unused__)),
 			    struct termios *tp __attribute__((__unused__)))
 {
 }
+
+static void show_issue(struct options *op __attribute__((__unused__)))
+{
+}
+
 #else /* ISSUE_SUPPORT */
+
+static int issuefile_read_stream(
+		struct issue *ie, FILE *f,
+		struct options *op, struct termios *tp)
+{
+	struct stat st;
+	int c;
+
+	if (fstat(fileno(f), &st) || !S_ISREG(st.st_mode))
+		return 1;
+
+	if (!ie->output) {
+		free(ie->mem);
+		ie->mem_sz = 0;
+		ie->mem = NULL;
+		ie->output = open_memstream(&ie->mem, &ie->mem_sz);
+	}
+
+	while ((c = getc(f)) != EOF) {
+		if (c == '\\')
+			output_special_char(ie, getc(f), op, tp, f);
+		else
+			putc(c, ie->output);
+	}
+
+	return 0;
+}
+
+static int issuefile_read(
+		struct issue *ie, const char *filename,
+		struct options *op, struct termios *tp)
+{
+	FILE *f = fopen(filename, "r" UL_CLOEXECSTR);
+	int rc = 1;
+
+	if (f) {
+		rc = issuefile_read_stream(ie, f, op, tp);
+		fclose(f);
+	}
+	return rc;
+}
+
 
 #ifdef AGETTY_RELOAD
 static int issue_is_changed(struct issue *ie)
@@ -1828,100 +1927,98 @@ static void eval_issue_file(struct issue *ie,
 			    struct options *op,
 			    struct termios *tp)
 {
-	const char *filename, *dirname = NULL;
-	FILE *f = NULL;
-#ifdef ISSUEDIR_SUPPORT
-	int dd = -1, nfiles = 0, i;
-	struct dirent **namelist = NULL;
-#endif
+	int has_file = 0;
+
 #ifdef AGETTY_RELOAD
 	netlink_groups = 0;
 #endif
-
 	if (!(op->flags & F_ISSUE))
-		return;
-
+		goto done;
 	/*
-	 * The custom issue file or directory specified by: agetty -f <path>.
+	 * The custom issue file or directory list specified by:
+	 *   agetty --isue-file <path[:path]...>
 	 * Note that nothing is printed if the file/dir does not exist.
 	 */
-	filename = op->issue;
-	if (filename) {
-		struct stat st;
+	if (op->issue) {
+		char *list = strdup(op->issue);
+		char *file;
 
-		if (stat(filename, &st) < 0)
-			return;
-		if (S_ISDIR(st.st_mode)) {
-			dirname = filename;
-			filename = NULL;
+		if (!list)
+			log_err(_("failed to allocate memory: %m"));
+
+		for (file = strtok(list, ":"); file; file = strtok(NULL, ":")) {
+			struct stat st;
+
+			if (stat(file, &st) < 0)
+				continue;
+			if (S_ISDIR(st.st_mode))
+				issuedir_read(ie, file, op, tp);
+			else
+				issuefile_read(ie, file, op, tp);
 		}
-	} else {
-		/* The default /etc/issue and optional /etc/issue.d directory
-		 * as extension to the file. The /etc/issue.d directory is
-		 * ignored if there is no /etc/issue file. The file may be
-		 * empty or symlink.
-		 */
-		if (access(_PATH_ISSUE, F_OK|R_OK) != 0)
-			return;
-		filename  = _PATH_ISSUE;
-		dirname = _PATH_ISSUEDIR;
+		free(list);
+		goto done;
 	}
 
-	ie->output = open_memstream(&ie->mem, &ie->mem_sz);
-#ifdef ISSUEDIR_SUPPORT
-	if (dirname) {
-		dd = open(dirname, O_RDONLY|O_CLOEXEC|O_DIRECTORY);
-		if (dd >= 0)
-			nfiles = scandirat(dd, ".", &namelist, issuedir_filter, versionsort);
-		if (nfiles <= 0)
-			dirname = NULL;
-	}
-	i = 0;
-#endif
-	if (filename)
-		f = fopen(filename, "r");
-
-	if (f || dirname) {
-		int c;
-
-		ie->do_tcsetattr = 1;
-
-		do {
-#ifdef ISSUEDIR_SUPPORT
-			if (!f && i < nfiles)
-				f = issuedir_next_file(dd, namelist, nfiles, &i);
-#endif
-			if (!f)
-				break;
-			while ((c = getc(f)) != EOF) {
-				if (c == '\\')
-					output_special_char(ie, getc(f), op, tp, f);
-				else
-					putc(c, ie->output);
-			}
-			fclose(f);
-			f = NULL;
-		} while (dirname);
-
-		fflush(stdout);
-
-		if ((op->flags & F_VCONSOLE) == 0)
-			ie->do_tcrestore = 1;
+	/* The default /etc/issue and optional /etc/issue.d directory as
+	 * extension to the file. The /etc/issue.d directory is ignored if
+	 * there is no /etc/issue file. The file may be empty or symlink.
+	 */
+	if (access(_PATH_ISSUE, F_OK|R_OK) == 0) {
+		issuefile_read(ie, _PATH_ISSUE, op, tp);
+		issuedir_read(ie, _PATH_ISSUEDIR, op, tp);
+		goto done;
 	}
 
-#ifdef ISSUEDIR_SUPPORT
-	for (i = 0; i < nfiles; i++)
-		free(namelist[i]);
-	free(namelist);
-	if (dd >= 0)
-		close(dd);
-#endif
+	/* Fallback @runstatedir (usually /run) -- the file is not required to
+	 * read the dir.
+	 */
+	if (issuefile_read(ie, _PATH_RUNSTATEDIR "/" _PATH_ISSUE_FILENAME, op, tp) == 0)
+		has_file++;
+	if (issuedir_read(ie, _PATH_RUNSTATEDIR "/" _PATH_ISSUE_DIRNAME, op, tp) == 0)
+		has_file++;
+	if (has_file)
+		goto done;
+
+	/* Fallback @sysconfstaticdir (usually /usr/lib) -- the file is not
+	 * required to read the dir
+	 */
+	issuefile_read(ie, _PATH_SYSCONFSTATICDIR "/" _PATH_ISSUE_FILENAME, op, tp); 
+	issuedir_read(ie, _PATH_SYSCONFSTATICDIR "/" _PATH_ISSUE_DIRNAME, op, tp);
+
+done:
+
 #ifdef AGETTY_RELOAD
 	if (netlink_groups != 0)
 		open_netlink();
 #endif
-	fclose(ie->output);
+	if (ie->output) {
+		fclose(ie->output);
+		ie->output = NULL;
+	}
 }
+
+/* This is --show-issue backend, executed by normal user on the current
+ * terminal.
+ */
+static void show_issue(struct options *op)
+{
+	struct issue ie = { .output = NULL };
+	struct termios tp;
+
+	memset(&tp, 0, sizeof(struct termios));
+	if (tcgetattr(STDIN_FILENO, &tp) < 0)
+		err(EXIT_FAILURE, _("failed to get terminal attributes: %m"));
+
+	eval_issue_file(&ie, op, &tp);
+
+	if (ie.mem_sz)
+		write_all(STDOUT_FILENO, ie.mem, ie.mem_sz);
+	if (ie.output)
+		fclose(ie.output);
+	free(ie.mem);
+}
+
 #endif /* ISSUE_SUPPORT */
 
 /* Show login prompt, optionally preceded by /etc/issue contents. */
@@ -2059,7 +2156,7 @@ static char *get_logname(struct issue *ie, struct options *op, struct termios *t
 		sleep(1);
 	tcflush(STDIN_FILENO, TCIFLUSH);
 
-	eightbit = (op->flags & F_EIGHTBITS);
+	eightbit = (op->flags & (F_EIGHTBITS|F_UTF8));
 	bp = logname;
 	*bp = '\0';
 
@@ -2174,9 +2271,10 @@ static char *get_logname(struct issue *ie, struct options *op, struct termios *t
 				break;
 			case CTL('D'):
 				exit(EXIT_SUCCESS);
+			case CTL('C'):
+				/* Ignore */
+				break;
 			default:
-				if (!isascii(ascval) || !isprint(ascval))
-					break;
 				if ((size_t)(bp - logname) >= sizeof(logname) - 1)
 					log_err(_("%s: input overrun"), op->tty);
 				if ((tp->c_lflag & ECHO) == 0)
@@ -2346,7 +2444,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -a, --autologin <user>     login the specified user automatically\n"), out);
 	fputs(_(" -c, --noreset              do not reset control mode\n"), out);
 	fputs(_(" -E, --remote               use -r <hostname> for login(1)\n"), out);
-	fputs(_(" -f, --issue-file <file>    display issue file\n"), out);
+	fputs(_(" -f, --issue-file <list>    display issue files or directories\n"), out);
+	fputs(_("     --show-issue           display issue file and exit\n"), out);
 	fputs(_(" -h, --flow-control         enable hardware flow control\n"), out);
 	fputs(_(" -H, --host <hostname>      specify login host\n"), out);
 	fputs(_(" -i, --noissue              do not display issue file\n"), out);
@@ -2395,46 +2494,40 @@ static void list_speeds(void)
  * Will be used by log_err() and log_warn() therefore
  * it takes a format as well as va_list.
  */
-#define	str2cpy(b,s1,s2)	strcat(strcpy(b,s1),s2)
-
-static void dolog(int priority, const char *fmt, va_list ap)
-{
-#ifndef	USE_SYSLOG
-	int fd;
+static void dolog(int priority
+#ifndef USE_SYSLOG
+		  __attribute__((__unused__))
 #endif
-	char buf[BUFSIZ];
-	char *bp;
-
+		  , const char *fmt, va_list ap)
+{
+#ifdef USE_SYSLOG
 	/*
 	 * If the diagnostic is reported via syslog(3), the process name is
 	 * automatically prepended to the message. If we write directly to
 	 * /dev/console, we must prepend the process name ourselves.
 	 */
-#ifdef USE_SYSLOG
-	buf[0] = '\0';
-	bp = buf;
-#else
-	str2cpy(buf, program_invocation_short_name, ": ");
-	bp = buf + strlen(buf);
-#endif				/* USE_SYSLOG */
-	vsnprintf(bp, sizeof(buf)-strlen(buf), fmt, ap);
-
-	/*
-	 * Write the diagnostic directly to /dev/console if we do not use the
-	 * syslog(3) facility.
-	 */
-#ifdef	USE_SYSLOG
 	openlog(program_invocation_short_name, LOG_PID, LOG_AUTHPRIV);
-	syslog(priority, "%s", buf);
+	vsyslog(priority, fmt, ap);
 	closelog();
 #else
+	/*
+	 * Write the diagnostic directly to /dev/console if we do not use
+	 * the syslog(3) facility.
+	 */
+	char buf[BUFSIZ];
+	char new_fmt[BUFSIZ];
+	int fd;
+
+	snprintf(new_fmt, sizeof(new_fmt), "%s: %s\r\n",
+		 program_invocation_short_name, fmt);
 	/* Terminate with CR-LF since the console mode is unknown. */
-	strcat(bp, "\r\n");
+	vsnprintf(buf, sizeof(buf), new_fmt, ap);
+
 	if ((fd = open("/dev/console", 1)) >= 0) {
 		write_all(fd, buf, strlen(buf));
 		close(fd);
 	}
-#endif				/* USE_SYSLOG */
+#endif	/* USE_SYSLOG */
 }
 
 static void exit_slowly(int code)
@@ -2654,24 +2747,21 @@ static void output_special_char(struct issue *ie,
 	case 't':
 	{
 		time_t now;
-		struct tm *tm;
+		struct tm tm;
 
 		time(&now);
-		tm = localtime(&now);
-
-		if (!tm)
-			break;
+		localtime_r(&now, &tm);
 
 		if (c == 'd') /* ISO 8601 */
 			fprintf(ie->output, "%s %s %d  %d",
-				      nl_langinfo(ABDAY_1 + tm->tm_wday),
-				      nl_langinfo(ABMON_1 + tm->tm_mon),
-				      tm->tm_mday,
-				      tm->tm_year < 70 ? tm->tm_year + 2000 :
-				      tm->tm_year + 1900);
+				      nl_langinfo(ABDAY_1 + tm.tm_wday),
+				      nl_langinfo(ABMON_1 + tm.tm_mon),
+				      tm.tm_mday,
+				      tm.tm_year < 70 ? tm.tm_year + 2000 :
+				      tm.tm_year + 1900);
 		else
 			fprintf(ie->output, "%02d:%02d:%02d",
-				      tm->tm_hour, tm->tm_min, tm->tm_sec);
+				      tm.tm_hour, tm.tm_min, tm.tm_sec);
 		break;
 	}
 	case 'l':

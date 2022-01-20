@@ -38,6 +38,7 @@
 #include "islocal.h"
 #include "nls.h"
 #include "pathnames.h"
+#include "pwdutils.h"
 #include "setpwnam.h"
 #include "strutils.h"
 #include "xalloc.h"
@@ -166,8 +167,7 @@ static void parse_argv(int argc, char **argv, struct sinfo *pinfo)
 	while ((c = getopt_long(argc, argv, "s:lhuv", long_options, NULL)) != -1) {
 		switch (c) {
 		case 'v':
-			printf(UTIL_LINUX_VERSION);
-			exit(EXIT_SUCCESS);
+			print_version(EXIT_SUCCESS);
 		case 'u': /* deprecated */
 		case 'h':
 			usage();
@@ -205,10 +205,11 @@ static char *ask_new_shell(char *question, char *oldshell)
 #endif
 	if (!oldshell)
 		oldshell = "";
-	printf("%s [%s]\n", question, oldshell);
+	printf("%s [%s]:", question, oldshell);
 #ifdef HAVE_LIBREADLINE
-	if ((ans = readline("> ")) == NULL)
+	if ((ans = readline(" ")) == NULL)
 #else
+	putchar(' ');
 	if (getline(&ans, &dummy, stdin) < 0)
 #endif
 		return NULL;
@@ -254,7 +255,7 @@ static void check_shell(const char *shell)
 
 int main(int argc, char **argv)
 {
-	char *oldshell;
+	char *oldshell, *pwbuf;
 	int nullshell = 0;
 	const uid_t uid = getuid();
 	struct sinfo info = { NULL };
@@ -264,16 +265,16 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	parse_argv(argc, argv, &info);
 	if (!info.username) {
-		pw = getpwuid(uid);
+		pw = xgetpwuid(uid, &pwbuf);
 		if (!pw)
 			errx(EXIT_FAILURE, _("you (user %d) don't exist."),
 			     uid);
 	} else {
-		pw = getpwnam(info.username);
+		pw = xgetpwnam(info.username, &pwbuf);
 		if (!pw)
 			errx(EXIT_FAILURE, _("user \"%s\" does not exist."),
 			     info.username);

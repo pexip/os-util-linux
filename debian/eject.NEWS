@@ -1,0 +1,22 @@
+util-linux (2.35.1-3) unstable; urgency=medium
+
+  The util-linux implementation of /usr/bin/eject is now used, replacing
+  the one previously supplied by src:eject. This version should be
+  completely compatible with the previous one.
+
+  The binaries /usr/bin/volname and /usr/lib/eject/dmcrypt-get-device
+  have been removed. If you have scripts using volname, an alternative
+  is: blkid -s LABEL -o value $filename.
+
+  Example, if you were using volname:
+    $ volname debian-10.3.0-amd64-netinst.iso
+    Debian 10.3.0 amd64 n
+
+  The same can be achieved with blkid:
+    $ /usr/sbin/blkid -c /dev/null -s LABEL -o value \
+      debian-10.3.0-amd64-netinst.iso
+    Debian 10.3.0 amd64 n
+
+  For dmcrypt-get-device there is no drop-in replacement.
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Sun, 10 May 2020 22:36:51 +0000

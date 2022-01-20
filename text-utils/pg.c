@@ -453,7 +453,7 @@ static char *endline_for_mb(unsigned col, char *s)
  ended:
 	*end = L'\0';
 	p = wbuf;
-	if ((pos = wcstombs(NULL, p, READBUF)) == (size_t)-1)
+	if ((pos = wcstombs(NULL, p, 0)) == (size_t)-1)
 		return s + 1;
 	return s + pos;
 }
@@ -987,42 +987,43 @@ static void pgfile(FILE *f, const char *name)
 					*b = '\0';
 					dline = pagelen;
 					break;
-				} else {
-					if (nobuf)
-						fseeko(f, fpos, SEEK_SET);
-					canjump = 1;
-					p = fgets(b, READBUF, f);
-					if (nobuf)
-						if ((fpos = ftello(f)) == -1)
-							warn("%s", name);
-					canjump = 0;
 				}
+
+				if (nobuf)
+					fseeko(f, fpos, SEEK_SET);
+				canjump = 1;
+				p = fgets(b, READBUF, f);
+				if (nobuf)
+					if ((fpos = ftello(f)) == -1)
+						warn("%s", name);
+				canjump = 0;
+
 				if (p == NULL || *b == '\0') {
 					if (ferror(f))
 						warn("%s", name);
 					eofline = fline;
 					eof = 1;
 					break;
-				} else {
-					if (!nobuf)
-						fputs(b, fbuf);
-					fwrite_all(&pos, sizeof pos, 1, find);
-					if (!fflag) {
-						oldpos = pos;
-						p = b;
-						while (*(p = endline(ttycols,
-								     p))
-						       != '\0') {
-							pos = oldpos + (p - b);
-							fwrite_all(&pos,
-								   sizeof pos,
-								   1, find);
-							fline++;
-							bline++;
-						}
-					}
-					fline++;
 				}
+
+				if (!nobuf)
+					fputs(b, fbuf);
+				fwrite_all(&pos, sizeof pos, 1, find);
+				if (!fflag) {
+					oldpos = pos;
+					p = b;
+					while (*(p = endline(ttycols,
+							     p))
+					       != '\0') {
+						pos = oldpos + (p - b);
+						fwrite_all(&pos,
+							   sizeof pos,
+							   1, find);
+						fline++;
+						bline++;
+					}
+				}
+				fline++;
 			} while (line > bline++);
 		} else {
 			/* eofline != 0 */
@@ -1057,7 +1058,9 @@ static void pgfile(FILE *f, const char *name)
 				skip(1);
 			}
 			continue;
-		} else if (eof) {
+		}
+
+		if (eof) {
 			/* We are not searching. */
 			line = bline;
 		} else if (*b != '\0') {
@@ -1379,7 +1382,7 @@ static void pgfile(FILE *f, const char *name)
 						my_sigset(SIGQUIT, oldquit);
 						my_sigset(SIGTERM, oldterm);
 						execl(sh, sh, "-c",
-						      cmd.cmdline + 1, NULL);
+						      cmd.cmdline + 1, (char *)NULL);
 						errexec(sh);
 						break;
 					}
@@ -1544,7 +1547,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	if (tcgetattr(STDOUT_FILENO, &otio) == 0) {
 		ontty = 1;
@@ -1570,7 +1573,7 @@ int main(int argc, char **argv)
 		}
 
 		if (!strcmp(argv[arg], "--version")) {
-		    printf(UTIL_LINUX_VERSION);
+		    print_version(EXIT_SUCCESS);
 		    return EXIT_SUCCESS;
 		}
 
@@ -1621,11 +1624,11 @@ int main(int argc, char **argv)
 			case 's':
 				sflag = 1;
 				break;
+
 			case 'h':
 				usage();
 			case 'V':
-				printf(UTIL_LINUX_VERSION);
-				return EXIT_SUCCESS;
+				print_version(EXIT_SUCCESS);
 			default:
 				invopt(&argv[arg][i]);
 			}

@@ -1,10 +1,11 @@
 /*
- * General purpose random utilities
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Based on libuuid code.
+ * General purpose random utilities. Based on libuuid code.
  *
- * This file may be redistributed under the terms of the
- * GNU Lesser General Public License.
+ * This code is free software; you can redistribute it and/or modify it under
+ * the terms of the Modified BSD License. The complete text of the license is
+ * available in the Documentation/licenses/COPYING.BSD-3-Clause file.
  */
 #include <stdio.h>
 #include <unistd.h>
@@ -12,9 +13,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
-
+#ifdef __linux__
 #include <sys/syscall.h>
-
+#endif
 #include "c.h"
 #include "randutils.h"
 #include "nls.h"
@@ -59,9 +60,12 @@ static void crank_random(void)
 {
 	int i;
 	struct timeval tv;
+	unsigned int n_pid, n_uid;
 
 	gettimeofday(&tv, NULL);
-	srand((getpid() << 16) ^ getuid() ^ tv.tv_sec ^ tv.tv_usec);
+	n_pid = getpid();
+	n_uid = getuid();
+	srand((n_pid << 16) ^ n_uid ^ tv.tv_sec ^ tv.tv_usec);
 
 #ifdef DO_JRAND_MIX
 	ul_jrand_seed[0] = getpid() ^ (tv.tv_sec & 0xFFFF);
@@ -98,7 +102,7 @@ int random_get_fd(void)
 #define UL_RAND_READ_ATTEMPTS	8
 #define UL_RAND_READ_DELAY	125000	/* microseconds */
 
-void random_get_bytes(void *buf, size_t nbytes)
+void ul_random_get_bytes(void *buf, size_t nbytes)
 {
 	unsigned char *cp = (unsigned char *)buf;
 	size_t i, n = nbytes;
@@ -119,7 +123,7 @@ void random_get_bytes(void *buf, size_t nbytes)
 			break;
 
 		} else if (errno == EAGAIN && lose_counter < UL_RAND_READ_ATTEMPTS) {
-			xusleep(UL_RAND_READ_DELAY);	/* no etropy, wait and try again */
+			xusleep(UL_RAND_READ_DELAY);	/* no entropy, wait and try again */
 			lose_counter++;
 		} else
 			break;
@@ -173,7 +177,6 @@ void random_get_bytes(void *buf, size_t nbytes)
 		       sizeof(ul_jrand_seed)-sizeof(unsigned short));
 	}
 #endif
-	return;
 }
 
 
@@ -213,7 +216,7 @@ int main(int argc, char *argv[])
 
 	printf("Multiple random calls:\n");
 	for (i = 0; i < n; i++) {
-		random_get_bytes(&v, sizeof(v));
+		ul_random_get_bytes(&v, sizeof(v));
 		printf("#%02zu: %25"PRIu64"\n", i, v);
 	}
 
@@ -224,7 +227,7 @@ int main(int argc, char *argv[])
 	if (!buf)
 		err(EXIT_FAILURE, "failed to allocate buffer");
 
-	random_get_bytes(buf, bufsz);
+	ul_random_get_bytes(buf, bufsz);
 	for (i = 0; i < n; i++) {
 		vp = (int64_t *) (buf + (i * sizeof(*vp)));
 		printf("#%02zu: %25"PRIu64"\n", i, *vp);

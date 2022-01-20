@@ -1,4 +1,3 @@
 usr/include/libfdisk
-usr/lib/*/libfdisk.a
 usr/lib/*/libfdisk.so
 usr/lib/*/pkgconfig/fdisk.pc

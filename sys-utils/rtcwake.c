@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <termios.h>
@@ -194,21 +195,23 @@ static int get_basetimes(struct rtcwake_control *ctl, int fd)
 		/* Unless the system uses UTC, either delta or tzone
 		 * reflects a seconds offset from UTC.  The value can
 		 * help sort out problems like bugs in your C library. */
+		char s[64];
 		printf("\tdelta   = %ld\n", ctl->sys_time - ctl->rtc_time);
 		printf("\ttzone   = %ld\n", timezone);
 		printf("\ttzname  = %s\n", tzname[daylight]);
-		gmtime_r(&ctl->rtc_time, &tm);
+		gmtime_r(&ctl->sys_time, &tm);
 		printf("\tsystime = %ld, (UTC) %s",
-				(long) ctl->sys_time, asctime(gmtime(&ctl->sys_time)));
+				(long) ctl->sys_time, asctime_r(&tm, s));
+		gmtime_r(&ctl->rtc_time, &tm);
 		printf("\trtctime = %ld, (UTC) %s",
-				(long) ctl->rtc_time, asctime(&tm));
+				(long) ctl->rtc_time, asctime_r(&tm, s));
 	}
 	return 0;
 }
 
 static int setup_alarm(struct rtcwake_control *ctl, int fd, time_t *wakeup)
 {
-	struct tm		*tm;
+	struct tm		tm;
 	struct rtc_wkalrm	wake = { 0 };
 
 	/* The wakeup time is in POSIX time (more or less UTC).  Ideally
@@ -220,13 +223,13 @@ static int setup_alarm(struct rtcwake_control *ctl, int fd, time_t *wakeup)
 	 *
 	 * Else clock_mode == CM_LOCAL so the time given to the RTC will
 	 * instead use the local time zone. */
-	tm = localtime(wakeup);
-	wake.time.tm_sec = tm->tm_sec;
-	wake.time.tm_min = tm->tm_min;
-	wake.time.tm_hour = tm->tm_hour;
-	wake.time.tm_mday = tm->tm_mday;
-	wake.time.tm_mon = tm->tm_mon;
-	wake.time.tm_year = tm->tm_year;
+	localtime_r(wakeup, &tm);
+	wake.time.tm_sec = tm.tm_sec;
+	wake.time.tm_min = tm.tm_min;
+	wake.time.tm_hour = tm.tm_hour;
+	wake.time.tm_mday = tm.tm_mday;
+	wake.time.tm_mon = tm.tm_mon;
+	wake.time.tm_year = tm.tm_year;
 	/* wday, yday, and isdst fields are unused */
 	wake.time.tm_wday = -1;
 	wake.time.tm_yday = -1;
@@ -246,12 +249,15 @@ static char **get_sys_power_states(struct rtcwake_control *ctl)
 
 	if (!ctl->possible_modes) {
 		char buf[256] = { 0 };
+		ssize_t ss;
 
 		fd = open(SYS_POWER_STATE_PATH, O_RDONLY);
 		if (fd < 0)
 			goto nothing;
-		if (read(fd, &buf, sizeof(buf) - 1) <= 0)
+		ss = read(fd, &buf, sizeof(buf) - 1);
+		if (ss <= 0)
 			goto nothing;
+		buf[ss] = '\0';
 		ctl->possible_modes = strv_split(buf, " \n");
 		close(fd);
 	}
@@ -333,6 +339,7 @@ static int print_alarm(struct rtcwake_control *ctl, int fd)
 	struct rtc_wkalrm wake;
 	struct tm tm = { 0 };
 	time_t alarm;
+	char s[CTIME_BUFSIZ];
 
 	if (ioctl(fd, RTC_WKALM_RD, &wake) < 0) {
 		warn(_("read rtc alarm failed"));
@@ -358,7 +365,8 @@ static int print_alarm(struct rtcwake_control *ctl, int fd)
 	}
 	/* 0 if both UTC, or expresses diff if RTC in local time */
 	alarm += ctl->sys_time - ctl->rtc_time;
-	printf(_("alarm: on  %s"), ctime(&alarm));
+	ctime_r(&alarm, s);
+	printf(_("alarm: on  %s"), s);
 
 	return 0;
 }
@@ -450,13 +458,14 @@ int main(int argc, char **argv)
 	static const ul_excl_t excl[] = {
 		{ 'a', 'l', 'u' },
 		{ 's', 't', OPT_DATE },
+		{ 0 },
 	};
 	int excl_st[ARRAY_SIZE(excl)] = UL_EXCL_STATUS_INIT;
 
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while ((t = getopt_long(argc, argv, "A:ahd:lm:ns:t:uVv",
 					long_options, NULL)) != EOF) {
@@ -510,9 +519,9 @@ int main(int argc, char **argv)
 		case 'v':
 			ctl.verbose = 1;
 			break;
+
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			exit(EXIT_SUCCESS);
+			print_version(EXIT_SUCCESS);
 		case 'h':
 			usage();
 		default:
@@ -549,9 +558,12 @@ int main(int argc, char **argv)
 	if (suspend != DISABLE_MODE && suspend != SHOW_MODE) {
 		/* perform alarm setup when the show or disable modes are not set */
 		if (alarm) {
-			if (alarm < ctl.sys_time)
-				errx(EXIT_FAILURE, _("time doesn't go backward to %s"),
-						ctime(&alarm));
+			if (alarm < ctl.sys_time) {
+				char s[CTIME_BUFSIZ];
+
+				ctime_r(&alarm, s);
+				errx(EXIT_FAILURE, _("time doesn't go backward to %s"), s);
+			}
 			alarm -= ctl.sys_time - ctl.rtc_time;
 		} else
 			alarm = ctl.rtc_time + seconds + 1;
@@ -559,14 +571,19 @@ int main(int argc, char **argv)
 		if (setup_alarm(&ctl, fd, &alarm) < 0)
 			exit(EXIT_FAILURE);
 
-		if (suspend == NO_MODE || suspend == ON_MODE)
+		if (suspend == NO_MODE || suspend == ON_MODE) {
+			char s[CTIME_BUFSIZ];
+
+			ctime_r(&alarm, s);
 			printf(_("%s: wakeup using %s at %s"),
-				program_invocation_short_name, devname,
-				ctime(&alarm));
-		else
+				program_invocation_short_name, devname, s);
+		} else {
+			char s[CTIME_BUFSIZ];
+
+			ctime_r(&alarm, s);
 			printf(_("%s: wakeup from \"%s\" using %s at %s"),
-				program_invocation_short_name, ctl.mode_str, devname,
-				ctime(&alarm));
+				program_invocation_short_name, ctl.mode_str, devname, s);
+		}
 		fflush(stdout);
 		xusleep(10 * 1000);
 	}
@@ -582,18 +599,32 @@ int main(int argc, char **argv)
 		char *arg[5];
 		int i = 0;
 
-		if (ctl.verbose)
-			printf(_("suspend mode: off; executing %s\n"),
-						_PATH_SHUTDOWN);
-		arg[i++] = _PATH_SHUTDOWN;
-		arg[i++] = "-h";
-		arg[i++] = "-P";
-		arg[i++] = "now";
-		arg[i]   = NULL;
-		if (!ctl.dryrun) {
-			execv(arg[0], arg);
-			warn(_("failed to execute %s"), _PATH_SHUTDOWN);
-			rc = EXIT_FAILURE;
+		if (!access(_PATH_SHUTDOWN, X_OK)) {
+			arg[i++] = _PATH_SHUTDOWN;
+			arg[i++] = "-h";
+			arg[i++] = "-P";
+			arg[i++] = "now";
+			arg[i]   = NULL;
+		} else if (!access(_PATH_POWEROFF, X_OK)) {
+			arg[i++] = _PATH_POWEROFF;
+			arg[i]   = NULL;
+		} else {
+			arg[i] 	 = NULL;
+		}
+
+		if (arg[0]) {
+			if (ctl.verbose)
+				printf(_("suspend mode: off; executing %s\n"),
+						arg[0]);
+			if (!ctl.dryrun) {
+				execv(arg[0], arg);
+				warn(_("failed to execute %s"), arg[0]);
+				rc = EX_EXEC_ENOENT;
+			}
+		} else {
+			/* Failed to find shutdown command */
+			warn(_("failed to find shutdown command"));
+			rc = EX_EXEC_ENOENT;
 		}
 		break;
 	}

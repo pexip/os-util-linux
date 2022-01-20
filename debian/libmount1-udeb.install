@@ -1,1 +1,1 @@
-lib/*/libmount*.so.* lib
+usr/lib/*/libmount*.so.*

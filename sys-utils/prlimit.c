@@ -397,7 +397,9 @@ static int get_range(char *str, rlim_t *soft, rlim_t *hard, int *found)
 		*found |= PRLIMIT_SOFT | PRLIMIT_HARD;
 		return 0;
 
-	} else if (*str == ':') {			/* <:hard> */
+	}
+
+	if (*str == ':') {			/* <:hard> */
 		str++;
 
 		if (strcmp(str, INFINITY_STR) != 0) {
@@ -516,7 +518,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	INIT_LIST_HEAD(&lims);
 
@@ -584,8 +586,6 @@ int main(int argc, char **argv)
 				errx(EXIT_FAILURE, _("option --pid may be specified only once"));
 			pid = strtos32_or_err(optarg, _("invalid PID argument"));
 			break;
-		case 'h':
-			usage();
 		case 'o':
 			ncolumns = string_to_idarray(optarg,
 						     columns, ARRAY_SIZE(columns),
@@ -593,10 +593,6 @@ int main(int argc, char **argv)
 			if (ncolumns < 0)
 				return EXIT_FAILURE;
 			break;
-		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
-
 		case NOHEADINGS_OPTION:
 			no_headings = 1;
 			break;
@@ -606,6 +602,11 @@ int main(int argc, char **argv)
 		case RAW_OPTION:
 			raw = 1;
 			break;
+
+		case 'h':
+			usage();
+		case 'V':
+			print_version(EXIT_SUCCESS);
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}

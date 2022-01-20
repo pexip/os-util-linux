@@ -95,10 +95,10 @@ blkid_dev blkid_verify(blkid_cache cache, blkid_dev dev)
 #else
 	    st.st_mtime <= dev->bid_time &&
 #endif
-	    (diff < BLKID_PROBE_MIN ||
-		(dev->bid_flags & BLKID_BID_FL_VERIFIED &&
-		 diff < BLKID_PROBE_INTERVAL)))
+	    diff < BLKID_PROBE_MIN) {
+		dev->bid_flags |= BLKID_BID_FL_VERIFIED;
 		return dev;
+	}
 
 #ifndef HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
 	DBG(PROBE, ul_debug("need to revalidate %s (cache time %lu, stat time %lu,\t"
@@ -126,7 +126,7 @@ blkid_dev blkid_verify(blkid_cache cache, blkid_dev dev)
 		}
 	}
 
-	fd = open(dev->bid_name, O_RDONLY|O_CLOEXEC);
+	fd = open(dev->bid_name, O_RDONLY|O_CLOEXEC|O_NONBLOCK);
 	if (fd < 0) {
 		DBG(PROBE, ul_debug("blkid_verify: error %m (%d) while "
 					"opening %s", errno,
@@ -184,9 +184,11 @@ blkid_dev blkid_verify(blkid_cache cache, blkid_dev dev)
 			   dev->bid_name, (long long)st.st_rdev, dev->bid_type));
 	}
 
-	blkid_reset_probe(cache->probe);
+	/* reset prober */
 	blkid_probe_reset_superblocks_filter(cache->probe);
+	blkid_probe_set_device(cache->probe, -1, 0, 0);
 	close(fd);
+
 	return dev;
 }
 

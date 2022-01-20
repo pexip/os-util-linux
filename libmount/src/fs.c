@@ -39,7 +39,7 @@ struct libmnt_fs *mnt_new_fs(void)
 
 	fs->refcount = 1;
 	INIT_LIST_HEAD(&fs->ents);
-	/*DBG(FS, ul_debugobj(fs, "alloc"));*/
+	DBG(FS, ul_debugobj(fs, "alloc"));
 	return fs;
 }
 
@@ -153,6 +153,8 @@ static inline int update_str(char **dest, const char *src)
 	return 0;
 }
 
+/* This function do NOT overwrite (replace) the string in @new, the string in
+ * the @new has to be NULL otherwise this is no-op */
 static inline int cpy_str_at_offset(void *new, const void *old, size_t offset)
 {
 	char **o = (char **) ((char *) old + offset);
@@ -188,6 +190,8 @@ struct libmnt_fs *mnt_copy_fs(struct libmnt_fs *dest,
 		dest = mnt_new_fs();
 		if (!dest)
 			return NULL;
+
+		dest->tab	 = NULL;
 	}
 
 	dest->id         = src->id;
@@ -251,11 +255,11 @@ struct libmnt_fs *mnt_copy_mtab_fs(const struct libmnt_fs *fs)
 	if (!n)
 		return NULL;
 
-	if (cpy_str_at_offset(n, fs, offsetof(struct libmnt_fs, source)))
+	if (strdup_between_structs(n, fs, source))
 		goto err;
-	if (cpy_str_at_offset(n, fs, offsetof(struct libmnt_fs, target)))
+	if (strdup_between_structs(n, fs, target))
 		goto err;
-	if (cpy_str_at_offset(n, fs, offsetof(struct libmnt_fs, fstype)))
+	if (strdup_between_structs(n, fs, fstype))
 		goto err;
 
 	if (fs->vfs_optstr) {
@@ -274,7 +278,7 @@ struct libmnt_fs *mnt_copy_mtab_fs(const struct libmnt_fs *fs)
 		n->user_optstr = p;
 	}
 
-	if (cpy_str_at_offset(n, fs, offsetof(struct libmnt_fs, fs_optstr)))
+	if (strdup_between_structs(n, fs, fs_optstr))
 		goto err;
 
 	/* we cannot copy original optstr, the new optstr has to be without
@@ -443,6 +447,24 @@ int mnt_fs_streq_srcpath(struct libmnt_fs *fs, const char *path)
 		return 1;
 
 	return p && path && strcmp(p, path) == 0;
+}
+
+/**
+ * mnt_fs_get_table:
+ * @fs: table entry
+ * @tb: table that contains @fs
+ *
+ * Returns: 0 or negative number on error (if @fs or @tb is NULL).
+ *
+ * Since: 2.34
+ */
+int mnt_fs_get_table(struct libmnt_fs *fs, struct libmnt_table **tb)
+{
+	if (!fs || !tb)
+		return -EINVAL;
+
+	*tb = fs->tab;
+	return 0;
 }
 
 /**

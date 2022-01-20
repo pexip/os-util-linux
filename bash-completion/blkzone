@@ -25,7 +25,7 @@ _blkzone_module()
 		-*)
 			case $prev in
 				'report'|'reset')
-					OPTS="--verbose --offset --length --count"
+					OPTS="--verbose --offset --length --count --force"
 					;;
 				*)
 					OPTS="--help --version"
@@ -46,6 +46,7 @@ _blkzone_module()
 			return 0
 			;;
 	esac
+	compopt -o bashdefault -o default
 	COMPREPLY=( $(compgen -W "$(lsblk -pnro name)" -- $cur) )
 	return 0
 }

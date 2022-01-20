@@ -3,7 +3,7 @@
  * Revised: Fri Mar 19 07:48:01 1999 by faith@acm.org
  * Public Domain 1995, 1999 Rickard E. Faith (faith@acm.org)
  * This program comes with ABSOLUTELY NO WARRANTY.
- * 
+ *
  * This program gathers some random bits of data and used the MD5
  * message-digest algorithm to generate a 128-bit hexadecimal number for
  * use with xauth(1).
@@ -92,6 +92,10 @@ static void __attribute__((__noreturn__)) usage(void)
 
 	fputs(USAGE_SEPARATOR, out);
 	printf(USAGE_HELP_OPTIONS(23));
+
+	fputs(USAGE_ARGUMENTS, out);
+	printf(USAGE_ARG_SIZE(_("<num>")));
+
 	printf(USAGE_MAN_TAIL("mcookie(1)"));
 
 	exit(EXIT_SUCCESS);
@@ -147,7 +151,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while ((c = getopt_long(argc, argv, "f:m:vVh", longopts, NULL)) != -1) {
 		switch (c) {
@@ -163,9 +167,9 @@ int main(int argc, char **argv)
 			ctl.maxsz = strtosize_or_err(optarg,
 						     _("failed to parse length"));
 			break;
+
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		case 'h':
 			usage();
 		default:
@@ -180,7 +184,7 @@ int main(int argc, char **argv)
 	randomness_from_files(&ctl);
 	free(ctl.files);
 
-	random_get_bytes(&buf, RAND_BYTES);
+	ul_random_get_bytes(&buf, RAND_BYTES);
 	ul_MD5Update(&ctl.ctx, buf, RAND_BYTES);
 	if (ctl.verbose)
 		fprintf(stderr, P_("Got %d byte from %s\n",

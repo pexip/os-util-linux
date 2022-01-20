@@ -95,9 +95,12 @@ void mnt_free_context(struct libmnt_context *cxt)
 
 	free(cxt->fstype_pattern);
 	free(cxt->optstr_pattern);
+	free(cxt->tgt_prefix);
 
 	mnt_unref_table(cxt->fstab);
 	mnt_unref_cache(cxt->cache);
+	mnt_unref_fs(cxt->fs);
+	mnt_unref_fs(cxt->fs_template);
 
 	mnt_context_clear_loopdev(cxt);
 	mnt_free_lock(cxt->lock);
@@ -118,7 +121,7 @@ void mnt_free_context(struct libmnt_context *cxt)
  * Resets all information in the context that is directly related to
  * the latest mount (spec, source, target, mount options, ...).
  *
- * The match patterns, target namespace, cached fstab, cached canonicalized
+ * The match patterns, target namespace, prefix, cached fstab, cached canonicalized
  * paths and tags and [e]uid are not reset. You have to use
  *
  *	mnt_context_set_fstab(cxt, NULL);
@@ -190,7 +193,118 @@ int mnt_reset_context(struct libmnt_context *cxt)
 	cxt->flags |= (fl & MNT_FL_NOSWAPMATCH);
 	cxt->flags |= (fl & MNT_FL_TABPATHS_CHECKED);
 
+	mnt_context_apply_template(cxt);
+
 	return 0;
+}
+
+/*
+ * Saves the current context FS setting (mount options, etc) to make it usable after
+ * mnt_reset_context() or by mnt_context_apply_template(). This is usable for
+ * example for mnt_context_next_mount() where for the next mount operation we
+ * need to restore to the original context setting.
+ *
+ * Returns: 0 on success, negative number in case of error.
+ */
+int mnt_context_save_template(struct libmnt_context *cxt)
+{
+	struct libmnt_fs *fs = NULL;
+
+	if (!cxt)
+		return -EINVAL;
+
+	DBG(CXT, ul_debugobj(cxt, "save FS as template"));
+
+	if (cxt->fs) {
+		fs = mnt_copy_fs(NULL, cxt->fs);
+		if (!fs)
+			return -ENOMEM;
+	}
+
+	mnt_unref_fs(cxt->fs_template);
+	cxt->fs_template = fs;
+
+	return 0;
+}
+
+/*
+ * Restores context FS setting from previously saved template (see
+ * mnt_context_save_template()).
+ *
+ * Returns: 0 on success, negative number in case of error.
+ */
+int mnt_context_apply_template(struct libmnt_context *cxt)
+{
+	struct libmnt_fs *fs = NULL;
+	int rc = 0;
+
+	if (!cxt)
+		return -EINVAL;
+
+	if (cxt->fs_template) {
+		DBG(CXT, ul_debugobj(cxt, "copy FS from template"));
+		fs = mnt_copy_fs(NULL, cxt->fs_template);
+		if (!fs)
+			return -ENOMEM;
+		rc = mnt_context_set_fs(cxt, fs);
+		mnt_unref_fs(fs);
+	} else {
+		DBG(CXT, ul_debugobj(cxt, "no FS template, reset only"));
+		mnt_unref_fs(cxt->fs);
+		cxt->fs = NULL;
+	}
+
+	return rc;
+}
+
+int mnt_context_has_template(struct libmnt_context *cxt)
+{
+	return cxt && cxt->fs_template ? 1 : 0;
+}
+
+struct libmnt_context *mnt_copy_context(struct libmnt_context *o)
+{
+	struct libmnt_context *n;
+
+	n = mnt_new_context();
+	if (!n)
+		return NULL;
+
+	DBG(CXT, ul_debugobj(n, "<---- clone ---->"));
+
+	n->flags = o->flags;
+
+	if (o->fs) {
+		n->fs = mnt_copy_fs(NULL, o->fs);
+		if (!n->fs)
+			goto failed;
+	}
+
+	n->mtab = o->mtab;
+	mnt_ref_table(n->mtab);
+
+	n->mtab = o->utab;
+	mnt_ref_table(n->utab);
+
+	if (strdup_between_structs(n, o, tgt_prefix))
+		goto failed;
+	if (strdup_between_structs(n, o, helper))
+		goto failed;
+	if (strdup_between_structs(n, o, orig_user))
+		goto failed;
+
+	n->mountflags = o->mountflags;
+	n->mountdata = o->mountdata;
+
+	mnt_context_reset_status(n);
+
+	n->table_fltrcb = o->table_fltrcb;
+	n->table_fltrcb_data = o->table_fltrcb_data;
+
+	return n;
+failed:
+	mnt_free_context(n);
+	return NULL;
 }
 
 /**
@@ -313,6 +427,31 @@ int mnt_context_is_restricted(struct libmnt_context *cxt)
 }
 
 /**
+ * mnt_context_force_unrestricted:
+ * @cxt: mount context
+ *
+ * This function is DANGEROURS as it disables all security policies in libmount.
+ * Don't use if not sure. It removes "restricted" flag from the context, so
+ * libmount will use the current context as for root user.
+ *
+ * This function is designed for case you have no any suid permissions, so you
+ * can depend on kernel.
+ *
+ * Returns: 0 on success, negative number in case of error.
+ *
+ * Since: 2.35
+ */
+int mnt_context_force_unrestricted(struct libmnt_context *cxt)
+{
+	if (mnt_context_is_restricted(cxt)) {
+		DBG(CXT, ul_debugobj(cxt, "force UNRESTRICTED"));
+		cxt->restricted = 0;
+	}
+
+	return 0;
+}
+
+/**
  * mnt_context_set_optsmode
  * @cxt: mount context
  * @mode: MNT_OMODE_* flags
@@ -345,7 +484,7 @@ int mnt_context_is_restricted(struct libmnt_context *cxt)
  * - MNT_OMODE_AUTO is used if nothing else is defined
  * - the flags are evaluated in this order: MNT_OMODE_NOTAB, MNT_OMODE_FORCE,
  *   MNT_OMODE_FSTAB, MNT_OMODE_MTAB and then the mount options from fstab/mtab
- *   are set according to MNT_OMODE_{IGNORE,APPEND,PREPAND,REPLACE}
+ *   are set according to MNT_OMODE_{IGNORE,APPEND,PREPEND,REPLACE}
  *
  * Returns: 0 on success, negative number in case of error.
  */
@@ -761,7 +900,7 @@ int mnt_context_is_loopdel(struct libmnt_context *cxt)
  * @cxt: mount context
  * @fs: filesystem description
  *
- * The mount context uses private @fs by default. This function allows to
+ * The mount context uses private @fs by default. This function can be used to
  * overwrite the private @fs with an external instance. This function
  * increments @fs reference counter (and decrement reference counter of the
  * old fs).
@@ -777,6 +916,7 @@ int mnt_context_set_fs(struct libmnt_context *cxt, struct libmnt_fs *fs)
 	if (!cxt)
 		return -EINVAL;
 
+	DBG(CXT, ul_debugobj(cxt, "setting new FS"));
 	mnt_ref_fs(fs);			/* new */
 	mnt_unref_fs(cxt->fs);		/* old */
 	cxt->fs = fs;
@@ -887,6 +1027,42 @@ const char *mnt_context_get_target(struct libmnt_context *cxt)
 }
 
 /**
+ * mnt_context_set_target_prefix:
+ * @cxt: mount context
+ * @path: mountpoint prefix
+ *
+ * Returns: 0 on success, negative number in case of error.
+ */
+int mnt_context_set_target_prefix(struct libmnt_context *cxt, const char *path)
+{
+	char *p = NULL;
+
+	if (!cxt)
+		return -EINVAL;
+	if (path) {
+		p = strdup(path);
+		if (!p)
+			return -ENOMEM;
+	}
+	free(cxt->tgt_prefix);
+	cxt->tgt_prefix = p;
+
+	return 0;
+}
+
+/**
+ * mnt_context_get_target_prefix:
+ * @cxt: mount context
+ *
+ * Returns: returns pointer or NULL in case of error or if not set.
+ */
+const char *mnt_context_get_target_prefix(struct libmnt_context *cxt)
+{
+	return cxt ? cxt->tgt_prefix : NULL;
+}
+
+
+/**
  * mnt_context_set_fstype:
  * @cxt: mount context
  * @fstype: filesystem type
@@ -918,7 +1094,7 @@ const char *mnt_context_get_fstype(struct libmnt_context *cxt)
  * @cxt: mount context
  * @optstr: comma delimited mount options
  *
- * Note that that MS_MOVE cannot be specified as "string". It's operation that
+ * Note that MS_MOVE cannot be specified as "string". It's operation that
  * is no supported in fstab (etc.)
  *
  * Returns: 0 on success, negative number in case of error.
@@ -1014,7 +1190,7 @@ int mnt_context_set_options_pattern(struct libmnt_context *cxt, const char *patt
  * @tb: fstab
  *
  * The mount context reads /etc/fstab to the private struct libmnt_table by default.
- * This function allows to overwrite the private fstab with an external
+ * This function can be used to overwrite the private fstab with an external
  * instance.
  *
  * This function modify the @tb reference counter. This function does not set
@@ -1317,7 +1493,7 @@ int mnt_context_set_tables_errcb(struct libmnt_context *cxt,
  * @cache: cache instance or NULL
  *
  * The mount context maintains a private struct libmnt_cache by default. This
- * function allows to overwrite the private cache with an external instance.
+ * function can be used to overwrite the private cache with an external instance.
  * This function increments cache reference counter.
  *
  * If the @cache argument is NULL, then the current cache instance is reset.
@@ -1435,7 +1611,7 @@ struct libmnt_lock *mnt_context_get_lock(struct libmnt_context *cxt)
  *
  * Sets mount flags (see mount(2) man page).
  *
- * Note that mount context allows to define mount options by mount flags. It
+ * Note that mount context can be used to define mount options by mount flags. It
  * means you can for example use
  *
  *	mnt_context_set_mflags(cxt, MS_NOEXEC | MS_NOSUID);
@@ -1564,7 +1740,7 @@ int mnt_context_get_user_mflags(struct libmnt_context *cxt, unsigned long *flags
  * @data: mount(2) data
  *
  * The mount context generates mountdata from mount options by default. This
- * function allows to overwrite this behavior, and @data will be used instead
+ * function can be used to overwrite this behavior, and @data will be used instead
  * of mount options.
  *
  * The libmount does not deallocate the data by mnt_free_context(). Note that
@@ -1632,7 +1808,7 @@ int mnt_context_prepare_srcpath(struct libmnt_context *cxt)
 		 * Source is PATH (canonicalize)
 		 */
 		path = mnt_resolve_path(src, cache);
-		if (path && strcmp(path, src))
+		if (path && strcmp(path, src) != 0)
 			rc = mnt_fs_set_source(cxt->fs, path);
 	 }
 
@@ -1650,10 +1826,21 @@ int mnt_context_prepare_srcpath(struct libmnt_context *cxt)
 		goto end;
 	}
 
+
 	/*
-	 * Initialize loop device
+	 * Initialize verity or loop device
+	 * ENOTSUP means verity options were requested, but the library is built without
+	 * libcryptsetup so integrity cannot be enforced, and this should be an error
+	 * rather than a silent fallback to a simple loopdev mount
 	 */
-	if (mnt_context_is_loopdev(cxt)) {
+	rc = mnt_context_is_veritydev(cxt);
+	if (rc == -ENOTSUP) {
+			goto end;
+	} else if (rc) {
+		rc = mnt_context_setup_veritydev(cxt);
+		if (rc)
+			goto end;
+	} else if (mnt_context_is_loopdev(cxt)) {
 		rc = mnt_context_setup_loopdev(cxt);
 		if (rc)
 			goto end;
@@ -1668,57 +1855,56 @@ end:
 	return rc;
 }
 
-/* create a mountpoint if X-mount.mkdir[=<mode>] specified */
-static int mkdir_target(const char *tgt, struct libmnt_fs *fs)
+static int is_mkdir_required(const char *tgt, struct libmnt_fs *fs, mode_t *mode, int *rc)
 {
 	char *mstr = NULL;
 	size_t mstr_sz = 0;
-	mode_t mode = 0;
 	struct stat st;
-	int rc;
 
 	assert(tgt);
 	assert(fs);
+	assert(mode);
+	assert(rc);
+
+	*mode = 0;
+	*rc = 0;
 
 	if (mnt_optstr_get_option(fs->user_optstr, "X-mount.mkdir", &mstr, &mstr_sz) != 0 &&
 	    mnt_optstr_get_option(fs->user_optstr, "x-mount.mkdir", &mstr, &mstr_sz) != 0)   	/* obsolete */
 		return 0;
 
-	DBG(CXT, ul_debug("mkdir %s (%s) wanted", tgt, mstr));
-
 	if (mnt_stat_mountpoint(tgt, &st) == 0)
 		return 0;
+
+	DBG(CXT, ul_debug("mkdir %s (%s) wanted", tgt, mstr));
 
 	if (mstr && mstr_sz) {
 		char *end = NULL;
 
 		errno = 0;
-		mode = strtol(mstr, &end, 8);
+		*mode = strtol(mstr, &end, 8);
 
 		if (errno || !end || mstr + mstr_sz != end) {
 			DBG(CXT, ul_debug("failed to parse mkdir mode '%s'", mstr));
-			return -MNT_ERR_MOUNTOPT;
+			*rc = -MNT_ERR_MOUNTOPT;
+			return 0;
 		}
 	}
 
-	if (!mode)
-		mode = S_IRWXU |			/* 0755 */
+	if (!*mode)
+		*mode = S_IRWXU |			/* 0755 */
 		       S_IRGRP | S_IXGRP |
 		       S_IROTH | S_IXOTH;
 
-	rc = mkdir_p(tgt, mode);
-	if (rc)
-		DBG(CXT, ul_debug("mkdir %s failed: %m", tgt));
-
-	return rc;
+	return 1;
 }
 
 int mnt_context_prepare_target(struct libmnt_context *cxt)
 {
-	const char *tgt;
-	struct libmnt_cache *cache;
+	const char *tgt, *prefix;
 	int rc = 0;
 	struct libmnt_ns *ns_old;
+	mode_t mode = 0;
 
 	assert(cxt);
 	assert(cxt->fs);
@@ -1730,41 +1916,65 @@ int mnt_context_prepare_target(struct libmnt_context *cxt)
 	if (!tgt)
 		return 0;
 
+	/* apply prefix */
+	prefix = mnt_context_get_target_prefix(cxt);
+	if (prefix) {
+		const char *p = *tgt == '/' ? tgt + 1 : tgt;
+
+		if (!*p)
+			/* target is "/", use "/prefix" */
+			rc = mnt_fs_set_target(cxt->fs, prefix);
+		else {
+			char *path = NULL;
+
+			if (asprintf(&path, "%s/%s", prefix, p) <= 0)
+				rc = -ENOMEM;
+			else {
+				rc = mnt_fs_set_target(cxt->fs, path);
+				free(path);
+			}
+		}
+		if (rc)
+			return rc;
+		tgt = mnt_fs_get_target(cxt->fs);
+	}
+
 	ns_old = mnt_context_switch_target_ns(cxt);
 	if (!ns_old)
 		return -MNT_ERR_NAMESPACE;
 
-	/* mkdir target */
+	/* X-mount.mkdir target */
 	if (cxt->action == MNT_ACT_MOUNT
-	    && !mnt_context_is_restricted(cxt)
 	    && (cxt->user_mountflags & MNT_MS_XCOMMENT ||
-		cxt->user_mountflags & MNT_MS_XFSTABCOMM)) {
+		cxt->user_mountflags & MNT_MS_XFSTABCOMM)
+	    && is_mkdir_required(tgt, cxt->fs, &mode, &rc)) {
 
-		rc = mkdir_target(tgt, cxt->fs);
-		if (rc) {
-			if (!mnt_context_switch_ns(cxt, ns_old))
-				return -MNT_ERR_NAMESPACE;
-			return rc;	/* mkdir or parse error */
-		}
+		/* supported only for root or non-suid mount(8) */
+		if (!mnt_context_is_restricted(cxt)) {
+			rc = mkdir_p(tgt, mode);
+			if (rc)
+				DBG(CXT, ul_debug("mkdir %s failed: %m", tgt));
+		} else
+			rc = -EPERM;
 	}
 
 	/* canonicalize the path */
-	cache = mnt_context_get_cache(cxt);
-	if (cache) {
-		char *path = mnt_resolve_path(tgt, cache);
-		if (path && strcmp(path, tgt) != 0)
-			rc = mnt_fs_set_target(cxt->fs, path);
+	if (rc == 0) {
+		struct libmnt_cache *cache = mnt_context_get_cache(cxt);
+
+		if (cache) {
+			char *path = mnt_resolve_path(tgt, cache);
+			if (path && strcmp(path, tgt) != 0)
+				rc = mnt_fs_set_target(cxt->fs, path);
+		}
 	}
 
 	if (!mnt_context_switch_ns(cxt, ns_old))
 		return -MNT_ERR_NAMESPACE;
 
-	if (rc)
-		DBG(CXT, ul_debugobj(cxt, "failed to prepare target '%s'", tgt));
-	else
-		DBG(CXT, ul_debugobj(cxt, "final target '%s'",
-					mnt_fs_get_target(cxt->fs)));
-	return 0;
+	DBG(CXT, ul_debugobj(cxt, "final target '%s' [rc=%d]",
+				mnt_fs_get_target(cxt->fs), rc));
+	return rc;
 }
 
 /* Guess type, but not set to cxt->fs, always use free() for the result. It's
@@ -1775,12 +1985,16 @@ int mnt_context_guess_srcpath_fstype(struct libmnt_context *cxt, char **type)
 {
 	int rc = 0;
 	struct libmnt_ns *ns_old;
-	const char *dev = mnt_fs_get_srcpath(cxt->fs);
+	const char *dev;
+
+	assert(type);
+	assert(cxt);
 
 	*type = NULL;
 
+	dev = mnt_fs_get_srcpath(cxt->fs);
 	if (!dev)
-		goto done;
+		return 0;
 
 	ns_old = mnt_context_switch_target_ns(cxt);
 	if (!ns_old)
@@ -1791,22 +2005,30 @@ int mnt_context_guess_srcpath_fstype(struct libmnt_context *cxt, char **type)
 		int ambi = 0;
 
 		*type = mnt_get_fstype(dev, &ambi, cache);
-		if (cache && *type)
-			*type = strdup(*type);
 		if (ambi)
 			rc = -MNT_ERR_AMBIFS;
+
+		if (cache && *type) {
+			*type = strdup(*type);
+			if (!*type)
+				rc = -ENOMEM;
+		}
 	} else {
 		DBG(CXT, ul_debugobj(cxt, "access(%s) failed [%m]", dev));
-		if (strchr(dev, ':') != NULL)
+		if (strchr(dev, ':') != NULL) {
 			*type = strdup("nfs");
-		else if (!strncmp(dev, "//", 2))
+			if (!*type)
+				rc = -ENOMEM;
+		} else if (!strncmp(dev, "//", 2)) {
 			*type = strdup("cifs");
+			if (!*type)
+				rc = -ENOMEM;
+		}
 	}
 
 	if (!mnt_context_switch_ns(cxt, ns_old))
 		return -MNT_ERR_NAMESPACE;
 
-done:
 	return rc;
 }
 
@@ -1868,6 +2090,7 @@ int mnt_context_prepare_helper(struct libmnt_context *cxt, const char *name,
 	char search_path[] = FS_SEARCH_PATH;		/* from config.h */
 	char *p = NULL, *path;
 	struct libmnt_ns *ns_old;
+	int rc = 0;
 
 	assert(cxt);
 	assert(cxt->fs);
@@ -1890,46 +2113,50 @@ int mnt_context_prepare_helper(struct libmnt_context *cxt, const char *name,
 	if (!ns_old)
 		return -MNT_ERR_NAMESPACE;
 
+	/* Ignore errors when search in $PATH and do not modify
+	 * @rc due to stat() etc.
+	 */
 	path = strtok_r(search_path, ":", &p);
 	while (path) {
 		char helper[PATH_MAX];
 		struct stat st;
-		int rc;
+		int xrc;
 
-		rc = snprintf(helper, sizeof(helper), "%s/%s.%s",
+		xrc = snprintf(helper, sizeof(helper), "%s/%s.%s",
 						path, name, type);
 		path = strtok_r(NULL, ":", &p);
 
-		if (rc < 0 || (size_t) rc >= sizeof(helper))
+		if (xrc < 0 || (size_t) xrc >= sizeof(helper))
 			continue;
 
-		rc = stat(helper, &st);
-		if (rc == -1 && errno == ENOENT && strchr(type, '.')) {
+		xrc = stat(helper, &st);
+		if (xrc == -1 && errno == ENOENT && strchr(type, '.')) {
 			/* If type ends with ".subtype" try without it */
 			char *hs = strrchr(helper, '.');
 			if (hs)
 				*hs = '\0';
-			rc = stat(helper, &st);
+			xrc = stat(helper, &st);
 		}
 
 		DBG(CXT, ul_debugobj(cxt, "%-25s ... %s", helper,
-					rc ? "not found" : "found"));
-		if (rc)
+					xrc ? "not found" : "found"));
+		if (xrc)
 			continue;
 
-		if (!mnt_context_switch_ns(cxt, ns_old))
-			return -MNT_ERR_NAMESPACE;
-
-		free(cxt->helper);
-		cxt->helper = strdup(helper);
-		if (!cxt->helper)
-			return -ENOMEM;
-		return 0;
+		/* success */
+		rc = strdup_to_struct_member(cxt, helper, helper);
+		break;
 	}
 
 	if (!mnt_context_switch_ns(cxt, ns_old))
-		return -MNT_ERR_NAMESPACE;
-	return 0;
+		rc = -MNT_ERR_NAMESPACE;
+
+	/* make sure helper is not set on error */
+	if (rc) {
+		free(cxt->helper);
+		cxt->helper = NULL;
+	}
+	return rc;
 }
 
 int mnt_context_merge_mflags(struct libmnt_context *cxt)
@@ -2087,12 +2314,71 @@ end:
 	return rc;
 }
 
+/* apply @fs to @cxt -- use mnt_context_apply_fstab() if not sure
+ */
+int mnt_context_apply_fs(struct libmnt_context *cxt, struct libmnt_fs *fs)
+{
+	int rc;
+
+	if (!cxt->optsmode) {
+		if (mnt_context_is_restricted(cxt)) {
+			DBG(CXT, ul_debugobj(cxt, "force fstab usage for non-root users!"));
+			cxt->optsmode = MNT_OMODE_USER;
+		} else {
+			DBG(CXT, ul_debugobj(cxt, "use default optsmode"));
+			cxt->optsmode = MNT_OMODE_AUTO;
+		}
+	}
+
+	DBG(CXT, ul_debugobj(cxt, "apply entry:"));
+	DBG(CXT, mnt_fs_print_debug(fs, stderr));
+	DBG(CXT, ul_debugobj(cxt, "OPTSMODE (opt-part): ignore=%d, append=%d, prepend=%d, replace=%d",
+				  cxt->optsmode & MNT_OMODE_IGNORE ? 1 : 0,
+				  cxt->optsmode & MNT_OMODE_APPEND ? 1 : 0,
+				  cxt->optsmode & MNT_OMODE_PREPEND ? 1 : 0,
+				  cxt->optsmode & MNT_OMODE_REPLACE ? 1 : 0));
+
+	/* copy from fs to our FS description
+	 */
+	rc = mnt_fs_set_source(cxt->fs, mnt_fs_get_source(fs));
+	if (!rc)
+		rc = mnt_fs_set_target(cxt->fs, mnt_fs_get_target(fs));
+
+	if (!rc && !mnt_fs_get_fstype(cxt->fs))
+		rc = mnt_fs_set_fstype(cxt->fs, mnt_fs_get_fstype(fs));
+
+	if (!rc && !mnt_fs_get_root(cxt->fs) && mnt_fs_get_root(fs))
+		rc = mnt_fs_set_root(cxt->fs, mnt_fs_get_root(fs));
+
+	if (rc)
+		goto done;
+
+	if (cxt->optsmode & MNT_OMODE_IGNORE)
+		;
+	else if (cxt->optsmode & MNT_OMODE_REPLACE)
+		rc = mnt_fs_set_options(cxt->fs, mnt_fs_get_options(fs));
+
+	else if (cxt->optsmode & MNT_OMODE_APPEND)
+		rc = mnt_fs_append_options(cxt->fs, mnt_fs_get_options(fs));
+
+	else if (cxt->optsmode & MNT_OMODE_PREPEND)
+		rc = mnt_fs_prepend_options(cxt->fs, mnt_fs_get_options(fs));
+
+	if (!rc)
+		cxt->flags |= MNT_FL_TAB_APPLIED;
+
+done:
+	DBG(CXT, ul_debugobj(cxt, "final entry [rc=%d]:", rc));
+	DBG(CXT, mnt_fs_print_debug(cxt->fs, stderr));
+
+	return rc;
+}
+
 static int apply_table(struct libmnt_context *cxt, struct libmnt_table *tb,
 		     int direction)
 {
 	struct libmnt_fs *fs = NULL;
 	const char *src, *tgt;
-	int rc;
 
 	assert(cxt);
 	assert(cxt->fs);
@@ -2127,38 +2413,7 @@ static int apply_table(struct libmnt_context *cxt, struct libmnt_table *tb,
 	if (!fs)
 		return -MNT_ERR_NOFSTAB;	/* not found */
 
-	DBG(CXT, ul_debugobj(cxt, "apply entry:"));
-	DBG(CXT, mnt_fs_print_debug(fs, stderr));
-
-	/* copy from tab to our FS description
-	 */
-	rc = mnt_fs_set_source(cxt->fs, mnt_fs_get_source(fs));
-	if (!rc)
-		rc = mnt_fs_set_target(cxt->fs, mnt_fs_get_target(fs));
-
-	if (!rc && !mnt_fs_get_fstype(cxt->fs))
-		rc = mnt_fs_set_fstype(cxt->fs, mnt_fs_get_fstype(fs));
-
-	if (!rc && !mnt_fs_get_root(cxt->fs) && mnt_fs_get_root(fs))
-		rc = mnt_fs_set_root(cxt->fs, mnt_fs_get_root(fs));
-
-	if (rc)
-		return rc;
-
-	if (cxt->optsmode & MNT_OMODE_IGNORE)
-		;
-	else if (cxt->optsmode & MNT_OMODE_REPLACE)
-		rc = mnt_fs_set_options(cxt->fs, mnt_fs_get_options(fs));
-
-	else if (cxt->optsmode & MNT_OMODE_APPEND)
-		rc = mnt_fs_append_options(cxt->fs, mnt_fs_get_options(fs));
-
-	else if (cxt->optsmode & MNT_OMODE_PREPEND)
-		rc = mnt_fs_prepend_options(cxt->fs, mnt_fs_get_options(fs));
-
-	if (!rc)
-		cxt->flags |= MNT_FL_TAB_APPLIED;
-	return rc;
+	return mnt_context_apply_fs(cxt, fs);
 }
 
 /**
@@ -2207,12 +2462,7 @@ int mnt_context_apply_fstab(struct libmnt_context *cxt)
 		tgt = mnt_fs_get_target(cxt->fs);
 	}
 
-	DBG(CXT, ul_debugobj(cxt, "OPTSMODE: ignore=%d, append=%d, prepend=%d, "
-				  "replace=%d, force=%d, fstab=%d, mtab=%d",
-				  cxt->optsmode & MNT_OMODE_IGNORE ? 1 : 0,
-				  cxt->optsmode & MNT_OMODE_APPEND ? 1 : 0,
-				  cxt->optsmode & MNT_OMODE_PREPEND ? 1 : 0,
-				  cxt->optsmode & MNT_OMODE_REPLACE ? 1 : 0,
+	DBG(CXT, ul_debugobj(cxt, "OPTSMODE (file-part): force=%d, fstab=%d, mtab=%d",
 				  cxt->optsmode & MNT_OMODE_FORCE ? 1 : 0,
 				  cxt->optsmode & MNT_OMODE_FSTAB ? 1 : 0,
 				  cxt->optsmode & MNT_OMODE_MTAB ? 1 : 0));
@@ -2437,8 +2687,8 @@ int mnt_context_get_generic_excode(int rc, char *buf, size_t bufsz, char *fmt, .
 	/* we need to support "%m" */
 	errno = rc < 0 ? -rc : rc;
 
-	if (buf)
-		vsnprintf(buf, bufsz, fmt, va);
+	if (buf && bufsz && vsnprintf(buf, bufsz, fmt, va) < 0)
+		*buf = '\0';
 
 	switch (errno) {
 	case EINVAL:
@@ -2614,10 +2864,13 @@ int mnt_context_is_fs_mounted(struct libmnt_context *cxt,
 		}
 		*mounted = 0;
 		return 0;	/* /proc not mounted */
-	} else if (rc)
+	}
+
+	if (rc)
 		return rc;
 
-	*mounted = mnt_table_is_fs_mounted(mtab, fs);
+	*mounted = __mnt_table_is_fs_mounted(mtab, fs,
+				mnt_context_get_target_prefix(cxt));
 
 	if (!mnt_context_switch_ns(cxt, ns_old))
 		return -MNT_ERR_NAMESPACE;
@@ -2868,7 +3121,7 @@ struct libmnt_ns *mnt_context_switch_ns(struct libmnt_context *cxt, struct libmn
 		return old;
 
 #ifdef USE_LIBMOUNT_SUPPORT_NAMESPACES
-	/* remember the curremt cache */
+	/* remember the current cache */
 	if (old->cache != cxt->cache) {
 		mnt_unref_cache(old->cache);
 		old->cache = cxt->cache;
@@ -2946,6 +3199,32 @@ struct libmnt_ns *mnt_context_switch_target_ns(struct libmnt_context *cxt)
 
 
 #ifdef TEST_PROGRAM
+
+static int test_search_helper(struct libmnt_test *ts, int argc, char *argv[])
+{
+	struct libmnt_context *cxt;
+	const char *type;
+	int rc;
+
+	if (argc < 2)
+		return -EINVAL;
+
+	cxt = mnt_new_context();
+	if (!cxt)
+		return -ENOMEM;
+
+	type = argv[1];
+
+	mnt_context_get_fs(cxt);		/* just to fill cxt->fs */
+	cxt->flags |= MNT_FL_MOUNTFLAGS_MERGED;	/* fake */
+
+	rc = mnt_context_prepare_helper(cxt, "mount", type);
+	printf("helper is: %s\n", cxt->helper ? cxt->helper : "not found");
+
+	mnt_free_context(cxt);
+	return rc;
+}
+
 
 static struct libmnt_lock *lock;
 
@@ -3152,6 +3431,7 @@ int main(int argc, char *argv[])
 	{ "--umount", test_umount, "[-t <type>] [-f][-l][-r] <src>|<target>" },
 	{ "--mount-all", test_mountall,  "[-O <pattern>] [-t <pattern] mount all filesystems from fstab" },
 	{ "--flags", test_flags,   "[-o <opts>] <spec>" },
+	{ "--search-helper", test_search_helper, "<fstype>" },
 	{ NULL }};
 
 	umask(S_IWGRP|S_IWOTH);	/* to be compatible with mount(8) */

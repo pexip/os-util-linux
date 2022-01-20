@@ -132,6 +132,10 @@ static const struct libmnt_optmap linux_flags_map[] =
    { "shared",      MS_SHARED,              MNT_NOHLPS | MNT_NOMTAB }, /* Shared */
    { "rshared",     MS_SHARED | MS_REC,     MNT_NOHLPS | MNT_NOMTAB },
 #endif
+#ifdef MS_NOSYMFOLLOW
+   { "symfollow", MS_NOSYMFOLLOW, MNT_INVERT }, /* Don't follow symlinks */
+   { "nosymfollow", MS_NOSYMFOLLOW },
+#endif
    { NULL, 0, 0 }
 };
 
@@ -179,6 +183,15 @@ static const struct libmnt_optmap userspace_opts_map[] =
 
    { "helper=", MNT_MS_HELPER },			   /* /sbin/mount.<helper> */
 
+   { "verity.hashdevice=", MNT_MS_HASH_DEVICE, MNT_NOHLPS | MNT_NOMTAB },     /* mount a verity device */
+   { "verity.roothash=",   MNT_MS_ROOT_HASH, MNT_NOHLPS | MNT_NOMTAB },		   /* verity device root hash */
+   { "verity.hashoffset=", MNT_MS_HASH_OFFSET, MNT_NOHLPS | MNT_NOMTAB },	   /* verity device hash offset */
+   { "verity.roothashfile=", MNT_MS_ROOT_HASH_FILE, MNT_NOHLPS | MNT_NOMTAB },/* verity device root hash (read from file) */
+   { "verity.fecdevice=",   MNT_MS_FEC_DEVICE, MNT_NOHLPS | MNT_NOMTAB },		/* verity FEC device */
+   { "verity.fecoffset=", MNT_MS_FEC_OFFSET, MNT_NOHLPS | MNT_NOMTAB },	      /* verity FEC area offset */
+   { "verity.fecroots=", MNT_MS_FEC_ROOTS, MNT_NOHLPS | MNT_NOMTAB },	      /* verity FEC roots */
+   { "verity.roothashsig=",    MNT_MS_ROOT_HASH_SIG, MNT_NOHLPS | MNT_NOMTAB },	/* verity device root hash signature file */
+
    { NULL, 0, 0 }
 };
 
@@ -200,7 +213,7 @@ const struct libmnt_optmap *mnt_get_builtin_optmap(int id)
 
 	if (id == MNT_LINUX_MAP)
 		return linux_flags_map;
-	else if (id == MNT_USERSPACE_MAP)
+	if (id == MNT_USERSPACE_MAP)
 		return userspace_opts_map;
 	return NULL;
 }
@@ -240,7 +253,7 @@ const struct libmnt_optmap *mnt_optmap_get_entry(
 				}
 				continue;
 			}
-			if (strncmp(ent->name, name, namelen))
+			if (strncmp(ent->name, name, namelen) != 0)
 				continue;
 			p = ent->name + namelen;
 			if (*p == '\0' || *p == '=' || *p == '[') {

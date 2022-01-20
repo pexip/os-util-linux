@@ -4,11 +4,11 @@
 .\" Copyright 2014 Red Hat, Inc.
 .\" May be distributed under the GNU General Public License
 .TH "TERMINAL_COLORS.D" "5" "January 2014" "util-linux" "terminal-colors.d"
-.SH "NAME"
+.SH NAME
 terminal-colors.d \- Configure output colorization for various utilities
-.SH "SYNOPSIS"
+.SH SYNOPSIS
 /etc/terminal-colors\&.d/[[\fIname\fR][@\fIterm\fR]\&.][\fItype\fR]
-.SH "DESCRIPTION"
+.SH DESCRIPTION
 Files in this directory determine the default behavior for utilities
 when coloring output.
 
@@ -42,37 +42,13 @@ the default format is described below.
 If there are more files that match for a utility, then the file with the more
 specific filename wins.  For example, the filename "@xterm.scheme" has less
 priority than "dmesg@xterm.scheme".  The lowest priority are those files without a
-utility name and terminal identifier (e.g. "disable").
+utility name and terminal identifier (e.g., "disable").
 
 The user-specific
 .I $XDG_CONFIG_HOME/terminal-colors.d
 or
 .I $HOME/.config/terminal-colors.d
 overrides the global setting.
-
-.SH EXAMPLES
-Disable colors for all compatible utilities:
-.RS
-.br
-.B "touch /etc/terminal-colors.d/disable"
-.br
-.RE
-
-Disable colors for all compatible utils on a vt100 terminal:
-.RS
-.br
-.B "touch /etc/terminal-colors.d/@vt100.disable"
-.br
-.RE
-
-Disable colors for all compatible utils except dmesg(1):
-.RS
-.br
-.B "touch /etc/terminal-colors.d/disable"
-.sp
-.B "touch /etc/terminal-colors.d/dmesg.enable"
-.br
-.RE
 
 .SH DEFAULT SCHEME FILES FORMAT
 The following statement is recognized:
@@ -169,6 +145,10 @@ Lines where the first non-blank character is a # (hash) are ignored.
 Any other use of the hash character is not interpreted as introducing
 a comment.
 
+.SH ENVIRONMENT
+.IP TERMINAL_COLORS_DEBUG=all
+enables debug output.
+
 .SH FILES
 .I $XDG_CONFIG_HOME/terminal-colors.d
 .br
@@ -176,9 +156,29 @@ a comment.
 .br
 .I /etc/terminal-colors.d
 
-.SH ENVIRONMENT
-.IP TERMINAL_COLORS_DEBUG=all
-enables debug output.
+.SH EXAMPLE
+Disable colors for all compatible utilities:
+.RS
+.br
+.B "touch /etc/terminal-colors.d/disable"
+.br
+.RE
+
+Disable colors for all compatible utils on a vt100 terminal:
+.RS
+.br
+.B "touch /etc/terminal-colors.d/@vt100.disable"
+.br
+.RE
+
+Disable colors for all compatible utils except dmesg(1):
+.RS
+.br
+.B "touch /etc/terminal-colors.d/disable"
+.sp
+.B "touch /etc/terminal-colors.d/dmesg.enable"
+.br
+.RE
 
 .SH COMPATIBILITY
 The terminal-colors.d functionality is currently supported by all util-linux

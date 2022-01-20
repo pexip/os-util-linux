@@ -81,6 +81,7 @@ fdisk_list_disklabel
 fdisk_locate_disklabel
 fdisk_reorder_partitions
 fdisk_set_disklabel_id
+fdisk_set_disklabel_id_from_string
 fdisk_set_partition_type
 fdisk_toggle_partition_flag
 fdisk_verify_disklabel
@@ -94,6 +95,7 @@ fdisk_get_npartitions
 <SUBSECTION>
 fdisk_label
 fdisk_is_label
+fdisk_label_advparse_parttype
 fdisk_label_get_field
 fdisk_label_get_field_by_name
 fdisk_label_get_fields_ids
@@ -106,8 +108,10 @@ fdisk_label_get_nparttypes
 fdisk_label_get_parttype
 fdisk_label_get_parttype_from_code
 fdisk_label_get_parttype_from_string
+fdisk_label_get_parttype_shortcut
 fdisk_label_get_type
 fdisk_label_has_code_parttypes
+fdisk_label_has_parttypes_shortcuts
 fdisk_label_is_changed
 fdisk_label_is_disabled
 fdisk_label_parse_parttype
@@ -132,6 +136,7 @@ fdisk_ref_script
 fdisk_script_enable_json
 fdisk_script_get_header
 fdisk_script_get_nlines
+fdisk_script_set_table
 fdisk_script_get_table
 fdisk_script_has_force_label
 fdisk_script_read_context
@@ -231,6 +236,8 @@ fdisk_gpt_is_hybrid
 fdisk_gpt_get_partition_attrs
 fdisk_gpt_set_partition_attrs
 fdisk_gpt_set_npartitions
+fdisk_gpt_disable_relocation
+fdisk_gpt_enable_minimize
 GPT_FLAG_REQUIRED
 GPT_FLAG_NOBLOCK
 GPT_FLAG_LEGACYBOOT
@@ -256,6 +263,7 @@ fdisk_parttype_get_code
 fdisk_parttype_get_name
 fdisk_parttype_get_string
 fdisk_parttype_is_unknown
+fdisk_parttype_parser_flags
 fdisk_parttype_set_code
 fdisk_parttype_set_name
 fdisk_parttype_set_typestr
@@ -290,6 +298,7 @@ fdisk_unref_table
 <FILE>context</FILE>
 fdisk_context
 fdisk_assign_device
+fdisk_assign_device_by_fd
 fdisk_deassign_device
 fdisk_reassign_device
 fdisk_device_is_used

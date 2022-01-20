@@ -298,7 +298,9 @@ static void timeout_handler(int sig __attribute__((__unused__)),
 			    siginfo_t * info,
 			    void *context __attribute__((__unused__)))
 {
+#ifdef HAVE_TIMER_CREATE
 	if (info->si_code == SI_TIMER)
+#endif
 		errx(EXIT_FAILURE, _("timed out"));
 }
 
@@ -311,7 +313,8 @@ static void server_loop(const char *socket_path, const char *pidfile_path,
 	uuid_t			uu;
 	char			reply_buf[1024], *cp;
 	char			op, str[UUID_STR_LEN];
-	int			i, ns, len, num;
+	int			i, ns, len;
+	int			num;		/* intentionally uninitialized */
 	int			s = 0;
 	int			fd_pidfile = -1;
 	int			ret;
@@ -327,18 +330,18 @@ static void server_loop(const char *socket_path, const char *pidfile_path,
 	if (!uuidd_cxt->no_sock)	/* no_sock implies no_fork and no_pid */
 #endif
 	{
-		static timer_t t_id;
+		struct ul_timer timer;
 		struct itimerval timeout;
 
 		memset(&timeout, 0, sizeof timeout);
 		timeout.it_value.tv_sec = 30;
-		if (setup_timer(&t_id, &timeout, &timeout_handler))
+		if (setup_timer(&timer, &timeout, &timeout_handler))
 			err(EXIT_FAILURE, _("cannot set up timer"));
 		if (pidfile_path)
 			fd_pidfile = create_pidfile(uuidd_cxt, pidfile_path);
 		ret = call_daemon(socket_path, UUIDD_OP_GETPID, reply_buf,
 				  sizeof(reply_buf), 0, NULL);
-		cancel_timer(&t_id);
+		cancel_timer(&timer);
 		if (ret > 0) {
 			if (!uuidd_cxt->quiet)
 				warnx(_("uuidd daemon is already running at pid %s"),
@@ -425,8 +428,7 @@ static void server_loop(const char *socket_path, const char *pidfile_path,
 		if (ns < 0) {
 			if ((errno == EAGAIN) || (errno == EINTR))
 				continue;
-			else
-				err(EXIT_FAILURE, "accept");
+			err(EXIT_FAILURE, "accept");
 		}
 		len = read(ns, &op, 1);
 		if (len != 1) {
@@ -573,7 +575,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while ((c =
 		getopt_long(argc, argv, "p:s:T:krtn:PFSdqVh", longopts,
@@ -626,9 +628,9 @@ int main(int argc, char **argv)
 			uuidd_cxt.timeout = strtou32_or_err(optarg,
 						_("failed to parse --timeout"));
 			break;
+
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		case 'h':
 			usage();
 		default:

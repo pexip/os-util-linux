@@ -91,12 +91,6 @@ static void __attribute__((__noreturn__)) usage(void)
 	exit(EXIT_SUCCESS);
 }
 
-static void __attribute__ ((__noreturn__)) print_version(void)
-{
-	printf(UTIL_LINUX_VERSION);
-	exit(EXIT_SUCCESS);
-}
-
 int main(int argc, char **argv)
 {
 	char *device, *volume, *fsname;
@@ -127,14 +121,14 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	if (argc < 2) {
 		warnx(_("not enough arguments"));
 		errtryhelp(EXIT_FAILURE);
 	}
 	if (argc == 2 && !strcmp(argv[1], "-V"))
-		print_version();
+		print_version(EXIT_SUCCESS);
 
 	volume = fsname = "      ";	/* is there a default? */
 	inodes = 0;
@@ -169,7 +163,7 @@ int main(int argc, char **argv)
 			break;
 
 		case VERSION_OPTION:
-			print_version();
+			print_version(EXIT_SUCCESS);
 		case 'h':
 			usage();
 		default:

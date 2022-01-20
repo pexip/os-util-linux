@@ -281,7 +281,8 @@ parameters should be observed.
 .
 .TP
 .BI \%\-\-delay= seconds
-This option allows to overwrite internally used delay when set clock time. The
+This option can be used to overwrite the internally used delay
+when setting the clock time. The
 default is 0.5 (500ms) for rtc_cmos, for another RTC types the delay is 0. If
 RTC type is impossible to determine (from sysfs) then it defaults also to 0.5
 to be backwardly compatible.
@@ -296,7 +297,6 @@ time. Unfortunately, this behavior is hardware specific and in same cases
 another delay is required.
 .RE
 .
-.TP
 .TP
 .BR \-D ", " \-\-debug
 .RB Use\  \-\-verbose .
@@ -456,7 +456,6 @@ is doing internally.
 .SH NOTES
 .
 .SS Clocks in a Linux System
-.PP
 There are two types of date-time clocks:
 .PP
 .B The Hardware Clock:
@@ -540,7 +539,6 @@ See also
 .BR \%settimeofday (2).
 .
 .SS Hardware Clock Access Methods
-.PP
 .B \%hwclock
 uses many different ways to get and set Hardware Clock values.  The most
 normal way is to do I/O to the rtc device special file, which is
@@ -571,7 +569,6 @@ provides it for testing, troubleshooting, and  because it may be the
 only method available on ISA systems which do not have a working rtc
 device driver.
 .SS The Adjust Function
-.PP
 The Hardware Clock is usually not very accurate.  However, much of its
 inaccuracy is completely predictable - it gains or loses the same amount
 of time every day.  This is called systematic drift.
@@ -652,7 +649,7 @@ in seconds per day, floating point decimal; 2) the resulting number of
 seconds since 1969 UTC of most recent adjustment or calibration,
 decimal integer; 3) zero (for compatibility with
 .BR \%clock (8))
-as a decimal integer.
+as a floating point decimal.
 .PP
 Line 2: One number: the resulting number of seconds since 1969 UTC of most
 recent calibration.  Zero if there has been no calibration yet or it
@@ -670,7 +667,6 @@ You can use an adjtime file that was previously used with the
 .BR \%clock "(8) program with " \%hwclock .
 .
 .SS Automatic Hardware Clock Synchronization by the Kernel
-.PP
 You should be aware of another way that the Hardware Clock is kept
 synchronized in some systems.  The Linux kernel has a mode wherein it
 copies the System Time to the Hardware Clock every 11 minutes. This mode
@@ -718,7 +714,6 @@ notify the kernel.
 should not be used with NTP \%'11\ minute\ mode'.
 .
 .SS ISA Hardware Clock Century value
-.PP
 There is some sort of standard that defines CMOS memory Byte 50 on an ISA
 machine as an indicator of what century it is.
 .B \%hwclock
@@ -810,7 +805,7 @@ and a precision timepiece, and then calculate the correction manually.
 .PP
 After setting the tick and frequency values, continue to test and refine the
 adjustments until the System Clock keeps good time.  See
-.BR \%adjtimex (8)
+.BR \%adjtimex (2)
 for more information and the example demonstrating manual drift
 calculations.
 .PP
@@ -983,7 +978,7 @@ may try for Hardware Clock access:
 .BR adjtimex (8),
 .BR gettimeofday (2),
 .BR settimeofday (2),
-.BR crontab (1),
+.BR crontab (1p),
 .BR tzset (3)
 .
 .SH AUTHORS

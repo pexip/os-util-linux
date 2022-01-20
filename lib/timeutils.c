@@ -179,6 +179,7 @@ int parse_timestamp(const char *t, usec_t *usec)
 	 * Allowed syntaxes:
 	 *
 	 *   2012-09-22 16:34:22
+	 *   2012-09-22T16:34:22
 	 *   2012-09-22 16:34	  (seconds will be set to 0)
 	 *   2012-09-22		  (time will be set to 00:00:00)
 	 *   16:34:22		  (date will be set to today)
@@ -272,6 +273,11 @@ int parse_timestamp(const char *t, usec_t *usec)
 		goto finish;
 
 	tm = copy;
+	k = strptime(t, "%Y-%m-%dT%H:%M:%S", &tm);
+	if (k && *k == 0)
+		goto finish;
+
+	tm = copy;
 	k = strptime(t, "%y-%m-%d %H:%M", &tm);
 	if (k && *k == 0) {
 		tm.tm_sec = 0;
@@ -349,7 +355,7 @@ int parse_timestamp(const char *t, usec_t *usec)
 int get_gmtoff(const struct tm *tp)
 {
 	if (tp->tm_isdst < 0)
-	return 0;
+		return 0;
 
 #if HAVE_TM_GMTOFF
 	return tp->tm_gmtoff;
@@ -503,34 +509,37 @@ int strtime_iso(const time_t *t, int flags, char *buf, size_t bufsz)
 }
 
 /* relative time functions */
-int time_is_today(const time_t *t, struct timeval *now)
+static inline int time_is_thisyear(struct tm const *const tm,
+				   struct tm const *const tmnow)
 {
-	if (now->tv_sec == 0)
-		gettimeofday(now, NULL);
-	return *t / (3600 * 24) == now->tv_sec / (3600 * 24);
+	return tm->tm_year == tmnow->tm_year;
 }
 
-int time_is_thisyear(const time_t *t, struct timeval *now)
+static inline int time_is_today(struct tm const *const tm,
+				struct tm const *const tmnow)
 {
-	if (now->tv_sec == 0)
-		gettimeofday(now, NULL);
-	return *t / (3600 * 24 * 365) == now->tv_sec / (3600 * 24 * 365);
+	return (tm->tm_yday == tmnow->tm_yday &&
+		time_is_thisyear(tm, tmnow));
 }
 
 int strtime_short(const time_t *t, struct timeval *now, int flags, char *buf, size_t bufsz)
 {
-        struct tm tm;
+	struct tm tm, tmnow;
 	int rc = 0;
 
-        localtime_r(t, &tm);
+	if (now->tv_sec == 0)
+		gettimeofday(now, NULL);
 
-	if (time_is_today(t, now)) {
+	localtime_r(t, &tm);
+	localtime_r(&now->tv_sec, &tmnow);
+
+	if (time_is_today(&tm, &tmnow)) {
 		rc = snprintf(buf, bufsz, "%02d:%02d", tm.tm_hour, tm.tm_min);
 		if (rc < 0 || (size_t) rc > bufsz)
 			return -1;
 		rc = 1;
 
-	} else if (time_is_thisyear(t, now)) {
+	} else if (time_is_thisyear(&tm, &tmnow)) {
 		if (flags & UL_SHORTTIME_THISYEAR_HHMM)
 			rc = strftime(buf, bufsz, "%b%d/%H:%M", &tm);
 		else
@@ -567,13 +576,21 @@ int main(int argc, char *argv[])
 	char buf[ISO_BUFSIZ];
 
 	if (argc < 2) {
-		fprintf(stderr, "usage: %s <time> [<usec>]\n", argv[0]);
+		fprintf(stderr, "usage: %s [<time> [<usec>]] | [--timestamp <str>]\n", argv[0]);
 		exit(EXIT_FAILURE);
 	}
 
-	tv.tv_sec = strtos64_or_err(argv[1], "failed to parse <time>");
-	if (argc == 3)
-		tv.tv_usec = strtos64_or_err(argv[2], "failed to parse <usec>");
+	if (strcmp(argv[1], "--timestamp") == 0) {
+		usec_t usec;
+
+		parse_timestamp(argv[2], &usec);
+		tv.tv_sec = (time_t) (usec / 1000000);
+		tv.tv_usec = usec % 1000000;
+	} else {
+		tv.tv_sec = strtos64_or_err(argv[1], "failed to parse <time>");
+		if (argc == 3)
+			tv.tv_usec = strtos64_or_err(argv[2], "failed to parse <usec>");
+	}
 
 	strtimeval_iso(&tv, ISO_DATE, buf, sizeof(buf));
 	printf("Date: '%s'\n", buf);

@@ -292,7 +292,7 @@ static int is_tabdiff_column(int id)
  */
 int is_listall_mode(void)
 {
-	if ((flags & FL_DF) && !(flags & FL_ALL))
+	if ((flags & FL_DF || flags & FL_REAL || flags & FL_PSEUDO) && !(flags & FL_ALL))
 		return 0;
 
 	return (!get_match(COL_SOURCE) &&
@@ -524,7 +524,7 @@ static char *get_data(struct libmnt_fs *fs, int num)
 			if (spec && (flags & FL_EVALUATE))
 				spec = cn = mnt_resolve_spec(spec, cache);
 		}
-		if (root && spec && !(flags & FL_NOFSROOT) && strcmp(root, "/"))
+		if (root && spec && !(flags & FL_NOFSROOT) && strcmp(root, "/") != 0)
 			xasprintf(&str, "%s[%s]", spec, root);
 		else if (spec)
 			str = xstrdup(spec);
@@ -533,22 +533,28 @@ static char *get_data(struct libmnt_fs *fs, int num)
 		break;
 	}
 	case COL_TARGET:
-		str = xstrdup(mnt_fs_get_target(fs));
+		if (mnt_fs_get_target(fs))
+			str = xstrdup(mnt_fs_get_target(fs));
 		break;
 	case COL_FSTYPE:
-		str = xstrdup(mnt_fs_get_fstype(fs));
+		if (mnt_fs_get_fstype(fs))
+			str = xstrdup(mnt_fs_get_fstype(fs));
 		break;
 	case COL_OPTIONS:
-		str = xstrdup(mnt_fs_get_options(fs));
+		if (mnt_fs_get_options(fs))
+			str = xstrdup(mnt_fs_get_options(fs));
 		break;
 	case COL_VFS_OPTIONS:
-		str = xstrdup(mnt_fs_get_vfs_options(fs));
+		if (mnt_fs_get_vfs_options(fs))
+			str = xstrdup(mnt_fs_get_vfs_options(fs));
 		break;
 	case COL_FS_OPTIONS:
-		str = xstrdup(mnt_fs_get_fs_options(fs));
+		if (mnt_fs_get_fs_options(fs))
+			str = xstrdup(mnt_fs_get_fs_options(fs));
 		break;
 	case COL_OPT_FIELDS:
-		str = xstrdup(mnt_fs_get_optional_fields(fs));
+		if (mnt_fs_get_optional_fields(fs))
+			str = xstrdup(mnt_fs_get_optional_fields(fs));
 		break;
 	case COL_UUID:
 		str = get_tag(fs, "UUID", col_id);
@@ -582,7 +588,8 @@ static char *get_data(struct libmnt_fs *fs, int num)
 		str = get_vfs_attr(fs, col_id);
 		break;
 	case COL_FSROOT:
-		str = xstrdup(mnt_fs_get_root(fs));
+		if (mnt_fs_get_root(fs))
+			str = xstrdup(mnt_fs_get_root(fs));
 		break;
 	case COL_TID:
 		if (mnt_fs_get_tid(fs))
@@ -659,12 +666,14 @@ static char *get_tabdiff_data(struct libmnt_fs *old_fs,
 		break;
 	case COL_OLD_OPTIONS:
 		if (old_fs && (change == MNT_TABDIFF_REMOUNT ||
-			       change == MNT_TABDIFF_UMOUNT))
+			       change == MNT_TABDIFF_UMOUNT)
+		           && mnt_fs_get_options(old_fs))
 			str = xstrdup(mnt_fs_get_options(old_fs));
 		break;
 	case COL_OLD_TARGET:
 		if (old_fs && (change == MNT_TABDIFF_MOVE ||
-			       change == MNT_TABDIFF_UMOUNT))
+			       change == MNT_TABDIFF_UMOUNT)
+			   && mnt_fs_get_target(old_fs))
 			str = xstrdup(mnt_fs_get_target(old_fs));
 		break;
 	default:
@@ -989,7 +998,8 @@ struct libmnt_fs *get_next_fs(struct libmnt_table *tb,
 		 *    findmnt [-l] <spec> [-O <options>] [-t <types>]
 		 */
 again:
-		mnt_table_find_next_fs(tb, itr, match_func,  NULL, &fs);
+		if (mnt_table_find_next_fs(tb, itr, match_func,  NULL, &fs) != 0)
+			fs = NULL;
 
 		if (!fs &&
 		    !(flags & FL_NOSWAPMATCH) &&
@@ -1348,7 +1358,7 @@ int main(int argc, char *argv[])
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	/* default output format */
 	flags |= FL_TREE;
@@ -1390,9 +1400,6 @@ int main(int argc, char *argv[])
 			break;
 		case 'e':
 			flags |= FL_EVALUATE;
-			break;
-		case 'h':
-			usage();
 			break;
 		case 'i':
 			flags |= FL_INVERT;
@@ -1490,9 +1497,6 @@ int main(int argc, char *argv[])
 		case 'w':
 			timeout = strtos32_or_err(optarg, _("invalid timeout argument"));
 			break;
-		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
 		case 'x':
 			verify = 1;
 			break;
@@ -1508,6 +1512,11 @@ int main(int argc, char *argv[])
 		case FINDMNT_OPT_REAL:
 			flags |= FL_REAL;
 			break;
+
+		case 'h':
+			usage();
+		case 'V':
+			print_version(EXIT_SUCCESS);
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}

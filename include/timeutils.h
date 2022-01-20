@@ -74,6 +74,7 @@ enum {
 	ISO_TIMESTAMP_COMMA_GT  = ISO_TIMESTAMP_COMMA_G | ISO_T
 };
 
+#define CTIME_BUFSIZ	26
 #define ISO_BUFSIZ	42
 
 int strtimeval_iso(struct timeval *tv, int flags, char *buf, size_t bufsz);
@@ -82,15 +83,10 @@ int strtime_iso(const time_t *t, int flags, char *buf, size_t bufsz);
 
 #define UL_SHORTTIME_THISYEAR_HHMM (1 << 1)
 
-int time_is_today(const time_t *t, struct timeval *now);
-int time_is_thisyear(const time_t *t, struct timeval *now);
-
 int strtime_short(const time_t *t, struct timeval *now, int flags, char *buf, size_t bufsz);
 
 #ifndef HAVE_TIMEGM
 extern time_t timegm(struct tm *tm);
 #endif
-
-int parse_date(struct timespec *, char const *, struct timespec const *);
 
 #endif /* UTIL_LINUX_TIME_UTIL_H */

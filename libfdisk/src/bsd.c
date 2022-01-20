@@ -615,8 +615,9 @@ int fdisk_bsd_edit_disklabel(struct fdisk_context *cxt)
 	d->d_ntracks = ask_uint32(cxt, d->d_ntracks, _("tracks/cylinder"));
 	d->d_ncylinders = ask_uint32(cxt, d->d_ncylinders  ,_("cylinders"));
 #endif
-	if (fdisk_ask_number(cxt, 1, d->d_nsectors * d->d_ntracks,
-			     d->d_nsectors * d->d_ntracks,
+	if (fdisk_ask_number(cxt, 1,
+			(uintmax_t) d->d_nsectors * d->d_ntracks,
+			(uintmax_t) d->d_nsectors * d->d_ntracks,
 			     _("sectors/cylinder"), &res) == 0)
 		d->d_secpercyl = res;
 
@@ -736,13 +737,20 @@ done:
 
 static unsigned short bsd_dkcksum (struct bsd_disklabel *lp)
 {
-	unsigned short *start, *end;
+	unsigned char *ptr, *end;
 	unsigned short sum = 0;
 
-	start = (unsigned short *) lp;
-	end = (unsigned short *) &lp->d_partitions[lp->d_npartitions];
-	while (start < end)
-		sum ^= *start++;
+	ptr = (unsigned char *) lp;
+	end = (unsigned char *) &lp->d_partitions[lp->d_npartitions];
+
+	while (ptr < end) {
+		unsigned short val;
+
+		memcpy(&val, ptr, sizeof(unsigned short));
+		sum ^= val;
+
+		ptr += sizeof(unsigned short);
+	}
 	return sum;
 }
 

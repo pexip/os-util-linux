@@ -20,10 +20,9 @@ avoid using default outputs in your scripts.  Always explicitly define expected
 columns by using the \fB\-\-output\fR option together with a columns list in
 environments where a stable output is required.
 
-\fBNSFS\fP column, printed when \fBnet\fP is specified for
-\fB\-\-type\fR option, is special; it uses multi-line cells.
-Use the option \fB\-\-nowrap\fR is for switching to "," separated single-line
-representation.
+The \fBNSFS\fP column, printed when \fBnet\fP is specified for the
+\fB\-\-type\fP option, is special; it uses multi-line cells. Use the option
+\fB\-\-nowrap\fR to switch to ","-separated single-line representation.
 
 Note that \fBlsns\fR reads information directly from the /proc filesystem and
 for non-root users it may return incomplete information.  The current /proc
@@ -49,7 +48,7 @@ Specify which output columns to print.  Use \fB\-\-help\fR
 to get a list of all supported columns.
 
 The default list of columns may be extended if \fIlist\fP is
-specified in the format \fB+\fIlist\fP (e.g. \fBlsns \-o +PATH\fP).
+specified in the format \fB+\fIlist\fP (e.g., \fBlsns \-o +PATH\fP).
 .TP
 .B \-\-output\-all
 Output all available columns.
@@ -62,8 +61,8 @@ Use the raw output format.
 .TP
 .BR \-t , " \-\-type " \fItype\fP
 Display the specified \fItype\fP of namespaces only.  The supported types are
-\fBmnt\fP, \fBnet\fP, \fBipc\fP, \fBuser\fP, \fBpid\fP, \fButs\fP and
-\fBcgroup\fP.  This option may be given more than once.
+\fBmnt\fP, \fBnet\fP, \fBipc\fP, \fBuser\fP, \fBpid\fP, \fButs\fP,
+\fBcgroup\fP and \fBtime\fP.  This option may be given more than once.
 .TP
 .BR \-u , " \-\-notruncate"
 Do not truncate text in columns.
@@ -82,7 +81,7 @@ Display help text and exit.
 Karel Zak <kzak@redhat.com>
 .fi
 
-.SH "SEE ALSO"
+.SH SEE ALSO
 .BR nsenter (1),
 .BR unshare (1),
 .BR clone (2),

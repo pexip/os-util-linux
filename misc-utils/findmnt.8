@@ -148,7 +148,7 @@ or
 options are not specified.
 
 The default list of columns may be extended if \fIlist\fP is
-specified in the format \fI+list\fP (e.g. \fBfindmnt \-o +PROPAGATION\fP).
+specified in the format \fI+list\fP (e.g., \fBfindmnt \-o +PROPAGATION\fP).
 .TP
 .B \-\-output\-all
 Output almost all available columns.  The columns that require
@@ -170,7 +170,7 @@ The standard columns always use the new version of the information from the
 mountinfo file, except the umount action which is based on the original
 information cached by
 .BR findmnt (8).
-The poll mode allows to use extra columns:
+The poll mode allows using extra columns:
 .RS
 .TP
 .B ACTION
@@ -229,7 +229,7 @@ more details see
 .TP
 .B \-\-tree
 Enable tree-like output if possible.  The options is silently ignored for
-tables where is missing child-parent relation (e.g. fstab).
+tables where is missing child-parent relation (e.g., fstab).
 .TP
 .BR \-U , " \-\-uniq"
 Ignore filesystems with duplicate mount targets, thus effectively skipping
@@ -260,7 +260,18 @@ It's possible to specify source (device) or target (mountpoint) to filter mount 
 .TP
 .B \-\-verbose
 Force findmnt to print more information (\fB\-\-verify\fP only for now).
-.SH EXAMPLES
+.SH ENVIRONMENT
+.IP LIBMOUNT_FSTAB=<path>
+overrides the default location of the fstab file
+.IP LIBMOUNT_MTAB=<path>
+overrides the default location of the mtab file
+.IP LIBMOUNT_DEBUG=all
+enables libmount debug output
+.IP LIBSMARTCOLS_DEBUG=all
+enables libsmartcols debug output
+.IP LIBSMARTCOLS_DEBUG_PADDING=on
+use visible padding characters. Requires enabled LIBSMARTCOLS_DEBUG.
+.SH EXAMPLE
 .IP "\fBfindmnt \-\-fstab \-t nfs\fP"
 Prints all NFS filesystems defined in
 .IR /etc/fstab .
@@ -285,17 +296,6 @@ Monitors mount, unmount, remount and move on /mnt/foo.
 Waits for /mnt/foo unmount.
 .IP "\fBfindmnt \-\-poll=remount \-t ext3 \-O ro\fP"
 Monitors remounts to read-only mode on all ext3 filesystems.
-.SH ENVIRONMENT
-.IP LIBMOUNT_FSTAB=<path>
-overrides the default location of the fstab file
-.IP LIBMOUNT_MTAB=<path>
-overrides the default location of the mtab file
-.IP LIBMOUNT_DEBUG=all
-enables libmount debug output
-.IP LIBSMARTCOLS_DEBUG=all
-enables libsmartcols debug output
-.IP LIBSMARTCOLS_DEBUG_PADDING=on
-use visible padding characters. Requires enabled LIBSMARTCOLS_DEBUG.
 .SH AUTHORS
 .nf
 Karel Zak <kzak@redhat.com>

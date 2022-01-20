@@ -1,0 +1,31 @@
+From: Vincent McIntyre <vincent.mcintyre@csiro.au>
+Date: Fri, 1 Jan 2021 13:37:52 +1100
+Subject: Manual pages: document the 'resize' command
+
+Reported in https://bugs.debian.org/906918, https://bugs.debian.org/915971.
+
+Signed-off-by: Vincent McIntyre <vincent.mcintyre@csiro.au>
+---
+ disk-utils/cfdisk.8 | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/disk-utils/cfdisk.8 b/disk-utils/cfdisk.8
+index a61aad7..4e3dfca 100644
+--- a/disk-utils/cfdisk.8
++++ b/disk-utils/cfdisk.8
+@@ -115,6 +115,15 @@ MiB (=1024*1024), and so on for GiB, TiB, PiB, EiB, ZiB and YiB
+ Quit the program.  This will exit the program without writing any data to
+ the disk.
+ .TP
++.B r
++Reduce or enlarge the current partition.
++.B cfdisk
++then prompts you for the new size of the partition.
++The default size is the current size.
++A partition marked as free space or marked as unusable cannot be resized.
++
++Note that reducing the size of a partition might destroy data on that partition.
++.TP
+ .B s
+ Sort the partitions in ascending start-sector order.  When deleting and
+ adding partitions, it is likely that the numbering of the partitions will

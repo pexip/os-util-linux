@@ -74,7 +74,7 @@ Display version information and exit.
 reads the
 .IR /etc\:/login.defs (5)
 configuration file.  Note that the configuration file could be
-distributed with another package (e.g. shadow-utils).  The following
+distributed with another package (e.g., shadow-utils).  The following
 configuration items are relevant for
 .BR chfn (1):
 .PP
@@ -93,16 +93,15 @@ r = Office (room), w = Office (work) Phone, h = Home Phone.  For example,
 If CHFN_RESTRICT is undefined, then all finger information is read-only.
 This is the default.
 .RE
-.PP
-.SH "EXIT STATUS"
+.SH EXIT STATUS
 Returns 0 if operation was successful, 1 if operation failed or command syntax was not valid.
-.SH "SEE ALSO"
+.SH AUTHORS
+Salvatore Valente <svalente@mit.edu>
+.SH SEE ALSO
 .BR chsh (1),
 .BR finger (1),
 .BR login.defs (5),
 .BR passwd (5)
-.SH AUTHOR
-Salvatore Valente <svalente@mit.edu>
 .SH AVAILABILITY
 The chfn command is part of the util-linux package and is available from
 https://www.kernel.org/pub/linux/utils/util-linux/.

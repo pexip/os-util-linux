@@ -1,31 +1,34 @@
 
  Note that items with (!) have high priority.
 
+script (lib/pty-session.c)
+--------------------------
+  - (!) add #ifdefs and optional code for non-signalfd() systems
+
+
+docs
+----
+  - use terminal hyperlinks (for example for --help)
+    try on terminal: printf 'For more details see \e]8;;man:fdisk(8)\e\\fdisk(8)\e]8;;\e\\.\n'
+    https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda
+
+rev
+---
+  - support huge input lines (for example read input by small fixed buffer
+    rather than try allocate all buffer for a whole line)
+    see: https://github.com/karelzak/util-linux/issues/972
+
+col
+---
+  - use unsigned sizes for columns and lines
+  - check for limits to avoid segfaults
+  - make it more robust
+  https://github.com/karelzak/util-linux/issues/749
+
 cal
 ---
-   - add option to print calendar in vertical way
-     https://github.com/karelzak/util-linux/issues/604
    - support another --reforms, see for example freebsd version
      https://github.com/freebsd/freebsd/blob/master/usr.bin/ncal/ncal.c#L72
-
-script
-------
-   - introduce a new timing file format to record information about multiple
-     streams (stdout, stdin) and events (signals)
-
-   - add support for stdin loggin -- separated log file with raw input and timing
-     records in the timing file
-
-   - for example timing file format:
-              
-             <type> <timestamp> [<offset> | <signal> ...]
-
-	     O 0.001296 256
-	     S 0.001297 SIGWINCH: columns=50, lines=20
-	     I 0.000010 10
-
-     O - output, S - signal, I - input
-
 
 lscpu
 -----
@@ -34,32 +37,22 @@ lscpu
 
 lsblk
 -----
-  - re-write the way how lsblk internally holds info about devices. Now we
-    compose only output (by libsmartcols). It would be better to have in memory
-    complete tree of the devices and generate the output from this tree. It will
-    make code more readable and allow to generate output in more ways -- for
-    example for RAIDs (https://github.com/karelzak/util-linux/issues/616)
-
   - currently it does not show mountpoint for all devices in btrfs RAID. It's because
     /proc/#/mountinfo contains reference to the one device only. Maybe we can add some
     btrfs specific code to provide a better output for FS based stacks. Not sure.
     https://bugzilla.redhat.com/show_bug.cgi?id=1084453
-
-  - think about free/used space columns; the problem is that such info is about FS
-    and it may be confusing for end-users when FS to DEV mapping is not 1:1 (RAIDs, btrfs, 
-    ...)
 
 nsenter(1)
 ----------
  - read the default UID and GID from the target process.
    http://thread.gmane.org/gmane.linux.utilities.util-linux-ng/9553/focus=9585
 
-hwlock
+hwclock
 ------
  - use /var/lib/hwclock/drift to store hw-clock drift numbers.
  - use /etc/adjtime as read-only for UTC/LOCAL information only
  - the /var/lib/hwclock/drift should be implemented backwardly compatible,
-   it means use the file only if exists, otherwise follow /etc/adjtime 
+   it means use the file only if exists, otherwise follow /etc/adjtime
 
 bash completion
 ---------------
@@ -70,11 +63,6 @@ bash completion
 
 libmount (mount/umount)
 -----------------------
-
- - remount all filesystems given their type, for example:
-        mount -a -t tmpfs -o remount
-   It should be probably enough to add remount_all() to mount(8) in way we
-   already have mount_all().  https://github.com/karelzak/util-linux/issues/589
 
  - add --onlyonce to force mount(8) to check if mountpoint is already used. Now
    "already mounted" detection is used for --all only. The problem is if you
@@ -89,14 +77,14 @@ libmount (mount/umount)
    loop devices, write to /run/mount/utab or /etc/mtab, etc.
 
    It would be nice to improve libmount to check for CAP_SYS_ADMIN if suid not
-   set and allow to use it for simple tasks where no another operation is
+   set and allow using it for simple tasks where no another operation is
    necessary.
 
 partx
 -----
 
  - support mapping by device-mapper if argv[0] is "kpartx" or --dm option is used.
-     
+
 
 getopt
 ------
@@ -113,6 +101,7 @@ docs
 
  - (!) add API documentation to libuuid
 
+ - (!) rewrite man pages to AsciiDoc and generate final man pages by Asciidoctor & Docbook
 
 login-utils:
 -----------
@@ -131,7 +120,7 @@ login-utils:
 libblkid
 --------
 
- - (!) add support for BitLocker Drive Encryption 
+ - (!) add support for BitLocker Drive Encryption
    https://github.com/karelzak/util-linux/issues/617
    https://github.com/libyal/libbde/blob/master/documentation/BitLocker%20Drive%20Encryption%20(BDE)%20format.asciidoc
 
@@ -143,13 +132,24 @@ libfdisk
  - add support for Apple Partition Map (see libblkid/src/partitions/mac.c)
    http://en.wikipedia.org/wiki/Apple_Partition_Map
 
+ - add support for nested PT (e.g. hybrid MBR) to scripts
+   * add "nested-label:" block to sfdisk --dump
+   * add "nested-partitiontable" to sfdisk --JSON
+   * support nested labels parsing from dump
+   see https://github.com/karelzak/util-linux/issues/850
+
+sfdisk
+------
+
+ - don't backup PT in interactive mode before write to the devices is requested,
+   see https://github.com/karelzak/util-linux/issues/852
 
 misc
 ----
 
  - add mllockall() and SCHED_FIFO to hwclock,
    see http://lkml.org/lkml/2008/10/12/132
- 
+
 
 ---------------
 exotic requests

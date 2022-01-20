@@ -96,9 +96,10 @@ to tell
 not to destroy the environment.
 .TP
 .B \-f
-Used to skip a second login authentication.  This specifically does
-.B not
-work for root, and does not appear to work well under Linux.
+Used to skip a login authentication.  This option is usually
+used by the
+.BR getty (8)
+autologin feature.
 .TP
 .B \-h
 Used by other servers (i.e.,
@@ -110,16 +111,16 @@ use this option.
 .IP
 Note that the
 .B \-h
-option has impact on the
+option has an impact on the
 .B PAM service
 .BR name .
 The standard service name is
 .IR login ,
-with the
+but with the
 .B \-h
-option the name is
+option, the name is
 .IR remote .
-It is necessary to create proper PAM config files (e.g.
+It is necessary to create proper PAM config files (e.g.,
 .I /etc\:/pam.d\:/login
 and
 .IR /etc\:/pam.d\:/remote ).
@@ -130,9 +131,11 @@ Used by other servers (i.e.,
 to tell
 .B login
 that printing the hostname should be suppressed in the login: prompt.
-See also LOGIN_PLAIN_PROMPT below if your server does not allow to configure
+See also
+.B LOGIN_PLAIN_PROMPT
+below if your server does not allow the
 .B login
-command line.
+command line to be configured.
 .TP
 \fB\-\-help\fR
 Display help text and exit.
@@ -144,30 +147,65 @@ Display version information and exit.
 reads the
 .IR /etc\:/login.defs (5)
 configuration file.  Note that the configuration file could be
-distributed with another package (e.g. shadow-utils).  The following
+distributed with another package (e.g., shadow-utils).  The following
 configuration items are relevant for
-.BR login (1):
+.BR login :
 .PP
 .B MOTD_FILE
 (string)
 .RS 4
-If defined, a ":" delimited list of "message of the day" files to be
-displayed upon login.  The default value is
-.IR /etc\:/motd .
+Specifies a ":" delimited list of "message of the day" files and directories
+to be displayed upon login.  If the specified path is a directory then displays
+all files with .motd file extension in version-sort order from the directory.
+.PP
+The default value is
+.IR "/usr/share/misc/motd:/run/motd:/etc/motd" .
 If the
 .B MOTD_FILE
 item is empty or a quiet login is enabled, then the message of the day
 is not displayed.  Note that the same functionality is also provided
-by
+by the
 .BR pam_motd (8)
 PAM module.
+.PP
+The directories in the
+.B MOTD_FILE
+are supported since version 2.36.
+.PP
+Note that
+.B login
+does not implement any filenames overriding behavior like pam_motd
+(see also
+.BR MOTD_FIRSTONLY ),
+but all content from all files is displayed.  It is
+recommended to keep extra logic in content generators and use
+.I /run/motd.d
+rather
+than rely on overriding behavior hardcoded in system tools.
+.RE
+.PP
+.B MOTD_FIRSTONLY
+(boolean)
+.RS 4
+Forces
+.B login
+to stop display content specified by
+.B MOTD_FILE
+after the first accessible item in the list.
+Note that a directory is one item in this case.
+This option allows
+.B login
+semantics to be configured to be more compatible with pam_motd.
 .RE
 .PP
 .B LOGIN_PLAIN_PROMPT
 (boolean)
 .RS 4
-Tell login that printing the hostname should be suppressed in the login:
-prompt.  This is alternative to the \fB\-H\fR command line option.  The default
+Tell
+.B login
+that printing the hostname should be suppressed in the login:
+prompt.
+This is an alternative to the \fB\-H\fR command line option.  The default
 value is
 .IR no .
 .RE
@@ -175,7 +213,7 @@ value is
 .B LOGIN_TIMEOUT
 (number)
 .RS 4
-Max time in seconds for login.  The default value is
+Maximum time in seconds for login.  The default value is
 .IR 60 .
 .RE
 .PP
@@ -226,7 +264,7 @@ can be either the name of a group or a numeric group identifier.
 (string)
 .RS 4
 If defined, this file can inhibit all the usual chatter during the
-login sequence.  If a full pathname (e.g.
+login sequence.  If a full pathname (e.g.,
 .IR /etc\:/hushlogins )
 is specified, then hushed mode will be enabled if the user\'s name or
 shell are found in the file.  If this global hush login file is empty
@@ -256,6 +294,23 @@ to change directory to her home.  The default value is
 .IR yes .
 .RE
 .PP
+.B LASTLOG_UID_MAX
+(unsigned number)
+.RS 4
+Highest user ID number for which the
+.I lastlog
+entries should be
+updated.  As higher user IDs are usually tracked by remote user
+identity and authentication services there is no need to create
+a huge sparse
+.I lastlog
+file for them.  No LASTLOG_UID_MAX option
+present in the configuration means that there is no user ID limit
+for writing
+.I lastlog
+entries.
+.RE
+.PP
 .B LOG_UNKFAIL_ENAB
 (boolean)
 .RS 4
@@ -270,7 +325,9 @@ user enters her password instead of her login name.
 .B ENV_PATH
 (string)
 .RS 4
-If set, it will be used to define the PATH environment variable when
+If set, it will be used to define the
+.B PATH
+environment variable when
 a regular user logs in.  The default value is
 .I /usr\:/local\:/bin:\:/bin:\:/usr\:/bin
 .RE
@@ -282,7 +339,7 @@ a regular user logs in.  The default value is
 (string)
 .RS 4
 If set, it will be used to define the PATH environment variable when
-the superuser logs in.  The default value is
+the superuser logs in.  ENV_ROOTPATH takes precedence.  The default value is
 .I /usr\:/local\:/sbin:\:/usr\:/local\:/bin:\:/sbin:\:/bin:\:/usr\:/sbin:\:/usr\:/bin
 .RE
 .SH FILES
@@ -299,14 +356,6 @@ the superuser logs in.  The default value is
 .I /etc/hushlogins
 .I .hushlogin
 .fi
-.SH "SEE ALSO"
-.BR mail (1),
-.BR passwd (1),
-.BR passwd (5),
-.BR environ (7),
-.BR getty (8),
-.BR init (8),
-.BR shutdown (8)
 .SH BUGS
 The undocumented BSD
 .B \-r
@@ -317,16 +366,21 @@ programs.
 A recursive login, as used to be possible in the good old days, no
 longer works; for most purposes
 .BR su (1)
-is a satisfactory substitute.  Indeed, for security reasons, login
-does a vhangup() system call to remove any possible listening
+is a satisfactory substitute.  Indeed, for security reasons,
+.B login
+does a
+.BR vhangup (2)
+system call to remove any possible listening
 processes on the tty.  This is to avoid password sniffing.  If one
 uses the command
 .BR login ,
-then the surrounding shell gets killed by vhangup() because it's no
+then the surrounding shell gets killed by
+.BR vhangup (2)
+because it's no
 longer the true owner of the tty.  This can be avoided by using
 .B exec login
 in a top-level shell or xterm.
-.SH AUTHOR
+.SH AUTHORS
 Derived from BSD login 5.40 (5/9/89) by
 .MT glad@\:daimi.\:dk
 Michael Glad
@@ -342,6 +396,16 @@ Rewritten to a PAM-only version by
 .MT kzak@\:redhat.\:com
 Karel Zak
 .ME
+.SH SEE ALSO
+.BR mail (1),
+.BR passwd (1),
+.BR passwd (5),
+.BR utmp (5),
+.BR environ (7),
+.BR getty (8),
+.BR init (8),
+.BR lastlog (8)
+.BR shutdown (8)
 .SH AVAILABILITY
 The login command is part of the util-linux package and is
 available from

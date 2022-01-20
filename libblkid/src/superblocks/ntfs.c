@@ -78,7 +78,7 @@ struct file_attribute {
 #define	MFT_RECORD_ATTR_VOLUME_NAME	0x60
 #define	MFT_RECORD_ATTR_END		0xffffffff
 
-static int probe_ntfs(blkid_probe pr, const struct blkid_idmag *mag)
+static int __probe_ntfs(blkid_probe pr, const struct blkid_idmag *mag, int save_info)
 {
 	struct ntfs_super_block *ns;
 	struct master_file_table_record *mft;
@@ -162,7 +162,7 @@ static int probe_ntfs(blkid_probe pr, const struct blkid_idmag *mag)
 	if (!buf_mft)
 		return errno ? -errno : 1;
 
-	if (memcmp(buf_mft, "FILE", 4))
+	if (memcmp(buf_mft, "FILE", 4) != 0)
 		return 1;
 
 	off += MFT_RECORD_VOLUME * mft_record_size;
@@ -171,8 +171,12 @@ static int probe_ntfs(blkid_probe pr, const struct blkid_idmag *mag)
 	if (!buf_mft)
 		return errno ? -errno : 1;
 
-	if (memcmp(buf_mft, "FILE", 4))
+	if (memcmp(buf_mft, "FILE", 4) != 0)
 		return 1;
+
+	/* return if caller does not care about UUID and LABEL */
+	if (!save_info)
+		return 0;
 
 	mft = (struct master_file_table_record *) buf_mft;
 	attr_off = le16_to_cpu(mft->attrs_offset);
@@ -197,12 +201,14 @@ static int probe_ntfs(blkid_probe pr, const struct blkid_idmag *mag)
 
 			if (attr_off + val_off + val_len <= mft_record_size)
 				blkid_probe_set_utf8label(pr, val, val_len,
-							  BLKID_ENC_UTF16LE);
+							  UL_ENCODE_UTF16LE);
 			break;
 		}
 
 		attr_off += attr_len;
 	}
+
+	blkid_probe_set_block_size(pr, sector_size);
 
 	blkid_probe_sprintf_uuid(pr,
 			(unsigned char *) &ns->volume_serial,
@@ -211,6 +217,24 @@ static int probe_ntfs(blkid_probe pr, const struct blkid_idmag *mag)
 	return 0;
 }
 
+static int probe_ntfs(blkid_probe pr, const struct blkid_idmag *mag)
+{
+	return __probe_ntfs(pr, mag, 1);
+}
+
+int blkid_probe_is_ntfs(blkid_probe pr)
+{
+	const struct blkid_idmag *mag = NULL;
+	int rc;
+
+	rc = blkid_probe_get_idmag(pr, &ntfs_idinfo, NULL, &mag);
+	if (rc < 0)
+		return rc;	/* error */
+	if (rc != BLKID_PROBE_OK || !mag)
+		return 0;
+
+	return __probe_ntfs(pr, mag, 0) == 0 ? 1 : 0;
+}
 
 const struct blkid_idinfo ntfs_idinfo =
 {

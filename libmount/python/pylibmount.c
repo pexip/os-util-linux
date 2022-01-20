@@ -51,23 +51,35 @@ void *UL_RaiseExc(int e)
 			PyErr_SetString(PyExc_TypeError, strerror(e));
 			break;
 		/* libmount-specific errors */
-		case MNT_ERR_APPLYFLAGS:
-			PyErr_SetString(LibmountError, "Failed to apply MS_PROPAGATION flags");
-			break;
-		case MNT_ERR_MOUNTOPT:
-			PyErr_SetString(LibmountError, "Failed to parse/use userspace mount options");
-			break;
 		case MNT_ERR_NOFSTAB:
-			PyErr_SetString(LibmountError, "Failed to detect filesystem type");
+			PyErr_SetString(LibmountError, "Not found required entry in fstab");
 			break;
 		case MNT_ERR_NOFSTYPE:
-			PyErr_SetString(LibmountError, "Required mount source undefined");
+			PyErr_SetString(LibmountError, "Lailed to detect filesystem type");
 			break;
 		case MNT_ERR_NOSOURCE:
+			PyErr_SetString(LibmountError, "Required mount source undefined");
+			break;
+		case MNT_ERR_LOOPDEV:
 			PyErr_SetString(LibmountError, "Loopdev setup failed");
+			break;
+		case MNT_ERR_APPLYFLAGS:
+			PyErr_SetString(LibmountError, "Failed to parse/use userspace mount options");
+			break;
+		case MNT_ERR_MOUNTOPT:
+			PyErr_SetString(LibmountError, "Failed to apply propagation flags");
 			break;
 		case MNT_ERR_AMBIFS:
 			PyErr_SetString(LibmountError, "Libblkid detected more filesystems on the device");
+			break;
+		case MNT_ERR_LOOPOVERLAP:
+			PyErr_SetString(LibmountError, "Detected overlapping loop device that cannot be re-use");
+			break;
+		case MNT_ERR_LOCK:
+			PyErr_SetString(LibmountError, "Failed to lock mtab/utab or so");
+			break;
+		case MNT_ERR_NAMESPACE:
+			PyErr_SetString(LibmountError, "Failed to switch namespace");
 			break;
 		/* some other errno */
 		default:
@@ -251,6 +263,14 @@ PyMODINIT_FUNC initpylibmount(void)
 	PyModule_AddIntConstant(m, "MNT_MS_USER", MNT_MS_USER);
 	PyModule_AddIntConstant(m, "MNT_MS_USERS", MNT_MS_USERS);
 	PyModule_AddIntConstant(m, "MNT_MS_XCOMMENT", MNT_MS_XCOMMENT);
+	PyModule_AddIntConstant(m, "MNT_MS_HASH_DEVICE", MNT_MS_HASH_DEVICE);
+	PyModule_AddIntConstant(m, "MNT_MS_ROOT_HASH", MNT_MS_ROOT_HASH);
+	PyModule_AddIntConstant(m, "MNT_MS_HASH_OFFSET", MNT_MS_HASH_OFFSET);
+	PyModule_AddIntConstant(m, "MNT_MS_ROOT_HASH_FILE", MNT_MS_ROOT_HASH_FILE);
+	PyModule_AddIntConstant(m, "MNT_MS_FEC_DEVICE", MNT_MS_FEC_DEVICE);
+	PyModule_AddIntConstant(m, "MNT_MS_FEC_OFFSET", MNT_MS_FEC_OFFSET);
+	PyModule_AddIntConstant(m, "MNT_MS_FEC_ROOTS", MNT_MS_FEC_ROOTS);
+	PyModule_AddIntConstant(m, "MNT_MS_ROOT_HASH_SIG", MNT_MS_ROOT_HASH_SIG);
 
 	/*
 	 * mount(2) MS_* masks (MNT_MAP_LINUX map)

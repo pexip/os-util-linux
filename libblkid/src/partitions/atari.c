@@ -74,16 +74,27 @@ static int linux_isalnum(unsigned char c) {
 
 #define IS_ACTIVE(partdef) ((partdef).flags & 1)
 
-#define IS_PARTDEF_VALID(partdef, hdsize) \
-	( \
-		(partdef).flags & 1 && \
-		isalnum((partdef).id[0]) && \
-		isalnum((partdef).id[1]) && \
-		isalnum((partdef).id[2]) && \
-		be32_to_cpu((partdef).start) <= (hdsize) && \
-		be32_to_cpu((partdef).start) + \
-			be32_to_cpu((partdef).size) <= (hdsize) \
-	)
+static int is_valid_dimension(uint32_t start, uint32_t size, uint32_t maxoff)
+{
+	uint64_t end = start + size;
+
+	return  end >= start
+		&& 0 < start && start <= maxoff
+		&& 0 < size && size <= maxoff
+		&& 0 < end && end <= maxoff;
+}
+
+static int is_valid_partition(struct atari_part_def *part, uint32_t maxoff)
+{
+	uint32_t start = be32_to_cpu(part->start),
+		 size = be32_to_cpu(part->size);
+
+	return (part->flags & 1)
+		&& isalnum(part->id[0])
+		&& isalnum(part->id[1])
+		&& isalnum(part->id[2])
+		&& is_valid_dimension(start, size, maxoff);
+}
 
 static int is_id_common(char *id)
 {
@@ -130,12 +141,16 @@ static int parse_extended(blkid_probe pr, blkid_partlist ls,
 	blkid_parttable tab, struct atari_part_def *part)
 {
 	uint32_t x0start, xstart;
-	unsigned i = 0;
+	unsigned ct = 0, i = 0;
 	int rc;
 
 	x0start = xstart = be32_to_cpu(part->start);
 	while (1) {
 		struct atari_rootsector *xrs;
+
+		if (++ct > 100)
+			break;
+
 		xrs = (struct atari_rootsector *) blkid_probe_get_sector(pr, xstart);
 		if (!xrs) {
 			if (errno)
@@ -164,7 +179,7 @@ static int parse_extended(blkid_probe pr, blkid_partlist ls,
 		if (!IS_ACTIVE(xrs->part[i+1]))
 			break;
 
-		if (memcmp(xrs->part[i+1].id, "XGM", 3))
+		if (memcmp(xrs->part[i+1].id, "XGM", 3) != 0)
 			return 0;
 
 		xstart = x0start + be32_to_cpu(xrs->part[i+1].start);
@@ -184,12 +199,20 @@ static int probe_atari_pt(blkid_probe pr,
 	unsigned i;
 	int has_xgm = 0;
 	int rc = 0;
-	off_t hdsize;
+	uint32_t rssize;	/* size in sectors from root sector */
+	uint64_t size;		/* size in sectors from system */
 
 	/* Atari partition is not defined for other sector sizes */
 	if (blkid_probe_get_sectorsize(pr) != 512)
 		goto nothing;
 
+	size = blkid_probe_get_size(pr) / 512;
+
+	/* Atari is not well defined to support large disks */
+	if (size > INT32_MAX)
+		goto nothing;
+
+	/* read root sector */
 	rs = (struct atari_rootsector *) blkid_probe_get_sector(pr, 0);
 	if (!rs) {
 		if (errno)
@@ -197,21 +220,35 @@ static int probe_atari_pt(blkid_probe pr,
 		goto nothing;
 	}
 
-	hdsize = blkid_probe_get_size(pr) / 512;
+	rssize = be32_to_cpu(rs->hd_size);
 
-	/* Look for validly looking primary partition */
-	for (i = 0; ; i++) {
-		if (i >= ARRAY_SIZE(rs->part))
-			goto nothing;
+	/* check number of sectors stored in the root sector */
+	if (rssize < 2 || rssize > size)
+		goto nothing;
 
-		if (IS_PARTDEF_VALID(rs->part[i], hdsize)) {
-			blkid_probe_set_magic(pr,
-				offsetof(struct atari_rootsector, part[i]),
-				sizeof(rs->part[i].flags) + sizeof(rs->part[i].id),
-				(unsigned char *) &rs->part[i]);
+	/* check list of bad blocks */
+	if ((rs->bsl_start || rs->bsl_len)
+	    && !is_valid_dimension(be32_to_cpu(rs->bsl_start),
+				   be32_to_cpu(rs->bsl_len),
+				   rssize))
+		goto nothing;
+
+	/*
+	 * At least one valid partition required
+	 */
+	for (i = 0; i < 4; i++) {
+		if (is_valid_partition(&rs->part[i], rssize)) {
+			if (blkid_probe_set_magic(pr,
+					offsetof(struct atari_rootsector, part[i]),
+					sizeof(rs->part[i].flags) + sizeof(rs->part[i].id),
+					(unsigned char *) &rs->part[i]))
+				goto err;
 			break;
 		}
 	}
+
+	if (i == 4)
+		goto nothing;
 
 	if (blkid_partitions_need_typeonly(pr))
 		/* caller does not ask for details about partitions */
@@ -232,7 +269,6 @@ static int probe_atari_pt(blkid_probe pr,
 			blkid_partlist_increment_partno(ls);
 			continue;
 		}
-
 		if (!memcmp(p->id, "XGM", 3)) {
 			has_xgm = 1;
 			rc = parse_extended(pr, ls, tab, p);

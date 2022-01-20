@@ -18,13 +18,14 @@ libblkid \- block device identification library
 .SH DESCRIPTION
 The
 .B libblkid
-library is used to identify block devices (disks) as to their content (e.g.
+library is used to identify block devices (disks) as to their content (e.g.,
 filesystem type) as well as extracting additional information such as
 filesystem labels/volume names, unique identifiers/serial numbers.
 A common use is to allow use of LABEL= and UUID= tags instead of hard-coding
 specific block device names into configuration files.
 .P
-The low-level part of the library also allows to extract information about
+The low-level part of the library also allows the extraction
+of information about
 partitions and block device topology.
 .P
 The high-level part of the library keeps information about block devices in a
@@ -61,7 +62,7 @@ config file can be overridden by the environment variable BLKID_CONF.  For more
 details about the config file see
 .BR blkid (8)
 man page.
-.SH AUTHOR
+.SH AUTHORS
 .B libblkid
 was written by Andreas Dilger for the ext2 filesystem utilities, with input
 from Ted Ts'o.  The library was subsequently heavily modified by Ted Ts'o.
@@ -71,7 +72,7 @@ The low-level probing code was rewritten by Karel Zak.
 .B libblkid
 is available under the terms of the GNU Library General Public License (LGPL),
 version 2 (or at your discretion any later version).
-.SH "SEE ALSO"
+.SH SEE ALSO
 .BR blkid (8),
 .BR findfs (8)
 .SH AVAILABILITY

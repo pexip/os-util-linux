@@ -169,6 +169,7 @@ struct dmesg_control {
 	struct timeval	lasttime;	/* last printed timestamp */
 	struct tm	lasttm;		/* last localtime */
 	struct timeval	boot_time;	/* system boot time */
+	time_t		suspended_time;	/* time spent in suspended state */
 
 	int		action;		/* SYSLOG_ACTION_* */
 	int		method;		/* DMESG_METHOD_* */
@@ -190,7 +191,9 @@ struct dmesg_control {
 	unsigned int	time_fmt;	/* time format */
 
 	unsigned int	follow:1,	/* wait for new messages */
+			end:1,		/* seek to the of buffer */
 			raw:1,		/* raw mode */
+			noesc:1,	/* no escape */
 			fltr_lev:1,	/* filter out by levels[] */
 			fltr_fac:1,	/* filter out by facilities[] */
 			decode:1,	/* use "facility: level: " prefix */
@@ -277,7 +280,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -f, --facility <list>       restrict output to defined facilities\n"), out);
 	fputs(_(" -H, --human                 human readable output\n"), out);
 	fputs(_(" -k, --kernel                display kernel messages\n"), out);
-	fputs(_(" -L, --color[=<when>]        colorize messages (auto, always or never)\n"), out);
+	fprintf(out,
+	      _(" -L, --color[=<when>]        colorize messages (%s, %s or %s)\n"), "auto", "always", "never");
 	fprintf(out,
 	        "                               %s\n", USAGE_COLORS_DEFAULT);
 	fputs(_(" -l, --level <list>          restrict output to defined levels\n"), out);
@@ -285,10 +289,12 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -P, --nopager               do not pipe output into a pager\n"), out);
 	fputs(_(" -p, --force-prefix          force timestamp output on each line of multi-line messages\n"), out);
 	fputs(_(" -r, --raw                   print the raw message buffer\n"), out);
+	fputs(_("     --noescape              don't escape unprintable character\n"), out);
 	fputs(_(" -S, --syslog                force to use syslog(2) rather than /dev/kmsg\n"), out);
 	fputs(_(" -s, --buffer-size <size>    buffer size to query the kernel ring buffer\n"), out);
 	fputs(_(" -u, --userspace             display userspace messages\n"), out);
 	fputs(_(" -w, --follow                wait for new messages\n"), out);
+	fputs(_(" -W, --follow-new            wait and print only new messages\n"), out);
 	fputs(_(" -x, --decode                decode facility and level to readable string\n"), out);
 	fputs(_(" -d, --show-delta            show time delta between printed messages\n"), out);
 	fputs(_(" -e, --reltime               show local time and time delta in readable format\n"), out);
@@ -615,47 +621,58 @@ static int fwrite_hex(const char *buf, size_t size, FILE *out)
 /*
  * Prints to 'out' and non-printable chars are replaced with \x<hex> sequences.
  */
-static void safe_fwrite(const char *buf, size_t size, int indent, FILE *out)
+static void safe_fwrite(struct dmesg_control *ctl, const char *buf, size_t size, int indent, FILE *out)
 {
 	size_t i;
 #ifdef HAVE_WIDECHAR
 	mbstate_t s;
+	wchar_t wc;
 	memset(&s, 0, sizeof (s));
 #endif
 	for (i = 0; i < size; i++) {
 		const char *p = buf + i;
 		int rc, hex = 0;
-		size_t len;
+		size_t len = 1;
 
+		if (!ctl->noesc) {
+			if (*p == '\0') {
+				hex = 1;
+				goto doprint;
+			}
 #ifdef HAVE_WIDECHAR
-		wchar_t wc;
-		len = mbrtowc(&wc, p, size - i, &s);
+			len = mbrtowc(&wc, p, size - i, &s);
 
-		if (len == 0)				/* L'\0' */
-			return;
+			if (len == 0)				/* L'\0' */
+				return;
 
-		if (len == (size_t)-1 || len == (size_t)-2) {		/* invalid sequence */
-			memset(&s, 0, sizeof (s));
-			len = hex = 1;
-		} else if (len > 1 && !iswprint(wc)) {	/* non-printable multibyte */
-			hex = 1;
-		}
-		i += len - 1;
-#else
-		len = 1;
-		if (!isprint((unsigned char) *p) &&
-		    !isspace((unsigned char) *p))        /* non-printable */
-			hex = 1;
+			if (len == (size_t)-1 || len == (size_t)-2) {		/* invalid sequence */
+				memset(&s, 0, sizeof (s));
+				len = hex = 1;
+				i += len - 1;
+			} else if (len > 1) {
+				if (!iswprint(wc) && !iswspace(wc))	/* non-printable multibyte */
+					hex = 1;
+				i += len - 1;
+			} else
 #endif
+			{
+				len = 1;
+				if (!isprint((unsigned char) *p) &&
+				    !isspace((unsigned char) *p))        /* non-printable */
+					hex = 1;
+			}
+		}
+
+doprint:
 		if (hex)
 			rc = fwrite_hex(p, len, out);
 		else if (*p == '\n' && *(p + 1) && indent) {
 		        rc = fwrite(p, 1, len, out) != len;
 			if (fprintf(out, "%*s", indent, "") != indent)
 				rc |= 1;
-		}
-		else
+		} else
 			rc = fwrite(p, 1, len, out) != len;
+
 		if (rc != 0) {
 			if (errno != EPIPE)
 				err(EXIT_FAILURE, _("write failed"));
@@ -782,7 +799,7 @@ static void raw_print(struct dmesg_control *ctl, const char *buf, size_t size)
 		/*
 		 * Print whole ring buffer
 		 */
-		safe_fwrite(buf, size, 0, stdout);
+		safe_fwrite(ctl, buf, size, 0, stdout);
 		lastc = buf[size - 1];
 	} else {
 		/*
@@ -792,7 +809,7 @@ static void raw_print(struct dmesg_control *ctl, const char *buf, size_t size)
 			size_t sz = size > ctl->pagesize ? ctl->pagesize : size;
 			char *x = ctl->mmap_buff;
 
-			safe_fwrite(x, sz, 0, stdout);
+			safe_fwrite(ctl, x, sz, 0, stdout);
 			lastc = x[sz - 1];
 			size -= sz;
 			ctl->mmap_buff += sz;
@@ -808,7 +825,7 @@ static struct tm *record_localtime(struct dmesg_control *ctl,
 				   struct dmesg_record *rec,
 				   struct tm *tm)
 {
-	time_t t = ctl->boot_time.tv_sec + rec->tv.tv_sec;
+	time_t t = ctl->boot_time.tv_sec + ctl->suspended_time + rec->tv.tv_sec;
 	return localtime_r(&t, tm);
 }
 
@@ -836,7 +853,7 @@ static char *iso_8601_time(struct dmesg_control *ctl, struct dmesg_record *rec,
 			   char *buf, size_t bufsz)
 {
 	struct timeval tv = {
-		.tv_sec = ctl->boot_time.tv_sec + rec->tv.tv_sec,
+		.tv_sec = ctl->boot_time.tv_sec + ctl->suspended_time + rec->tv.tv_sec,
 		.tv_usec = rec->tv.tv_usec
 	};
 
@@ -1017,6 +1034,8 @@ full_output:
 		if (!line) {
 			mesg_copy = xstrdup(rec->mesg);
 			line = strtok(mesg_copy, "\n");
+			if (!line)
+				goto done;	/* only when something is wrong */
 			mesg_size = strlen(line);
 		}
 	} else {
@@ -1032,7 +1051,7 @@ full_output:
 
 		if (subsys) {
 			dmesg_enable_color(DMESG_COLOR_SUBSYS);
-			safe_fwrite(line, subsys - line, ctl->indent, stdout);
+			safe_fwrite(ctl, line, subsys - line, ctl->indent, stdout);
 			color_disable();
 
 			mesg_size -= subsys - line;
@@ -1040,11 +1059,11 @@ full_output:
 		}
 		/* Error, alert .. etc. colors */
 		has_color = set_level_color(rec->level, line, mesg_size) == 0;
-		safe_fwrite(line, mesg_size, ctl->indent, stdout);
+		safe_fwrite(ctl, line, mesg_size, ctl->indent, stdout);
 		if (has_color)
 			color_disable();
 	} else
-		safe_fwrite(line, mesg_size, ctl->indent, stdout);
+		safe_fwrite(ctl, line, mesg_size, ctl->indent, stdout);
 
 	/* Get the next line */
 	if (ctl->force_prefix) {
@@ -1057,6 +1076,7 @@ full_output:
 		free(mesg_copy);
 	}
 
+done:
 	putchar('\n');
 }
 
@@ -1110,11 +1130,11 @@ static int init_kmsg(struct dmesg_control *ctl)
 	 *
 	 * ... otherwise SYSLOG_ACTION_CLEAR will have no effect for kmsg.
 	 */
-	lseek(ctl->kmsg, 0, SEEK_DATA);
+	lseek(ctl->kmsg, 0, ctl->end ? SEEK_END : SEEK_DATA);
 
 	/*
-	 * Old kernels (<3.5) allow to successfully open /dev/kmsg for
-	 * read-only, but read() returns -EINVAL :-(((
+	 * Old kernels (<3.5) can successfully open /dev/kmsg for read-only,
+	 * but read() returns -EINVAL :-(((
 	 *
 	 * Let's try to read the first record. The record is later processed in
 	 * read_kmsg().
@@ -1282,8 +1302,16 @@ static inline int dmesg_get_boot_time(struct timeval *tv)
 
 	return get_boot_time(tv);
 }
+
+static inline time_t dmesg_get_suspended_time(void)
+{
+	if (getenv("DMESG_TEST_BOOTIME"))
+		return 0;
+	return get_suspended_time();
+}
 #else
 # define dmesg_get_boot_time	get_boot_time
+# define dmesg_get_suspended_time	get_suspended_time
 #endif
 
 int main(int argc, char *argv[])
@@ -1305,6 +1333,7 @@ int main(int argc, char *argv[])
 	int colormode = UL_COLORMODE_UNDEF;
 	enum {
 		OPT_TIME_FORMAT = CHAR_MAX + 1,
+		OPT_NOESC
 	};
 
 	static const struct option longopts[] = {
@@ -1318,6 +1347,7 @@ int main(int argc, char *argv[])
 		{ "file",          required_argument, NULL, 'F' },
 		{ "facility",      required_argument, NULL, 'f' },
 		{ "follow",        no_argument,       NULL, 'w' },
+		{ "follow-new",    no_argument,       NULL, 'W' },
 		{ "human",         no_argument,       NULL, 'H' },
 		{ "help",          no_argument,	      NULL, 'h' },
 		{ "kernel",        no_argument,       NULL, 'k' },
@@ -1328,6 +1358,7 @@ int main(int argc, char *argv[])
 		{ "reltime",       no_argument,       NULL, 'e' },
 		{ "show-delta",    no_argument,	      NULL, 'd' },
 		{ "ctime",         no_argument,       NULL, 'T' },
+		{ "noescape",      no_argument,       NULL, OPT_NOESC },
 		{ "notime",        no_argument,       NULL, 't' },
 		{ "nopager",       no_argument,       NULL, 'P' },
 		{ "userspace",     no_argument,       NULL, 'u' },
@@ -1354,9 +1385,9 @@ int main(int argc, char *argv[])
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
-	while ((c = getopt_long(argc, argv, "CcDdEeF:f:HhkL::l:n:iPprSs:TtuVwx",
+	while ((c = getopt_long(argc, argv, "CcDdEeF:f:HhkL::l:n:iPprSs:TtuVWwx",
 				longopts, NULL)) != -1) {
 
 		err_exclusive_options(c, longopts, excl, excl_st);
@@ -1394,9 +1425,6 @@ int main(int argc, char *argv[])
 			ctl.time_fmt = DMESG_TIMEFTM_RELTIME;
 			colormode = UL_COLORMODE_AUTO;
 			ctl.pager = 1;
-			break;
-		case 'h':
-			usage();
 			break;
 		case 'k':
 			ctl.fltr_fac = 1;
@@ -1447,11 +1475,12 @@ int main(int argc, char *argv[])
 			for (n = 1; (size_t) n < ARRAY_SIZE(facility_names); n++)
 				setbit(ctl.facilities, n);
 			break;
-		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
 		case 'w':
 			ctl.follow = 1;
+			break;
+		case 'W':
+			ctl.follow = 1;
+			ctl.end = 1;
 			break;
 		case 'x':
 			ctl.decode = 1;
@@ -1459,6 +1488,14 @@ int main(int argc, char *argv[])
 		case OPT_TIME_FORMAT:
 			ctl.time_fmt = which_time_format(optarg);
 			break;
+		case OPT_NOESC:
+			ctl.noesc = 1;
+			break;
+
+		case 'h':
+			usage();
+		case 'V':
+			print_version(EXIT_SUCCESS);
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}
@@ -1471,9 +1508,12 @@ int main(int argc, char *argv[])
 
 	if ((is_timefmt(&ctl, RELTIME) ||
 	     is_timefmt(&ctl, CTIME)   ||
-	     is_timefmt(&ctl, ISO8601))
-	    && dmesg_get_boot_time(&ctl.boot_time) != 0)
-		ctl.time_fmt = DMESG_TIMEFTM_NONE;
+	     is_timefmt(&ctl, ISO8601))) {
+		if (dmesg_get_boot_time(&ctl.boot_time) != 0)
+			ctl.time_fmt = DMESG_TIMEFTM_NONE;
+		else
+			ctl.suspended_time = dmesg_get_suspended_time();
+	}
 
 	if (delta)
 		switch (ctl.time_fmt) {

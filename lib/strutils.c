@@ -1,8 +1,10 @@
 /*
  * Copyright (C) 2010 Karel Zak <kzak@redhat.com>
  * Copyright (C) 2010 Davidlohr Bueso <dave@gnu.org>
+ *
+ * No copyright is claimed.  This code is in the public domain; do with
+ * it what you wish.
  */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
@@ -16,6 +18,7 @@
 #include "nls.h"
 #include "strutils.h"
 #include "bitops.h"
+#include "pathnames.h"
 
 static int STRTOXX_EXIT_CODE = EXIT_FAILURE;
 
@@ -122,13 +125,18 @@ check_suffix:
 
 			for (p = fstr; *p == '0'; p++)
 				frac_zeros++;
-			errno = 0, end = NULL;
-			frac = strtoumax(fstr, &end, 0);
-			if (end == fstr ||
-			    (errno != 0 && (frac == UINTMAX_MAX || frac == 0))) {
-				rc = errno ? -errno : -EINVAL;
-				goto err;
-			}
+			fstr = p;
+			if (isdigit(*fstr)) {
+				errno = 0, end = NULL;
+				frac = strtoumax(fstr, &end, 0);
+				if (end == fstr ||
+				    (errno != 0 && (frac == UINTMAX_MAX || frac == 0))) {
+					rc = errno ? -errno : -EINVAL;
+					goto err;
+				}
+			} else
+				end = (char *) p;
+
 			if (frac && (!end  || !*end)) {
 				rc = -EINVAL;
 				goto err;		/* without suffix, but with frac */
@@ -157,17 +165,49 @@ check_suffix:
 	if (power)
 		*power = pwr;
 	if (frac && pwr) {
-		int zeros_in_pwr = frac_zeros % 3;
-		int frac_pwr = pwr - (frac_zeros / 3) - 1;
-		uintmax_t y = frac * (zeros_in_pwr == 0 ? 100 :
-				      zeros_in_pwr == 1 ?  10 : 1);
+		int i;
+		uintmax_t frac_div = 10, frac_poz = 1, frac_base = 1;
 
-		if (frac_pwr < 0) {
-			rc = -EINVAL;
-			goto err;
+		/* mega, giga, ... */
+		do_scale_by_power(&frac_base, base, pwr);
+
+		/* maximal divisor for last digit (e.g. for 0.05 is
+		 * frac_div=100, for 0.054 is frac_div=1000, etc.)
+		 *
+		 * Reduce frac if too large.
+		 */
+		while (frac_div < frac) {
+			if (frac_div <= UINTMAX_MAX/10)
+				frac_div *= 10;
+			else
+				frac /= 10;
 		}
-		do_scale_by_power(&y, base, frac_pwr);
-		x += y;
+
+		/* 'frac' is without zeros (5 means 0.5 as well as 0.05) */
+		for (i = 0; i < frac_zeros; i++) {
+			if (frac_div <= UINTMAX_MAX/10)
+				frac_div *= 10;
+			else
+				frac /= 10;
+		}
+
+		/*
+		 * Go backwardly from last digit and add to result what the
+		 * digit represents in the frac_base. For example 0.25G
+		 *
+		 *  5 means 1GiB / (100/5)
+		 *  2 means 1GiB / (10/2)
+		 */
+		do {
+			unsigned int seg = frac % 10;		 /* last digit of the frac */
+			uintmax_t seg_div = frac_div / frac_poz; /* what represents the segment 1000, 100, .. */
+
+			frac /= 10;	/* remove last digit from frac */
+			frac_poz *= 10;
+
+			if (seg && seg_div / seg)
+				x += frac_base / (seg_div / seg);
+		} while (frac);
 	}
 done:
 	*res = x;
@@ -225,7 +265,9 @@ int parse_switch(const char *arg, const char *errmesg, ...)
 		if (strcmp(arg, a) == 0) {
 			va_end(ap);
 			return 1;
-		} else if (strcmp(arg, b) == 0) {
+		}
+
+		if (strcmp(arg, b) == 0) {
 			va_end(ap);
 			return 0;
 		}
@@ -551,6 +593,7 @@ char *size_to_human_string(int options, uint64_t bytes)
 	if (options & SIZE_SUFFIX_SPACE)
 		*psuf++ = ' ';
 
+
 	exp  = get_exp(bytes);
 	c    = *(letters + (exp ? exp / 10 : 0));
 	dec  = exp ? bytes / (1ULL << exp) : bytes;
@@ -569,20 +612,46 @@ char *size_to_human_string(int options, uint64_t bytes)
 	 *                 exp, suffix[0], dec, frac);
 	 */
 
+	/* round */
 	if (frac) {
-		/* round */
-		frac = (frac / (1ULL << (exp - 10)) + 50) / 100;
-		if (frac == 10)
-			dec++, frac = 0;
+		/* get 3 digits after decimal point */
+		if (frac >= UINT64_MAX / 1000)
+			frac = ((frac / 1024) * 1000) / (1ULL << (exp - 10)) ;
+		else
+			frac = (frac * 1000) / (1ULL << (exp)) ;
+
+		if (options & SIZE_DECIMAL_2DIGITS) {
+			/* round 4/5 and keep 2 digits after decimal point */
+			frac = (frac + 5) / 10 ;
+		} else {
+			/* round 4/5 and keep 1 digit after decimal point */
+			frac = ((frac + 50) / 100) * 10 ;
+		}
+
+		/* rounding could have overflowed */
+		if (frac == 100) {
+			dec++;
+			frac = 0;
+		}
 	}
 
 	if (frac) {
 		struct lconv const *l = localeconv();
 		char *dp = l ? l->decimal_point : NULL;
+		int len;
 
 		if (!dp || !*dp)
 			dp = ".";
-		snprintf(buf, sizeof(buf), "%d%s%" PRIu64 "%s", dec, dp, frac, suffix);
+
+		len = snprintf(buf, sizeof(buf), "%d%s%02" PRIu64, dec, dp, frac);
+		if (len > 0 && (size_t) len < sizeof(buf)) {
+			/* remove potential extraneous zero */
+			if (buf[len - 1] == '0')
+				buf[len--] = '\0';
+			/* append suffix */
+			xstrncpy(buf+len, suffix, sizeof(buf) - len);
+		} else
+			*buf = '\0';	/* snprintf error */
 	} else
 		snprintf(buf, sizeof(buf), "%d%s", dec, suffix);
 
@@ -835,8 +904,10 @@ int streq_paths(const char *a, const char *b)
 		    ((a_seg && *a_seg == '/') || (b_seg && *b_seg == '/')))
 			return 1;
 
+		if (!a_seg || !b_seg)
+			break;
 		if (a_sz != b_sz || strncmp(a_seg, b_seg, a_sz) != 0)
-			return 0;
+			break;
 
 		a = a_seg + a_sz;
 		b = b_seg + b_sz;
@@ -975,11 +1046,41 @@ int skip_fline(FILE *fp)
 }
 
 #ifdef TEST_PROGRAM_STRUTILS
+struct testS {
+	char *name;
+	char *value;
+};
+
+static int test_strdup_to_member(int argc, char *argv[])
+{
+	struct testS *xx;
+
+	if (argc < 3)
+		return EXIT_FAILURE;
+
+	xx = calloc(1, sizeof(*xx));
+	if (!xx)
+		err(EXIT_FAILURE, "calloc() failed");
+
+	strdup_to_struct_member(xx, name, argv[1]);
+	strdup_to_struct_member(xx, value, argv[2]);
+
+	if (strcmp(xx->name, argv[1]) != 0 &&
+	    strcmp(xx->value, argv[2]) != 0)
+		errx(EXIT_FAILURE, "strdup_to_struct_member() failed");
+
+	printf("1: '%s', 2: '%s'\n", xx->name, xx->value);
+
+	free(xx->name);
+	free(xx->value);
+	free(xx);
+	return EXIT_SUCCESS;
+}
 
 static int test_strutils_sizes(int argc, char *argv[])
 {
 	uintmax_t size = 0;
-	char *hum, *hum2;
+	char *hum1, *hum2, *hum3;
 
 	if (argc < 2)
 		return EXIT_FAILURE;
@@ -987,13 +1088,17 @@ static int test_strutils_sizes(int argc, char *argv[])
 	if (strtosize(argv[1], &size))
 		errx(EXIT_FAILURE, "invalid size '%s' value", argv[1]);
 
-	hum = size_to_human_string(SIZE_SUFFIX_1LETTER, size);
+	hum1 = size_to_human_string(SIZE_SUFFIX_1LETTER, size);
 	hum2 = size_to_human_string(SIZE_SUFFIX_3LETTER |
 				    SIZE_SUFFIX_SPACE, size);
+	hum3 = size_to_human_string(SIZE_SUFFIX_3LETTER |
+				    SIZE_SUFFIX_SPACE |
+				    SIZE_DECIMAL_2DIGITS, size);
 
-	printf("%25s : %20ju : %8s : %12s\n", argv[1], size, hum, hum2);
-	free(hum);
+	printf("%25s : %20ju : %8s : %12s : %13s\n", argv[1], size, hum1, hum2, hum3);
+	free(hum1);
 	free(hum2);
+	free(hum3);
 
 	return EXIT_SUCCESS;
 }
@@ -1014,15 +1119,16 @@ int main(int argc, char *argv[])
 	if (argc == 3 && strcmp(argv[1], "--size") == 0)
 		return test_strutils_sizes(argc - 1, argv + 1);
 
-	else if (argc == 4 && strcmp(argv[1], "--cmp-paths") == 0)
+	if (argc == 4 && strcmp(argv[1], "--cmp-paths") == 0)
 		return test_strutils_cmp_paths(argc - 1, argv + 1);
 
-	else {
-		fprintf(stderr, "usage: %1$s --size <number>[suffix]\n"
-				"       %1$s --cmp-paths <path> <path>\n",
-				argv[0]);
-		exit(EXIT_FAILURE);
-	}
+	if (argc == 4 && strcmp(argv[1], "--strdup-member") == 0)
+		return test_strdup_to_member(argc - 1, argv + 1);
+
+	fprintf(stderr, "usage: %1$s --size <number>[suffix]\n"
+			"       %1$s --cmp-paths <path> <path>\n"
+			"       %1$s --strdup-member <str> <str>\n",
+			argv[0]);
 
 	return EXIT_FAILURE;
 }

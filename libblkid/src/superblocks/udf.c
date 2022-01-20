@@ -19,7 +19,7 @@
 
 #include "superblocks.h"
 
-#define udf_cid_to_enc(cid) ((cid) == 8 ? BLKID_ENC_LATIN1 : (cid) == 16 ? BLKID_ENC_UTF16BE : -1)
+#define udf_cid_to_enc(cid) ((cid) == 8 ? UL_ENCODE_LATIN1 : (cid) == 16 ? UL_ENCODE_UTF16BE : -1)
 
 struct dstring128 {
 	uint8_t	cid;
@@ -144,7 +144,7 @@ static inline int gen_uuid_from_volset_id(unsigned char uuid[17], struct dstring
 	if (enc == -1)
 		return -1;
 
-	len = blkid_encode_to_utf8(enc, buf, sizeof(buf), volset_id->c, clen);
+	len = ul_encode_to_utf8(enc, buf, sizeof(buf), volset_id->c, clen);
 	if (len < 8)
 		return -1;
 
@@ -217,7 +217,7 @@ static int probe_udf(blkid_probe pr,
 		if (vsd_len == 2048) {
 			if (vsd_2048_valid == 0)
 				continue;
-			else if (vsd_2048_valid == 1)
+			if (vsd_2048_valid == 1)
 				goto anchor;
 		}
 
@@ -243,7 +243,7 @@ static int probe_udf(blkid_probe pr,
 				 * terminated by the first sector which is not a valid
 				 * descriptor.
 				 * UDF-2.60 2.1.7: UDF 2.00 and lower revisions do not
-				 * have requirement that NSR descritor is in Extended Area
+				 * have requirement that NSR descriptor is in Extended Area
 				 * (between BEA01 and TEA01) and that there is only one
 				 * Extended Area. So do not stop scanning after TEA01. */
 				break;
@@ -367,7 +367,7 @@ real_blksz:
 			}
 			if (!udf_rev) {
 				/* UDF-2.60: 2.1.5.3: UDF revision field shall indicate revision of UDF document
-				 * We use this field as fallback value for ID_FS_VERSION when LVIDIU is missing */
+				 * We use maximal value from this field and from LVIDIU fields for ID_FS_VERSION */
 				if (strncmp(vd->type.logical.domain_id, "*OSTA UDF Compliant", sizeof(vd->type.logical.domain_id)) == 0)
 					udf_rev = le16_to_cpu(vd->type.logical.udf_rev);
 			}
@@ -442,20 +442,19 @@ real_blksz:
 						sizeof(*lvidiu));
 			if (!lvidiu)
 				return errno ? -errno : 1;
-			/* Use Minimum UDF Read Revision as ID_FS_VERSION */
-			lvidiu_udf_rev = le16_to_cpu(lvidiu->min_udf_read_rev);
-			if (lvidiu_udf_rev)
-				udf_rev = lvidiu_udf_rev;
 			/* UDF-2.60: 2. Basic Restrictions & Requirements:
 			 * The Minimum UDF Read Revision value shall be at most #0250
 			 * for all media with a UDF 2.60 file system.
-			 * So in this case use Minimum UDF Write Revision as ID_FS_VERSION
-			 * to distinguish between UDF 2.50 and UDF 2.60 discs. */
-			if (lvidiu_udf_rev == 0x250) {
-				lvidiu_udf_rev = le16_to_cpu(lvidiu->min_udf_write_rev);
-				if (lvidiu_udf_rev > 0x250)
-					udf_rev = lvidiu_udf_rev;
-			}
+			 * Because some 2.60 implementations put 2.50 into both LVIDIU
+			 * fields and 2.60 into LVD, use maximal value from LVD,
+			 * Minimum UDF Read Revision and Minimum UDF Write Revision for
+			 * ID_FS_VERSION to distinguish between UDF 2.50 and UDF 2.60 discs. */
+			lvidiu_udf_rev = le16_to_cpu(lvidiu->min_udf_read_rev);
+			if (lvidiu_udf_rev && udf_rev < lvidiu_udf_rev)
+				udf_rev = lvidiu_udf_rev;
+			lvidiu_udf_rev = le16_to_cpu(lvidiu->min_udf_write_rev);
+			if (lvidiu_udf_rev && udf_rev < lvidiu_udf_rev)
+				udf_rev = lvidiu_udf_rev;
 		}
 	}
 
@@ -463,6 +462,8 @@ real_blksz:
 		/* UDF revision is stored as decimal number in hexadecimal format.
 		 * E.g. number 0x0150 is revision 1.50, number 0x0201 is revision 2.01. */
 		blkid_probe_sprintf_version(pr, "%x.%02x", (unsigned int)(udf_rev >> 8), (unsigned int)(udf_rev & 0xFF));
+
+	blkid_probe_set_block_size(pr, bs);
 
 	return 0;
 }
