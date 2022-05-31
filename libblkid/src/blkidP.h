@@ -23,9 +23,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 
-#ifdef HAVE_LIBUUID
-# include <uuid.h>
-#else
+#ifndef UUID_STR_LEN
 # define UUID_STR_LEN   37
 #endif
 
@@ -36,6 +34,7 @@
 #include "debug.h"
 #include "blkid.h"
 #include "list.h"
+#include "encode.h"
 
 /*
  * This describes the attributes of a specific device.
@@ -221,7 +220,7 @@ struct blkid_struct_probe
 #define BLKID_FL_TINY_DEV	(1 << 2)	/* <= 1.47MiB (floppy or so) */
 #define BLKID_FL_CDROM_DEV	(1 << 3)	/* is a CD/DVD drive */
 #define BLKID_FL_NOSCAN_DEV	(1 << 4)	/* do not scan this device */
-#define BLKID_FL_MODIF_BUFF	(1 << 5)	/* cached bufferes has been modified */
+#define BLKID_FL_MODIF_BUFF	(1 << 5)	/* cached buffers has been modified */
 
 /* private per-probing flags */
 #define BLKID_PROBE_FL_IGNORE_PT (1 << 1)	/* ignore partition table */
@@ -351,11 +350,8 @@ struct dir_list {
 };
 extern void blkid__scan_dir(char *, dev_t, struct dir_list **, char **)
 			__attribute__((nonnull(1,4)));
-extern int blkid_driver_has_major(const char *drvname, int major)
+extern int blkid_driver_has_major(const char *drvname, int drvmaj)
 			__attribute__((warn_unused_result));
-
-/* lseek.c */
-extern blkid_loff_t blkid_llseek(int fd, blkid_loff_t offset, int whence);
 
 /* read.c */
 extern void blkid_read_cache(blkid_cache cache)
@@ -544,15 +540,5 @@ extern void blkid_probe_use_wiper(blkid_probe pr, uint64_t off, uint64_t size)
 
 #define blkid_bmp_nbytes(max_items) \
 		(blkid_bmp_nwords(max_items) * sizeof(unsigned long))
-
-/* encode.c */
-extern unsigned char *blkid_encode_alloc(size_t count, size_t *reslen);
-extern size_t blkid_encode_to_utf8(int enc, unsigned char *dest, size_t len,
-				const unsigned char *src, size_t count)
-			__attribute__((nonnull));
-
-#define BLKID_ENC_UTF16BE	0
-#define BLKID_ENC_UTF16LE	1
-#define BLKID_ENC_LATIN1	2
 
 #endif /* _BLKID_BLKIDP_H */

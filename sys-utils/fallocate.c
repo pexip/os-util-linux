@@ -103,6 +103,9 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(USAGE_SEPARATOR, out);
 	printf(USAGE_HELP_OPTIONS(22));
 
+	fputs(USAGE_ARGUMENTS, out);
+	printf(USAGE_ARG_SIZE(_("<num>")));
+
 	printf(USAGE_MAN_TAIL("fallocate(1)"));
 
 	exit(EXIT_SUCCESS);
@@ -219,8 +222,11 @@ static void dig_holes(int fd, off_t file_off, off_t len)
 		if (file_end && end > file_end)
 			end = file_end;
 
+		if (off < 0 || end < 0)
+			break;
+
 #if defined(POSIX_FADV_SEQUENTIAL) && defined(HAVE_POSIX_FADVISE)
-		posix_fadvise(fd, off, end, POSIX_FADV_SEQUENTIAL);
+		(void) posix_fadvise(fd, off, end, POSIX_FADV_SEQUENTIAL);
 #endif
 		/*
 		 * Dig holes in the area
@@ -251,15 +257,18 @@ static void dig_holes(int fd, off_t file_off, off_t len)
 				size_t clen = off - cache_start;
 
 				clen = (clen / cachesz) * cachesz;
-				posix_fadvise(fd, cache_start, clen, POSIX_FADV_DONTNEED);
+				(void) posix_fadvise(fd, cache_start, clen, POSIX_FADV_DONTNEED);
 				cache_start = cache_start + clen;
 			}
 #endif
 			off += rsz;
 		}
 		if (hole_sz) {
+			off_t alloc_sz = hole_sz;
+			if (off >= end)
+				alloc_sz += st.st_blksize;		/* meet block boundary */
 			xfallocate(fd, FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,
-					hole_start, hole_sz);
+					hole_start, alloc_sz);
 			ct += hole_sz;
 		}
 		file_off = off;
@@ -312,7 +321,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while ((c = getopt_long(argc, argv, "hvVncpdizxl:o:", longopts, NULL))
 			!= -1) {
@@ -320,9 +329,6 @@ int main(int argc, char **argv)
 		err_exclusive_options(c, longopts, excl, excl_st);
 
 		switch(c) {
-		case 'h':
-			usage();
-			break;
 		case 'c':
 			mode |= FALLOC_FL_COLLAPSE_RANGE;
 			break;
@@ -357,9 +363,11 @@ int main(int argc, char **argv)
 		case 'v':
 			verbose++;
 			break;
+
+		case 'h':
+			usage();
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}

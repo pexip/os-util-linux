@@ -1,4 +1,4 @@
-.TH NOLOGIN 8 "September 2013" "util-linux" "System Administration"
+.TH NOLOGIN 8 "November 2019" "util-linux" "System Administration"
 .SH NAME
 nologin \- politely refuse a login
 .SH SYNOPSIS
@@ -13,14 +13,36 @@ intended as a replacement shell field to deny login access to an account.
 If the file /etc/nologin.txt exists, nologin displays its contents to the
 user instead of the default message.
 .PP
-The exit code returned by
+The exit status returned by
 .B nologin
 is always 1.
-.PP
 .SH OPTIONS
-.IP "\fB\-h, \-\-help\fP"
+\fB\-c\fR, \fB\-\-command\fR \fIcommand\fR
+.br
+\fB\-\-init-file\fR
+.br
+\fB\-i\fR \fB\-\-interactive\fR
+.br
+\fB\-\-init-file\fR \fIfile\fR
+.br
+\fB\-i\fR, \fB\-\-interactive\fR
+.br
+\fB\-l\fR, \fB\-\-login\fR
+.br
+\fB\-\-noprofile\fR
+.br
+\fB\-\-norc\fR
+.br
+\fB\-\-posix\fR
+.br
+\fB\-\-rcfile\fR \fIfile\fR
+.br
+\fB\-r\fR, \fB\-\-restricted\fR
+.IP
+These shell command-line options are ignored to avoid nologin error.
+.IP "\fB\-h\fR, \fB\-\-help\fR"
 Display help text and exit.
-.IP "\fB-V, \-\-version"
+.IP "\fB\-V\fR, \fB\-\-version\fR"
 Display version information and exit.
 .SH NOTES
 .B nologin
@@ -33,6 +55,10 @@ access is always refused independently of the file.
 PAM module usually prevents all non-root users from logging into the system.
 .BR pam_nologin (8)
 functionality is controlled by /var/run/nologin or the /etc/nologin file.
+.SH HISTORY
+The
+.B nologin
+command appeared in 4.4BSD.
 .SH AUTHORS
 .UR kzak@redhat.com
 Karel Zak
@@ -41,10 +67,6 @@ Karel Zak
 .BR login (1),
 .BR passwd (5),
 .BR pam_nologin (8)
-.SH HISTORY
-The
-.B nologin
-command appeared in 4.4BSD.
 .SH AVAILABILITY
 The nologin command is part of the util-linux package and is available from
 .UR https://\:www.kernel.org\:/pub\:/linux\:/utils\:/util-linux/

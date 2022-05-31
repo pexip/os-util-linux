@@ -153,7 +153,7 @@ void mnt_unref_cache(struct libmnt_cache *cache)
  * @cache: cache pointer
  * @mtab: table with already canonicalized mountpoints
  *
- * Add to @cache reference to @mtab. This allows to avoid unnecessary paths
+ * Add to @cache reference to @mtab. This can be used to avoid unnecessary paths
  * canonicalization in mnt_resolve_target().
  *
  * Returns: negative number in case of error, or 0 o success.
@@ -578,7 +578,8 @@ char *mnt_resolve_target(const char *path, struct libmnt_cache *cache)
 	p = (char *) cache_find_path(cache, path);
 	if (p)
 		return p;
-	else {
+
+	{
 		struct libmnt_iter itr;
 		struct libmnt_fs *fs = NULL;
 
@@ -586,8 +587,8 @@ char *mnt_resolve_target(const char *path, struct libmnt_cache *cache)
 		while (mnt_table_next_fs(cache->mtab, &itr, &fs) == 0) {
 
 			if (!mnt_fs_is_kernel(fs)
-                            || mnt_fs_is_swaparea(fs)
-                            || !mnt_fs_streq_target(fs, path))
+			     || mnt_fs_is_swaparea(fs)
+			     || !mnt_fs_streq_target(fs, path))
 				continue;
 
 			p = strdup(path);

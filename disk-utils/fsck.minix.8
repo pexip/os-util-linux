@@ -92,8 +92,8 @@ will print "unable to read super block".  If the device exists, but is not
 a MINIX filesystem,
 .B fsck.minix
 will print "bad magic number in super-block".
-.SH "EXIT CODES"
-The exit code returned by
+.SH EXIT STATUS
+The exit status returned by
 .B fsck.minix
 is the sum of the following:
 .PP
@@ -111,7 +111,7 @@ mounted
 Filesystem errors left uncorrected
 .TP
 .B 7
-Combination of exit codes 3 and 4
+Combination of exit statuses 3 and 4
 .TP
 .B 8
 Operational error
@@ -120,13 +120,12 @@ Operational error
 Usage or syntax error
 .PD
 .RE
-.PP
 .SH AUTHORS
 .MT torvalds@\:cs.\:helsinki.\:fi
 Linus Torvalds
 .ME
 .br
-Error code values by
+Exit status values by
 .MT faith@\:cs.\:unc.\:edu
 Rik Faith
 .ME
@@ -154,7 +153,7 @@ Portability patch by
 .MT rmk@\:ecs.\:soton.\:ac.\:uk
 Russell King
 .ME .
-.SH "SEE ALSO"
+.SH SEE ALSO
 .BR fsck (8),
 .BR fsck.ext2 (8),
 .BR mkfs (8),

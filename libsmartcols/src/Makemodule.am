@@ -15,8 +15,14 @@ libsmartcols_la_SOURCES= \
 	libsmartcols/src/column.c \
 	libsmartcols/src/line.c \
 	libsmartcols/src/table.c \
-	libsmartcols/src/table_print.c \
+	libsmartcols/src/print.c \
+	libsmartcols/src/fput.c \
+	libsmartcols/src/print-api.c \
 	libsmartcols/src/version.c \
+	libsmartcols/src/buffer.c \
+	libsmartcols/src/calculate.c \
+	libsmartcols/src/grouping.c \
+	libsmartcols/src/walk.c \
 	libsmartcols/src/init.c
 
 libsmartcols_la_LIBADD = $(LDADD) libcommon.la

@@ -1,7 +1,6 @@
 /*
- * Vaguely based on
- *	@(#)pathnames.h	5.3 (Berkeley) 5/9/89
- * This code is in the public domain.
+ * No copyright is claimed.  This code is in the public domain; do with
+ * it what you wish.
  */
 #ifndef PATHNAMES_H
 #define PATHNAMES_H
@@ -15,8 +14,7 @@
 #endif
 
 /* used by kernel in /proc (e.g. /proc/swaps) for deleted files */
-#define PATH_DELETED_SUFFIX	"\\040(deleted)"
-#define PATH_DELETED_SUFFIX_SZ	(sizeof(PATH_DELETED_SUFFIX) - 1)
+#define PATH_DELETED_SUFFIX	" (deleted)"
 
 /* DEFPATHs from <paths.h> don't include /usr/local */
 #undef _PATH_DEFPATH
@@ -53,6 +51,7 @@
 # define _PATH_LOGIN		"/bin/login"
 #endif
 #define _PATH_SHUTDOWN		"/sbin/shutdown"
+#define _PATH_POWEROFF		"/sbin/poweroff"
 
 #define _PATH_TERMCOLORS_DIRNAME "terminal-colors.d"
 #define _PATH_TERMCOLORS_DIR	"/etc/" _PATH_TERMCOLORS_DIRNAME
@@ -64,12 +63,19 @@
 #define _PATH_SHADOW_PASSWD	"/etc/shadow"
 #define _PATH_SHELLS		"/etc/shells"
 
+#ifndef _PATH_TMP
+# define _PATH_TMP		"/tmp/"
+#endif
+
 #ifndef _PATH_BTMP
 # define _PATH_BTMP		"/var/log/btmp"
 #endif
 
-#define _PATH_ISSUE		"/etc/issue"
-#define _PATH_ISSUEDIR		_PATH_ISSUE ".d"
+#define _PATH_ISSUE_FILENAME	"issue"
+#define _PATH_ISSUE_DIRNAME	_PATH_ISSUE_FILENAME ".d"
+
+#define _PATH_ISSUE		"/etc/" _PATH_ISSUE_FILENAME
+#define _PATH_ISSUEDIR		"/etc/" _PATH_ISSUE_DIRNAME
 
 #define _PATH_OS_RELEASE_ETC	"/etc/os-release"
 #define _PATH_OS_RELEASE_USR	"/usr/lib/os-release"
@@ -95,6 +101,8 @@
 #define _PATH_PROC_GIDMAP	"/proc/self/gid_map"
 #define _PATH_PROC_SETGROUPS	"/proc/self/setgroups"
 
+#define _PATH_PROC_FDDIR	"/proc/self/fd"
+
 #define _PATH_PROC_ATTR_CURRENT	"/proc/self/attr/current"
 #define _PATH_PROC_ATTR_EXEC	"/proc/self/attr/exec"
 #define _PATH_PROC_CAPLASTCAP	"/proc/sys/kernel/cap_last_cap"
@@ -102,6 +110,7 @@
 
 #define _PATH_SYS_BLOCK		"/sys/block"
 #define _PATH_SYS_DEVBLOCK	"/sys/dev/block"
+#define _PATH_SYS_DEVCHAR	"/sys/dev/char"
 #define _PATH_SYS_CLASS		"/sys/class"
 #define _PATH_SYS_SCSI		"/sys/bus/scsi"
 
@@ -165,9 +174,6 @@
 /* deprecated */
 #define _PATH_RAWDEVCTL_OLD	"/dev/rawctl"
 
-/* wdctl path */
-#define _PATH_WATCHDOG_DEV	"/dev/watchdog"
-
 /* ipc paths */
 #define _PATH_PROC_SYSV_MSG	"/proc/sysvipc/msg"
 #define _PATH_PROC_SYSV_SEM	"/proc/sysvipc/sem"
@@ -179,6 +185,10 @@
 #define _PATH_PROC_IPC_SHMALL	"/proc/sys/kernel/shmall"
 #define _PATH_PROC_IPC_SHMMAX	"/proc/sys/kernel/shmmax"
 #define _PATH_PROC_IPC_SHMMNI	"/proc/sys/kernel/shmmni"
+
+/* irqtop paths */
+#define _PATH_PROC_INTERRUPTS	"/proc/interrupts"
+#define _PATH_PROC_UPTIME	"/proc/uptime"
 
 /* kernel command line */
 #define _PATH_PROC_CMDLINE	"/proc/cmdline"

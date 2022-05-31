@@ -245,7 +245,7 @@ static int get_max_partno(const char *disk, dev_t devno)
 		if (d->d_type != DT_DIR && d->d_type != DT_UNKNOWN)
 			continue;
 #endif
-		if (strncmp(parent, d->d_name, strlen(parent)))
+		if (strncmp(parent, d->d_name, strlen(parent)) != 0)
 			continue;
 		snprintf(path, sizeof(path), "%s/partition", d->d_name);
 
@@ -328,12 +328,13 @@ static int del_parts(int fd, const char *device, dev_t devno,
 	}
 
 	for (i = lower; i <= upper; i++) {
-		rc = partx_del_partition(fd, i);
-		if (rc == 0) {
+		if (partx_del_partition(fd, i) == 0) {
 			if (verbose)
 				printf(_("%s: partition #%d removed\n"), device, i);
 			continue;
-		} else if (errno == ENXIO) {
+		}
+
+		if (errno == ENXIO) {
 			if (verbose)
 				printf(_("%s: partition #%d doesn't exist\n"), device, i);
 			continue;
@@ -832,7 +833,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while ((c = getopt_long(argc, argv,
 				"abdglrsuvn:t:o:PS:hV", long_opts, NULL)) != -1) {
@@ -901,8 +902,7 @@ int main(int argc, char **argv)
 		case 'h':
 			usage();
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}

@@ -43,17 +43,10 @@
 # define UMOUNT_UNUSED    0x80000000	/* Flag guaranteed to be unused */
 #endif
 
-/**
- * mnt_context_find_umount_fs:
- * @cxt: mount context
- * @tgt: mountpoint, device, ...
- * @pfs: returns point to filesystem
- *
- * Returns: 0 on success, <0 on error, 1 if target filesystem not found
- */
-int mnt_context_find_umount_fs(struct libmnt_context *cxt,
-			       const char *tgt,
-			       struct libmnt_fs **pfs)
+/* search in mountinfo/mtab */
+static int __mtab_find_umount_fs(struct libmnt_context *cxt,
+			    const char *tgt,
+			    struct libmnt_fs **pfs)
 {
 	int rc;
 	struct libmnt_ns *ns_old;
@@ -61,21 +54,17 @@ int mnt_context_find_umount_fs(struct libmnt_context *cxt,
 	struct libmnt_fs *fs;
 	char *loopdev = NULL;
 
-	if (pfs)
-		*pfs = NULL;
+	assert(cxt);
+	assert(tgt);
+	assert(pfs);
 
-	if (!cxt || !tgt || !pfs)
-		return -EINVAL;
-
-	DBG(CXT, ul_debugobj(cxt, "umount: lookup FS for '%s'", tgt));
-
-	if (!*tgt)
-		return 1; /* empty string is not an error */
+	*pfs = NULL;
+	DBG(CXT, ul_debugobj(cxt, " search %s in mountinfo", tgt));
 
 	/*
 	 * The mount table may be huge, and on systems with utab we have to
 	 * merge userspace mount options into /proc/self/mountinfo. This all is
-	 * expensive. The tab filter allows to filter out entries, then a mount
+	 * expensive. The tab filter can be used to filter out entries, then a mount
 	 * table and utab are very tiny files.
 	 *
 	 * The filter uses mnt_fs_streq_{target,srcpath} function where all
@@ -166,8 +155,7 @@ try_loopdev:
 		}
 	}
 
-	if (pfs)
-		*pfs = fs;
+	*pfs = fs;
 	free(loopdev);
 	if (!mnt_context_switch_ns(cxt, ns_old))
 		return -MNT_ERR_NAMESPACE;
@@ -180,6 +168,36 @@ err:
 	if (!mnt_context_switch_ns(cxt, ns_old))
 		return -MNT_ERR_NAMESPACE;
 	return rc;
+}
+
+/**
+ * mnt_context_find_umount_fs:
+ * @cxt: mount context
+ * @tgt: mountpoint, device, ...
+ * @pfs: returns point to filesystem
+ *
+ * Returns: 0 on success, <0 on error, 1 if target filesystem not found
+ */
+int mnt_context_find_umount_fs(struct libmnt_context *cxt,
+			       const char *tgt,
+			       struct libmnt_fs **pfs)
+{
+	if (pfs)
+		*pfs = NULL;
+
+	if (!cxt || !tgt || !pfs)
+		return -EINVAL;
+
+	DBG(CXT, ul_debugobj(cxt, "umount: lookup FS for '%s'", tgt));
+
+	if (!*tgt)
+		return 1; /* empty string is not an error */
+
+	/* In future this function should be extended to support for example
+	 * fsinfo() (or another cheap way kernel will support), for now the
+	 * default is expensive mountinfo/mtab.
+	 */
+	return __mtab_find_umount_fs(cxt, tgt, pfs);
 }
 
 /* Check if there is something important in the utab file. The parsed utab is
@@ -226,28 +244,16 @@ static int has_utab_entry(struct libmnt_context *cxt, const char *target)
 
 	if (!cache)
 		free(cn);
-
 	return rc;
 }
 
-/* this is umount replacement to mnt_context_apply_fstab(), use
- * mnt_context_tab_applied() to check result.
- */
-static int lookup_umount_fs(struct libmnt_context *cxt)
+/* returns: 1 not found; <0 on error; 1 success */
+static int lookup_umount_fs_by_statfs(struct libmnt_context *cxt, const char *tgt)
 {
-	const char *tgt;
 	struct stat st;
-	struct libmnt_fs *fs = NULL;
-	int rc = 0;
+	const char *type;
 
-	assert(cxt);
-	assert(cxt->fs);
-
-	tgt = mnt_fs_get_target(cxt->fs);
-	if (!tgt) {
-		DBG(CXT, ul_debugobj(cxt, "umount: undefined target"));
-		return -EINVAL;
-	}
+	DBG(CXT, ul_debugobj(cxt, " lookup by statfs"));
 
 	/*
 	 * Let's try to avoid mountinfo usage at all to minimize performance
@@ -261,68 +267,116 @@ static int lookup_umount_fs(struct libmnt_context *cxt)
 	 * umounts as target is probably unreachable NFS, also for --detach-loop
 	 * as this additionally needs to know the name of the loop device).
 	 */
-	if (!mnt_context_is_restricted(cxt)
-	    && *tgt == '/'
-	    && !(cxt->flags & MNT_FL_HELPER)
-	    && !mnt_context_mtab_writable(cxt)
-	    && !mnt_context_is_force(cxt)
-	    && !mnt_context_is_lazy(cxt)
-	    && !mnt_context_is_nocanonicalize(cxt)
-	    && !mnt_context_is_loopdel(cxt)
-	    && mnt_stat_mountpoint(tgt, &st) == 0 && S_ISDIR(st.st_mode)
-	    && !has_utab_entry(cxt, tgt)) {
+	if (mnt_context_is_restricted(cxt)
+	    || *tgt != '/'
+	    || (cxt->flags & MNT_FL_HELPER)
+	    || mnt_context_mtab_writable(cxt)
+	    || mnt_context_is_force(cxt)
+	    || mnt_context_is_lazy(cxt)
+	    || mnt_context_is_nocanonicalize(cxt)
+	    || mnt_context_is_loopdel(cxt)
+	    || mnt_stat_mountpoint(tgt, &st) != 0 || !S_ISDIR(st.st_mode)
+	    || has_utab_entry(cxt, tgt))
+		return 1; /* not found */
 
-		const char *type = mnt_fs_get_fstype(cxt->fs);
+	type = mnt_fs_get_fstype(cxt->fs);
 
-		DBG(CXT, ul_debugobj(cxt, "umount: disable mtab"));
+	DBG(CXT, ul_debugobj(cxt, "  umount: disabling mtab"));
+	mnt_context_disable_mtab(cxt, TRUE);
 
-		/* !mnt_context_mtab_writable(cxt) && has_utab_entry() verified that there
-		 * is no stuff in utab, so disable all mtab/utab related actions */
-		mnt_context_disable_mtab(cxt, TRUE);
+	if (!type) {
+		struct statfs vfs;
+		int fd;
 
-		if (!type) {
-			struct statfs vfs;
+		DBG(CXT, ul_debugobj(cxt, "  trying fstatfs()"));
 
-			DBG(CXT, ul_debugobj(cxt, "umount: trying statfs()"));
-			if (statfs(tgt, &vfs) == 0)
+		/* O_PATH avoids triggering automount points. */
+		fd = open(tgt, O_PATH);
+		if (fd >= 0) {
+			if (fstatfs(fd, &vfs) == 0)
 				type = mnt_statfs_get_fstype(&vfs);
-			if (type) {
-				rc = mnt_fs_set_fstype(cxt->fs, type);
-				if (rc)
-					return rc;
-			}
+			close(fd);
 		}
 		if (type) {
-			DBG(CXT, ul_debugobj(cxt,
-				"umount: mountinfo unnecessary [type=%s]", type));
-			return 0;
+			int rc = mnt_fs_set_fstype(cxt->fs, type);
+			if (rc)
+				return rc;
 		}
 	}
-
-	rc = mnt_context_find_umount_fs(cxt, tgt, &fs);
-	if (rc < 0)
-		return rc;
-
-	if (rc == 1 || !fs) {
-		DBG(CXT, ul_debugobj(cxt, "umount: cannot find '%s' in mtab", tgt));
-		return 0;	/* this is correct! */
+	if (type) {
+		DBG(CXT, ul_debugobj(cxt,
+			"  mountinfo unnecessary [type=%s]", type));
+		return 0;
 	}
 
+	return 1; /* not found */
+}
+
+/* returns: 1 not found; <0 on error; 1 success */
+static int lookup_umount_fs_by_mountinfo(struct libmnt_context *cxt, const char *tgt)
+{
+	struct libmnt_fs *fs = NULL;
+	int rc;
+
+	DBG(CXT, ul_debugobj(cxt, " lookup by mountinfo"));
+
+	/* search */
+	rc = __mtab_find_umount_fs(cxt, tgt, &fs);
+	if (rc != 0)
+		return rc;
+
+	/* apply result */
 	if (fs != cxt->fs) {
-		/* copy from mtab to our FS description
-		 */
 		mnt_fs_set_source(cxt->fs, NULL);
 		mnt_fs_set_target(cxt->fs, NULL);
 
 		if (!mnt_copy_fs(cxt->fs, fs)) {
-			DBG(CXT, ul_debugobj(cxt, "umount: failed to copy FS"));
+			DBG(CXT, ul_debugobj(cxt, "  failed to copy FS"));
 			return -errno;
 		}
-		DBG(CXT, ul_debugobj(cxt, "umount: mtab applied"));
+		DBG(CXT, ul_debugobj(cxt, "  mtab applied"));
 	}
 
 	cxt->flags |= MNT_FL_TAB_APPLIED;
-	return rc;
+	return 0;
+}
+
+/* This finction search for FS according to cxt->fs->target,
+ * apply result to cxt->fs and it's umount replacement to
+ * mnt_context_apply_fstab(), use mnt_context_tab_applied()
+ * to check result.
+ *
+ * The goal is to minimize situations when we need to parse
+ * /proc/self/mountinfo.
+ */
+static int lookup_umount_fs(struct libmnt_context *cxt)
+{
+	const char *tgt;
+	int rc = 0;
+
+	assert(cxt);
+	assert(cxt->fs);
+
+	DBG(CXT, ul_debugobj(cxt, "umount: lookup FS"));
+
+	tgt = mnt_fs_get_target(cxt->fs);
+	if (!tgt) {
+		DBG(CXT, ul_debugobj(cxt, " undefined target"));
+		return -EINVAL;
+	}
+
+	/* try get fs type by statfs() */
+	rc = lookup_umount_fs_by_statfs(cxt, tgt);
+	if (rc <= 0)
+		return rc;
+
+	/* get complete fs from fs entry from mountinfo */
+	rc = lookup_umount_fs_by_mountinfo(cxt, tgt);
+	if (rc <= 0)
+		return rc;
+
+	DBG(CXT, ul_debugobj(cxt, " cannot find '%s'", tgt));
+	return 0;	/* this is correct! */
 }
 
 /* check if @devname is loopdev and if the device is associated
@@ -337,7 +391,7 @@ static int is_associated_fs(const char *devname, struct libmnt_fs *fs)
 	int flags = 0;
 
 	/* check if it begins with /dev/loop */
-	if (strncmp(devname, _PATH_DEV_LOOP, sizeof(_PATH_DEV_LOOP) - 1))
+	if (strncmp(devname, _PATH_DEV_LOOP, sizeof(_PATH_DEV_LOOP) - 1) != 0)
 		return 0;
 
 	src = mnt_fs_get_srcpath(fs);
@@ -388,6 +442,56 @@ static int prepare_helper_from_options(struct libmnt_context *cxt,
 	return rc;
 }
 
+static int is_fuse_usermount(struct libmnt_context *cxt, int *errsv)
+{
+	struct libmnt_ns *ns_old;
+	const char *type = mnt_fs_get_fstype(cxt->fs);
+	const char *optstr;
+	char *user_id = NULL;
+	size_t sz;
+	uid_t uid;
+	char uidstr[sizeof(stringify_value(ULONG_MAX))];
+
+	*errsv = 0;
+
+	if (!type)
+		return 0;
+
+	if (strcmp(type, "fuse") != 0 &&
+	    strcmp(type, "fuseblk") != 0 &&
+	    strncmp(type, "fuse.", 5) != 0 &&
+	    strncmp(type, "fuseblk.", 8) != 0)
+		return 0;
+
+	/* get user_id= from mount table */
+	optstr = mnt_fs_get_fs_options(cxt->fs);
+	if (!optstr)
+		return 0;
+
+	if (mnt_optstr_get_option(optstr, "user_id", &user_id, &sz) != 0)
+		return 0;
+
+	if (sz == 0 || user_id == NULL)
+		return 0;
+
+	/* get current user */
+	ns_old = mnt_context_switch_origin_ns(cxt);
+	if (!ns_old) {
+		*errsv = -MNT_ERR_NAMESPACE;
+		return 0;
+	}
+
+	uid = getuid();
+
+	if (!mnt_context_switch_ns(cxt, ns_old)) {
+		*errsv = -MNT_ERR_NAMESPACE;
+		return 0;
+	}
+
+	snprintf(uidstr, sizeof(uidstr), "%lu", (unsigned long) uid);
+	return strncmp(user_id, uidstr, sz) == 0;
+}
+
 /*
  * Note that cxt->fs contains relevant mtab entry!
  */
@@ -396,7 +500,7 @@ static int evaluate_permissions(struct libmnt_context *cxt)
 	struct libmnt_table *fstab;
 	unsigned long u_flags = 0;
 	const char *tgt, *src, *optstr;
-	int rc, ok = 0;
+	int rc = 0, ok = 0;
 	struct libmnt_fs *fs;
 
 	assert(cxt);
@@ -423,6 +527,17 @@ static int evaluate_permissions(struct libmnt_context *cxt)
 		if (cxt->helper)
 			return 0;	/* we'll call /sbin/umount.<uhelper> */
 	}
+
+	/*
+	 * Check if this is a fuse mount for the current user,
+	 * if so then unmounting is allowed
+	 */
+	if (is_fuse_usermount(cxt, &rc)) {
+		DBG(CXT, ul_debugobj(cxt, "fuse user mount, umount is allowed"));
+		return 0;
+	}
+	if (rc)
+		return rc;
 
 	/*
 	 * User mounts have to be in /etc/fstab
@@ -513,9 +628,10 @@ static int evaluate_permissions(struct libmnt_context *cxt)
 
 		curr_user = mnt_get_username(getuid());
 
-		if (!mnt_context_switch_ns(cxt, ns_old))
+		if (!mnt_context_switch_ns(cxt, ns_old)) {
+			free(curr_user);
 			return -MNT_ERR_NAMESPACE;
-
+		}
 		if (!curr_user) {
 			DBG(CXT, ul_debugobj(cxt, "umount %s: cannot "
 				"convert %d to username", tgt, getuid()));
@@ -727,7 +843,7 @@ static int do_umount(struct libmnt_context *cxt)
 
 	DBG(CXT, ul_debugobj(cxt, "do umount"));
 
-	if (cxt->restricted && !mnt_context_is_fake(cxt)) {
+	if (mnt_context_is_restricted(cxt) && !mnt_context_is_fake(cxt)) {
 		/*
 		 * extra paranoia for non-root users
 		 * -- chdir to the parent of the mountpoint and use NOFOLLOW
@@ -1140,11 +1256,15 @@ int mnt_context_get_umount_excode(
 			if (buf)
 				snprintf(buf, bufsz, _("not mounted"));
 			return MNT_EX_USAGE;
-		} else if (rc == -MNT_ERR_LOCK) {
+		}
+
+		if (rc == -MNT_ERR_LOCK) {
 			if (buf)
 				snprintf(buf, bufsz, _("locking failed"));
 			return MNT_EX_FILEIO;
-		} else if (rc == -MNT_ERR_NAMESPACE) {
+		}
+
+		if (rc == -MNT_ERR_NAMESPACE) {
 			if (buf)
 				snprintf(buf, bufsz, _("failed to switch namespace"));
 			return MNT_EX_SYSERR;
@@ -1152,7 +1272,7 @@ int mnt_context_get_umount_excode(
 		return mnt_context_get_generic_excode(rc, buf, bufsz,
 					_("umount failed: %m"));
 
-	} else if (mnt_context_get_syscall_errno(cxt) == 0) {
+	} if (mnt_context_get_syscall_errno(cxt) == 0) {
 		/*
 		 * umount(2) syscall success, but something else failed
 		 * (probably error in mtab processing).
@@ -1161,12 +1281,16 @@ int mnt_context_get_umount_excode(
 			if (buf)
 				snprintf(buf, bufsz, _("filesystem was unmounted, but failed to update userspace mount table"));
 			return MNT_EX_FILEIO;
-		} else if (rc == -MNT_ERR_NAMESPACE) {
+		}
+
+		if (rc == -MNT_ERR_NAMESPACE) {
 			if (buf)
 				snprintf(buf, bufsz, _("filesystem was unmounted, but failed to switch namespace back"));
 			return MNT_EX_SYSERR;
 
-		} else if (rc < 0)
+		}
+
+		if (rc < 0)
 			return mnt_context_get_generic_excode(rc, buf, bufsz,
 				_("filesystem was unmounted, but any subsequent operation failed: %m"));
 

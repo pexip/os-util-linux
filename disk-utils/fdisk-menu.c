@@ -87,8 +87,7 @@ DECLARE_MENU_CB(generic_menu_cb);
 #define MENU_BENT_E(k, t, l)	{ .title = t, .key = k, .expert = 1, .normal = 1, .exclude = l }
 
 #define MENU_ENT_NEST(k, t, l, p)	{ .title = t, .key = k, .normal = 1, .label = l, .parent = p }
-#define MENU_XENT_NEST(k, t, l, p)	{ .title = t, .key = k, .expert = 1, .label = l, .parent = p }
-#define MENU_BENT_NEST(k, t, l, p)	{ .title = t, .key = k, .expert = 1, .normal = 1, .label = l, .parent = p }
+#define MENU_BENT_NEST_H(k, t, l, p)	{ .title = t, .key = k, .expert = 1, .normal = 1, .label = l, .parent = p, .hidden = 1 }
 
 /* Generic menu */
 static const struct menu menu_generic = {
@@ -124,6 +123,8 @@ static const struct menu menu_generic = {
 		MENU_XENT ('r', N_("return to main menu")),
 
 		MENU_ENT_NEST('r', N_("return from BSD to DOS"), FDISK_DISKLABEL_BSD, FDISK_DISKLABEL_DOS),
+
+		MENU_ENT_NEST('r', N_("return from protective/hybrid MBR to GPT"), FDISK_DISKLABEL_DOS, FDISK_DISKLABEL_GPT),
 
 		{ 0, NULL }
 	}
@@ -222,8 +223,8 @@ static const struct menu menu_dos = {
 		MENU_XENT('b', N_("move beginning of data in a partition")),
 		MENU_XENT('i', N_("change the disk identifier")),
 
-		MENU_BENT_NEST('M', N_("return from protective/hybrid MBR to GPT"),
-					FDISK_DISKLABEL_DOS, FDISK_DISKLABEL_GPT),
+		MENU_BENT_NEST_H('M', N_("return from protective/hybrid MBR to GPT"), FDISK_DISKLABEL_DOS, FDISK_DISKLABEL_GPT),
+
 		{ 0, NULL }
 	}
 };
@@ -278,7 +279,7 @@ static const struct menu_entry *next_menu_entry(
 		/* no more entries */
 		if (e->title == NULL ||
 		/* menu wanted for specified labels only */
-		    (m->label && lb && !(m->label & type)) ||
+		    (m->label && (!lb || !(m->label & type))) ||
 		/* unwanted for nested PT */
 		    (m->nonested && parent) ||
 		/* menu excluded for specified labels */
@@ -295,7 +296,7 @@ static const struct menu_entry *next_menu_entry(
 		/* excluded for the current label */
 		if ((e->exclude && lb && e->exclude & type) ||
 		/* entry wanted for specified labels only */
-		    (e->label && lb && !(e->label & type)) ||
+		    (e->label && (!lb || !(e->label & type))) ||
 		/* exclude non-expert entries in expect mode */
 		    (e->expert == 0 && fdisk_is_details(cxt)) ||
 		/* nested only */
@@ -417,7 +418,7 @@ int process_fdisk_menu(struct fdisk_context **cxt0)
 	const struct menu *menu;
 	int key, rc;
 	const char *prompt;
-	char buf[BUFSIZ];
+	char buf[BUFSIZ] = { '\0' };
 
 	if (fdisk_is_details(cxt))
 		prompt = _("Expert command (m for help): ");
@@ -432,7 +433,7 @@ int process_fdisk_menu(struct fdisk_context **cxt0)
 		if (is_interactive
 		    && fdisk_label_is_changed(fdisk_get_label(cxt, NULL))) {
 			rc = get_user_reply(
-				_("\nDo you really want to quit? "),
+				_("\nAll unwritten changes will be lost, do you really want to quit? "),
 				buf, sizeof(buf));
 			if (rc || !rpmatch(buf))
 				return 0;
@@ -486,7 +487,7 @@ static int script_read(struct fdisk_context *cxt)
 		rc = fdisk_reassign_device(cxt);
                 if (rc == 0 && !fdisk_has_label(cxt)) {
                         fdisk_info(cxt, _("Device does not contain a recognized partition table."));
-                        fdisk_create_disklabel(cxt, NULL);
+                        rc = fdisk_create_disklabel(cxt, NULL);
 		}
 	} else
 		fdisk_info(cxt, _("Script successfully applied."));
@@ -594,9 +595,10 @@ static int generic_menu_cb(struct fdisk_context **cxt0,
 		rc = fdisk_write_disklabel(cxt);
 		if (rc)
 			err(EXIT_FAILURE, _("failed to write disklabel"));
+
+		fdisk_info(cxt, _("The partition table has been altered."));
 		if (fdisk_get_parent(cxt))
 			break; /* nested PT, don't leave */
-		fdisk_info(cxt, _("The partition table has been altered."));
 
 		if (device_is_used)
 			rc = fdisk_reread_changes(cxt, original_layout);
@@ -692,7 +694,7 @@ static int generic_menu_cb(struct fdisk_context **cxt0,
 		fdisk_enable_details(cxt, 1);
 		break;
 	case 'r':
-		/* return from nested BSD to DOS */
+		/* return from nested BSD to DOS or MBR to GPT */
 		if (fdisk_get_parent(cxt)) {
 			*cxt0 = fdisk_get_parent(cxt);
 
@@ -863,7 +865,7 @@ static int dos_menu_cb(struct fdisk_context **cxt0,
 		rc = fdisk_set_disklabel_id(cxt);
 		break;
 	case 'M':
-		/* return from nested MBR to GPT */
+		/* return from nested MBR to GPT (backward compatibility only) */
 		if (fdisk_get_parent(cxt)) {
 			*cxt0 = fdisk_get_parent(cxt);
 
@@ -1063,6 +1065,7 @@ static int createlabel_menu_cb(struct fdisk_context **cxt0,
 		       const struct menu_entry *ent)
 {
 	struct fdisk_context *cxt = *cxt0;
+	const char *wanted = NULL;
 	int rc = -EINVAL;
 
 	DBG(MENU, ul_debug("enter Create label menu"));
@@ -1075,26 +1078,33 @@ static int createlabel_menu_cb(struct fdisk_context **cxt0,
 		case 'g':
 			/* Deprecated, use 'G' in main menu, just for backward
 			 * compatibility only. */
-			rc = fdisk_create_disklabel(cxt, "sgi");
+			wanted = "sgi";
 			break;
 		}
 	} else {
 		switch (ent->key) {
 			case 'g':
-				rc = fdisk_create_disklabel(cxt, "gpt");
+				wanted = "gpt";
 				break;
 			case 'G':
-				rc = fdisk_create_disklabel(cxt, "sgi");
+				wanted = "sgi";
 				break;
 			case 'o':
-				rc = fdisk_create_disklabel(cxt, "dos");
+				wanted = "dos";
 				break;
 			case 's':
-				rc = fdisk_create_disklabel(cxt, "sun");
+				wanted = "sun";
 				break;
 		}
 	}
 
+	if (wanted) {
+		rc = fdisk_create_disklabel(cxt, wanted);
+		if (rc) {
+			errno = -rc;
+			fdisk_warn(cxt, _("Failed to create '%s' disk label"), wanted);
+		}
+	}
 	if (rc == 0 && fdisk_get_collision(cxt))
 		follow_wipe_mode(cxt);
 

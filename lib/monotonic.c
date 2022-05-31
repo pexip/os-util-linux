@@ -1,6 +1,9 @@
 /*
  * Please, don't add this file to libcommon because clock_gettime() requires
  * -lrt on systems with old libc.
+ *
+ * No copyright is claimed.  This code is in the public domain; do with
+ * it what you wish.
  */
 #include <time.h>
 #include <signal.h>
@@ -45,6 +48,18 @@ int get_boot_time(struct timeval *boot_time)
 #endif
 }
 
+time_t get_suspended_time(void)
+{
+#if defined(CLOCK_BOOTTIME) && defined(CLOCK_MONOTONIC)
+	struct timespec boot, mono;
+
+	if (clock_gettime(CLOCK_BOOTTIME, &boot) == 0 &&
+	    clock_gettime(CLOCK_MONOTONIC, &mono) == 0)
+		return boot.tv_sec - mono.tv_sec;
+#endif
+	return 0;
+}
+
 int gettime_monotonic(struct timeval *tv)
 {
 #ifdef CLOCK_MONOTONIC
@@ -52,12 +67,8 @@ int gettime_monotonic(struct timeval *tv)
 	int ret;
 	struct timespec ts;
 
-# ifdef CLOCK_MONOTONIC_RAW
 	/* Linux specific, can't slew */
-	if (!(ret = clock_gettime(CLOCK_MONOTONIC_RAW, &ts))) {
-# else
-	if (!(ret = clock_gettime(CLOCK_MONOTONIC, &ts))) {
-# endif
+	if (!(ret = clock_gettime(UL_CLOCK_MONOTONIC, &ts))) {
 		tv->tv_sec = ts.tv_sec;
 		tv->tv_usec = ts.tv_nsec / 1000;
 	}

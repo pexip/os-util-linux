@@ -361,8 +361,8 @@ static int probe_vfat(blkid_probe pr, const struct blkid_idmag *mag)
 		/* Search the FAT32 root dir for the label attribute */
 		uint32_t buf_size = vs->vs_cluster_size * sector_size;
 		uint32_t start_data_sect = reserved + fat_size;
-		uint32_t entries = le32_to_cpu(vs->vs_fat32_length) *
-					sector_size / sizeof(uint32_t);
+		uint32_t entries = ((uint64_t) le32_to_cpu(vs->vs_fat32_length)
+					* sector_size) / sizeof(uint32_t);
 		uint32_t next = le32_to_cpu(vs->vs_root_cluster);
 
 		while (next && next < entries && --maxloop) {
@@ -425,7 +425,7 @@ static int probe_vfat(blkid_probe pr, const struct blkid_idmag *mag)
 		}
 	}
 
-	if (boot_label && memcmp(boot_label, no_name, 11))
+	if (boot_label && memcmp(boot_label, no_name, 11) != 0)
 		blkid_probe_set_id_label(pr, "LABEL_FATBOOT", boot_label, 11);
 
 	if (vol_label)
@@ -437,6 +437,8 @@ static int probe_vfat(blkid_probe pr, const struct blkid_idmag *mag)
 			vol_serno[3], vol_serno[2], vol_serno[1], vol_serno[0]);
 	if (version)
 		blkid_probe_set_version(pr, version);
+
+	blkid_probe_set_block_size(pr, sector_size);
 
 	return 0;
 }

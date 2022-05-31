@@ -163,10 +163,8 @@ static void zram_set_devname(struct zram *z, const char *devname, size_t n)
 
 	if (!devname)
 		snprintf(z->devname, sizeof(z->devname), "/dev/zram%zu", n);
-	else {
-		strncpy(z->devname, devname, sizeof(z->devname));
-		z->devname[sizeof(z->devname) - 1] = '\0';
-	}
+	else
+		xstrncpy(z->devname, devname, sizeof(z->devname));
 
 	DBG(fprintf(stderr, "set devname: %s", z->devname));
 	ul_unref_path(z->sysfs);
@@ -387,7 +385,9 @@ static char *get_mm_stat(struct zram *z, size_t idx, int bytes)
 		ul_path_read_string(sysfs, &str, name);
 		return str;
 
-	} else if (ul_path_read_u64(sysfs, &num, name) == 0)
+	}
+
+	if (ul_path_read_u64(sysfs, &num, name) == 0)
 		return size_to_human_string(SIZE_SUFFIX_1LETTER, num);
 
 	return NULL;
@@ -561,6 +561,9 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(USAGE_SEPARATOR, out);
 	printf(USAGE_HELP_OPTIONS(27));
 
+	fputs(USAGE_ARGUMENTS, out);
+	printf(USAGE_ARG_SIZE(_("<size>")));
+
 	fputs(USAGE_COLUMNS, out);
 	for (i = 0; i < ARRAY_SIZE(infos); i++)
 		fprintf(out, " %11s  %s\n", infos[i].name, _(infos[i].help));
@@ -616,7 +619,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while ((c = getopt_long(argc, argv, "a:bfho:nrs:t:V", longopts, NULL)) != -1) {
 
@@ -659,9 +662,9 @@ int main(int argc, char **argv)
 		case 'n':
 			no_headings = 1;
 			break;
+
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		case 'h':
 			usage();
 		default:

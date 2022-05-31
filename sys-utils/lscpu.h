@@ -48,7 +48,17 @@ enum {
 /* cache(s) description */
 struct cpu_cache {
 	char		*name;
-	char		*size;
+	char		*type;
+	char		*allocation_policy;
+	char		*write_policy;
+
+	int		level;
+	uint64_t	size;
+
+	unsigned int	ways_of_associativity;
+	unsigned int	physical_line_partition;
+	unsigned int	number_of_sets;
+	unsigned int	coherency_line_size;
 
 	int		nsharedmaps;
 	cpu_set_t	**sharedmaps;
@@ -74,6 +84,10 @@ struct polarization_modes {
 	char *readable;
 };
 
+struct cpu_vulnerability {
+	char	*name;
+	char	*text;
+};
 
 /* global description */
 struct lscpu_desc {
@@ -105,6 +119,7 @@ struct lscpu_desc {
 	char	*mtid;		/* maximum thread id (s390) */
 	char	*addrsz;	/* address sizes */
 	int	dispatching;	/* none, horizontal or vertical */
+	int	freqboost;	/* -1 if not available */
 	int	mode;		/* rm, lm or/and tm */
 
 	int		ncpuspos;	/* maximal possible CPUs */
@@ -119,6 +134,9 @@ struct lscpu_desc {
 
 	int		necaches;	/* extra caches (s390) */
 	struct cpu_cache *ecaches;
+
+	struct cpu_vulnerability *vuls;	/* array of CPU vulnerabilities */
+	int			 nvuls;	/* number of CPU vulnerabilities */
 
 	/*
 	 * All maps are sequentially indexed (0..ncpuspos), the array index
@@ -170,6 +188,7 @@ enum {
 	OUTPUT_SUMMARY	= 0,	/* default */
 	OUTPUT_PARSABLE,	/* -p */
 	OUTPUT_READABLE,	/* -e */
+	OUTPUT_CACHES           /* -C */
 };
 
 enum {
@@ -185,6 +204,7 @@ struct lscpu_modifier {
 			online:1,	/* print online CPUs */
 			offline:1,	/* print offline CPUs */
 			json:1,		/* JSON output format */
+			bytes:1,        /* output sizes in bytes */
 			physical:1;	/* use physical numbers */
 };
 

@@ -32,9 +32,13 @@ All partitioning is driven by device I/O limits (the topology) by default.
 .B fdisk
 is able to optimize the disk layout for a 4K-sector size and use an alignment offset on
 modern devices for MBR and GPT.  It is always a good idea to follow \fBfdisk\fR's defaults
-as the default values (e.g. first and last partition sectors) and partition
+as the default values (e.g., first and last partition sectors) and partition
 sizes specified by the +/-<size>{M,G,...} notation are always aligned according
 to the device properties.
+
+CHS (Cylinder-Head-Sector) addressing is deprecated and not used by default.
+Please, do not follow old articles and recommendations with "fdisk \-S <n> \-H
+<n>" advices for SSD or 4K-sector devices.
 
 Note that
 .BR partx (8)
@@ -54,15 +58,15 @@ between logical and physical sector size.  This option changes both sector sizes
 .IB sectorsize .
 .TP
 \fB\-B\fR, \fB\-\-protect\-boot\fP
-Don't erase the begin of the first disk sector when create a new disk label.  This
+Don't erase the beginning of the first disk sector when creating a new disk label.  This
 feature is supported for GPT and MBR.
 .TP
 \fB\-c\fR, \fB\-\-compatibility\fR[=\fImode\fR]
 Specify the compatibility mode, 'dos' or 'nondos'.  The default is non-DOS
 mode.  For backward compatibility, it is possible to use the option without
 the \fImode\fR argument -- then the default is used.  Note that the optional
-\fImode\fR argument cannot be separated from the \fB-c\fR option by a space,
-the correct form is for example '-c=dos'.
+\fImode\fR argument cannot be separated from the \fB\-c\fR option by a space,
+the correct form is for example '\-c=dos'.
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Display a help text and exit.
@@ -79,18 +83,33 @@ If no devices are given, those mentioned in
 .I /proc/partitions
 (if that file exists) are used.
 .TP
+\fB\-x\fR, \fB\-\-list\-details\fR
+Like \fB\-\-list\fR, but provides more details.
+.TP
+\fB\-\-lock\fR[=\fImode\fR]
+Use exclusive BSD lock for device or file it operates.  The optional argument
+\fImode\fP can be \fByes\fR, \fBno\fR (or 1 and 0) or \fBnonblock\fR.  If the \fImode\fR
+argument is omitted, it defaults to \fB"yes"\fR.  This option overwrites
+environment variable \fB$LOCK_BLOCK_DEVICE\fR.  The default is not to use any
+lock at all, but it's recommended to avoid collisions with udevd or other
+tools.
+.TP
+\fB\-n\fR, \fB\-\-noauto\-pt\fR
+Don't automatically create a default partition table on empty device.  The partition table
+has to be explicitly created by user (by command like 'o', 'g', etc.).
+.TP
 .BR \-o , " \-\-output " \fIlist\fP
 Specify which output columns to print.  Use
 .B \-\-help
 to get a list of all supported columns.
 
 The default list of columns may be extended if \fIlist\fP is
-specified in the format \fI+list\fP (e.g. \fB-o +UUID\fP).
+specified in the format \fI+list\fP (e.g., \fB\-o +UUID\fP).
 .TP
 \fB\-s\fR, \fB\-\-getsz\fR
 Print the size in 512-byte sectors of each given block device.  This option is DEPRECATED
 in favour of
-.BR blockdev (1).
+.BR blockdev (8).
 .TP
 \fB\-t\fR, \fB\-\-type\fR \fItype\fR
 Enable support only for disklabels of the specified \fItype\fP, and disable
@@ -100,8 +119,8 @@ support for all other types.
 When listing partition tables, show sizes in 'sectors' or in 'cylinders'.  The
 default is to show sizes in sectors.  For backward compatibility, it is possible
 to use the option without the \fIunit\fR argument -- then the default is used.
-Note that the optional \fIunit\fR argument cannot be separated from the \fB-u\fR
-option by a space, the correct form is for example '-u=cylinders'.
+Note that the optional \fIunit\fR argument cannot be separated from the \fB\-u\fR
+option by a space, the correct form is for example '\-u=cylinders'.
 
 .TP
 \fB\-C\fR, \fB\-\-cylinders\fR \fInumber\fR
@@ -130,7 +149,7 @@ before a new partition table is created.  See also
 command.
 
 .TP
-\fB\-W\fR, \fB\-\-wipe-partition\fR \fIwhen\fR
+\fB\-W\fR, \fB\-\-wipe-partitions\fR \fIwhen\fR
 Wipe filesystem, RAID and partition-table signatures from a newly created
 partitions, in order to avoid possible collisions.  The argument \fIwhen\fR can
 be \fBauto\fR, \fBnever\fR or \fBalways\fR.  When this option is not given, the
@@ -157,19 +176,19 @@ The
 .I partition
 is a device name followed by a partition number.  For example, /dev/sda1 is the
 first partition on the first hard disk in the system.  See also Linux kernel
-documentation (the Documentation/devices.txt file).
+documentation (the Documentation/admin-guide/devices.txt file).
 
 .SH SIZES
 The "last sector" dialog accepts partition size specified by number of sectors
 or by +/-<size>{K,B,M,G,...} notation.
 
 If the size is prefixed by  '+' then it is interpreted as relative to the
-partition first sector.  If the size is prefixed by  '-' then it is interpreted
+partition first sector.  If the size is prefixed by  '\-' then it is interpreted
 as relative to the high limit (last available sector for the partition).
 
 In the case the size is specified in bytes than the number may be followed by
 the multiplicative suffixes KiB=1024, MiB=1024*1024, and so on for GiB, TiB,
-PiB, EiB, ZiB and YiB. The "iB" is optional, e.g. "K" has the same meaning as
+PiB, EiB, ZiB and YiB. The "iB" is optional, e.g., "K" has the same meaning as
 "KiB".
 
 The relative sizes are always aligned according to device I/O limits.  The
@@ -181,14 +200,14 @@ are deprecated.
 
 .SH SCRIPT FILES
 .B fdisk
-allows to read (by 'I' command) sfdisk compatible script files. The script is
+allows reading (by 'I' command) sfdisk compatible script files.  The script is
 applied to in-memory partition table, and then it is possible to modify the
 partition table before you write it to the device.
 .PP
 And vice-versa it is possible to write the current in-memory disk layout
 to the script file by command 'O'.
 .PP
-The script files are compatible between cfdisk, sfdisk, fdisk and another
+The script files are compatible between cfdisk, sfdisk, fdisk and other
 libfdisk applications. For more details see
 .BR sfdisk (8).
 
@@ -262,11 +281,11 @@ Linux.
 A sync() and an ioctl(BLKRRPART) (rereading the partition table from disk)
 are performed before exiting when the partition table has been updated.
 
-.SH "DOS mode and DOS 6.x WARNING"
+.SH DOS mode and DOS 6.x WARNING
 .B Note that all this is deprecated.  You don't have to care about things like
 .B geometry and cylinders on modern operating systems.  If you really want
 .B DOS-compatible partitioning then you have to enable DOS mode and cylinder
-.B units by using the '-c=dos -u=cylinders' fdisk command-line options.
+.B units by using the '\-c=dos \-u=cylinders' fdisk command-line options.
 
 The DOS 6.x FORMAT command looks for some information in the first sector of
 the data area of the partition, and treats this information as more reliable
@@ -335,6 +354,20 @@ The warning messages.
 .B welcome
 The welcome message.
 
+.SH ENVIRONMENT
+.IP FDISK_DEBUG=all
+enables fdisk debug output.
+.IP LIBFDISK_DEBUG=all
+enables libfdisk debug output.
+.IP LIBBLKID_DEBUG=all
+enables libblkid debug output.
+.IP LIBSMARTCOLS_DEBUG=all
+enables libsmartcols debug output.
+.IP LIBSMARTCOLS_DEBUG_PADDING=on
+use visible padding characters. Requires enabled LIBSMARTCOLS_DEBUG.
+.IP LOCK_BLOCK_DEVICE=<mode>
+use exclusive BSD lock.  The mode is "1" or "0".  See \fB\-\-lock\fR for more details.
+
 .SH AUTHORS
 .MT kzak@redhat.com
 Karel Zak
@@ -348,19 +381,7 @@ Davidlohr Bueso
 The original version was written by
 Andries E. Brouwer, A. V. Le Blanc and others.
 
-.SH ENVIRONMENT
-.IP FDISK_DEBUG=all
-enables fdisk debug output.
-.IP LIBFDISK_DEBUG=all
-enables libfdisk debug output.
-.IP LIBBLKID_DEBUG=all
-enables libblkid debug output.
-.IP LIBSMARTCOLS_DEBUG=all
-enables libsmartcols debug output.
-.IP LIBSMARTCOLS_DEBUG_PADDING=on
-use visible padding characters. Requires enabled LIBSMARTCOLS_DEBUG.
-
-.SH "SEE ALSO"
+.SH SEE ALSO
 .BR cfdisk (8),
 .BR mkfs (8),
 .BR partx (8),

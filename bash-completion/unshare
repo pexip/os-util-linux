@@ -26,14 +26,23 @@ _unshare_module()
 				--pid
 				--user
 				--cgroup
+				--time
 				--fork
 				--kill-child
+				--keep-caps
 				--mount-proc
+				--map-current-user
 				--map-root-user
 				--propagation
 				--setgroups
 				--help
-				--version"
+				--version
+				--root
+				--wd
+				--monotonic
+				--boottime
+				--setuid
+				--setgid"
 			COMPREPLY=( $(compgen -W "${OPTS[*]}" -- $cur) )
 			return 0
 			;;

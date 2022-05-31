@@ -119,7 +119,8 @@ enum {
 	LSNS_ID_UTS,
 	LSNS_ID_IPC,
 	LSNS_ID_USER,
-	LSNS_ID_CGROUP
+	LSNS_ID_CGROUP,
+	LSNS_ID_TIME
 };
 
 static char *ns_names[] = {
@@ -129,7 +130,8 @@ static char *ns_names[] = {
 	[LSNS_ID_UTS] = "uts",
 	[LSNS_ID_IPC] = "ipc",
 	[LSNS_ID_USER] = "user",
-	[LSNS_ID_CGROUP] = "cgroup"
+	[LSNS_ID_CGROUP] = "cgroup",
+	[LSNS_ID_TIME] = "time"
 };
 
 struct lsns_namespace {
@@ -594,11 +596,10 @@ static int netnsid_xasputs(char **str, int netnsid)
 	if (netnsid >= 0)
 		return xasprintf(str, "%d", netnsid);
 #ifdef NETNSA_NSID_NOT_ASSIGNED
-	else if (netnsid == NETNSA_NSID_NOT_ASSIGNED)
+	if (netnsid == NETNSA_NSID_NOT_ASSIGNED)
 		return xasprintf(str, "%s", "unassigned");
 #endif
-	else
-		return 0;
+	return 0;
 }
 
 static int read_namespaces(struct lsns *ls)
@@ -910,7 +911,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -r, --raw              use the raw output format\n"), out);
 	fputs(_(" -u, --notruncate       don't truncate text in columns\n"), out);
 	fputs(_(" -W, --nowrap           don't use multi-line representation\n"), out);
-	fputs(_(" -t, --type <name>      namespace type (mnt, net, ipc, user, pid, uts, cgroup)\n"), out);
+	fputs(_(" -t, --type <name>      namespace type (mnt, net, ipc, user, pid, uts, cgroup, time)\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
 	printf(USAGE_HELP_OPTIONS(24));
@@ -960,7 +961,7 @@ int main(int argc, char *argv[])
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	lsns_init_debug();
 	memset(&ls, 0, sizeof(ls));
@@ -988,14 +989,9 @@ int main(int argc, char *argv[])
 			for (ncolumns = 0; ncolumns < ARRAY_SIZE(infos); ncolumns++)
 				columns[ncolumns] = ncolumns;
 			break;
-		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
 		case 'p':
 			ls.fltr_pid = strtos32_or_err(optarg, _("invalid PID argument"));
 			break;
-		case 'h':
-			usage();
 		case 'n':
 			ls.no_headings = 1;
 			break;
@@ -1019,6 +1015,11 @@ int main(int argc, char *argv[])
 		case 'W':
 			ls.no_wrap = 1;
 			break;
+
+		case 'h':
+			usage();
+		case 'V':
+			print_version(EXIT_SUCCESS);
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}

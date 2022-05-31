@@ -69,8 +69,8 @@ static int put1wc(int c)
 {
 	if (putwchar(c) == WEOF)
 		return EOF;
-	else
-		return c;
+
+	return c;
 }
 #define putwp(s) tputs(s, STDOUT_FILENO, put1wc)
 #else
@@ -172,7 +172,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	signal(SIGINT, sig_handler);
 	signal(SIGTERM, sig_handler);
@@ -191,9 +191,9 @@ int main(int argc, char **argv)
 		case 'i':
 			iflag = 1;
 			break;
+
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		case 'h':
 			usage();
 		default:
@@ -407,7 +407,7 @@ static void flushln(void)
 static void overstrike(void)
 {
 	register int i;
-	register wchar_t *lbuf = xmalloc((maxcol + 1) * sizeof(wchar_t));
+	register wchar_t *lbuf = xcalloc(maxcol + 1, sizeof(wchar_t));
 	register wchar_t *cp = lbuf;
 	int hadbold=0;
 
@@ -446,7 +446,7 @@ static void overstrike(void)
 static void iattr(void)
 {
 	register int i;
-	register wchar_t *lbuf = xmalloc((maxcol + 1) * sizeof(wchar_t));
+	register wchar_t *lbuf = xcalloc(maxcol + 1, sizeof(wchar_t));
 	register wchar_t *cp = lbuf;
 
 	for (i = 0; i < maxcol; i++)

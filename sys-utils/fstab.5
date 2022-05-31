@@ -68,12 +68,12 @@ LABEL=t-home2   /home      ext4    defaults,auto_da_alloc      0  2
 .B The first field
 .RI ( fs_spec ).
 .RS
-This field describes the block special device or
-remote filesystem to be mounted.
+This field describes the block special device, remote filesystem or filesystem
+image for loop device to be mounted or swap file or swap partition to be enabled.
 .LP
 For ordinary mounts, it will hold (a link to) a block special
 device node (as created by
-.BR mknod (8))
+.BR mknod (2))
 for the device to be mounted, like `/dev/cdrom' or `/dev/sdb7'.
 For NFS mounts, this field is <host>:<dir>, e.g., `knuth.aeb.nl:/'.
 For filesystems with no storage, any string can be used, and will show up in
@@ -174,7 +174,7 @@ Basic filesystem-independent options are:
 use default options: rw, suid, dev, exec, auto, nouser, and async.
 .TP
 .B noauto
-do not mount when "mount -a" is given (e.g., at boot time)
+do not mount when "mount \-a" is given (e.g., at boot time)
 .TP
 .B user
 allow a user to mount
@@ -214,6 +214,11 @@ of 2.  Filesystems within a drive will be checked sequentially, but
 filesystems on different drives will be checked at the same time to utilize
 parallelism available in the hardware.
 Defaults to zero (don't fsck) if not present.
+.RE
+
+.SH FILES
+.IR /etc/fstab ,
+.I <fstab.h>
 
 .SH NOTES
 The proper way to read records from
@@ -227,21 +232,17 @@ The keyword
 .B ignore
 as a filesystem type (3rd field) is no longer supported by the pure
 libmount based mount utility (since util-linux v2.22).
-
-.SH FILES
-.IR /etc/fstab ,
-.I <fstab.h>
-.SH "SEE ALSO"
-.BR getmntent (3),
-.BR fs (5),
-.BR findmnt (8),
-.BR mount (8),
-.BR swapon (8)
 .SH HISTORY
 The ancestor of this
 .B fstab
 file format appeared in 4.0BSD.
 .\" But without comment convention, and options and vfs_type.
+.SH SEE ALSO
+.BR getmntent (3),
+.BR fs (5),
+.BR findmnt (8),
+.BR mount (8),
+.BR swapon (8)
 .\" Instead there was a type rw/ro/rq/sw/xx, where xx is the present 'ignore'.
 .SH AVAILABILITY
 This man page is part of the util-linux package and is available from

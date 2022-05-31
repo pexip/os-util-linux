@@ -263,7 +263,9 @@ static int userspace_add_watch(struct monitor_entry *me, int *final, int *fd)
 			if (fd)
 				*fd = wd;
 			break;
-		} else if (errno != ENOENT) {
+		}
+
+		if (errno != ENOENT) {
 			rc = -errno;
 			break;
 		}
@@ -802,7 +804,7 @@ int mnt_monitor_next_change(struct libmnt_monitor *mn,
 		*type = me->type;
 
 	DBG(MONITOR, ul_debugobj(mn, " *** success [changed: %s]", me->path));
-	return 0;				/* success */
+	return 0;
 }
 
 /**

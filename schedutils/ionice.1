@@ -113,23 +113,22 @@ scheduling parameters.
 .TP
 .BR \-V , " \-\-version"
 Display version information and exit.
-.SH EXAMPLES
-.LP
-.TP 7
-# \fBionice\fP -c 3 -p 89
-.TP 7
-Sets process with PID 89 as an idle I/O process.
-.TP 7
-# \fBionice\fP -c 2 -n 0 bash
-.TP 7
-Runs 'bash' as a best-effort program with highest priority.
-.TP 7
-# \fBionice\fP -p 89 91
-.TP 7
-Prints the class and priority of the processes with PID 89 and 91.
 .SH NOTES
 Linux supports I/O scheduling priorities and classes since 2.6.13 with the CFQ
 I/O scheduler.
+.SH EXAMPLES
+.TP 7
+# \fBionice\fP \-c 3 \-p 89
+.TP 7
+Sets process with PID 89 as an idle I/O process.
+.TP 7
+# \fBionice\fP \-c 2 \-n 0 bash
+.TP 7
+Runs 'bash' as a best-effort program with highest priority.
+.TP 7
+# \fBionice\fP \-p 89 91
+.TP 7
+Prints the class and priority of the processes with PID 89 and 91.
 .SH AUTHORS
 .nf
 Jens Axboe <jens@axboe.dk>

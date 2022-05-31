@@ -133,7 +133,7 @@ static int chmem_size(struct chmem_desc *desc, int enable, int zone_id)
 				zn = zone_names[zone_id];
 				if (enable && !strcasestr(line, zn))
 					continue;
-				if (!enable && strncasecmp(line, zn, strlen(zn)))
+				if (!enable && strncasecmp(line, zn, strlen(zn)) != 0)
 					continue;
 			} else if (enable) {
 				/* By default, use zone Movable for online, if valid */
@@ -218,7 +218,7 @@ static int chmem_range(struct chmem_desc *desc, int enable, int zone_id)
 					warnx(_("%s enable failed: Zone mismatch"), str);
 					continue;
 				}
-				if (!enable && strncasecmp(line, zn, strlen(zn))) {
+				if (!enable && strncasecmp(line, zn, strlen(zn)) != 0) {
 					warnx(_("%s disable failed: Zone mismatch"), str);
 					continue;
 				}
@@ -251,7 +251,7 @@ static int chmem_range(struct chmem_desc *desc, int enable, int zone_id)
 
 static int filter(const struct dirent *de)
 {
-	if (strncmp("memory", de->d_name, 6))
+	if (strncmp("memory", de->d_name, 6) != 0)
 		return 0;
 	return isdigit_string(de->d_name + 6);
 }
@@ -379,7 +379,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	ul_path_init_debug();
 	desc->sysmem = ul_new_path(_PATH_SYS_MEMORY);
@@ -402,18 +402,17 @@ int main(int argc, char **argv)
 		case 'b':
 			desc->use_blocks = 1;
 			break;
-		case 'h':
-			usage();
-			break;
 		case 'v':
 			desc->verbose = 1;
 			break;
-		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
 		case 'z':
 			zone = xstrdup(optarg);
 			break;
+
+		case 'h':
+			usage();
+		case 'V':
+			print_version(EXIT_SUCCESS);
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}

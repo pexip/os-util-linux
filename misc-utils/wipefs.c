@@ -64,6 +64,7 @@ struct wipe_desc {
 struct wipe_control {
 	char		*devname;
 	const char	*type_pattern;		/* -t <pattern> */
+	const char	*lockmode;
 
 	struct libscols_table *outtab;
 	struct wipe_desc *offsets;		/* -o <offset> -o <offset> ... */
@@ -307,7 +308,7 @@ static struct wipe_desc *get_desc_for_probe(struct wipe_control *ctl,
 					    loff_t *offset,
 					    size_t *len)
 {
-	const char *off, *type, *mag, *p, *usage = NULL;
+	const char *off, *type, *mag, *p, *use = NULL;
 	struct wipe_desc *wp;
 	int rc, ispt = 0;
 
@@ -328,7 +329,7 @@ static struct wipe_desc *get_desc_for_probe(struct wipe_control *ctl,
 			rc = blkid_probe_lookup_value(pr, "PTMAGIC", &mag, len);
 		if (rc)
 			return NULL;
-		usage = N_("partition-table");
+		use = N_("partition-table");
 		ispt = 1;
 	} else
 		return NULL;
@@ -357,8 +358,8 @@ static struct wipe_desc *get_desc_for_probe(struct wipe_control *ctl,
 	if (!wp)
 		return NULL;
 
-	if (usage || blkid_probe_lookup_value(pr, "USAGE", &usage, NULL) == 0)
-		wp->usage = xstrdup(usage);
+	if (use || blkid_probe_lookup_value(pr, "USAGE", &use, NULL) == 0)
+		wp->usage = xstrdup(use);
 
 	wp->type = xstrdup(type);
 	wp->on_disk = 1;
@@ -386,7 +387,7 @@ new_probe(const char *devname, int mode)
 		return NULL;
 
 	if (mode) {
-		int fd = open(devname, mode);
+		int fd = open(devname, mode | O_NONBLOCK);
 		if (fd < 0)
 			goto error;
 
@@ -546,6 +547,12 @@ static int do_wipe(struct wipe_control *ctl)
 	if (!pr)
 		return -errno;
 
+	if (blkdev_lock(blkid_probe_get_fd(pr),
+			ctl->devname, ctl->lockmode) != 0) {
+		blkid_free_probe(pr);
+		return -1;
+	}
+
 	if (ctl->backup) {
 		const char *home = getenv ("HOME");
 		char *tmp = xstrdup(ctl->devname);
@@ -655,8 +662,13 @@ usage(void)
 	puts(_(" -p, --parsable      print out in parsable instead of printable format"));
 	puts(_(" -q, --quiet         suppress output messages"));
 	puts(_(" -t, --types <list>  limit the set of filesystem, RAIDs or partition tables"));
+	printf(
+	     _("     --lock[=<mode>] use exclusive device lock (%s, %s or %s)\n"), "yes", "no", "nonblock");
 
 	printf(USAGE_HELP_OPTIONS(21));
+
+	fputs(USAGE_ARGUMENTS, stdout);
+	printf(USAGE_ARG_SIZE(_("<num>")));
 
 	fputs(USAGE_COLUMNS, stdout);
 	for (i = 0; i < ARRAY_SIZE(infos); i++)
@@ -673,12 +685,15 @@ main(int argc, char **argv)
 	struct wipe_control ctl = { .devname = NULL };
 	int c;
 	char *outarg = NULL;
-
+	enum {
+		OPT_LOCK = CHAR_MAX + 1,
+	};
 	static const struct option longopts[] = {
 	    { "all",       no_argument,       NULL, 'a' },
 	    { "backup",    no_argument,       NULL, 'b' },
 	    { "force",     no_argument,       NULL, 'f' },
 	    { "help",      no_argument,       NULL, 'h' },
+	    { "lock",      optional_argument, NULL, OPT_LOCK },
 	    { "no-act",    no_argument,       NULL, 'n' },
 	    { "offset",    required_argument, NULL, 'o' },
 	    { "parsable",  no_argument,       NULL, 'p' },
@@ -700,7 +715,7 @@ main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while ((c = getopt_long(argc, argv, "abfhiJnO:o:pqt:V", longopts, NULL)) != -1) {
 
@@ -715,9 +730,6 @@ main(int argc, char **argv)
 			break;
 		case 'f':
 			ctl.force = 1;
-			break;
-		case 'h':
-			usage();
 			break;
 		case 'J':
 			ctl.json = 1;
@@ -745,9 +757,18 @@ main(int argc, char **argv)
 		case 't':
 			ctl.type_pattern = optarg;
 			break;
+		case OPT_LOCK:
+			ctl.lockmode = "1";
+			if (optarg) {
+				if (*optarg == '=')
+					optarg++;
+				ctl.lockmode = optarg;
+			}
+			break;
+		case 'h':
+			usage();
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}

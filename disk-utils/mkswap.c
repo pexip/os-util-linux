@@ -53,6 +53,7 @@ struct mkswap_control {
 	void			*signature_page;/* buffer with swap header */
 
 	char			*devname;	/* device or file name */
+	const char		*lockmode;	/* as specified by --lock */
 	struct stat		devstat;	/* stat() result */
 	int			fd;		/* swap file descriptor */
 
@@ -161,6 +162,8 @@ static void __attribute__((__noreturn__)) usage(void)
 		" -v, --swapversion NUM     specify swap-space version number\n"
 		" -U, --uuid UUID           specify the uuid to use\n"
 		));
+	fprintf(out,
+	      _("     --lock[=<mode>]       use exclusive device lock (%s, %s or %s)\n"), "yes", "no", "nonblock");
 	printf(USAGE_HELP_OPTIONS(27));
 
 	printf(USAGE_MAN_TAIL("mkswap(8)"));
@@ -191,9 +194,9 @@ static void check_blocks(struct mkswap_control *ctl)
 	buffer = xmalloc(ctl->pagesize);
 	while (current_page < ctl->npages) {
 		ssize_t rc;
+		off_t offset = (off_t) current_page * ctl->pagesize;
 
-		if (do_seek && lseek(ctl->fd, current_page * ctl->pagesize, SEEK_SET) !=
-		    current_page * ctl->pagesize)
+		if (do_seek && lseek(ctl->fd, offset, SEEK_SET) != offset)
 			errx(EXIT_FAILURE, _("seek failed in check_blocks"));
 
 		rc = read(ctl->fd, buffer, ctl->pagesize);
@@ -244,6 +247,10 @@ static void open_device(struct mkswap_control *ctl)
 	ctl->fd = open_blkdev_or_file(&ctl->devstat, ctl->devname, O_RDWR);
 	if (ctl->fd < 0)
 		err(EXIT_FAILURE, _("cannot open %s"), ctl->devname);
+
+	if (blkdev_lock(ctl->fd, ctl->devname, ctl->lockmode) != 0)
+		exit(EXIT_FAILURE);
+
 	if (ctl->check && S_ISREG(ctl->devstat.st_mode)) {
 		ctl->check = 0;
 		warnx(_("warning: checking bad blocks from swap file is not supported: %s"),
@@ -354,6 +361,9 @@ int main(int argc, char **argv)
 	const char *opt_uuid = NULL;
 	uuid_t uuid_dat;
 #endif
+	enum {
+		OPT_LOCK = CHAR_MAX + 1,
+	};
 	static const struct option longopts[] = {
 		{ "check",       no_argument,       NULL, 'c' },
 		{ "force",       no_argument,       NULL, 'f' },
@@ -363,13 +373,14 @@ int main(int argc, char **argv)
 		{ "uuid",        required_argument, NULL, 'U' },
 		{ "version",     no_argument,       NULL, 'V' },
 		{ "help",        no_argument,       NULL, 'h' },
+		{ "lock",        optional_argument, NULL, OPT_LOCK },
 		{ NULL,          0, NULL, 0 }
 	};
 
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while((c = getopt_long(argc, argv, "cfp:L:v:U:Vh", longopts, NULL)) != -1) {
 		switch (c) {
@@ -400,8 +411,16 @@ int main(int argc, char **argv)
 #endif
 			break;
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			exit(EXIT_SUCCESS);
+			print_version(EXIT_SUCCESS);
+			break;
+		case OPT_LOCK:
+			ctl.lockmode = "1";
+			if (optarg) {
+				if (*optarg == '=')
+					optarg++;
+				ctl.lockmode = optarg;
+			}
+			break;
 		case 'h':
 			usage();
 		default:

@@ -1,4 +1,9 @@
-
+/*
+ * No copyright is claimed.  This code is in the public domain; do with
+ * it what you wish.
+ *
+ * Written by Karel Zak <kzak@redhat.com>
+ */
 #include <wchar.h>
 #include <pwd.h>
 #include <grp.h>
@@ -88,7 +93,6 @@ static void add_id(struct idcache *ic, char *name, unsigned long int id)
 	if (w <= 0)
 		w = ent->name ? strlen(ent->name) : 0;
 	ic->width = ic->width < w ? w : ic->width;
-	return;
 }
 
 void add_uid(struct idcache *cache, unsigned long int id)

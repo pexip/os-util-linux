@@ -9,14 +9,13 @@ lslogins \- display information about known users in the system
 .RB [ \-s | \-u [ =\fIUID ]]
 .RB [ \-g " \fIgroups\fR]"
 .RB [ \-l " \fIlogins\fR]"
-.RB [\fIusername\fR]
+.RI [ username ]
 .SH DESCRIPTION
-.PP
 Examine the wtmp and btmp logs, /etc/shadow (if necessary) and /etc/passwd
 and output the desired data.
 
 The optional argument \fIusername\fR forces
-.BR lslogins
+.B lslogins
 to print all available details about the specified user only. In this case the
 output format is different than in case of \fB\-l\fR or \fB\-g\fR and unknown
 is \fIusername\fR reported as an error.
@@ -51,7 +50,7 @@ may be specified; the list has to be comma-separated.  The unknown group
 names are ignored.
 
 Note that relation between user and group may be invisible for primary group if
-the user is not explicitly specify as group member (e.g. in /etc/group). If the
+the user is not explicitly specify as group member (e.g., in /etc/group). If the
 command lslogins scans for groups than it uses groups database only, and user
 database with primary GID is not used at all.
 .TP
@@ -76,7 +75,7 @@ Do not print a header line.
 Don't truncate output.
 .TP
 \fB\-o\fR, \fB\-\-output \fIlist\fP
-Specify which output columns to print. 
+Specify which output columns to print.
 The default list of columns may be extended if \fIlist\fP is
 specified in the format \fI+list\fP.
 .TP
@@ -92,9 +91,9 @@ Display information related to login by password (see also \fB\-afL).
 Raw output (no columnation).
 .TP
 \fB\-s\fR, \fB\-\-system\-accs\fR
-Show system accounts.  These are by default all accounts with a UID below 1000
-(non-inclusive), with the exception of either nobody or nfsnobody (UID 65534).
-This hardcoded default maybe overwritten by parameters SYS_UID_MIN and SYS_UID_MAX in
+Show system accounts.  These are by default all accounts with a UID between 101 and 999
+(inclusive), with the exception of either nobody or nfsnobody (UID 65534).
+This hardcoded default may be overwritten by parameters SYS_UID_MIN and SYS_UID_MAX in
 the file /etc/login.defs.
 .TP
 \fB\-\-time\-format\fR \fItype\fP
@@ -113,14 +112,14 @@ Display version information and exit.
 \fB\-\-wtmp\-file \fIpath\fP
 Alternate path for wtmp.
 .TP
+\fB\-\-lastlog \fIpath\fP
+Alternate path for lastlog.
+.TP
 \fB\-Z\fR, \fB\-\-context\fR
 Display the users' security context.
 .TP
 \fB\-z\fR, \fB\-\-print0\fR
 Delimit user entries with a nul character, instead of a newline.
-
-.SH NOTES
-The default UID thresholds are read from /etc/login.defs.
 
 .SH EXIT STATUS
 .TP
@@ -131,9 +130,10 @@ if OK,
 if incorrect arguments specified,
 .TP
 2
-if a serious error occurs (e.g. a corrupt log).
-.SH SEE ALSO
-\fBgroup\fP(5), \fBpasswd\fP(5), \fBshadow\fP(5), \fButmp\fP(5)
+if a serious error occurs (e.g., a corrupt log).
+.SH NOTES
+The default UID thresholds are read from /etc/login.defs.
+
 .SH HISTORY
 The \fBlslogins\fP utility is inspired by the \fBlogins\fP utility, which first appeared in FreeBSD 4.10.
 .SH AUTHORS
@@ -145,6 +145,8 @@ Ondrej Oprala
 Karel Zak
 .ME
 
+.SH SEE ALSO
+\fBgroup\fP(5), \fBpasswd\fP(5), \fBshadow\fP(5), \fButmp\fP(5)
 .SH AVAILABILITY
 The lslogins command is part of the util-linux package and is available from
 .UR https://\:www.kernel.org\:/pub\:/linux\:/utils\:/util-linux/

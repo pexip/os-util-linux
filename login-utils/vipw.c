@@ -94,7 +94,7 @@ static void copyfile(int from, int to)
 	char buf[8 * 1024];
 
 	while ((nr = read(from, buf, sizeof(buf))) > 0)
-		for (off = 0; off < nr; nr -= nw, off += nw)
+		for (off = 0; nr > 0; nr -= nw, off += nw)
 			if ((nw = write(to, buf + off, nr)) < 0)
 				pw_error(tmp_file, 1, 1);
 
@@ -208,7 +208,7 @@ static void pw_edit(void)
 		err(EXIT_FAILURE, _("fork failed"));
 
 	if (!pid) {
-		execlp(editor, p, tmp_file, NULL);
+		execlp(editor, p, tmp_file, (char *)NULL);
 		errexec(editor);
 	}
 	for (;;) {
@@ -325,7 +325,7 @@ int main(int argc, char *argv[])
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	if (!strcmp(program_invocation_short_name, "vigr")) {
 		program = VIGR;
@@ -335,24 +335,23 @@ int main(int argc, char *argv[])
 		xstrncpy(orig_file, PASSWD_FILE, sizeof(orig_file));
 	}
 
-	while ((c = getopt_long(argc, argv, "Vh", longopts, NULL)) != -1)
+	while ((c = getopt_long(argc, argv, "Vh", longopts, NULL)) != -1) {
 		switch (c) {
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		case 'h':
 			usage();
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}
+	}
 
 	edit_file(0);
 
-	if (program == VIGR) {
-		strncpy(orig_file, SGROUP_FILE, FILENAMELEN - 1);
-	} else {
-		strncpy(orig_file, SHADOW_FILE, FILENAMELEN - 1);
-	}
+	if (program == VIGR)
+		xstrncpy(orig_file, SGROUP_FILE, sizeof(orig_file));
+	else
+		xstrncpy(orig_file, SHADOW_FILE, sizeof(orig_file));
 
 	if (access(orig_file, F_OK) == 0) {
 		char response[80];

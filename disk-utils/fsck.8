@@ -20,11 +20,11 @@ fsck \- check and repair a Linux filesystem
 .B fsck
 is used to check and optionally repair one or more Linux filesystems.
 .I filesys
-can be a device name (e.g.
+can be a device name (e.g.,
 .IR /dev/hdc1 ", " /dev/sdb2 ),
-a mount point (e.g.
+a mount point (e.g.,
 .IR / ", " /usr ", " /home ),
-or an ext2 label or UUID specifier (e.g.
+or an filesystem label or UUID specifier (e.g.,
 UUID=8868abf6-88c5-4a83-98b8-bfc24057f7bd or LABEL=root).
 Normally, the
 .B fsck
@@ -41,7 +41,7 @@ serially.  This is equivalent to the
 .B \-As
 options.
 .PP
-The exit code returned by
+The exit status returned by
 .B fsck
 is the sum of the following conditions:
 .PP
@@ -74,8 +74,8 @@ Shared-library error
 .PD
 .RE
 .PP
-The exit code returned when multiple filesystems are checked
-is the bit-wise OR of the exit codes for each
+The exit status returned when multiple filesystems are checked
+is the bit-wise OR of the exit statuses for each
 filesystem that is checked.
 .PP
 In actuality,
@@ -280,7 +280,7 @@ a progress bar at a time.  GUI front-ends may specify a file descriptor
 in which case the progress bar information will be sent to that file descriptor.
 .TP
 .B \-M
-Do not check mounted filesystems and return an exit code of 0
+Do not check mounted filesystems and return an exit status of 0
 for mounted filesystems.
 .TP
 .B \-N
@@ -316,7 +316,7 @@ Display help text and exit.
 \fB\-\-version\fR
 Display version information and exit.
 .SH FILESYSTEM SPECIFIC OPTIONS
-.B Options which are not understood by fsck are passed to the filesystem-specific checker! 
+.B Options which are not understood by fsck are passed to the filesystem-specific checker!
 .PP
 These options
 .B must
@@ -343,9 +343,7 @@ You're almost certainly doing something that you shouldn't be doing
 with
 .BR fsck .
 Options to different filesystem-specific fsck's are not standardized.
-.SH FILES
-.I /etc/fstab
-.SH ENVIRONMENT VARIABLES
+.SH ENVIRONMENT
 The
 .B fsck
 program's behavior is affected by the following environment variables:
@@ -388,6 +386,13 @@ enables libblkid debug output.
 .TP
 .B LIBMOUNT_DEBUG=all
 enables libmount debug output.
+.SH FILES
+.I /etc/fstab
+.SH AUTHORS
+.nf
+Theodore Ts'o <tytso@mit.edu>
+Karel Zak <kzak@redhat.com>
+.fi
 .SH SEE ALSO
 .na
 .BR fstab (5),
@@ -397,7 +402,7 @@ or
 .BR fsck.ext3 (8)
 or
 .BR e2fsck (8),
-.BR cramfsck (8),
+.BR fsck.cramfs (8),
 .BR fsck.jfs (8),
 .BR fsck.nfs (8),
 .BR fsck.minix (8),
@@ -406,11 +411,6 @@ or
 .BR fsck.xfs (8),
 .BR reiserfsck (8)
 .ad
-.SH AUTHORS
-.nf
-Theodore Ts'o <tytso@mit.edu>
-Karel Zak <kzak@redhat.com>
-.fi
 .SH AVAILABILITY
 The fsck command is part of the util-linux package and is available from
 .UR https://\:www.kernel.org\:/pub\:/linux\:/utils\:/util-linux/

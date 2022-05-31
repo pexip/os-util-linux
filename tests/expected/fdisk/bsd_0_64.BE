@@ -132,7 +132,7 @@ Disklabel type: bsd
 
 Slice Start   End Sectors  Size Type     Fsize Bsize Cpg
 c      4096 20479   16384    8M unused       0     0   0
-d         0 16064   16065  7.9M unused       0     0   0
+d         0 16064   16065  7.8M unused       0     0   0
 
 Partition table entries are not in disk order.
 
@@ -186,7 +186,7 @@ Disklabel type: bsd
 Slice Start   End Sectors  Size Type     Fsize Bsize Cpg
 a      4096  6144    2049    1M 4.2BSD       0     0   0
 c      4096 20479   16384    8M unused       0     0   0
-d         0 16064   16065  7.9M unused       0     0   0
+d         0 16064   16065  7.8M unused       0     0   0
 
 Partition table entries are not in disk order.
 
@@ -204,10 +204,10 @@ Be careful before using the write command.
 Command (m for help): Entering nested BSD disklabel.
 
 Command (m for help): 
- 0  unused           5  4.1BSD           9  4.4LFS           d  boot           
- 1  swap             6  Eighth Edition   a  unknown          e  ADOS           
- 2  Version 6        7  4.2BSD           b  HPFS             f  HFS            
- 3  Version 7        8  MS-DOS           c  ISO-9660        10  AdvFS          
- 4  System V       
+00 unused           05 4.1BSD           09 4.4LFS           0d boot           
+01 swap             06 Eighth Edition   0a unknown          0e ADOS           
+02 Version 6        07 4.2BSD           0b HPFS             0f HFS            
+03 Version 7        08 MS-DOS           0c ISO-9660         10 AdvFS          
+04 System V       
 
 Command (m for help): 

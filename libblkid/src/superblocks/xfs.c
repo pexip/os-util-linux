@@ -173,6 +173,7 @@ static int probe_xfs(blkid_probe pr, const struct blkid_idmag *mag)
 		blkid_probe_set_label(pr, (unsigned char *) xs->sb_fname,
 				sizeof(xs->sb_fname));
 	blkid_probe_set_uuid(pr, xs->sb_uuid);
+	blkid_probe_set_block_size(pr, be16_to_cpu(xs->sb_sectsize));
 	return 0;
 }
 
@@ -252,11 +253,12 @@ static int probe_xfs_log(blkid_probe pr,
 	if (!buf)
 		return errno ? -errno : 1;
 
-	if (memcmp(buf, "XFSB", 4) == 0)
-		return 1;			/* this is regular XFS, ignore */
-
 	/* check the first 512 512-byte sectors */
 	for (i = 0; i < 512; i++) {
+		/* this is regular XFS (maybe with some sectors shift), ignore */
+		if (memcmp(&buf[i*512], "XFSB", 4) == 0)
+			return 1;
+
 		rhead = (struct xlog_rec_header *)&buf[i*512];
 
 		if (xlog_valid_rec_header(rhead)) {

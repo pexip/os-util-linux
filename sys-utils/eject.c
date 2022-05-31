@@ -96,6 +96,9 @@ struct eject_control {
 		x_option:1,
 		a_arg:1,
 		i_arg:1;
+
+	unsigned int force_exclusive;	/* use O_EXCL */
+
 	long int c_arg;			/* changer slot number */
 	long int x_arg;			/* cd speed */
 };
@@ -222,9 +225,6 @@ static void parse_args(struct eject_control *ctl, int argc, char **argv)
 		case 'F':
 			ctl->F_option = 1;
 			break;
-		case 'h':
-			usage();
-			break;
 		case 'i':
 			ctl->i_option = 1;
 			ctl->i_arg = parse_switch(optarg, _("argument error"),
@@ -263,10 +263,11 @@ static void parse_args(struct eject_control *ctl, int argc, char **argv)
 		case 'v':
 			ctl->v_option = 1;
 			break;
+
+		case 'h':
+			usage();
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			exit(EXIT_SUCCESS);
-			break;
+			print_version(EXIT_SUCCESS);
 		default:
 			errtryhelp(EXIT_FAILURE);
 			break;
@@ -297,13 +298,12 @@ static char *find_device(const char *name)
 
 	if ((*name == '.' || *name == '/') && access(name, F_OK) == 0)
 		return xstrdup(name);
-	else {
-		char buf[PATH_MAX];
 
-		snprintf(buf, sizeof(buf), "/dev/%s", name);
-		if (access(buf, F_OK) == 0)
-			return xstrdup(buf);
-	}
+	char buf[PATH_MAX];
+
+	snprintf(buf, sizeof(buf), "/dev/%s", name);
+	if (access(buf, F_OK) == 0)
+		return xstrdup(buf);
 
 	return NULL;
 }
@@ -329,7 +329,7 @@ static void auto_eject(const struct eject_control *ctl)
  * Stops CDROM from opening on manual eject button press.
  * This can be useful when you carry your laptop
  * in your bag while it's on and no CD inserted in it's drive.
- * Implemented as found in Documentation/ioctl/cdrom.txt
+ * Implemented as found in Documentation/userspace-api/ioctl/cdrom.rst
  */
 static void manual_eject(const struct eject_control *ctl)
 {
@@ -444,7 +444,7 @@ static void toggle_tray(int fd)
 	struct timeval time_start, time_stop;
 	int time_elapsed;
 
-	/* Try to open the CDROM tray and measure the time therefor
+	/* Try to open the CDROM tray and measure the time therefore
 	 * needed.  In my experience the function needs less than 0.05
 	 * seconds if the tray was already open, and at least 1.5 seconds
 	 * if it was closed.  */
@@ -663,9 +663,9 @@ static void umount_one(const struct eject_control *ctl, const char *name)
 			err(EXIT_FAILURE, _("cannot set user id"));
 
 		if (ctl->p_option)
-			execl("/bin/umount", "/bin/umount", name, "-n", NULL);
+			execl("/bin/umount", "/bin/umount", name, "-n", (char *)NULL);
 		else
-			execl("/bin/umount", "/bin/umount", name, NULL);
+			execl("/bin/umount", "/bin/umount", name, (char *)NULL);
 
 		errexec("/bin/umount");
 
@@ -688,9 +688,12 @@ static void umount_one(const struct eject_control *ctl, const char *name)
 /* Open a device file. */
 static void open_device(struct eject_control *ctl)
 {
-	ctl->fd = open(ctl->device, O_RDWR | O_NONBLOCK);
+	int extra = ctl->F_option == 0 &&		/* never use O_EXCL on --force */
+		    ctl->force_exclusive ? O_EXCL : 0;
+
+	ctl->fd = open(ctl->device, O_RDWR | O_NONBLOCK | extra);
 	if (ctl->fd < 0)
-		ctl->fd = open(ctl->device, O_RDONLY | O_NONBLOCK);
+		ctl->fd = open(ctl->device, O_RDONLY | O_NONBLOCK | extra);
 	if (ctl->fd == -1)
 		err(EXIT_FAILURE, _("cannot open %s"), ctl->device);
 }
@@ -757,6 +760,9 @@ static char *get_disk_devname(const char *device)
 	return st.st_rdev == diskno ? NULL : find_device(diskname);
 }
 
+/* umount all partitions if -M not specified, otherwise returns
+ * number of the mounted partitions only.
+ */
 static int umount_partitions(struct eject_control *ctl)
 {
 	struct path_cxt *pc = NULL;
@@ -849,7 +855,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL,"");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	/* parse the command line arguments */
 	parse_args(&ctl, argc, argv);
@@ -881,7 +887,7 @@ int main(int argc, char **argv)
 	}
 
 	if (!ctl.device)
-		errx(EXIT_FAILURE, _("%s: unable to find device"), ctl.device);
+		errx(EXIT_FAILURE, _("unable to find device"));
 
 	verbose(&ctl, _("device name is `%s'"), ctl.device);
 
@@ -972,7 +978,7 @@ int main(int argc, char **argv)
 	 * partition is mounted.
 	 */
 	if (!ctl.m_option) {
-		int ct = umount_partitions(&ctl);
+		int ct = umount_partitions(&ctl); /* umount all, or count mounted on -M */
 
 		if (ct == 0 && mountpoint)
 			umount_one(&ctl, mountpoint); /* probably whole-device */
@@ -983,6 +989,11 @@ int main(int argc, char **argv)
 			else if (ct)
 				errx(EXIT_FAILURE, _("error: %s: device in use"), ctl.device);
 		}
+		/* Now, we assume the device is no more used, use O_EXCL to be
+		 * resistant against our bugs and possible races (someone else
+		 * remounted the device).
+		 */
+		ctl.force_exclusive = 1;
 	}
 
 	/* handle -c option */

@@ -53,7 +53,7 @@ static int table_parser_errcb(struct libmnt_table *tb __attribute__((__unused__)
 }
 
 
-static void __attribute__((__noreturn__)) print_version(void)
+static void __attribute__((__noreturn__)) umount_print_version(void)
 {
 	const char *ver = NULL;
 	const char **features = NULL, **p;
@@ -112,24 +112,24 @@ static void __attribute__((__noreturn__)) usage(void)
 	exit(MNT_EX_SUCCESS);
 }
 
-static void __attribute__((__noreturn__)) exit_non_root(const char *option)
+static void suid_drop(struct libmnt_context *cxt)
 {
 	const uid_t ruid = getuid();
 	const uid_t euid = geteuid();
 
-	if (ruid == 0 && euid != 0) {
-		/* user is root, but setuid to non-root */
-		if (option)
-			errx(MNT_EX_USAGE,
-				_("only root can use \"--%s\" option "
-				 "(effective UID is %u)"),
-					option, euid);
-		errx(MNT_EX_USAGE, _("only root can do that "
-				 "(effective UID is %u)"), euid);
+	if (ruid != 0 && euid == 0) {
+		if (setgid(getgid()) < 0)
+			err(MNT_EX_FAIL, _("setgid() failed"));
+
+		if (setuid(getuid()) < 0)
+			err(MNT_EX_FAIL, _("setuid() failed"));
 	}
-	if (option)
-		errx(MNT_EX_USAGE, _("only root can use \"--%s\" option"), option);
-	errx(MNT_EX_USAGE, _("only root can do that"));
+
+	/* be paranoid and check it, setuid(0) has to fail */
+	if (ruid != 0 && setuid(0) == 0)
+		errx(MNT_EX_FAIL, _("drop permissions failed."));
+
+	mnt_context_force_unrestricted(cxt);
 }
 
 static void success_message(struct libmnt_context *cxt)
@@ -220,6 +220,17 @@ static int umount_one(struct libmnt_context *cxt, const char *spec)
 		err(MNT_EX_SYSERR, _("failed to set umount target"));
 
 	rc = mnt_context_umount(cxt);
+
+	if (rc == -EPERM
+	    && mnt_context_is_restricted(cxt)
+	    && mnt_context_tab_applied(cxt)
+	    && !mnt_context_syscall_called(cxt)) {
+		/* Mountpoint exists, but failed something else in libmount,
+		 * drop perms and try it again */
+		suid_drop(cxt);
+		rc = mnt_context_umount(cxt);
+	}
+
 	rc = mk_exit_code(cxt, rc);
 
 	if (rc == MNT_EX_SUCCESS && mnt_context_is_verbose(cxt))
@@ -479,7 +490,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	mnt_init_debug(0);
 	cxt = mnt_new_context();
@@ -494,7 +505,7 @@ int main(int argc, char **argv)
 
 		/* only few options are allowed for non-root users */
 		if (mnt_context_is_restricted(cxt) && !strchr("hdilqVv", c))
-			exit_non_root(option_to_longopt(c, longopts));
+			suid_drop(cxt);
 
 		err_exclusive_options(c, longopts, excl, excl_st);
 
@@ -516,9 +527,6 @@ int main(int argc, char **argv)
 			break;
 		case 'f':
 			mnt_context_enable_force(cxt, TRUE);
-			break;
-		case 'h':
-			usage();
 			break;
 		case 'i':
 			mnt_context_disable_helpers(cxt, TRUE);
@@ -548,9 +556,6 @@ int main(int argc, char **argv)
 		case 'v':
 			mnt_context_enable_verbose(cxt, TRUE);
 			break;
-		case 'V':
-			print_version();
-			break;
 		case 'N':
 		{
 			char path[PATH_MAX];
@@ -563,6 +568,13 @@ int main(int argc, char **argv)
 				err(MNT_EX_SYSERR, _("failed to set target namespace to %s"), pid ? path : optarg);
 			break;
 		}
+
+		case 'h':
+			mnt_free_context(cxt);
+			usage();
+		case 'V':
+			mnt_free_context(cxt);
+			umount_print_version();
 		default:
 			errtryhelp(MNT_EX_USAGE);
 		}
@@ -572,6 +584,10 @@ int main(int argc, char **argv)
 	argv += optind;
 
 	if (all) {
+		if (argc) {
+			warnx(_("unexpected number of arguments"));
+			errtryhelp(MNT_EX_USAGE);
+		}
 		if (!types)
 			types = "noproc,nodevfs,nodevpts,nosysfs,norpc_pipefs,nonfsd,noselinuxfs";
 

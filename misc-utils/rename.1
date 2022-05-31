@@ -40,38 +40,6 @@ Display version information and exit.
 .TP
 .BR \-h , " \-\-help"
 Display help text and exit.
-.SH EXAMPLES
-Given the files
-.IR foo1 ", ..., " foo9 ", " foo10 ", ..., " foo278 ,
-the commands
-.RS
-.PP
-.nf
-rename foo foo00 foo?
-rename foo foo0 foo??
-.fi
-.PP
-.RE
-will turn them into
-.IR foo001 ", ..., " foo009 ", " foo010 ", ..., " foo278 .
-And
-.RS
-.PP
-.nf
-rename .htm .html *.htm
-.fi
-.PP
-.RE
-will fix the extension of your html files.
-Provide an empty string for shortening:
-.RS
-.PP
-.nf
-rename '_with_long_name' '' file_with_long_name.*
-.fi
-.PP
-.RE
-will remove the substring in the filenames.
 .SH WARNING
 The renaming has no safeguards by default or without any one of the options
 .B \-\-no-overwrite\fR,
@@ -89,14 +57,13 @@ short) in canonical mode, where the line is buffered by the tty and you press
 ENTER to validate the user input.  If you put your tty in cbreak mode however,
 rename requires only a single key press to answer the prompt.  To set cbreak
 mode, run for example:
+.PP
 .RS
-.PP
 .nf
-sh -c 'stty -icanon min 1; "$0" "$@"; stty icanon' rename -i from to files
+sh \-c 'stty \-icanon min 1; "$0" "$@"; stty icanon' rename \-i from to files
 .fi
-.PP
 .RE
-.SH "EXIT STATUS"
+.SH EXIT STATUS
 .RS
 .PD 0
 .TP
@@ -116,7 +83,39 @@ nothing was renamed
 unanticipated error occurred
 .PD
 .RE
-.SH "SEE ALSO"
+.SH EXAMPLES
+Given the files
+.IR foo1 ", ..., " foo9 ", " foo10 ", ..., " foo278 ,
+the commands
+.PP
+.RS
+.nf
+rename foo foo00 foo?
+rename foo foo0 foo??
+.fi
+.RE
+.PP
+will turn them into
+.IR foo001 ", ..., " foo009 ", " foo010 ", ..., " foo278 .
+And
+.PP
+.RS
+.nf
+rename .htm .html *.htm
+.fi
+.RE
+.PP
+will fix the extension of your html files.
+Provide an empty string for shortening:
+.PP
+.RS
+.nf
+rename '_with_long_name' '' file_with_long_name.*
+.fi
+.RE
+.PP
+will remove the substring in the filenames.
+.SH SEE ALSO
 .BR mv (1)
 .SH AVAILABILITY
 The rename command is part of the util-linux package and is available from

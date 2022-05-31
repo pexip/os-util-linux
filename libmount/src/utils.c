@@ -19,6 +19,7 @@
 #include <fcntl.h>
 #include <pwd.h>
 #include <grp.h>
+#include <poll.h>
 #include <blkid.h>
 
 #include "strutils.h"
@@ -71,6 +72,7 @@ int is_file_empty(const char *name)
 int mnt_valid_tagname(const char *tagname)
 {
 	if (tagname && *tagname && (
+	    strcmp("ID", tagname) == 0 ||
 	    strcmp("UUID", tagname) == 0 ||
 	    strcmp("LABEL", tagname) == 0 ||
 	    strcmp("PARTUUID", tagname) == 0 ||
@@ -131,6 +133,16 @@ int mnt_stat_mountpoint(const char *target, struct stat *st)
 	return stat(target, st);
 #endif
 }
+
+int mnt_lstat_mountpoint(const char *target, struct stat *st)
+{
+#ifdef AT_NO_AUTOMOUNT
+	return fstatat(AT_FDCWD, target, st, AT_NO_AUTOMOUNT | AT_SYMLINK_NOFOLLOW);
+#else
+	return lstat(target, st);
+#endif
+}
+
 
 /*
  * Note that the @target has to be an absolute path (so at least "/").  The
@@ -270,9 +282,12 @@ int mnt_fstype_is_pseudofs(const char *type)
 	/* This array must remain sorted when adding new fstypes */
 	static const char *pseudofs[] = {
 		"anon_inodefs",
+		"apparmorfs",
 		"autofs",
 		"bdev",
+		"binder",
 		"binfmt_misc",
+		"bpf",
 		"cgroup",
 		"cgroup2",
 		"configfs",
@@ -282,10 +297,23 @@ int mnt_fstype_is_pseudofs(const char *type)
 		"devpts",
 		"devtmpfs",
 		"dlmfs",
+		"dmabuf",
+		"drm",
 		"efivarfs",
-		"fuse.gvfs-fuse-daemon",
+		"fuse", /* Fallback name of fuse used by many poorly written drivers. */
+		"fuse.archivemount", /* Not a true pseudofs (has source), but source is not reported. */
+		"fuse.avfsd", /* Not a true pseudofs (has source), but source is not reported. */
+		"fuse.dumpfs", /* In fact, it is a netfs, but source is not reported. */
+		"fuse.encfs", /* Not a true pseudofs (has source), but source is not reported. */
+		"fuse.gvfs-fuse-daemon", /* Old name, not used by gvfs any more. */
+		"fuse.gvfsd-fuse",
+		"fuse.lxcfs",
+		"fuse.rofiles-fuse",
+		"fuse.vmware-vmblock",
+		"fuse.xwmfs",
 		"fusectl",
 		"hugetlbfs",
+		"ipathfs",
 		"mqueue",
 		"nfsd",
 		"none",
@@ -295,13 +323,17 @@ int mnt_fstype_is_pseudofs(const char *type)
 		"proc",
 		"pstore",
 		"ramfs",
+		"resctrl",
 		"rootfs",
 		"rpc_pipefs",
 		"securityfs",
+		"selinuxfs",
+		"smackfs",
 		"sockfs",
 		"spufs",
 		"sysfs",
-		"tmpfs"
+		"tmpfs",
+		"tracefs"
 	};
 
 	assert(type);
@@ -319,10 +351,13 @@ int mnt_fstype_is_pseudofs(const char *type)
 int mnt_fstype_is_netfs(const char *type)
 {
 	if (strcmp(type, "cifs")   == 0 ||
+	    strcmp(type, "smb3")   == 0 ||
 	    strcmp(type, "smbfs")  == 0 ||
 	    strncmp(type,"nfs", 3) == 0 ||
 	    strcmp(type, "afs")    == 0 ||
 	    strcmp(type, "ncpfs")  == 0 ||
+	    strcmp(type, "fuse.curlftpfs") == 0 ||
+	    strcmp(type, "fuse.sshfs") == 0 ||
 	    strncmp(type,"9p", 2)  == 0)
 		return 1;
 	return 0;
@@ -413,6 +448,12 @@ const char *mnt_statfs_get_fstype(struct statfs *vfs)
 	return NULL;
 }
 
+int is_procfs_fd(int fd)
+{
+	struct statfs sfs;
+
+	return fstatfs(fd, &sfs) == 0 && sfs.f_type == STATFS_PROC_MAGIC;
+}
 
 /**
  * mnt_match_fstype:
@@ -669,28 +710,32 @@ static int try_write(const char *filename, const char *directory)
 	if (eaccess(filename, R_OK|W_OK) == 0) {
 		DBG(UTILS, ul_debug(" access OK"));
 		return 0;
-	} else if (errno != ENOENT) {
+	}
+
+	if (errno != ENOENT) {
 		DBG(UTILS, ul_debug(" access FAILED"));
 		return -errno;
-	} else if (directory) {
+	}
+
+	if (directory) {
 		/* file does not exist; try if directory is writable */
 		if (eaccess(directory, R_OK|W_OK) != 0)
 			rc = -errno;
 
 		DBG(UTILS, ul_debug(" access %s [%s]", rc ? "FAILED" : "OK", directory));
 		return rc;
-	} else
-#endif
-	{
-		DBG(UTILS, ul_debug(" doing open-write test"));
-
-		int fd = open(filename, O_RDWR|O_CREAT|O_CLOEXEC,
-			    S_IWUSR|S_IRUSR|S_IRGRP|S_IROTH);
-		if (fd < 0)
-			rc = -errno;
-		else
-			close(fd);
 	}
+#endif
+
+	DBG(UTILS, ul_debug(" doing open-write test"));
+
+	int fd = open(filename, O_RDWR|O_CREAT|O_CLOEXEC,
+		    S_IWUSR|S_IRUSR|S_IRGRP|S_IROTH);
+	if (fd < 0)
+		rc = -errno;
+	else
+		close(fd);
+
 	return rc;
 }
 
@@ -904,7 +949,7 @@ int mnt_open_uniq_filename(const char *filename, char **name)
  * should be canonicalized. The returned pointer should be freed by the caller.
  *
  * WARNING: the function compares st_dev of the @path elements. This traditional
- * way maybe be insufficient on filesystems like Linux "overlay". See also
+ * way may be insufficient on filesystems like Linux "overlay". See also
  * mnt_table_find_target().
  *
  * Returns: allocated string with the target of the mounted device or NULL on error
@@ -1037,13 +1082,20 @@ char *mnt_get_kernel_cmdline_option(const char *name)
 	return res;
 }
 
-/*
+/**
+ * mnt_guess_system_root:
+ * @devno: device number or zero
+ * @cache: paths cache or NULL
+ * @path: returns allocated path
+ *
  * Converts @devno to the real device name if devno major number is greater
  * than zero, otherwise use root= kernel cmdline option to get device name.
  *
  * The function uses /sys to convert devno to device name.
  *
  * Returns: 0 = success, 1 = not found, <0 = error
+ *
+ * Since: 2.34
  */
 int mnt_guess_system_root(dev_t devno, struct libmnt_cache *cache, char **path)
 {
@@ -1122,8 +1174,164 @@ done:
 	return 1;
 }
 
+#if defined(HAVE_FMEMOPEN) || defined(TEST_PROGRAM)
+
+/*
+ * This function tries to minimize possible races when we read
+ * /proc/#/{mountinfo,mount} files.
+ *
+ * The idea is to minimize number of read()s and check by poll() that during
+ * the read the mount table has not been modified. If yes, than re-read it
+ * (with some limitations to avoid never ending loop).
+ *
+ * Returns: <0 error, 0 success, 1 too many attempts
+ */
+static int read_procfs_file(int fd, char **buf, size_t *bufsiz)
+{
+	size_t bufmax = 0;
+	int rc = 0, tries = 0, ninters = 0;
+	char *bufptr = NULL;
+
+	assert(buf);
+	assert(bufsiz);
+
+	*bufsiz = 0;
+	*buf = NULL;
+
+	do {
+		ssize_t ret;
+
+		if (!bufptr || bufmax == *bufsiz) {
+			char *tmp;
+
+			bufmax = bufmax ? bufmax * 2 : (16 * 1024);
+			tmp = realloc(*buf, bufmax);
+			if (!tmp)
+				break;
+			*buf = tmp;
+			bufptr = tmp + *bufsiz;
+		}
+
+		errno = 0;
+		ret = read(fd, bufptr, bufmax - *bufsiz);
+
+		if (ret < 0) {
+			/* error */
+			if ((errno == EAGAIN || errno == EINTR) && (ninters++ < 5)) {
+				xusleep(200000);
+				continue;
+			}
+			break;
+
+		} if (ret > 0) {
+			/* success -- verify no event during read */
+			struct pollfd fds[] = {
+				{ .fd = fd, .events = POLLPRI }
+			};
+
+			rc = poll(fds, 1, 0);
+			if (rc < 0)
+				break;		/* poll() error */
+			if (rc > 0) {
+				/* event -- read all again */
+				if (lseek(fd, 0, SEEK_SET) != 0)
+					break;
+				*bufsiz = 0;
+				bufptr = *buf;
+				tries++;
+
+				if (tries > 10)
+					/* busy system? -- wait */
+					xusleep(10000);
+				continue;
+			}
+
+			/* successful read() without active poll() */
+			(*bufsiz) += (size_t) ret;
+			bufptr += ret;
+			tries = ninters = 0;
+		} else {
+			/* end-of-file */
+			goto success;
+		}
+	} while (tries <= 100);
+
+	rc = errno ? -errno : 1;
+	free(*buf);
+	return rc;
+
+success:
+	return 0;
+}
+
+/*
+ * Create FILE stream for data from read_procfs_file()
+ */
+FILE *mnt_get_procfs_memstream(int fd, char **membuf)
+{
+	size_t sz = 0;
+	off_t cur;
+
+	*membuf = NULL;
+
+	/* in case of error, rewind to the original position */
+	cur = lseek(fd, 0, SEEK_CUR);
+
+	if (read_procfs_file(fd, membuf, &sz) == 0 && sz > 0) {
+		FILE *memf = fmemopen(*membuf, sz, "r");
+		if (memf)
+			return memf;	/* success */
+
+		free(*membuf);
+		*membuf = NULL;
+	}
+
+	/* error */
+	if (cur != (off_t) -1)
+		lseek(fd, cur, SEEK_SET);
+	return NULL;
+}
+#else
+FILE *mnt_get_procfs_memstream(int fd __attribute((__unused__)),
+		               char **membuf __attribute((__unused__)))
+{
+	return NULL;
+}
+#endif /* HAVE_FMEMOPEN */
+
 
 #ifdef TEST_PROGRAM
+static int test_proc_read(struct libmnt_test *ts, int argc, char *argv[])
+{
+	char *buf = NULL;
+	char *filename = argv[1];
+	size_t bufsiz = 0;
+	int rc = 0, fd = open(filename, O_RDONLY);
+
+	if (fd <= 0) {
+		warn("%s: cannot open", filename);
+		return -errno;
+	}
+
+	rc = read_procfs_file(fd, &buf, &bufsiz);
+	close(fd);
+
+	switch (rc) {
+	case 0:
+		fwrite(buf, 1, bufsiz, stdout);
+		free(buf);
+		break;
+	case 1:
+		warnx("too many attempts");
+		break;
+	default:
+		warn("%s: cannot read", filename);
+		break;
+	}
+
+	return rc;
+}
+
 static int test_match_fstype(struct libmnt_test *ts, int argc, char *argv[])
 {
 	char *type = argv[1];
@@ -1305,6 +1513,7 @@ int main(int argc, char *argv[])
 	{ "--guess-root",    test_guess_root,      "[<maj:min>]" },
 	{ "--mkdir",         test_mkdir,           "<path>" },
 	{ "--statfs-type",   test_statfs_type,     "<path>" },
+	{ "--read-procfs",   test_proc_read,       "<path>" },
 
 	{ NULL }
 	};

@@ -82,25 +82,51 @@ void fdisk_reset_partition(struct fdisk_partition *pa)
 static struct fdisk_partition *__copy_partition(struct fdisk_partition *o)
 {
 	struct fdisk_partition *n = fdisk_new_partition();
+	int rc;
 
 	if (!n)
 		return NULL;
+
 	memcpy(n, o, sizeof(*n));
+
+	/* do not copy reference to lists, etc.*/
+	n->refcount = 1;
+	INIT_LIST_HEAD(&n->parts);
+
 	if (n->type)
 		fdisk_ref_parttype(n->type);
-	if (o->name)
-		n->name = strdup(o->name);
-	if (o->uuid)
-		n->uuid = strdup(o->uuid);
-	if (o->attrs)
-		n->attrs = strdup(o->attrs);
-	if (o->fstype)
-		n->fstype = strdup(o->fstype);
-	if (o->fsuuid)
-		n->fsuuid = strdup(o->fsuuid);
-	if (o->fslabel)
-		n->fslabel = strdup(o->fslabel);
 
+	/* note that strdup_between_structs() deallocates destination pointer,
+	 * so make sure it's NULL as we call memcpy() before ... */
+	n->name = NULL;
+	rc = strdup_between_structs(n, o, name);
+
+	n->uuid = NULL;
+	if (!rc)
+		rc = strdup_between_structs(n, o, uuid);
+	n->attrs = NULL;
+	if (!rc)
+		rc = strdup_between_structs(n, o, attrs);
+	n->fstype = NULL;
+	if (!rc)
+		rc = strdup_between_structs(n, o, fstype);
+	n->fsuuid = NULL;
+	if (!rc)
+		rc = strdup_between_structs(n, o, fsuuid);
+	n->fslabel = NULL;
+	if (!rc)
+		rc = strdup_between_structs(n, o, fslabel);
+	n->start_chs = NULL;
+	if (!rc)
+		rc = strdup_between_structs(n, o, start_chs);
+	n->end_chs = NULL;
+	if (!rc)
+		rc = strdup_between_structs(n, o, end_chs);
+
+	if (rc) {
+		fdisk_unref_partition(n);
+		n = NULL;
+	}
 	return n;
 }
 
@@ -474,41 +500,43 @@ struct fdisk_parttype *fdisk_partition_get_type(struct fdisk_partition *pa)
 	return pa ? pa->type : NULL;
 }
 
+/**
+ * fdisk_partition_set_name:
+ * @pa: partition
+ * @name: partition name
+ *
+ * Returns: 0 on success, <0 on error.
+ */
 int fdisk_partition_set_name(struct fdisk_partition *pa, const char *name)
 {
-	char *p = NULL;
-
 	if (!pa)
 		return -EINVAL;
-	if (name) {
-	       p = strdup(name);
-	       if (!p)
-		       return -ENOMEM;
-	}
-	free(pa->name);
-	pa->name = p;
-	return 0;
+	return strdup_to_struct_member(pa, name, name);
 }
 
+/**
+ * fdisk_partition_get_name:
+ * @pa: partition
+ *
+ * Returns: partition name
+ */
 const char *fdisk_partition_get_name(struct fdisk_partition *pa)
 {
 	return pa ? pa->name : NULL;
 }
 
+/**
+ * fdisk_partition_set_uuid:
+ * @pa: partition
+ * @uuid: UUID of the partition
+ *
+ * Returns: 0 on success, <0 on error.
+ */
 int fdisk_partition_set_uuid(struct fdisk_partition *pa, const char *uuid)
 {
-	char *p = NULL;
-
 	if (!pa)
 		return -EINVAL;
-	if (uuid) {
-	       p = strdup(uuid);
-	       if (!p)
-		       return -ENOMEM;
-	}
-	free(pa->uuid);
-	pa->uuid = p;
-	return 0;
+	return strdup_to_struct_member(pa, uuid, uuid);
 }
 
 /**
@@ -602,18 +630,9 @@ const char *fdisk_partition_get_attrs(struct fdisk_partition *pa)
  */
 int fdisk_partition_set_attrs(struct fdisk_partition *pa, const char *attrs)
 {
-	char *p = NULL;
-
 	if (!pa)
 		return -EINVAL;
-	if (attrs) {
-	       p = strdup(attrs);
-	       if (!p)
-		       return -ENOMEM;
-	}
-	free(pa->attrs);
-	pa->attrs = p;
-	return 0;
+	return strdup_to_struct_member(pa, attrs, attrs);
 }
 
 /**
@@ -734,7 +753,9 @@ int fdisk_partition_next_partno(
 		}
 		return -ERANGE;
 
-	} else if (pa && fdisk_partition_has_partno(pa)) {
+	}
+
+	if (pa && fdisk_partition_has_partno(pa)) {
 
 		DBG(PART, ul_debugobj(pa, "next partno (specified=%zu)", pa->partno));
 
@@ -744,7 +765,9 @@ int fdisk_partition_next_partno(
 		*n = pa->partno;
 		return 0;
 
-	} else if (fdisk_has_dialogs(cxt))
+	}
+
+	if (fdisk_has_dialogs(cxt))
 		return fdisk_ask_partnum(cxt, n, 1);
 
 	return -EINVAL;
@@ -1019,7 +1042,9 @@ int fdisk_get_partition(struct fdisk_context *cxt, size_t partno,
 }
 
 static struct fdisk_partition *resize_get_by_offset(
-			struct fdisk_table *tb, fdisk_sector_t off)
+			struct fdisk_table *tb,
+			struct fdisk_partition *cur,
+			fdisk_sector_t off)
 {
 	struct fdisk_partition *pa = NULL;
 	struct fdisk_iter itr;
@@ -1028,6 +1053,9 @@ static struct fdisk_partition *resize_get_by_offset(
 
 	while (fdisk_table_next_partition(tb, &itr, &pa) == 0) {
 		if (!fdisk_partition_has_start(pa) || !fdisk_partition_has_size(pa))
+			continue;
+		if (fdisk_partition_is_nested(cur) &&
+		    pa->parent_partno != cur->parent_partno)
 			continue;
 		if (off >= pa->start && off < pa->start + pa->size)
 			return pa;
@@ -1145,10 +1173,19 @@ static int recount_resize(
 	FDISK_INIT_UNDEF(size);
 
 	rc = fdisk_get_partitions(cxt, &tb);
-	if (!rc)
+	if (!rc) {
+		/* For resize we do not follow grain to detect free-space, but
+		 * we support to resize with very small granulation. */
+		unsigned long org = cxt->grain;
+
+		cxt->grain = cxt->sector_size;
 		rc = fdisk_get_freespaces(cxt, &tb);
-	if (rc)
+		cxt->grain = org;
+	}
+	if (rc) {
+		fdisk_unref_table(tb);
 		return rc;
+	}
 
 	fdisk_table_sort_partitions(tb, fdisk_partition_cmp_start);
 
@@ -1183,15 +1220,18 @@ static int recount_resize(
 
 	/* 2) verify that start is within the current partition or any freespace area */
 	if (!FDISK_IS_UNDEF(start)) {
-		struct fdisk_partition *area = resize_get_by_offset(tb, start);
+		struct fdisk_partition *area = resize_get_by_offset(tb, cur, start);
+
 		if (area == cur)
 			DBG(PART, ul_debugobj(tpl, "resize: start points to the current partition"));
 		else if (area && fdisk_partition_is_freespace(area))
 			DBG(PART, ul_debugobj(tpl, "resize: start points to freespace"));
 		else if (!area && start >= cxt->first_lba && start < cxt->first_lba + (cxt->grain / cxt->sector_size))
 			DBG(PART, ul_debugobj(tpl, "resize: start points before first partition"));
-		else
+		else {
+			DBG(PART, ul_debugobj(tpl, "resize: start verification failed"));
 			goto erange;
+		}
 	} else {
 		/* no change, start points to the current partition */
 		DBG(PART, ul_debugobj(tpl, "resize: start unchanged"));
@@ -1238,7 +1278,7 @@ static int recount_resize(
 			goto erange;
 	}
 
-	if (!FDISK_IS_UNDEF(size)) {
+	if (FDISK_IS_UNDEF(size)) {
 		DBG(PART, ul_debugobj(tpl, "resize: size unchanged (undefined)"));
 	}
 
@@ -1379,7 +1419,7 @@ int fdisk_partition_has_wipe(struct fdisk_context *cxt, struct fdisk_partition *
  * If @pa is not specified or any @pa item is missing the libfdisk will ask by
  * fdisk_ask_ API.
  *
- * The @pa template is is important for non-interactive partitioning,
+ * The @pa template is important for non-interactive partitioning,
  * especially for MBR where is necessary to differentiate between
  * primary/logical; this is done by start offset or/and partno.
  * The rules for MBR:

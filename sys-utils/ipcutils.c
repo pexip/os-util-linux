@@ -22,9 +22,12 @@ int ipc_msg_get_limits(struct ipc_limits *lim)
 	    access(_PATH_PROC_IPC_MSGMNB, F_OK) == 0 &&
 	    access(_PATH_PROC_IPC_MSGMAX, F_OK) == 0) {
 
-		ul_path_read_s32(NULL, &lim->msgmni, _PATH_PROC_IPC_MSGMNI);
-		ul_path_read_s32(NULL, &lim->msgmnb, _PATH_PROC_IPC_MSGMNB);
-		ul_path_read_u64(NULL, &lim->msgmax, _PATH_PROC_IPC_MSGMAX);
+		if (ul_path_read_s32(NULL, &lim->msgmni, _PATH_PROC_IPC_MSGMNI) != 0)
+			return 1;
+		if (ul_path_read_s32(NULL, &lim->msgmnb, _PATH_PROC_IPC_MSGMNB) != 0)
+			return 1;
+		if (ul_path_read_u64(NULL, &lim->msgmax, _PATH_PROC_IPC_MSGMAX) != 0)
+			return 1;
 	} else {
 		struct msginfo msginfo;
 
@@ -142,8 +145,8 @@ int ipc_shm_get_info(int id, struct shm_data **shmds)
 			if (id == p->shm_perm.id) {
 				i = 1;
 				break;
-			} else
-				continue;
+			}
+			continue;
 		}
 
 		p->next = xcalloc(1, sizeof(struct shm_data));
@@ -281,8 +284,8 @@ int ipc_sem_get_info(int id, struct sem_data **semds)
 				get_sem_elements(p);
 				i = 1;
 				break;
-			} else
-				continue;
+			}
+			continue;
 		}
 
 		p->next = xcalloc(1, sizeof(struct sem_data));
@@ -394,8 +397,8 @@ int ipc_msg_get_info(int id, struct msg_data **msgds)
 					p->q_qbytes = msgseg.msg_qbytes;
 				i = 1;
 				break;
-			} else
-				continue;
+			}
+			continue;
 		}
 
 		p->next = xcalloc(1, sizeof(struct msg_data));

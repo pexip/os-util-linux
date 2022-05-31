@@ -81,7 +81,7 @@ static void _dump_debug_string(const char *lead, const char *s, char quote)
 	if (quote != 0)
 		PySys_WriteStdout("%c", quote);
 
-	for (len = strlen(s); len > _PY_MAX_LEN; len -= _PY_MAX_LEN, s += _PY_MAX_LEN) 
+	for (len = strlen(s); len > _PY_MAX_LEN; len -= _PY_MAX_LEN, s += _PY_MAX_LEN)
 		PySys_WriteStdout(_PY_MAX_LEN_FMT, s);
 
 	if (len > 0)
@@ -370,7 +370,9 @@ static int Fs_set_freq(FsObject *self, PyObject *value,
 		PyErr_SetString(PyExc_TypeError, NODEL_ATTR);
 		return -1;
 
-	} else if (!PyLong_Check(value)) {
+	}
+
+	if (!PyLong_Check(value)) {
 		PyErr_SetString(PyExc_TypeError, ARG_ERR);
 		return -1;
 	}
@@ -395,7 +397,9 @@ static int Fs_set_passno(FsObject *self, PyObject *value, void *closure __attrib
 	if (!value) {
 		PyErr_SetString(PyExc_TypeError, NODEL_ATTR);
 		return -1;
-	} else if (!PyLong_Check(value)) {
+	}
+
+	if (!PyLong_Check(value)) {
 		PyErr_SetString(PyExc_TypeError, ARG_ERR);
 		return -1;
 	}
@@ -810,7 +814,9 @@ static PyObject *Fs_copy_fs(FsObject *self, PyObject *args, PyObject *kwds)
 		DBG(FS, pymnt_debug_h(dest, "copy data"));
 		return (PyObject *)dest;
 
-	} else if (dest == Py_None) {			/* create new object */
+	}
+
+	if (dest == Py_None) {			/* create new object */
 		FsObject *result = PyObject_New(FsObject, &FsType);
 
 		DBG(FS, pymnt_debug_h(result, "new copy"));
@@ -830,7 +836,7 @@ PyTypeObject FsType = {
 	sizeof(FsObject), /*tp_basicsize*/
 	0, /*tp_itemsize*/
 	(destructor)Fs_destructor, /*tp_dealloc*/
-	NULL, /*tp_print*/
+	0, /*tp_print*/
 	NULL, /*tp_getattr*/
 	NULL, /*tp_setattr*/
 	NULL, /*tp_compare*/

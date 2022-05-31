@@ -9,7 +9,7 @@
     <title>libsmartcols Reference Manual</title>
     <releaseinfo>for libsmartcols version &version;</releaseinfo>
     <copyright>
-      <year>2014-2018</year>
+      <year>2014-2020</year>
       <holder>Karel Zak &lt;kzak@redhat.com&gt;</holder>
     </copyright>
   </bookinfo>
@@ -34,6 +34,7 @@ available from https://www.kernel.org/pub/linux/utils/util-linux/.
     <xi:include href="xml/line.xml"/>
     <xi:include href="xml/cell.xml"/>
     <xi:include href="xml/symbols.xml"/>
+    <xi:include href="xml/grouping.xml"/>
   </part>
   <part>
     <title>Printing</title>
@@ -68,5 +69,17 @@ available from https://www.kernel.org/pub/linux/utils/util-linux/.
   <index role="2.31">
     <title>Index of new symbols in 2.31</title>
     <xi:include href="xml/api-index-2.31.xml"><xi:fallback /></xi:include>
+  </index>
+  <index role="2.33">
+    <title>Index of new symbols in 2.33</title>
+    <xi:include href="xml/api-index-2.33.xml"><xi:fallback /></xi:include>
+  </index>
+  <index role="2.34">
+    <title>Index of new symbols in 2.34</title>
+    <xi:include href="xml/api-index-2.34.xml"><xi:fallback /></xi:include>
+  </index>
+  <index role="2.35">
+    <title>Index of new symbols in 2.35</title>
+    <xi:include href="xml/api-index-2.35.xml"><xi:fallback /></xi:include>
   </index>
 </book>

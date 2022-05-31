@@ -30,7 +30,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("Politely refuse a login.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
-	printf(USAGE_HELP_OPTIONS(16));
+	fputs(_(" -c, --command <command>  does nothing (for compatibility with su -c)\n"), out);
+	printf(USAGE_HELP_OPTIONS(26));
 
 	printf(USAGE_MAN_TAIL("nologin(8)"));
 	exit(EXIT_FAILURE);
@@ -40,9 +41,25 @@ int main(int argc, char *argv[])
 {
 	int c, fd = -1;
 	struct stat st;
+	enum {
+		OPT_INIT_FILE = CHAR_MAX + 1,
+		OPT_NOPROFILE,
+		OPT_NORC,
+		OPT_POSIX,
+		OPT_RCFILE
+	};
 	static const struct option longopts[] = {
-		{ "help",    0, NULL, 'h' },
-		{ "version", 0, NULL, 'V' },
+		{ "command",     required_argument, NULL, 'c'           },
+		{ "init-file",   required_argument, NULL, OPT_INIT_FILE },
+		{ "interactive", no_argument,       NULL, 'i'           },
+		{ "login",       no_argument,       NULL, 'l'           },
+		{ "noprofile",   no_argument,       NULL, OPT_NOPROFILE },
+		{ "norc",        no_argument,       NULL, OPT_NORC      },
+		{ "posix",       no_argument,       NULL, OPT_POSIX     },
+		{ "rcfile",      required_argument, NULL, OPT_RCFILE    },
+		{ "restricted",  no_argument,       NULL, 'r'           },
+		{ "help",        no_argument,       NULL, 'h'           },
+		{ "version",     no_argument,       NULL, 'V'           },
 		{ NULL, 0, NULL, 0 }
 	};
 
@@ -50,14 +67,23 @@ int main(int argc, char *argv[])
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
 
-	while ((c = getopt_long(argc, argv, "hV", longopts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "c:ilrhV", longopts, NULL)) != -1) {
 		switch (c) {
+		case 'c':
+		case OPT_INIT_FILE:
+		case 'i':
+		case 'l':
+		case OPT_NOPROFILE:
+		case OPT_NORC:
+		case OPT_POSIX:
+		case OPT_RCFILE:
+		case 'r':
+			/* Ignore well known shell command-line options */
+			break;
 		case 'h':
 			usage();
-			break;
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_FAILURE;
+			print_version(EXIT_FAILURE);	/* yes FAILURE! */
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}

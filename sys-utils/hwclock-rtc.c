@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * rtc.c - Use /dev/rtc for clock access
  */
 #include <asm/ioctl.h>
@@ -12,6 +14,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "monotonic.h"
 #include "nls.h"
 
 #include "hwclock.h"
@@ -128,9 +131,12 @@ static int open_rtc(const struct hwclock_control *ctl)
 				printf(_("Trying to open: %s\n"), fls[i]);
 			rtc_dev_fd = open(fls[i], O_RDONLY);
 
-			if (rtc_dev_fd < 0
-			    && (errno == ENOENT || errno == ENODEV))
-				continue;
+			if (rtc_dev_fd < 0) {
+				if (errno == ENOENT || errno == ENODEV)
+					continue;
+				if (ctl->verbose)
+					warn(_("cannot open %s"), fls[i]);
+			}
 			rtc_dev_name = fls[i];
 			break;
 		}
@@ -223,12 +229,12 @@ static int busywait_for_rtc_clock_tick(const struct hwclock_control *ctl,
 	 * something weird happens, we have a time limit (1.5s) on this loop
 	 * to reduce the impact of this failure.
 	 */
-	gettimeofday(&begin, NULL);
+	gettime_monotonic(&begin);
 	do {
 		rc = do_rtc_read_ioctl(rtc_fd, &nowtime);
 		if (rc || start_time.tm_sec != nowtime.tm_sec)
 			break;
-		gettimeofday(&now, NULL);
+		gettime_monotonic(&now);
 		if (time_diff(now, begin) > 1.5) {
 			warnx(_("Timed out waiting for time change."));
 			return 1;
@@ -252,48 +258,48 @@ static int synchronize_to_clock_tick_rtc(const struct hwclock_control *ctl)
 	if (rtc_fd == -1) {
 		warn(_("cannot open rtc device"));
 		return ret;
-	} else {
-		/* Turn on update interrupts (one per second) */
-		int rc = ioctl(rtc_fd, RTC_UIE_ON, 0);
+	}
 
-		if (rc != -1) {
-			/*
-			 * Just reading rtc_fd fails on broken hardware: no
-			 * update interrupt comes and a bootscript with a
-			 * hwclock call hangs
-			 */
-			fd_set rfds;
-			struct timeval tv;
+	/* Turn on update interrupts (one per second) */
+	int rc = ioctl(rtc_fd, RTC_UIE_ON, 0);
 
-			/*
-			 * Wait up to ten seconds for the next update
-			 * interrupt
-			 */
-			FD_ZERO(&rfds);
-			FD_SET(rtc_fd, &rfds);
-			tv.tv_sec = 10;
-			tv.tv_usec = 0;
-			rc = select(rtc_fd + 1, &rfds, NULL, NULL, &tv);
-			if (0 < rc)
-				ret = 0;
-			else if (rc == 0) {
-				warnx(_("select() to %s to wait for clock tick timed out"),
-				      rtc_dev_name);
-			} else
-				warn(_("select() to %s to wait for clock tick failed"),
-				     rtc_dev_name);
-			/* Turn off update interrupts */
-			rc = ioctl(rtc_fd, RTC_UIE_OFF, 0);
-			if (rc == -1)
-				warn(_("ioctl() to %s to turn off update interrupts failed"),
-				     rtc_dev_name);
+	if (rc != -1) {
+		/*
+		 * Just reading rtc_fd fails on broken hardware: no
+		 * update interrupt comes and a bootscript with a
+		 * hwclock call hangs
+		 */
+		fd_set rfds;
+		struct timeval tv;
+
+		/*
+		 * Wait up to ten seconds for the next update
+		 * interrupt
+		 */
+		FD_ZERO(&rfds);
+		FD_SET(rtc_fd, &rfds);
+		tv.tv_sec = 10;
+		tv.tv_usec = 0;
+		rc = select(rtc_fd + 1, &rfds, NULL, NULL, &tv);
+		if (0 < rc)
+			ret = 0;
+		else if (rc == 0) {
+			warnx(_("select() to %s to wait for clock tick timed out"),
+			      rtc_dev_name);
+		} else
+			warn(_("select() to %s to wait for clock tick failed"),
+			     rtc_dev_name);
+		/* Turn off update interrupts */
+		rc = ioctl(rtc_fd, RTC_UIE_OFF, 0);
+		if (rc == -1)
+			warn(_("ioctl() to %s to turn off update interrupts failed"),
+			     rtc_dev_name);
 		} else if (errno == ENOTTY || errno == EINVAL) {
 			/* rtc ioctl interrupts are unimplemented */
 			ret = busywait_for_rtc_clock_tick(ctl, rtc_fd);
 		} else
 			warn(_("ioctl(%d, RTC_UIE_ON, 0) to %s failed"),
 			     rtc_fd, rtc_dev_name);
-	}
 	return ret;
 }
 

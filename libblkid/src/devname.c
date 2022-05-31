@@ -58,7 +58,7 @@ blkid_dev blkid_get_dev(blkid_cache cache, const char *devname, int flags)
 	/* search by name */
 	list_for_each(p, &cache->bic_devs) {
 		tmp = list_entry(p, struct blkid_struct_dev, bid_devs);
-		if (strcmp(tmp->bid_name, devname))
+		if (strcmp(tmp->bid_name, devname) != 0)
 			continue;
 		dev = tmp;
 		break;
@@ -70,7 +70,7 @@ blkid_dev blkid_get_dev(blkid_cache cache, const char *devname, int flags)
 			DBG(DEVNAME, ul_debug("search canonical %s", cn));
 			list_for_each(p, &cache->bic_devs) {
 				tmp = list_entry(p, struct blkid_struct_dev, bid_devs);
-				if (strcmp(tmp->bid_name, cn))
+				if (strcmp(tmp->bid_name, cn) != 0)
 					continue;
 				dev = tmp;
 
@@ -120,13 +120,13 @@ blkid_dev blkid_get_dev(blkid_cache cache, const char *devname, int flags)
 			if (dev2->bid_flags & BLKID_BID_FL_VERIFIED)
 				continue;
 			if (!dev->bid_type || !dev2->bid_type ||
-			    strcmp(dev->bid_type, dev2->bid_type))
+			    strcmp(dev->bid_type, dev2->bid_type) != 0)
 				continue;
 			if (dev->bid_label && dev2->bid_label &&
-			    strcmp(dev->bid_label, dev2->bid_label))
+			    strcmp(dev->bid_label, dev2->bid_label) != 0)
 				continue;
 			if (dev->bid_uuid && dev2->bid_uuid &&
-			    strcmp(dev->bid_uuid, dev2->bid_uuid))
+			    strcmp(dev->bid_uuid, dev2->bid_uuid) != 0)
 				continue;
 			if ((dev->bid_label && !dev2->bid_label) ||
 			    (!dev->bid_label && dev2->bid_label) ||
@@ -160,7 +160,7 @@ static int is_dm_leaf(const char *devname)
 	while ((de = readdir(dir)) != NULL) {
 		if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, "..") ||
 		    !strcmp(de->d_name, devname) ||
-		    strncmp(de->d_name, "dm-", 3) ||
+		    strncmp(de->d_name, "dm-", 3) != 0 ||
 		    strlen(de->d_name) > sizeof(path)-32)
 			continue;
 		sprintf(path, "/sys/block/%s/slaves", de->d_name);
@@ -258,7 +258,7 @@ set_pri:
 	if (dev) {
 		if (pri)
 			dev->bid_pri = pri;
-		else if (!strncmp(dev->bid_name, "/dev/mapper/", 11)) {
+		else if (!strncmp(dev->bid_name, "/dev/mapper/", 12)) {
 			dev->bid_pri = BLKID_PRI_DM;
 			if (is_dm_leaf(ptname))
 				dev->bid_pri += 5;
@@ -267,7 +267,6 @@ set_pri:
 		if (removable)
 			dev->bid_flags |= BLKID_BID_FL_REMOVABLE;
 	}
-	return;
 }
 
 #define PROC_PARTITIONS "/proc/partitions"
@@ -451,7 +450,8 @@ static int probe_all(blkid_cache cache, int only_if_new)
 	char line[1024];
 	char ptname0[128 + 1], ptname1[128 + 1], *ptname = NULL;
 	char *ptnames[2];
-	dev_t devs[2];
+	dev_t devs[2] = { 0, 0 };
+	int iswhole[2] = { 0, 0 };
 	int ma, mi;
 	unsigned long long sz;
 	int lens[2] = { 0, 0 };
@@ -489,7 +489,7 @@ static int probe_all(blkid_cache cache, int only_if_new)
 			continue;
 		devs[which] = makedev(ma, mi);
 
-		DBG(DEVNAME, ul_debug("read partition name %s", ptname));
+		DBG(DEVNAME, ul_debug("read device name %s", ptname));
 
 		/* Skip whole disk devs unless they have no partitions.
 		 * If base name of device has changed, also
@@ -499,15 +499,14 @@ static int probe_all(blkid_cache cache, int only_if_new)
 		 *
 		 * Skip extended partitions.
 		 * heuristic: size is 1
-		 *
-		 * FIXME: skip /dev/{ida,cciss,rd} whole-disk devs
 		 */
 
 		lens[which] = strlen(ptname);
+		iswhole[which] = sysfs_devno_is_wholedisk(devs[which]);
 
-		/* ends in a digit, clearly a partition, so check */
-		if (isdigit(ptname[lens[which] - 1])) {
-			DBG(DEVNAME, ul_debug("partition dev %s, devno 0x%04X",
+		/* probably partition, so check */
+		if (!iswhole[which]) {
+			DBG(DEVNAME, ul_debug(" partition dev %s, devno 0x%04X",
 				   ptname, (unsigned int) devs[which]));
 
 			if (sz > 1)
@@ -521,7 +520,9 @@ static int probe_all(blkid_cache cache, int only_if_new)
 		 * on it, remove the whole-disk dev from the cache if
 		 * it exists.
 		 */
-		if (lens[last] && !strncmp(ptnames[last], ptname, lens[last])) {
+		if (lens[last] && iswhole[last]
+		    && !strncmp(ptnames[last], ptname, lens[last])) {
+
 			list_for_each_safe(p, pnext, &cache->bic_devs) {
 				blkid_dev tmp;
 
@@ -529,26 +530,27 @@ static int probe_all(blkid_cache cache, int only_if_new)
 				tmp = list_entry(p, struct blkid_struct_dev,
 						 bid_devs);
 				if (tmp->bid_devno == devs[last]) {
-					DBG(DEVNAME, ul_debug("freeing %s",
+					DBG(DEVNAME, ul_debug(" freeing %s",
 						       tmp->bid_name));
 					blkid_free_dev(tmp);
 					cache->bic_flags |= BLKID_BIC_FL_CHANGED;
 					break;
 				}
 			}
-			lens[last] = 0;
+			lens[last] = 0;		/* mark as checked */
 		}
 		/*
 		 * If last was not checked because it looked like a whole-disk
 		 * dev, and the device's base name has changed,
 		 * check last as well.
 		 */
-		if (lens[last] && strncmp(ptnames[last], ptname, lens[last])) {
-			DBG(DEVNAME, ul_debug("whole dev %s, devno 0x%04X",
+		if (lens[last] && strncmp(ptnames[last], ptname, lens[last]) != 0) {
+			DBG(DEVNAME, ul_debug(" whole dev %s, devno 0x%04X",
 				   ptnames[last], (unsigned int) devs[last]));
 			probe_one(cache, ptnames[last], devs[last], 0,
 				  only_if_new, 0);
-			lens[last] = 0;
+
+			lens[last] = 0;		/* mark as checked */
 		}
 	}
 

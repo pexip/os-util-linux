@@ -29,10 +29,17 @@
 #include "smartcolsP.h"
 
 #ifdef HAVE_WIDECHAR
-#define UTF_V	"\342\224\202"	/* U+2502, Vertical line drawing char */
-#define UTF_VR	"\342\224\234"	/* U+251C, Vertical and right */
-#define UTF_H	"\342\224\200"	/* U+2500, Horizontal */
-#define UTF_UR	"\342\224\224"	/* U+2514, Up and right */
+#define UTF_V	"\342\224\202"	/* U+2502, Vertical line drawing char  |   */
+#define UTF_VR	"\342\224\234"	/* U+251C, Vertical and right          |-  */
+#define UTF_H	"\342\224\200"	/* U+2500, Horizontal                  -   */
+#define UTF_UR	"\342\224\224"	/* U+2514, Up and right                '-  */
+
+#define UTF_V3  "\342\224\206"  /* U+2506 Triple Dash Vertical          |  */
+#define UTF_H3  "\342\224\210"  /* U+2504 Triple Dash Horizontal        -  */
+#define UTF_DR  "\342\224\214"  /* U+250C Down and Right                ,- */
+#define UTF_DH  "\342\224\254"  /* U+252C Down and Horizontal           |' */
+
+#define UTF_TR  "\342\226\266"  /* U+25B6 Black Right-Pointing Triangle  >  */
 #endif /* !HAVE_WIDECHAR */
 
 #define is_last_column(_tb, _cl) \
@@ -76,6 +83,7 @@ struct libscols_table *scols_new_table(void)
 
 	INIT_LIST_HEAD(&tb->tb_lines);
 	INIT_LIST_HEAD(&tb->tb_columns);
+	INIT_LIST_HEAD(&tb->tb_groups);
 
 	DBG(TAB, ul_debugobj(tb, "alloc"));
 	ON_DBG(INIT, check_padding_debug(tb));
@@ -95,6 +103,17 @@ void scols_ref_table(struct libscols_table *tb)
 		tb->refcount++;
 }
 
+static void scols_table_remove_groups(struct libscols_table *tb)
+{
+	while (!list_empty(&tb->tb_groups)) {
+		struct libscols_group *gr = list_entry(tb->tb_groups.next,
+							struct libscols_group, gr_groups);
+		scols_group_remove_children(gr);
+		scols_group_remove_members(gr);
+		scols_unref_group(gr);
+	}
+}
+
 /**
  * scols_unref_table:
  * @tb: a pointer to a struct libscols_table instance
@@ -105,16 +124,40 @@ void scols_ref_table(struct libscols_table *tb)
 void scols_unref_table(struct libscols_table *tb)
 {
 	if (tb && (--tb->refcount <= 0)) {
-		DBG(TAB, ul_debugobj(tb, "dealloc"));
+		DBG(TAB, ul_debugobj(tb, "dealloc <-"));
+		scols_table_remove_groups(tb);
 		scols_table_remove_lines(tb);
 		scols_table_remove_columns(tb);
 		scols_unref_symbols(tb->symbols);
 		scols_reset_cell(&tb->title);
+		free(tb->grpset);
 		free(tb->linesep);
 		free(tb->colsep);
 		free(tb->name);
 		free(tb);
+		DBG(TAB, ul_debug("<- done"));
 	}
+}
+
+/* Private API */
+int scols_table_next_group(struct libscols_table *tb,
+			  struct libscols_iter *itr,
+			  struct libscols_group **gr)
+{
+	int rc = 1;
+
+	if (!tb || !itr || !gr)
+		return -EINVAL;
+	*gr = NULL;
+
+	if (!itr->head)
+		SCOLS_ITER_INIT(itr, &tb->tb_groups);
+	if (itr->p != itr->head) {
+		SCOLS_ITER_ITERATE(itr, *gr, struct libscols_group, gr_groups);
+		rc = 0;
+	}
+
+	return rc;
 }
 
 /**
@@ -180,6 +223,9 @@ int scols_table_add_column(struct libscols_table *tb, struct libscols_column *cl
 	int rc = 0;
 
 	if (!tb || !cl || cl->table)
+		return -EINVAL;
+
+	if (!list_empty(&cl->cl_columns))
 		return -EINVAL;
 
 	if (cl->flags & SCOLS_FL_TREE)
@@ -429,6 +475,35 @@ int scols_table_next_column(struct libscols_table *tb,
 }
 
 /**
+ * scols_table_set_columns_iter:
+ * @tb: tab pointer
+ * @itr: iterator
+ * @cl: tab entry
+ *
+ * Sets @iter to the position of @cl in the file @tb.
+ *
+ * Returns: 0 on success, negative number in case of error.
+ *
+ * Since: 2.35
+ */
+int scols_table_set_columns_iter(
+			struct libscols_table *tb,
+			struct libscols_iter *itr,
+			struct libscols_column *cl)
+{
+	if (!tb || !itr || !cl)
+		return -EINVAL;
+
+	if (cl->table != tb)
+		return -EINVAL;
+
+	SCOLS_ITER_INIT(itr, &tb->tb_columns);
+	itr->p = &cl->cl_columns;
+
+	return 0;
+}
+
+/**
  * scols_table_get_ncols:
  * @tb: table
  *
@@ -549,6 +624,9 @@ struct libscols_column *scols_table_get_column(struct libscols_table *tb,
 int scols_table_add_line(struct libscols_table *tb, struct libscols_line *ln)
 {
 	if (!tb || !ln)
+		return -EINVAL;
+
+	if (!list_empty(&ln->ln_lines))
 		return -EINVAL;
 
 	if (tb->ncols > ln->ncells) {
@@ -798,15 +876,35 @@ int scols_table_set_default_symbols(struct libscols_table *tb)
 #if defined(HAVE_WIDECHAR)
 	if (!scols_table_is_ascii(tb) &&
 	    !strcmp(nl_langinfo(CODESET), "UTF-8")) {
+		/* tree chart */
 		scols_symbols_set_branch(sy, UTF_VR UTF_H);
 		scols_symbols_set_vertical(sy, UTF_V " ");
 		scols_symbols_set_right(sy, UTF_UR UTF_H);
+		/* groups chart */
+		scols_symbols_set_group_horizontal(sy, UTF_H3);
+		scols_symbols_set_group_vertical(sy, UTF_V3);
+
+		scols_symbols_set_group_first_member(sy,  UTF_DR UTF_H3 UTF_TR);
+		scols_symbols_set_group_last_member(sy,   UTF_UR UTF_DH UTF_TR);
+		scols_symbols_set_group_middle_member(sy, UTF_VR UTF_H3 UTF_TR);
+		scols_symbols_set_group_last_child(sy,    UTF_UR UTF_H3);
+		scols_symbols_set_group_middle_child(sy,  UTF_VR UTF_H3);
 	} else
 #endif
 	{
+		/* tree chart */
 		scols_symbols_set_branch(sy, "|-");
 		scols_symbols_set_vertical(sy, "| ");
 		scols_symbols_set_right(sy, "`-");
+		/* groups chart */
+		scols_symbols_set_group_horizontal(sy, "-");
+		scols_symbols_set_group_vertical(sy, "|");
+
+		scols_symbols_set_group_first_member(sy, ",->");
+		scols_symbols_set_group_last_member(sy, "'->");
+		scols_symbols_set_group_middle_member(sy, "|->");
+		scols_symbols_set_group_last_child(sy, "`-");
+		scols_symbols_set_group_middle_child(sy, "|-");
 	}
 	scols_symbols_set_title_padding(sy, " ");
 	scols_symbols_set_cell_padding(sy, " ");
@@ -1064,16 +1162,44 @@ int scols_table_enable_header_repeat(struct libscols_table *tb, int enable)
  * @enable: 1 or 0
  *
  * The extra space after last column is ignored by default. The output
- * maximization use the extra space for all columns.
+ * maximization add padding for all columns.
+ *
+ * This setting is mutually exclusive to scols_table_enable_minout().
  *
  * Returns: 0 on success, negative number in case of an error.
  */
 int scols_table_enable_maxout(struct libscols_table *tb, int enable)
 {
-	if (!tb)
+	if (!tb || tb->minout)
 		return -EINVAL;
+
 	DBG(TAB, ul_debugobj(tb, "maxout: %s", enable ? "ENABLE" : "DISABLE"));
 	tb->maxout = enable ? 1 : 0;
+	return 0;
+}
+
+/**
+ * scols_table_enable_minout:
+ * @tb: table
+ * @enable: 1 or 0
+ *
+ * Force library to terminate line after last column with data. The extra
+ * padding is not added to the empty cells at the end of the line. The default is fill
+ * tailing empty cells except the last line cell.
+ *
+ * This setting is mutually exclusive to scols_table_enable_maxout().
+ *
+ * Returns: 0 on success, negative number in case of an error.
+ *
+ * Since: 2.35
+ */
+int scols_table_enable_minout(struct libscols_table *tb, int enable)
+{
+	if (!tb || tb->maxout)
+		return -EINVAL;
+
+	DBG(TAB, ul_debugobj(tb, "minout: %s", enable ? "ENABLE" : "DISABLE"));
+	tb->minout = enable ? 1 : 0;
 	return 0;
 }
 
@@ -1247,6 +1373,19 @@ int scols_table_is_maxout(const struct libscols_table *tb)
 }
 
 /**
+ * scols_table_is_minout
+ * @tb: table
+ *
+ * Returns: 1 if output minimization is enabled or 0
+ *
+ * Since: 2.35
+ */
+int scols_table_is_minout(const struct libscols_table *tb)
+{
+	return tb->minout;
+}
+
+/**
  * scols_table_is_tree:
  * @tb: table
  *
@@ -1349,16 +1488,26 @@ static int sort_line_children(struct libscols_line *ln, struct libscols_column *
 {
 	struct list_head *p;
 
-	if (list_empty(&ln->ln_branch))
-		return 0;
+	if (!list_empty(&ln->ln_branch)) {
+		list_for_each(p, &ln->ln_branch) {
+			struct libscols_line *chld =
+					list_entry(p, struct libscols_line, ln_children);
+			sort_line_children(chld, cl);
+		}
 
-	list_for_each(p, &ln->ln_branch) {
-		struct libscols_line *chld =
-				list_entry(p, struct libscols_line, ln_children);
-		sort_line_children(chld, cl);
+		list_sort(&ln->ln_branch, cells_cmp_wrapper_children, cl);
 	}
 
-	list_sort(&ln->ln_branch, cells_cmp_wrapper_children, cl);
+	if (is_first_group_member(ln)) {
+		list_for_each(p, &ln->group->gr_children) {
+			struct libscols_line *chld =
+					list_entry(p, struct libscols_line, ln_children);
+			sort_line_children(chld, cl);
+		}
+
+		list_sort(&ln->group->gr_children, cells_cmp_wrapper_children, cl);
+	}
+
 	return 0;
 }
 

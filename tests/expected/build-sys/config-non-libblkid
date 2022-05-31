@@ -1,13 +1,15 @@
-cfdisk:  libfdisk libncursesw libsmartcols libtinfo libuuid 
+cfdisk:  libdl libfdisk libncursesw libsmartcols libtinfo libuuid 
 column:  libsmartcols 
 fdisk:  libfdisk libreadline libsmartcols libtinfo libuuid 
 fincore:  libsmartcols 
+irqtop:  libdl libncursesw librt libsmartcols libtinfo 
 libfdisk.so.1.1.0:  libuuid 
 libsmartcols.so.1.1.0:  
 libuuid.so.1.3.0:  
 losetup:  libsmartcols 
 lscpu:  libsmartcols 
 lsipc:  libsmartcols 
+lsirq:  libsmartcols 
 lslogins:  libsmartcols libsystemd 
 lsmem:  libsmartcols 
 mkswap:  libuuid 
@@ -21,6 +23,7 @@ wdctl:  libsmartcols
 zramctl:  libsmartcols 
 agetty:  
 blkdiscard:  librt 
+blkid.static: STATIC
 blkzone:  
 blockdev:  
 cal:  libtinfo 
@@ -37,13 +40,15 @@ ctrlaltdel:
 dmesg:  librt libtinfo 
 fallocate:  
 fdformat:  
+fdisk.static: STATIC
 flock:  librt 
 fsck.cramfs:  libz 
 fsck.minix:  
 fsfreeze:  
 getopt:  
+hardlink:  libpcre2-8 
 hexdump:  libtinfo 
-hwclock:  libm 
+hwclock:  libm librt 
 ionice:  
 ipcmk:  
 ipcrm:  
@@ -55,6 +60,7 @@ ldattach:
 logger:  libsystemd 
 login:  libpam libpam_misc 
 look:  
+losetup.static: STATIC
 mcookie:  
 mesg:  
 mkfs:  
@@ -62,9 +68,11 @@ mkfs.bfs:
 mkfs.cramfs:  libz 
 mkfs.minix:  
 more:  libtinfo 
+mount.static: STATIC
 namei:  
 nologin:  
 nsenter:  
+nsenter.static: STATIC
 pivot_root:  
 raw:  
 readprofile:  
@@ -72,19 +80,23 @@ rename:
 renice:  
 rev:  
 rtcwake:  
-runuser:  libpam libpam_misc libutil 
+runuser:  libpam libpam_misc librt libutil 
 script:  librt libutil 
+scriptlive:  librt libutil 
 scriptreplay:  
 setarch:  
-setpriv:  ap-ng 
+setpriv:  libcap-ng 
 setsid:  
 setterm:  libtinfo 
-su:  libpam libpam_misc libutil 
-sulogin:  rypt 
+sfdisk.static: STATIC
+su:  libpam libpam_misc librt libutil 
+sulogin:  libcrypt 
 switch_root:  
 taskset:  
 ul:  libtinfo 
+umount.static: STATIC
 unshare:  
+unshare.static: STATIC
 utmpdump:  
 wall:  
 whereis:  

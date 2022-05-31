@@ -1,7 +1,9 @@
 /*
  * Fundamental C definitions.
+ *
+ * No copyright is claimed.  This code is in the public domain; do with
+ * it what you wish.
  */
-
 #ifndef UTIL_LINUX_C_H
 #define UTIL_LINUX_C_H
 
@@ -34,7 +36,8 @@
 #endif
 
 /*
- * Compiler-specific stuff
+ * __GNUC_PREREQ is deprecated in favour of __has_attribute() and
+ * __has_feature(). The __has macros are supported by clang and gcc>=5.
  */
 #ifndef __GNUC_PREREQ
 # if defined __GNUC__ && defined __GNUC_MINOR__
@@ -62,10 +65,22 @@
 #endif /* !__GNUC__ */
 
 /*
+ * It evaluates to 1 if the attribute/feature is supported by the current
+ * compilation target. Fallback for old compilers.
+ */
+#ifndef __has_attribute
+  #define __has_attribute(x) 0
+#endif
+
+#ifndef __has_feature
+  #define __has_feature(x) 0
+#endif
+
+/*
  * Function attributes
  */
 #ifndef __ul_alloc_size
-# if __GNUC_PREREQ (4, 3)
+# if (__has_attribute(alloc_size) && __has_attribute(warn_unused_result)) || __GNUC_PREREQ (4, 3)
 #  define __ul_alloc_size(s) __attribute__((alloc_size(s), warn_unused_result))
 # else
 #  define __ul_alloc_size(s)
@@ -73,11 +88,17 @@
 #endif
 
 #ifndef __ul_calloc_size
-# if __GNUC_PREREQ (4, 3)
+# if (__has_attribute(alloc_size) && __has_attribute(warn_unused_result)) || __GNUC_PREREQ (4, 3)
 #  define __ul_calloc_size(n, s) __attribute__((alloc_size(n, s), warn_unused_result))
 # else
 #  define __ul_calloc_size(n, s)
 # endif
+#endif
+
+#if __has_attribute(returns_nonnull) || __GNUC_PREREQ (4, 9)
+# define __ul_returns_nonnull __attribute__((returns_nonnull))
+#else
+# define __ul_returns_nonnull
 #endif
 
 /*
@@ -329,6 +350,7 @@ static inline int xusleep(useconds_t usec)
 #define USAGE_OPTIONS    _("\nOptions:\n")
 #define USAGE_FUNCTIONS  _("\nFunctions:\n")
 #define USAGE_COMMANDS   _("\nCommands:\n")
+#define USAGE_ARGUMENTS   _("\nArguments:\n")
 #define USAGE_COLUMNS    _("\nAvailable output columns:\n")
 #define USAGE_SEPARATOR    "\n"
 
@@ -341,18 +363,19 @@ static inline int xusleep(useconds_t usec)
 		, " -h, --help",    USAGE_OPTSTR_HELP \
 		, " -V, --version", USAGE_OPTSTR_VERSION
 
+#define USAGE_ARG_SEPARATOR    "\n"
+#define USAGE_ARG_SIZE(_name) \
+		_(" %s arguments may be followed by the suffixes for\n" \
+		  "   GiB, TiB, PiB, EiB, ZiB, and YiB (the \"iB\" is optional)\n"), _name
+
 #define USAGE_MAN_TAIL(_man)   _("\nFor more details see %s.\n"), _man
 
 #define UTIL_LINUX_VERSION _("%s from %s\n"), program_invocation_short_name, PACKAGE_STRING
 
-/*
- * scanf modifiers for "strings allocation"
- */
-#ifdef HAVE_SCANF_MS_MODIFIER
-#define UL_SCNsA	"%ms"
-#elif defined(HAVE_SCANF_AS_MODIFIER)
-#define UL_SCNsA	"%as"
-#endif
+#define print_version(eval) __extension__ ({ \
+		printf(UTIL_LINUX_VERSION); \
+		exit(eval); \
+})
 
 /*
  * seek stuff
@@ -380,17 +403,11 @@ static inline int xusleep(useconds_t usec)
  * inlining the function because inlining currently breaks the blacklisting
  * mechanism of AddressSanitizer.
  */
-#if defined(__has_feature)
-# if __has_feature(address_sanitizer)
-#  define UL_ASAN_BLACKLIST __attribute__((noinline)) __attribute__((no_sanitize_memory)) __attribute__((no_sanitize_address))
-# else
-#  define UL_ASAN_BLACKLIST	/* nothing */
-# endif
+#if __has_feature(address_sanitizer) && __has_attribute(no_sanitize_memory) && __has_attribute(no_sanitize_address)
+# define UL_ASAN_BLACKLIST __attribute__((noinline)) __attribute__((no_sanitize_memory)) __attribute__((no_sanitize_address))
 #else
 # define UL_ASAN_BLACKLIST	/* nothing */
 #endif
-
-
 
 /*
  * Note that sysconf(_SC_GETPW_R_SIZE_MAX) returns *initial* suggested size for

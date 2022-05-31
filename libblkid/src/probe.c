@@ -203,7 +203,7 @@ blkid_probe blkid_new_probe_from_filename(const char *filename)
 	int fd;
 	blkid_probe pr = NULL;
 
-	fd = open(filename, O_RDONLY|O_CLOEXEC);
+	fd = open(filename, O_RDONLY|O_CLOEXEC|O_NONBLOCK);
 	if (fd < 0)
 		return NULL;
 
@@ -217,8 +217,7 @@ blkid_probe blkid_new_probe_from_filename(const char *filename)
 	pr->flags |= BLKID_FL_PRIVATE_FD;
 	return pr;
 err:
-	if (fd >= 0)
-		close(fd);
+	close(fd);
 	blkid_free_probe(pr);
 	return NULL;
 }
@@ -311,9 +310,7 @@ int blkid_probe_chain_save_values(blkid_probe pr, struct blkid_chain *chn,
 		if (v->chain != chn)
 			continue;
 
-		list_del(&v->prvals);
-		INIT_LIST_HEAD(&v->prvals);
-
+		list_del_init(&v->prvals);
 		list_add_tail(&v->prvals, vals);
 	}
 	return 0;
@@ -538,7 +535,7 @@ static struct blkid_bufinfo *read_buffer(blkid_probe pr, uint64_t real_off, uint
 	ssize_t ret;
 	struct blkid_bufinfo *bf = NULL;
 
-	if (blkid_llseek(pr->fd, real_off, SEEK_SET) < 0) {
+	if (lseek(pr->fd, real_off, SEEK_SET) == (off_t) -1) {
 		errno = 0;
 		return NULL;
 	}
@@ -625,7 +622,7 @@ static int hide_buffer(blkid_probe pr, uint64_t off, uint64_t len)
 
 			data = real_off ? x->data + (real_off - x->off) : x->data;
 
-			DBG(BUFFER, ul_debug("\thidding: off=%"PRIu64" len=%"PRIu64,
+			DBG(BUFFER, ul_debug("\thiding: off=%"PRIu64" len=%"PRIu64,
 						off, len));
 			memset(data, 0, len);
 			ct++;
@@ -696,9 +693,9 @@ unsigned char *blkid_probe_get_buffer(blkid_probe pr, uint64_t off, uint64_t len
  * blkid_probe_reset_buffers:
  * @pr: prober
  *
- * libblkid reuse all already read buffers from the device. The bufferes may be
+ * libblkid reuse all already read buffers from the device. The buffers may be
  * modified by blkid_probe_hide_range(). This function reset and free all
- * cached bufferes. The next blkid_do_probe() will read all data from the
+ * cached buffers. The next blkid_do_probe() will read all data from the
  * device.
  *
  * Returns: <0 in case of failure, or 0 on success.
@@ -799,7 +796,7 @@ static int is_sector_readable(int fd, uint64_t sector)
 	char buf[512];
 	ssize_t sz;
 
-	if (blkid_llseek(fd, sector * 512, SEEK_SET) < 0)
+	if (lseek(fd, sector * 512, SEEK_SET) == (off_t) -1)
 		goto failed;
 
 	sz = read(fd, buf, sizeof(buf));
@@ -848,10 +845,15 @@ failed:
  * @off: begin of probing area
  * @size: size of probing area (zero means whole device/file)
  *
- * Assigns the device to probe control struct, resets internal buffers and
- * resets the current probing.
+ * Assigns the device to probe control struct, resets internal buffers, resets
+ * the current probing, and close previously associated device (if open by
+ * libblkid).
  *
- * Returns: -1 in case of failure, or 0 on success.
+ * If @fd is < 0 than only resets the prober and returns 1. Note that
+ * blkid_reset_probe() keeps the device associated with the prober, but
+ * blkid_probe_set_device() does complete reset.
+ *
+ * Returns: -1 in case of failure, 0 on success and 1 on reset.
  */
 int blkid_probe_set_device(blkid_probe pr, int fd,
 		blkid_loff_t off, blkid_loff_t size)
@@ -865,6 +867,11 @@ int blkid_probe_set_device(blkid_probe pr, int fd,
 
 	if ((pr->flags & BLKID_FL_PRIVATE_FD) && pr->fd >= 0)
 		close(pr->fd);
+
+	if (pr->disk_probe) {
+		blkid_free_probe(pr->disk_probe);
+		pr->disk_probe = NULL;
+	}
 
 	pr->flags &= ~BLKID_FL_PRIVATE_FD;
 	pr->flags &= ~BLKID_FL_TINY_DEV;
@@ -880,6 +887,9 @@ int blkid_probe_set_device(blkid_probe pr, int fd,
 	pr->wipe_off = 0;
 	pr->wipe_size = 0;
 	pr->wipe_chain = NULL;
+
+	if (fd < 0)
+		return 1;
 
 #if defined(POSIX_FADV_RANDOM) && defined(HAVE_POSIX_FADVISE)
 	/* Disable read-ahead */
@@ -935,6 +945,14 @@ int blkid_probe_set_device(blkid_probe pr, int fd,
 	    blkid_probe_is_wholedisk(pr) &&
 	    ioctl(fd, CDROM_GET_CAPABILITY, NULL) >= 0) {
 
+# ifdef CDROM_DRIVE_STATUS
+		switch (ioctl(fd, CDROM_DRIVE_STATUS, CDSL_CURRENT)) {
+		case CDS_TRAY_OPEN:
+		case CDS_NO_DISC:
+			errno = ENOMEDIUM;
+			goto err;
+		}
+# endif
 		pr->flags |= BLKID_FL_CDROM_DEV;
 		cdrom_size_correction(pr);
 	}
@@ -1163,7 +1181,7 @@ int blkid_do_probe(blkid_probe pr)
  *  </programlisting>
  * </example>
  *
- * See also blkid_probe_step_back() if you cannot use this build-in wipe
+ * See also blkid_probe_step_back() if you cannot use this built-in wipe
  * function, but you want to use libblkid probing as a source for wiping.
  *
  * Returns: 0 on success, and -1 in case of error.
@@ -1172,7 +1190,7 @@ int blkid_do_wipe(blkid_probe pr, int dryrun)
 {
 	const char *off = NULL;
 	size_t len = 0;
-	uint64_t offset, magoff, l;
+	uint64_t offset, magoff;
 	char buf[BUFSIZ];
 	int fd, rc = 0;
 	struct blkid_chain *chn;
@@ -1212,8 +1230,7 @@ int blkid_do_wipe(blkid_probe pr, int dryrun)
 	    "do_wipe [offset=0x%"PRIx64" (%"PRIu64"), len=%zu, chain=%s, idx=%d, dryrun=%s]\n",
 	    offset, offset, len, chn->driver->name, chn->idx, dryrun ? "yes" : "not"));
 
-	l = blkid_llseek(fd, offset, SEEK_SET);
-	if ((blkid_loff_t)l == (off_t) -1)
+	if (lseek(fd, offset, SEEK_SET) == (off_t) -1)
 		return -1;
 
 	memset(buf, 0, len);
@@ -1227,7 +1244,9 @@ int blkid_do_wipe(blkid_probe pr, int dryrun)
 
 		return blkid_probe_step_back(pr);
 
-	} else if (dryrun) {
+	}
+
+	if (dryrun) {
 		/* wipe in memory only */
 		blkid_probe_hide_range(pr, magoff, len);
 		return blkid_probe_step_back(pr);
@@ -1248,7 +1267,7 @@ int blkid_do_wipe(blkid_probe pr, int dryrun)
  * according to the current libblkid probing result.
  *
  * Note that blkid_probe_hide_range() changes semantic of this function and
- * cached bufferes are not reset, but library uses in-memory modified
+ * cached buffers are not reset, but library uses in-memory modified
  * buffers to call the next probing function.
  *
  * <example>
@@ -1886,13 +1905,6 @@ struct blkid_prval *__blkid_probe_lookup_value(blkid_probe pr, const char *name)
 
 /* converts DCE UUID (uuid[16]) to human readable string
  * - the @len should be always 37 */
-#ifdef HAVE_LIBUUID
-void blkid_unparse_uuid(const unsigned char *uuid, char *str,
-			size_t len __attribute__((__unused__)))
-{
-	uuid_unparse(uuid, str);
-}
-#else
 void blkid_unparse_uuid(const unsigned char *uuid, char *str, size_t len)
 {
 	snprintf(str, len,
@@ -1903,7 +1915,6 @@ void blkid_unparse_uuid(const unsigned char *uuid, char *str, size_t len)
 		uuid[8], uuid[9],
 		uuid[10], uuid[11], uuid[12], uuid[13], uuid[14],uuid[15]);
 }
-#endif
 
 /* like uuid_is_null() from libuuid, but works with arbitrary size of UUID */
 int blkid_uuid_is_empty(const unsigned char *buf, size_t len)
@@ -1945,8 +1956,8 @@ size_t blkid_ltrim_whitespace(unsigned char *str)
  * wiped area then the signature has been added later and LVM superblock
  * should be ignore.
  *
- * Note that this heuristic is not 100% reliable, for example "pvcreate --zero
- * n" allows to keep the begin of the device unmodified. It's probably better
+ * Note that this heuristic is not 100% reliable, for example "pvcreate --zero n"
+ * can be used to keep the begin of the device unmodified. It's probably better
  * to use this heuristic for conflicts between superblocks and partition tables
  * than for conflicts between filesystem superblocks -- existence of unwanted
  * partition table is very unusual, because PT is pretty visible (parsed and
@@ -1988,7 +1999,6 @@ void blkid_probe_set_wiper(blkid_probe pr, uint64_t off, uint64_t size)
 			chn->driver->name,
 			chn->driver->idinfos[chn->idx]->name,
 			pr->wipe_off, pr->wipe_size));
-	return;
 }
 
 /*

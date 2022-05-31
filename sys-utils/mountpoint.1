@@ -1,4 +1,4 @@
-.TH MOUNTPOINT 1 "July 2014" "util-linux" "User Commands"
+.TH MOUNTPOINT 1 "August 2019" "util-linux" "User Commands"
 .SH NAME
 mountpoint \- see if a directory or file is a mountpoint
 .SH SYNOPSIS
@@ -28,6 +28,11 @@ directory.
 .BR \-q , " \-\-quiet"
 Be quiet - don't print anything.
 .TP
+.B "\-\-nofollow"
+Do not follow symbolic link if it the last element of the
+.I directory
+path.
+.TP
 .BR \-x , " \-\-devno"
 Show the major/minor numbers of the given blockdevice on standard output.
 .TP
@@ -38,19 +43,17 @@ Display version information and exit.
 Display help text and exit.
 .SH EXIT STATUS
 Zero if the directory or file is a mountpoint, non-zero if not.
-.SH AUTHOR
-.PP
-Karel Zak <kzak@redhat.com>
 .SH ENVIRONMENT
 .IP LIBMOUNT_DEBUG=all
 enables libmount debug output.
 .SH NOTES
-.PP
 The util-linux
 .B mountpoint
 implementation was written from scratch for libmount.  The original version
 for sysvinit suite was written by Miquel van Smoorenburg.
 
+.SH AUTHORS
+Karel Zak <kzak@redhat.com>
 .SH SEE ALSO
 .BR mount (8)
 .SH AVAILABILITY

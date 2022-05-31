@@ -96,8 +96,8 @@ static int ask(char *name)
 	buf[1] = '\0';
 	if (rpmatch(buf) == RPMATCH_YES)
 		return 0;
-	else
-		return 1;
+
+	return 1;
 }
 
 static int do_symlink(char *from, char *to, char *s, int verbose, int noact,
@@ -167,12 +167,21 @@ static int do_file(char *from, char *to, char *s, int verbose, int noact,
 {
 	char *newname = NULL, *file=NULL;
 	int ret = 1;
+	struct stat sb;
 
-	if (access(s, F_OK) != 0) {
+	if ( faccessat(AT_FDCWD, s, F_OK, AT_SYMLINK_NOFOLLOW) != 0 &&
+	     errno != EINVAL )
+	   /* Skip if AT_SYMLINK_NOFOLLOW is not supported; lstat() below will
+	      detect the access error */
+	{
 		warn(_("%s: not accessible"), s);
 		return 2;
 	}
 
+	if (lstat(s, &sb) == -1) {
+		warn(_("stat of %s failed"), s);
+		return 2;
+	}
 	if (strchr(from, '/') == NULL && strchr(to, '/') == NULL)
 		file = strrchr(s, '/');
 	if (file == NULL)
@@ -243,7 +252,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while ((c = getopt_long(argc, argv, "vsVhnoi", longopts, NULL)) != -1)
 		switch (c) {
@@ -264,9 +273,9 @@ int main(int argc, char **argv)
 		case 's':
 			do_rename = do_symlink;
 			break;
+
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		case 'h':
 			usage();
 		default:

@@ -46,6 +46,7 @@
 #define MNT_DEBUG_MONITOR	(1 << 11)
 #define MNT_DEBUG_BTRFS		(1 << 12)
 #define MNT_DEBUG_LOOP		(1 << 13)
+#define MNT_DEBUG_VERITY	(1 << 14)
 
 #define MNT_DEBUG_ALL		0xFFFF
 
@@ -97,6 +98,7 @@ extern int mnt_valid_tagname(const char *tagname);
 extern int append_string(char **a, const char *b);
 
 extern const char *mnt_statfs_get_fstype(struct statfs *vfs);
+extern int is_procfs_fd(int fd);
 extern int is_file_empty(const char *name);
 
 extern int mnt_is_readonly(const char *path)
@@ -120,8 +122,9 @@ extern int mnt_get_filesystems(char ***filesystems, const char *pattern);
 extern void mnt_free_filesystems(char **filesystems);
 
 extern char *mnt_get_kernel_cmdline_option(const char *name);
-extern int mnt_guess_system_root(dev_t devno, struct libmnt_cache *cache, char **path);
 extern int mnt_stat_mountpoint(const char *target, struct stat *st);
+extern int mnt_lstat_mountpoint(const char *target, struct stat *st);
+extern FILE *mnt_get_procfs_memstream(int fd, char **membuf);
 
 /* tab.c */
 extern int is_mountinfo(struct libmnt_table *tb);
@@ -137,6 +140,10 @@ extern struct libmnt_fs *mnt_table_get_fs_root(struct libmnt_table *tb,
 					struct libmnt_fs *fs,
 					unsigned long mountflags,
 					char **fsroot);
+
+extern int __mnt_table_is_fs_mounted(	struct libmnt_table *tb,
+					struct libmnt_fs *fstab_fs,
+					const char *tgt_prefix);
 
 /*
  * Generic iterator
@@ -171,6 +178,7 @@ struct libmnt_iter {
  */
 struct libmnt_fs {
 	struct list_head ents;
+	struct libmnt_table *tab;
 
 	int		refcount;	/* reference counter */
 	int		id;		/* mountinfo[1]: ID */
@@ -289,6 +297,7 @@ struct libmnt_context
 	char	*optstr_pattern;	/* for mnt_match_options() */
 
 	struct libmnt_fs *fs;		/* filesystem description (type, mountpoint, device, ...) */
+	struct libmnt_fs *fs_template;	/* used for @fs on mnt_reset_context() */
 
 	struct libmnt_table *fstab;	/* fstab (or mtab for some remounts) entries */
 	struct libmnt_table *mtab;	/* mtab entries */
@@ -322,6 +331,8 @@ struct libmnt_context
 
 	const char	*utab_path; /* path to utab */
 	int		utab_writable; /* is utab writable */
+
+	char		*tgt_prefix;	/* path used for all targets */
 
 	int	flags;		/* private context flags */
 
@@ -370,6 +381,7 @@ struct libmnt_context
 #define MNT_FL_MOUNTOPTS_FIXED  (1 << 27)
 #define MNT_FL_TABPATHS_CHECKED	(1 << 28)
 #define MNT_FL_FORCED_RDONLY	(1 << 29)	/* mounted read-only on write-protected device */
+#define MNT_FL_VERITYDEV_READY	(1 << 30)	/* /dev/mapper/<FOO> initialized by the library */
 
 /* default flags */
 #define MNT_FL_DEFAULT		0
@@ -404,6 +416,7 @@ extern int __mnt_fs_set_fstype_ptr(struct libmnt_fs *fs, char *fstype)
 			__attribute__((nonnull(1)));
 
 /* context.c */
+extern struct libmnt_context *mnt_copy_context(struct libmnt_context *o);
 extern int mnt_context_mtab_writable(struct libmnt_context *cxt);
 extern int mnt_context_utab_writable(struct libmnt_context *cxt);
 extern const char *mnt_context_get_writable_tabpath(struct libmnt_context *cxt);
@@ -446,6 +459,17 @@ extern int mnt_context_set_tabfilter(struct libmnt_context *cxt,
 extern int mnt_context_get_generic_excode(int rc, char *buf, size_t bufsz, char *fmt, ...);
 extern int mnt_context_get_mount_excode(struct libmnt_context *cxt, int mntrc, char *buf, size_t bufsz);
 extern int mnt_context_get_umount_excode(struct libmnt_context *cxt, int mntrc, char *buf, size_t bufsz);
+
+extern int mnt_context_has_template(struct libmnt_context *cxt);
+extern int mnt_context_apply_template(struct libmnt_context *cxt);
+extern int mnt_context_save_template(struct libmnt_context *cxt);
+
+extern int mnt_context_apply_fs(struct libmnt_context *cxt, struct libmnt_fs *fs);
+
+extern int mnt_context_is_veritydev(struct libmnt_context *cxt)
+			__attribute__((nonnull));
+extern int mnt_context_setup_veritydev(struct libmnt_context *cxt);
+extern int mnt_context_deferred_delete_veritydev(struct libmnt_context *cxt);
 
 /* tab_update.c */
 extern int mnt_update_set_filename(struct libmnt_update *upd,
