@@ -221,12 +221,12 @@ static int column_name_to_id(const char *name, size_t namesz)
 			if (i > COL_CTIME) {
 				if (i >= LOWER && i <= UPPER)
 					return i;
-				else {
-					warnx(_("column %s does not apply to the specified IPC"), name);
-					return -1;
-				}
-			} else
-				return i;
+
+				warnx(_("column %s does not apply to the specified IPC"), name);
+				return -1;
+			}
+
+			return i;
 		}
 	}
 	warnx(_("unknown column: %s"), name);
@@ -1137,7 +1137,7 @@ int main(int argc, char *argv[])
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	ctl->time_mode = 0;
 
@@ -1232,11 +1232,11 @@ int main(int argc, char *argv[])
 		case 'c':
 			show_creat = 1;
 			break;
+
 		case 'h':
 			usage();
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}

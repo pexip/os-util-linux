@@ -196,13 +196,12 @@ int main(int argc, char *argv[])
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while ((ch = getopt_long(argc, argv, "Vh", longopts, NULL)) != -1)
 		switch (ch) {
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		case 'h':
 			usage();
 		default:
@@ -235,6 +234,6 @@ int main(int argc, char *argv[])
 	fflush(NULL);
 	shell = (pw_entry->pw_shell && *pw_entry->pw_shell ?
 				pw_entry->pw_shell : _PATH_BSHELL);
-	execl(shell, shell, (char *)0);
+	execl(shell, shell, (char *)NULL);
 	errexec(shell);
 }

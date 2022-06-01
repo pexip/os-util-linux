@@ -1,4 +1,4 @@
-debian/fstab.example2
 Documentation/example.files/*
-debian/tmp/usr/share/doc/util-linux/getopt/getopt-parse.tcsh
+debian/fstab.example2
 debian/tmp/usr/share/doc/util-linux/getopt/getopt-parse.bash
+debian/tmp/usr/share/doc/util-linux/getopt/getopt-parse.tcsh

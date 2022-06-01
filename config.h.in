@@ -12,6 +12,9 @@
 /* Path to hwclock adjtime file */
 #undef CONFIG_ADJTIME_PATH
 
+/* Define if cryptsetup is to be loaded via dlopen */
+#undef CRYPTSETUP_VIA_DLOPEN
+
 /* Define to 1 if translation of program messages to the user's native
    language is requested. */
 #undef ENABLE_NLS
@@ -44,6 +47,12 @@
 
 /* Define to 1 if the system has the type `cpu_set_t'. */
 #undef HAVE_CPU_SET_T
+
+/* Define if cryptsetup is available */
+#undef HAVE_CRYPTSETUP
+
+/* Define if crypt_activate_by_signed_key exist in -lcryptsetup */
+#undef HAVE_CRYPT_ACTIVATE_BY_SIGNED_KEY
 
 /* Define to 1 if you have the <crypt.h> header file. */
 #undef HAVE_CRYPT_H
@@ -106,6 +115,9 @@
 
 /* Define to 1 if you have the <fcntl.h> header file. */
 #undef HAVE_FCNTL_H
+
+/* Define to 1 if you have the `fmemopen' function. */
+#undef HAVE_FMEMOPEN
 
 /* Define to 1 if you have the `fpurge' function. */
 #undef HAVE_FPURGE
@@ -203,6 +215,9 @@
 /* Do we need -lcrypt? */
 #undef HAVE_LIBCRYPT
 
+/* Define if libeconf is available */
+#undef HAVE_LIBECONF
+
 /* Define if libmount available. */
 #undef HAVE_LIBMOUNT
 
@@ -254,6 +269,9 @@
 /* Define to 1 if you have the <linux/btrfs.h> header file. */
 #undef HAVE_LINUX_BTRFS_H
 
+/* Define to 1 if you have the <linux/capability.h> header file. */
+#undef HAVE_LINUX_CAPABILITY_H
+
 /* Define to 1 if you have the <linux/cdrom.h> header file. */
 #undef HAVE_LINUX_CDROM_H
 
@@ -296,20 +314,14 @@
 /* Define to 1 if you have the `llseek' function. */
 #undef HAVE_LLSEEK
 
-/* Define to 1 if have llseek prototype */
-#undef HAVE_LLSEEK_PROTOTYPE
-
 /* Define to 1 if you have the <locale.h> header file. */
 #undef HAVE_LOCALE_H
 
 /* Define to 1 if the system has the type `loff_t'. */
 #undef HAVE_LOFF_T
 
-/* Define to 1 if you have the `lseek64' function. */
-#undef HAVE_LSEEK64
-
-/* Define to 1 if have lseek64 prototype */
-#undef HAVE_LSEEK64_PROTOTYPE
+/* Define to 1 if you have the libmagic present. */
+#undef HAVE_MAGIC
 
 /* Define to 1 if you have the <memory.h> header file. */
 #undef HAVE_MEMORY_H
@@ -362,8 +374,17 @@
 /* Define to 1 if you have the <paths.h> header file. */
 #undef HAVE_PATHS_H
 
+/* Define if libpcre2 is available */
+#undef HAVE_PCRE
+
 /* Define to 1 if you have the `personality' function. */
 #undef HAVE_PERSONALITY
+
+/* Define to 1 if you have the `pidfd_open' function. */
+#undef HAVE_PIDFD_OPEN
+
+/* Define to 1 if you have the `pidfd_send_signal' function. */
+#undef HAVE_PIDFD_SEND_SIGNAL
 
 /* Define to 1 if you have the `posix_fadvise' function. */
 #undef HAVE_POSIX_FADVISE
@@ -379,6 +400,9 @@
 
 /* Define if program_invocation_short_name is defined */
 #undef HAVE_PROGRAM_INVOCATION_SHORT_NAME
+
+/* have PTY support */
+#undef HAVE_PTY
 
 /* Define to 1 if you have the <pty.h> header file. */
 #undef HAVE_PTY_H
@@ -401,12 +425,6 @@
 /* Define to 1 if you have the `scandirat' function. */
 #undef HAVE_SCANDIRAT
 
-/* scanf %as modifier */
-#undef HAVE_SCANF_AS_MODIFIER
-
-/* scanf %ms modifier */
-#undef HAVE_SCANF_MS_MODIFIER
-
 /* Define to 1 if you have the `sched_setattr' function. */
 #undef HAVE_SCHED_SETATTR
 
@@ -427,6 +445,9 @@
 
 /* Define to 1 if you have the <security/pam_misc.h> header file. */
 #undef HAVE_SECURITY_PAM_MISC_H
+
+/* Define to 1 if you have the `setitimer' function. */
+#undef HAVE_SETITIMER
 
 /* Define to 1 if you have the `setns' function. */
 #undef HAVE_SETNS
@@ -596,7 +617,7 @@
 /* Define to 1 if you have the `timegm' function. */
 #undef HAVE_TIMEGM
 
-/* Define to 1 if you have the `timer_create' function. */
+/* Define if timer_create exist in -lrt -lpthread */
 #undef HAVE_TIMER_CREATE
 
 /* Define to 1 if the target supports thread-local storage. */
@@ -739,6 +760,12 @@
 /* Fallback syscall number for ioprio_set */
 #undef SYS_ioprio_set
 
+/* Fallback syscall number for pidfd_open */
+#undef SYS_pidfd_open
+
+/* Fallback syscall number for pidfd_send_signal */
+#undef SYS_pidfd_send_signal
+
 /* Fallback syscall number for pivot_root */
 #undef SYS_pivot_root
 
@@ -768,6 +795,12 @@
 
 /* Enables colorized output from utils by default */
 #undef USE_COLORS_BY_DEFAULT
+
+/* Define to 1 if want to use CMOS clock. */
+#undef USE_HWCLOCK_CMOS
+
+/* use datetime parsing GPLv3 code to hwclock */
+#undef USE_HWCLOCK_GPLv3_DATETIME
 
 /* Define to 1 if want to support mtab. */
 #undef USE_LIBMOUNT_SUPPORT_MTAB
@@ -808,6 +841,9 @@
 
 /* Define to 1 to remove /bin and /sbin from PATH env.variable */
 #undef USE_USRDIR_PATHS_ONLY
+
+/* Define to 1 to use vendordir */
+#undef USE_VENDORDIR
 
 /* Version number of package */
 #undef VERSION

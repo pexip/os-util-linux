@@ -64,6 +64,7 @@
 #include "colors.h"
 #include "debug.h"
 #include "list.h"
+#include "blkdev.h"
 
 static const char *default_disks[] = {
 #ifdef __GNU__
@@ -436,9 +437,7 @@ static char *table_to_string(struct cfdisk *cf, struct fdisk_table *tb)
 	 * parno stored within struct fdisk_partition)  */
 
 	/* remove all */
-	fdisk_reset_iter(itr, FDISK_ITER_FORWARD);
-	while (fdisk_table_next_partition(tb, itr, &pa) == 0)
-		fdisk_table_remove_partition(tb, pa);
+	fdisk_reset_table(tb);
 
 	s_itr = scols_new_iter(SCOLS_ITER_FORWARD);
 	if (!s_itr)
@@ -748,6 +747,20 @@ static void ui_clean_warn(void)
 	clrtoeol();
 }
 
+static int __attribute__((__noreturn__)) ui_err(int rc, const char *fmt, ...)
+		{
+	va_list ap;
+	ui_end();
+
+	va_start(ap, fmt);
+	fprintf(stderr, "%s: ", program_invocation_short_name);
+	vfprintf(stderr, fmt, ap);
+	fprintf(stderr, ": %s\n", strerror(errno));
+	va_end(ap);
+
+	exit(rc);
+}
+
 static int __attribute__((__noreturn__)) ui_errx(int rc, const char *fmt, ...)
 		{
 	va_list ap;
@@ -988,7 +1001,9 @@ static size_t menuitem_get_line(struct cfdisk *cf, size_t idx)
 		if (!m->page_sz)				/* small menu */
 			return (ui_lines - (cf->menu->nitems + 1)) / 2 + idx;
 		return (idx % m->page_sz) + 1;
-	} else {
+	}
+
+	{
 		size_t len = MENU_H_ITEMWIDTH(m) + MENU_H_BETWEEN; /** item width */
 		size_t items = ui_cols / len;			/* items per line */
 
@@ -1005,7 +1020,9 @@ static int menuitem_get_column(struct cfdisk *cf, size_t idx)
 		if ((size_t) ui_cols <= nc)
 			return 0;
 		return (ui_cols - nc) / 2;
-	} else {
+	}
+
+	{
 		size_t len = MENU_H_ITEMWIDTH(cf->menu) + MENU_H_BETWEEN; /* item width */
 		size_t items = ui_cols / len;				/* items per line */
 		size_t extra = items < cf->menu->nitems ?		/* extra space on line */
@@ -1268,7 +1285,10 @@ static char *get_mountpoint(struct cfdisk *cf, const char *tagname, const char *
 			cf->fstab = mnt_new_table();
 			if (cf->fstab) {
 				mnt_table_set_cache(cf->fstab, cf->mntcache);
-				mnt_table_parse_fstab(cf->fstab, NULL);
+				if (mnt_table_parse_fstab(cf->fstab, NULL) != 0) {
+					mnt_unref_table(cf->fstab);
+					cf->fstab = NULL;
+				}
 			}
 		}
 		if (cf->fstab)
@@ -1699,7 +1719,8 @@ static int ui_refresh(struct cfdisk *cf)
 	if (!ui_enabled)
 		return -EINVAL;
 
-	strsz = size_to_human_string(SIZE_SUFFIX_SPACE
+	strsz = size_to_human_string(SIZE_DECIMAL_2DIGITS
+				| SIZE_SUFFIX_SPACE
 				| SIZE_SUFFIX_3LETTER, bytes);
 
 	lb = fdisk_get_label(cf->cxt, NULL);
@@ -1719,6 +1740,7 @@ static int ui_refresh(struct cfdisk *cf)
 	else
 		ui_center(2, _("Label: %s"), fdisk_label_get_name(lb));
 	free(strsz);
+	free(id);
 
 	ui_draw_table(cf);
 	ui_draw_menu(cf);
@@ -1875,7 +1897,7 @@ static int ui_get_size(struct cfdisk *cf,	/* context */
 		if (rc == 0) {
 			ui_warnx(_("Please, specify size."));
 			continue;			/* nothing specified */
-		} else if (rc == -CFDISK_ERR_ESC)
+		} if (rc == -CFDISK_ERR_ESC)
 			break;				/* cancel dialog */
 
 		if (strcmp(buf, dflt) == 0)
@@ -2521,9 +2543,11 @@ static int ui_run(struct cfdisk *cf)
 
 	if (!fdisk_has_label(cf->cxt) || cf->zero_start) {
 		rc = ui_create_label(cf);
-		if (rc < 0)
-			ui_errx(EXIT_FAILURE,
+		if (rc < 0) {
+			errno = -rc;
+			ui_err(EXIT_FAILURE,
 					_("failed to create a new disklabel"));
+		}
 		if (rc)
 			return rc;
 	}
@@ -2636,10 +2660,13 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("Display or manipulate a disk partition table.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
-	fputs(_(" -L, --color[=<when>]     colorize output (auto, always or never)\n"), out);
+	fprintf(out,
+	      _(" -L, --color[=<when>]     colorize output (%s, %s or %s)\n"), "auto", "always", "never");
 	fprintf(out,
 	        "                            %s\n", USAGE_COLORS_DEFAULT);
 	fputs(_(" -z, --zero               start with zeroed partition table\n"), out);
+	fprintf(out,
+	      _("     --lock[=<mode>]      use exclusive device lock (%s, %s or %s)\n"), "yes", "no", "nonblock");
 
 	fputs(USAGE_SEPARATOR, out);
 	printf(USAGE_HELP_OPTIONS(26));
@@ -2650,13 +2677,16 @@ static void __attribute__((__noreturn__)) usage(void)
 
 int main(int argc, char *argv[])
 {
-	const char *diskpath = NULL;
+	const char *diskpath = NULL, *lockmode = NULL;
 	int rc, c, colormode = UL_COLORMODE_UNDEF;
 	struct cfdisk _cf = { .lines_idx = 0 },
 		      *cf = &_cf;
-
+	enum {
+		OPT_LOCK	= CHAR_MAX + 1
+	};
 	static const struct option longopts[] = {
 		{ "color",   optional_argument, NULL, 'L' },
+		{ "lock",    optional_argument, NULL, OPT_LOCK },
 		{ "help",    no_argument,       NULL, 'h' },
 		{ "version", no_argument,       NULL, 'V' },
 		{ "zero",    no_argument,	NULL, 'z' },
@@ -2666,7 +2696,7 @@ int main(int argc, char *argv[])
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while((c = getopt_long(argc, argv, "L::hVz", longopts, NULL)) != -1) {
 		switch(c) {
@@ -2680,10 +2710,17 @@ int main(int argc, char *argv[])
 						_("unsupported color mode"));
 			break;
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		case 'z':
 			cf->zero_start = 1;
+			break;
+		case OPT_LOCK:
+			lockmode = "1";
+			if (optarg) {
+				if (*optarg == '=')
+					optarg++;
+				lockmode = optarg;
+			}
 			break;
 		default:
 			errtryhelp(EXIT_FAILURE);
@@ -2722,6 +2759,9 @@ int main(int argc, char *argv[])
 		err(EXIT_FAILURE, _("cannot open %s"), diskpath);
 
 	if (!fdisk_is_readonly(cf->cxt)) {
+		if (blkdev_lock(fdisk_get_devfd(cf->cxt), diskpath, lockmode) != 0)
+			return EXIT_FAILURE;
+
 		cf->device_is_used = fdisk_device_is_used(cf->cxt);
 		fdisk_get_partitions(cf->cxt, &cf->original_layout);
 	}
@@ -2733,6 +2773,7 @@ int main(int argc, char *argv[])
 
 	cfdisk_free_lines(cf);
 	free(cf->linesbuf);
+	free(cf->fields);
 
 	fdisk_unref_table(cf->table);
 #ifdef HAVE_LIBMOUNT

@@ -23,7 +23,7 @@ characteristics accordingly.
 specifies the IRQ to use for the parallel port in question.  If this is set
 to something non-zero, \-t and \-c have no effect.  If your port does not use
 interrupts, this option will make printing stop.  The command
-.B tunelp -i 0
+.B tunelp \-i 0
 restores non-interrupt driven (polling) action, and your printer should work
 again.  If your parallel port does support interrupts, interrupt-driven
 printing should be somewhat faster and efficient, and will probably be
@@ -34,7 +34,7 @@ irq is handled by the parport driver.  You can change the parport irq for
 example via
 .IR /proc/parport/*/irq .
 Read
-.I /usr/src/linux/Documentation/parport.txt
+.I /usr/src/linux/Documentation/admin-guide/parport.rst
 for more details on parport.
 .TP
 \fB\-t\fR, \fB\-\-time\fR \fImilliseconds\fR
@@ -102,6 +102,10 @@ later.
 .TP
 \fB\-q\fR, \fB\-\-print\-irq\fR \fI<on|off>\fR
 This option sets printing the display of the current IRQ setting.
+.SH FILES
+.I /dev/lp?
+.br
+.I /proc/parport/*/*
 .SH NOTES
 .BR \-o ,
 .BR \-C ,
@@ -111,10 +115,6 @@ all require a Linux kernel version of 1.1.76 or later.
 .PP
 .B \-C
 requires a Linux version prior to 2.1.131.
-.SH FILES
-.I /dev/lp?
-.br
-.I /proc/parport/*/*
 .SH AVAILABILITY
 The tunelp  command is part of the util-linux package and is available from
 .UR https://\:www.kernel.org\:/pub\:/linux\:/utils\:/util-linux/

@@ -5,10 +5,10 @@
 # This allows root to su without passwords (normal operation)
 auth       sufficient pam_rootok.so
 
-# Uncomment this to force users to be a member of group root
+# Uncomment this to force users to be a member of group wheel
 # before they can use `su'. You can also add "group=foo"
 # to the end of this line if you want to use a group other
-# than the default "root" (but this may have side effect of
+# than the default "wheel" (but this may have side effect of
 # denying "root" user, unless she's a member of "foo" or explicitly
 # permitted earlier by e.g. "sufficient pam_rootok.so").
 # (Replaces the `SU_WHEEL_ONLY' option from login.defs)

@@ -1,0 +1,12 @@
+upstream/upstream_build-sys-do-not-build-plymouth-ctrl.c-w-disabled-pl.patch
+upstream/upstream_hwclock-do-not-assume-__NR_settimeofday_time32.patch
+upstream/0001-libmount-don-t-use-symfollow-for-helpers-on-user-mou.patch
+upstream/Manual-pages-document-the-resize-command.patch
+debian/man-getopt-examples.patch
+debian/verbose-tests.patch
+upstream/libmount-do-not-canonicalize-ZFS-source-dataset.patch
+upstream/libmount-allow-read-only-for-not-root-users.patch
+upstream/CVE-2021-37600-sys-utils-ipcutils-be-careful-when-call-calloc.patch
+debian/backport-ul_strtou64-function.patch
+upstream/libmount-fix-UID-check-for-FUSE-umount-CVE-2021-3995.patch
+upstream/libmount-fix-deleted-suffix-issue-CVE-2021-3996.patch

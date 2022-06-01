@@ -17,7 +17,6 @@ libblkid_la_SOURCES = \
 	libblkid/src/encode.c \
 	libblkid/src/evaluate.c \
 	libblkid/src/getsize.c \
-	libblkid/src/llseek.c \
 	libblkid/src/probe.c \
 	libblkid/src/read.c \
 	libblkid/src/resolve.c \
@@ -49,6 +48,7 @@ libblkid_la_SOURCES = \
 	libblkid/src/superblocks/befs.c \
 	libblkid/src/superblocks/bfs.c \
 	libblkid/src/superblocks/bitlocker.c \
+	libblkid/src/superblocks/bluestore.c \
 	libblkid/src/superblocks/btrfs.c \
 	libblkid/src/superblocks/cramfs.c \
 	libblkid/src/superblocks/ddf_raid.c \
@@ -100,6 +100,7 @@ libblkid_la_SOURCES = \
 	libblkid/src/superblocks/vxfs.c \
 	libblkid/src/superblocks/xfs.c \
 	libblkid/src/superblocks/zfs.c \
+	libblkid/src/superblocks/zonefs.c \
 	\
 	libblkid/src/topology/topology.c \
 	libblkid/src/topology/topology.h
@@ -124,11 +125,6 @@ libblkid_la_CFLAGS = \
 	$(SOLIB_CFLAGS) \
 	-I$(ul_libblkid_incdir) \
 	-I$(top_srcdir)/libblkid/src
-
-if BUILD_LIBUUID
-libblkid_la_LIBADD += libuuid.la
-libblkid_la_CFLAGS += -I$(ul_libuuid_incdir)
-endif
 
 libblkid_la_LDFLAGS = $(SOLIB_LDFLAGS)
 if HAVE_VSCRIPT
@@ -155,13 +151,7 @@ check_PROGRAMS += \
 
 blkid_tests_cflags  = -DTEST_PROGRAM $(libblkid_la_CFLAGS)
 blkid_tests_ldflags =
-blkid_tests_ldadd   = libblkid.la
-
-if BUILD_LIBUUID
-blkid_tests_ldflags += libuuid.la
-blkid_tests_ldadd   += $(LDADD)
-endif
-
+blkid_tests_ldadd   = $(LDADD) libblkid.la
 blkid_tests_ldflags += -static
 
 test_blkid_cache_SOURCES = libblkid/src/cache.c

@@ -24,7 +24,7 @@
  * from this software without specific prior written permission.
  * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 #include <sys/param.h>
 #include <stdio.h>
@@ -76,6 +76,7 @@
 #include "xalloc.h"
 #include "all-io.h"
 #include "fileutils.h"
+#include "timeutils.h"
 #include "ttyutils.h"
 #include "pwdutils.h"
 
@@ -95,6 +96,13 @@
 
 #define	TTYGRPNAME	"tty"	/* name of group to own ttys */
 #define VCS_PATH_MAX	64
+
+#if defined(HAVE_SCANDIRAT) && defined(HAVE_OPENAT)
+# include <dirent.h>
+# define MOTDDIR_SUPPORT
+# define MOTDDIR_EXT	".motd"
+# define MOTDDIR_EXTSIZ	(sizeof(MOTDDIR_EXT) - 1)
+#endif
 
 /*
  * Login control struct
@@ -126,9 +134,9 @@ struct login_context {
 	char		hostaddress[16];	/* remote address */
 
 	pid_t		pid;
-	int		quiet;		/* 1 if hush file exists */
 
-	unsigned int	remote:1,	/* login -h */
+	unsigned int	quiet:1,        /* hush file exists */
+			remote:1,	/* login -h */
 			nohost:1,	/* login -H */
 			noauth:1,	/* login -f */
 			keep_env:1;	/* login -p */
@@ -191,7 +199,7 @@ static void timedout(int sig __attribute__ ((__unused__)))
 }
 
 /*
- * This handler allows to inform a shell about signals to login. If you have
+ * This handler can be used to inform a shell about signals to login. If you have
  * (root) permissions, you can kill all login children by one signal to the
  * login process.
  *
@@ -237,40 +245,106 @@ static const char *get_thishost(struct login_context *cxt, const char **domain)
 	return cxt->thishost;
 }
 
+#ifdef MOTDDIR_SUPPORT
+static int motddir_filter(const struct dirent *d)
+{
+	size_t namesz;
+
+#ifdef _DIRENT_HAVE_D_TYPE
+	if (d->d_type != DT_UNKNOWN && d->d_type != DT_REG &&
+	    d->d_type != DT_LNK)
+		return 0;
+#endif
+	if (*d->d_name == '.')
+		return 0;
+
+	namesz = strlen(d->d_name);
+	if (!namesz || namesz < MOTDDIR_EXTSIZ + 1 ||
+	    strcmp(d->d_name + (namesz - MOTDDIR_EXTSIZ), MOTDDIR_EXT) != 0)
+		return 0;
+
+	return 1; /* accept */
+}
+
+static int motddir(const char *dirname)
+{
+        int dd, nfiles, i, done = 0;
+        struct dirent **namelist = NULL;
+
+	dd = open(dirname, O_RDONLY|O_CLOEXEC|O_DIRECTORY);
+	if (dd < 0)
+		return 0;
+
+	nfiles = scandirat(dd, ".", &namelist, motddir_filter, versionsort);
+	if (nfiles <= 0)
+		goto done;
+
+	for (i = 0; i < nfiles; i++) {
+		struct dirent *d = namelist[i];
+		int fd;
+
+		fd = openat(dd, d->d_name, O_RDONLY|O_CLOEXEC);
+		if (fd >= 0) {
+			struct stat st;
+			if (fstat(fd, &st) == 0 && st.st_size > 0)
+				sendfile(fileno(stdout), fd, NULL, st.st_size);
+			close(fd);
+			done++;
+		}
+	}
+
+	for (i = 0; i < nfiles; i++)
+		free(namelist[i]);
+	free(namelist);
+done:
+	close(dd);
+	return done;
+}
+#endif /* MOTDDIR_SUPPORT */
+
 /*
  * Output the /etc/motd file.
  *
- * It determines the name of a login announcement file and outputs it to the
+ * It determines the name of a login announcement file/dir and outputs it to the
  * user's terminal at login time.  The MOTD_FILE configuration option is a
- * colon-delimited list of filenames.  An empty MOTD_FILE option disables
+ * colon-delimited list of filenames or directories.  An empty option disables
  * message-of-the-day printing completely.
  */
 static void motd(void)
 {
-	char *motdlist, *motdfile;
 	const char *mb;
+	char *file, *list;
+	int firstonly, done = 0;
+
+	firstonly = getlogindefs_bool("MOTD_FIRSTONLY", 0);
 
 	mb = getlogindefs_str("MOTD_FILE", _PATH_MOTDFILE);
 	if (!mb || !*mb)
 		return;
 
-	motdlist = xstrdup(mb);
+	list = xstrdup(mb);
 
-	for (motdfile = strtok(motdlist, ":"); motdfile;
-	     motdfile = strtok(NULL, ":")) {
-
+	for (file = strtok(list, ":"); file; file = strtok(NULL, ":")) {
 		struct stat st;
-		int fd;
 
-		fd = open(motdfile, O_RDONLY, 0);
-		if (fd < 0)
+		if (stat(file, &st) < 0)
 			continue;
-		if (!fstat(fd, &st) && st.st_size)
-			sendfile(fileno(stdout), fd, NULL, st.st_size);
-		close(fd);
+#ifdef MOTDDIR_SUPPORT
+		if (S_ISDIR(st.st_mode))
+			done += motddir(file);
+#endif
+		if (S_ISREG(st.st_mode) && st.st_size > 0) {
+			int fd = open(file, O_RDONLY, 0);
+			if (fd >= 0) {
+				sendfile(fileno(stdout), fd, NULL, st.st_size);
+				close(fd);
+			}
+			done++;
+		}
+		if (firstonly && done)
+			break;
 	}
-
-	free(motdlist);
+	free(list);
 }
 
 /*
@@ -376,7 +450,7 @@ static void init_tty(struct login_context *cxt)
 	 */
 	if (!cxt->tty_path || !*cxt->tty_path ||
 	    lstat(cxt->tty_path, &st) != 0 || !S_ISCHR(st.st_mode) ||
-	    (st.st_nlink > 1 && strncmp(cxt->tty_path, "/dev/", 5)) ||
+	    (st.st_nlink > 1 && strncmp(cxt->tty_path, "/dev/", 5) != 0) ||
 	    access(cxt->tty_path, R_OK | W_OK) != 0) {
 
 		syslog(LOG_ERR, _("FATAL: bad tty"));
@@ -497,10 +571,14 @@ static void log_lastlog(struct login_context *cxt)
 {
 	struct sigaction sa, oldsa_xfsz;
 	struct lastlog ll;
+	off_t offset;
 	time_t t;
 	int fd;
 
 	if (!cxt->pwd)
+		return;
+
+	if (cxt->pwd->pw_uid > (uid_t) getlogindefs_num("LASTLOG_UID_MAX", ULONG_MAX))
 		return;
 
 	/* lastlog is huge on systems with large UIDs, ignore SIGXFSZ */
@@ -511,19 +589,20 @@ static void log_lastlog(struct login_context *cxt)
 	fd = open(_PATH_LASTLOG, O_RDWR, 0);
 	if (fd < 0)
 		goto done;
-
-	if (lseek(fd, (off_t) cxt->pwd->pw_uid * sizeof(ll), SEEK_SET) == -1)
-		goto done;
+	offset = cxt->pwd->pw_uid * sizeof(ll);
 
 	/*
 	 * Print last log message.
 	 */
 	if (!cxt->quiet) {
-		if (read(fd, (char *)&ll, sizeof(ll)) == sizeof(ll) &&
-							ll.ll_time != 0) {
+		if ((pread(fd, (void *)&ll, sizeof(ll), offset) == sizeof(ll)) &&
+		    ll.ll_time != 0) {
+			char time_string[CTIME_BUFSIZ];
+
 			time_t ll_time = (time_t) ll.ll_time;
 
-			printf(_("Last login: %.*s "), 24 - 5, ctime(&ll_time));
+			ctime_r(&ll_time, time_string);
+			printf(_("Last login: %.*s "), 24 - 5, time_string);
 			if (*ll.ll_host != '\0')
 				printf(_("from %.*s\n"),
 				       (int)sizeof(ll.ll_host), ll.ll_host);
@@ -531,8 +610,6 @@ static void log_lastlog(struct login_context *cxt)
 				printf(_("on %.*s\n"),
 				       (int)sizeof(ll.ll_line), ll.ll_line);
 		}
-		if (lseek(fd, (off_t) cxt->pwd->pw_uid * sizeof(ll), SEEK_SET) == -1)
-			goto done;
 	}
 
 	memset((char *)&ll, 0, sizeof(ll));
@@ -545,7 +622,7 @@ static void log_lastlog(struct login_context *cxt)
 	if (cxt->hostname)
 		str2memcpy(ll.ll_host, cxt->hostname, sizeof(ll.ll_host));
 
-	if (write_all(fd, (char *)&ll, sizeof(ll)))
+	if (pwrite(fd, (void *)&ll, sizeof(ll), offset) != sizeof(ll))
 		warn(_("write lastlog failed"));
 done:
 	if (fd >= 0)
@@ -559,9 +636,9 @@ done:
  */
 static void log_utmp(struct login_context *cxt)
 {
-	struct utmpx ut;
-	struct utmpx *utp;
-	struct timeval tv;
+	struct utmpx ut = {0};
+	struct utmpx *utp = NULL;
+	struct timeval tv = {0};
 
 	utmpxname(_PATH_UTMP);
 	setutxent();
@@ -853,8 +930,7 @@ static void loginpam_acct(struct login_context *cxt)
 
 	if (!cxt->username || !*cxt->username) {
 		warnx(_("\nSession setup problem, abort."));
-		syslog(LOG_ERR, _("NULL user name in %s:%d. Abort."),
-		       __FUNCTION__, __LINE__);
+		syslog(LOG_ERR, _("NULL user name. Abort."));
 		pam_end(pamh, PAM_SYSTEM_ERR);
 		sleepexit(EXIT_FAILURE);
 	}
@@ -884,7 +960,7 @@ static void loginpam_session(struct login_context *cxt)
 	if (is_pam_failure(rc))
 		loginpam_err(pamh, rc);
 
-	rc = pam_open_session(pamh, 0);
+	rc = pam_open_session(pamh, cxt->quiet ? PAM_SILENT : 0);
 	if (is_pam_failure(rc)) {
 		pam_setcred(cxt->pamh, PAM_DELETE_CRED);
 		loginpam_err(pamh, rc);
@@ -1102,7 +1178,7 @@ static void __attribute__((__noreturn__)) usage(void)
 
 	fputs(USAGE_OPTIONS, stdout);
 	puts(_(" -p             do not destroy the environment"));
-	puts(_(" -f             skip a second login authentication"));
+	puts(_(" -f             skip a login authentication"));
 	puts(_(" -h <host>      hostname to be used for utmp logging"));
 	puts(_(" -H             suppress hostname in the login prompt"));
 	printf("     --help     %s\n", USAGE_OPTSTR_HELP);
@@ -1114,14 +1190,15 @@ static void __attribute__((__noreturn__)) usage(void)
 int main(int argc, char **argv)
 {
 	int c;
-	int cnt;
 	char *childArgv[10];
 	char *buff;
 	int childArgc = 0;
 	int retcode;
 	struct sigaction act;
 	struct passwd *pwd;
-
+	static const int wanted_fds[] = {
+		STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO
+	};
 	struct login_context cxt = {
 		.tty_mode = TTY_MODE,		  /* tty chmod() */
 		.pid = getpid(),		  /* PID */
@@ -1163,12 +1240,6 @@ int main(int argc, char **argv)
 	setpriority(PRIO_PROCESS, 0, 0);
 	initproctitle(argc, argv);
 
-	/*
-	 * -p is used by getty to tell login not to destroy the environment
-	 * -f is used to skip a second login authentication
-	 * -h is used by other servers to pass the name of the remote
-	 *    host to login so that it may be placed in utmp and wtmp
-	 */
 	while ((c = getopt_long(argc, argv, "fHh:pV", longopts, NULL)) != -1)
 		switch (c) {
 		case 'f':
@@ -1193,8 +1264,7 @@ int main(int argc, char **argv)
 			break;
 
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		case HELP_OPTION:
 			usage();
 		default:
@@ -1217,8 +1287,7 @@ int main(int argc, char **argv)
 			*p++ = ' ';
 	}
 
-	for (cnt = get_fd_tabsize() - 1; cnt > 2; cnt--)
-		close(cnt);
+	close_all_fds(wanted_fds, ARRAY_SIZE(wanted_fds));
 
 	setpgrp();	 /* set pgid to pid this means that setsid() will fail */
 	init_tty(&cxt);
@@ -1244,8 +1313,8 @@ int main(int argc, char **argv)
 	cxt.pwd = xgetpwnam(cxt.username, &cxt.pwdbuf);
 	if (!cxt.pwd) {
 		warnx(_("\nSession setup problem, abort."));
-		syslog(LOG_ERR, _("Invalid user name \"%s\" in %s:%d. Abort."),
-		       cxt.username, __FUNCTION__, __LINE__);
+		syslog(LOG_ERR, _("Invalid user name \"%s\". Abort."),
+		       cxt.username);
 		pam_end(cxt.pamh, PAM_SYSTEM_ERR);
 		sleepexit(EXIT_FAILURE);
 	}
@@ -1271,6 +1340,8 @@ int main(int argc, char **argv)
 		sleepexit(EXIT_FAILURE);
 	}
 
+	cxt.quiet = get_hushlogin_status(pwd, 1) == 1 ? 1 : 0;
+
 	/*
 	 * Open PAM session (after successful authentication and account check).
 	 */
@@ -1280,8 +1351,6 @@ int main(int argc, char **argv)
 	alarm((unsigned int)0);
 
 	endpwent();
-
-	cxt.quiet = get_hushlogin_status(pwd, 1);
 
 	log_utmp(&cxt);
 	log_audit(&cxt, 1);
@@ -1354,10 +1423,7 @@ int main(int argc, char **argv)
 
 	/* if the shell field has a space: treat it like a shell script */
 	if (strchr(pwd->pw_shell, ' ')) {
-		buff = xmalloc(strlen(pwd->pw_shell) + 6);
-
-		strcpy(buff, "exec ");
-		strcat(buff, pwd->pw_shell);
+		xasprintf(&buff, "exec %s", pwd->pw_shell);
 		childArgv[childArgc++] = "/bin/sh";
 		childArgv[childArgc++] = "-sh";
 		childArgv[childArgc++] = "-c";

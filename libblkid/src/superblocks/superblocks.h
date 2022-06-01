@@ -70,6 +70,7 @@ extern const struct blkid_idinfo zfs_idinfo;
 extern const struct blkid_idinfo bfs_idinfo;
 extern const struct blkid_idinfo vmfs_volume_idinfo;
 extern const struct blkid_idinfo vmfs_fs_idinfo;
+extern const struct blkid_idinfo bluestore_idinfo;
 extern const struct blkid_idinfo drbd_idinfo;
 extern const struct blkid_idinfo drbdmanage_idinfo;
 extern const struct blkid_idinfo drbdproxy_datalog_idinfo;
@@ -83,6 +84,7 @@ extern const struct blkid_idinfo vdo_idinfo;
 extern const struct blkid_idinfo stratis_idinfo;
 extern const struct blkid_idinfo bitlocker_idinfo;
 extern const struct blkid_idinfo apfs_idinfo;
+extern const struct blkid_idinfo zonefs_idinfo;
 
 /*
  * superblock functions
@@ -107,6 +109,9 @@ extern int blkid_probe_set_id_label(blkid_probe pr, const char *name,
 extern int blkid_probe_set_utf8_id_label(blkid_probe pr, const char *name,
 			     const unsigned char *data, size_t len, int enc);
 
+int blkid_probe_set_block_size(blkid_probe pr, unsigned block_size);
+
 extern int blkid_probe_is_bitlocker(blkid_probe pr);
+extern int blkid_probe_is_ntfs(blkid_probe pr);
 
 #endif /* _BLKID_SUPERBLOCKS_H */

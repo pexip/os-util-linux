@@ -1,7 +1,8 @@
 /*
  * Functions for \oct encoding used in mtab/fstab/swaps/etc.
  *
- * Based on code from mount(8).
+ * No copyright is claimed.  This code is in the public domain; do with
+ * it what you wish.
  *
  * Copyright (C) 2010 Karel Zak <kzak@redhat.com>
  */
@@ -96,7 +97,7 @@ size_t unhexmangle_to_buffer(const char *s, char *buf, size_t len)
 
 static inline const char *skip_nonspaces(const char *s)
 {
-	while (*s && !(*s == ' ' || *s == '\t'))
+	while (s && *s && !(*s == ' ' || *s == '\t'))
 		s++;
 	return s;
 }
@@ -155,9 +156,9 @@ int main(int argc, char *argv[])
 		}
 
 		x = strdup(argv[2]);
-		unmangle_to_buffer(x, x, strlen(x) + 1);
-
 		if (x) {
+			unmangle_to_buffer(x, x, strlen(x) + 1);
+
 			printf("self-unmangled: '%s'\n", x);
 			free(x);
 		}

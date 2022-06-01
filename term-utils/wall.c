@@ -68,8 +68,10 @@
 #include "pathnames.h"
 #include "carefulputc.h"
 #include "c.h"
+#include "cctype.h"
 #include "fileutils.h"
 #include "closestream.h"
+#include "timeutils.h"
 
 #define	TERM_WIDTH	79
 #define	WRITE_TIME_OUT	300		/* in seconds */
@@ -111,26 +113,26 @@ struct group_workspace {
 #endif
 };
 
-static gid_t get_group_gid(const char *optarg)
+static gid_t get_group_gid(const char *group)
 {
 	struct group *gr;
 	gid_t gid;
 
-	if ((gr = getgrnam(optarg)))
+	if ((gr = getgrnam(group)))
 		return gr->gr_gid;
 
-	gid = strtou32_or_err(optarg, _("invalid group argument"));
+	gid = strtou32_or_err(group, _("invalid group argument"));
 	if (!getgrgid(gid))
-		errx(EXIT_FAILURE, _("%s: unknown gid"), optarg);
+		errx(EXIT_FAILURE, _("%s: unknown gid"), group);
 
 	return gid;
 }
 
-static struct group_workspace *init_group_workspace(const char *optarg)
+static struct group_workspace *init_group_workspace(const char *group)
 {
 	struct group_workspace *buf = xmalloc(sizeof(struct group_workspace));
 
-	buf->requested_group = get_group_gid(optarg);
+	buf->requested_group = get_group_gid(group);
 	buf->ngroups = sysconf(_SC_NGROUPS_MAX) + 1;  /* room for the primary gid */
 	buf->groups = xcalloc(sizeof(*buf->groups), buf->ngroups);
 
@@ -202,7 +204,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while ((ch = getopt_long(argc, argv, "nt:g:Vh", longopts, NULL)) != -1) {
 		switch (ch) {
@@ -220,9 +222,9 @@ int main(int argc, char **argv)
 		case 'g':
 			group_buf = init_group_workspace(optarg);
 			break;
+
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			exit(EXIT_SUCCESS);
+			print_version(EXIT_SUCCESS);
 		case 'h':
 			usage();
 		default:
@@ -250,10 +252,12 @@ int main(int argc, char **argv)
 		if (utmpptr->ut_type != USER_PROCESS)
 			continue;
 #endif
-		/* Joey Hess reports that use-sessreg in /etc/X11/wdm/
-		   produces ut_line entries like :0, and a write
-		   to /dev/:0 fails. */
-		if (utmpptr->ut_line[0] == ':')
+		/* Joey Hess reports that use-sessreg in /etc/X11/wdm/ produces
+		 * ut_line entries like :0, and a write to /dev/:0 fails.
+		 *
+		 * It also seems that some login manager may produce empty ut_line.
+		 */
+		if (!*utmpptr->ut_line || *utmpptr->ut_line == ':')
 			continue;
 
 		if (group_buf && !is_gr_member(utmpptr->ut_user, group_buf))
@@ -322,7 +326,7 @@ static void buf_putc_careful(struct buffer *bs, int c)
 	if (isprint(c) || c == '\a' || c == '\t' || c == '\r' || c == '\n') {
 		buf_enlarge(bs, 1);
 		bs->data[bs->used++] = c;
-	} else if (!isascii(c))
+	} else if (!c_isascii(c))
 		buf_printf(bs, "\\%3o", (unsigned char)c);
 	else {
 		char tmp[] = { '^', c ^ 0x40, '\0' };
@@ -346,7 +350,7 @@ static char *makemsg(char *fname, char **mvec, int mvecsz,
 
 	if (print_banner == TRUE) {
 		char *hostname = xgethostname();
-		char *whom, *where, *date;
+		char *whom, *where, date[CTIME_BUFSIZ];
 		struct passwd *pw;
 		time_t now;
 
@@ -359,12 +363,11 @@ static char *makemsg(char *fname, char **mvec, int mvecsz,
 		where = ttyname(STDOUT_FILENO);
 		if (!where) {
 			where = "somewhere";
-			warn(_("cannot get tty name"));
 		} else if (strncmp(where, "/dev/", 5) == 0)
 			where += 5;
 
 		time(&now);
-		date = xstrdup(ctime(&now));
+		ctime_r(&now, date);
 		date[strlen(date) - 1] = '\0';
 
 		/*
@@ -383,7 +386,6 @@ static char *makemsg(char *fname, char **mvec, int mvecsz,
 				whom, hostname, where, date);
 		buf_printf(bs, "%-*.*s\007\007\r\n", TERM_WIDTH, TERM_WIDTH, lbuf);
 		free(hostname);
-		free(date);
 	}
 	buf_printf(bs, "%*s\r\n", TERM_WIDTH, " ");
 

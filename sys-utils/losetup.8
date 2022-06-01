@@ -9,10 +9,10 @@ Get info:
 .B losetup
 [\fIloopdev\fP]
 .sp
-.B losetup -l
+.B losetup \-l
 .RB [ \-a ]
 .sp
-.B losetup -j
+.B losetup \-j
 .I file
 .RB [ \-o
 .IR offset ]
@@ -61,13 +61,20 @@ to detach loop devices, and to query the status of a loop device.  If only the
 \fIloopdev\fP argument is given, the status of the corresponding loop
 device is shown.  If no option is given, all loop devices are shown.
 .sp
-Note that the old output format (i.e., \fBlosetup -a\fR) with comma-delimited
-strings is deprecated in favour of the \fB--list\fR output format.
+Note that the old output format (i.e., \fBlosetup \-a\fR) with comma-delimited
+strings is deprecated in favour of the \fB\-\-list\fR output format.
 .sp
 It's possible to create more independent loop devices for the same backing
 file.
 .B This setup may be dangerous, can cause data loss, corruption and overwrites.
 Use \fB\-\-nooverlap\fR with \fB\-\-find\fR during setup to avoid this problem.
+.sp
+The loop device setup is not an atomic operation when used with \fB\-\-find\fP, and
+.B losetup
+does not protect this operation by any lock.  The number of attempts is
+internally restricted to a maximum of 16.  It is recommended to use for example
+.BR flock (1)
+to avoid a collision in heavily parallel use cases.
 
 .SH OPTIONS
 The \fIsize\fR and \fIoffset\fR
@@ -80,7 +87,7 @@ KB (=1000), MB (=1000*1000), and so on for GB, TB, PB, EB, ZB and YB.
 .BR \-a , " \-\-all"
 Show the status of all loop devices.  Note that not all information is accessible
 for non-root users.  See also \fB\-\-list\fR.  The old output format (as printed
-without \fB--list)\fR is deprecated.
+without \fB\-\-list)\fR is deprecated.
 .TP
 .BR \-d , " \-\-detach " \fIloopdev\fR...
 Detach the file or device associated with the specified loop device(s). Note
@@ -124,7 +131,9 @@ Force the loop driver to reread the size of the file associated with the
 specified loop device.
 .TP
 .BR \-P , " \-\-partscan"
-Force the kernel to scan the partition table on a newly created loop device.
+Force the kernel to scan the partition table on a newly created loop device.  Note that the
+partition table parsing depends on sector sizes.  The default is sector size is 512 bytes,
+otherwise you need to use the option \fB\-\-sector\-size\fR together with \fB\-\-partscan\fR.
 .TP
 .BR \-r , " \-\-read\-only"
 Set up a read-only loop device.
@@ -132,13 +141,13 @@ Set up a read-only loop device.
 .BR \-\-direct\-io [ =on | off ]
 Enable or disable direct I/O for the backing file.  The optional argument
 can be either \fBon\fR or \fBoff\fR.  If the argument is omitted, it defaults
-to \fBon\fR.
+to \fBoff\fR.
 .TP
 .BR \-v , " \-\-verbose"
 Verbose mode.
 .TP
 .BR \-l , " \-\-list"
-If a loop device or the \fB-a\fR option is specified, print the default columns
+If a loop device or the \fB\-a\fR option is specified, print the default columns
 for either the specified loop device or all loop devices; the default is to
 print info about all devices.  See also \fB\-\-output\fP, \fB\-\-noheadings\fP,
 \fB\-\-raw\fP, and \fB\-\-json\fP.
@@ -168,13 +177,17 @@ Display help text and exit.
 .B Cryptoloop is no longer supported in favor of dm-crypt.
 .B For more details see cryptsetup(8).
 
-.SH RETURN VALUE
+.SH EXIT STATUS
 .B losetup
 returns 0 on success, nonzero on failure.  When
 .B losetup
 displays the status of a loop device, it returns 1 if the device
 is not configured and 2 if an error occurred which prevented
 determining the status of the device.
+
+.SH ENVIRONMENT
+.IP LOOPDEV_DEBUG=all
+enables debug output.
 
 .SH FILES
 .TP
@@ -183,23 +196,19 @@ loop block devices
 .TP
 .I /dev/loop-control
 loop control device
-
 .SH EXAMPLE
 The following commands can be used as an example of using the loop device.
 .nf
 .IP
 # dd if=/dev/zero of=~/file.img bs=1024k count=10
-# losetup --find --show ~/file.img
+# losetup \-\-find \-\-show ~/file.img
 /dev/loop0
-# mkfs -t ext2 /dev/loop0
+# mkfs \-t ext2 /dev/loop0
 # mount /dev/loop0 /mnt
  ...
 # umount /dev/loop0
-# losetup --detach /dev/loop0
+# losetup \-\-detach /dev/loop0
 .fi
-.SH ENVIRONMENT
-.IP LOOPDEV_DEBUG=all
-enables debug output.
 .SH AUTHORS
 Karel Zak <kzak@redhat.com>, based on the original version from
 Theodore Ts'o <tytso@athena.mit.edu>

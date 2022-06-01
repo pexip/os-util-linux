@@ -77,25 +77,24 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while ((c = getopt_long(argc, argv, "hfuV", longopts, NULL)) != -1) {
 
 		err_exclusive_options(c, longopts, excl, excl_st);
 
 		switch(c) {
-		case 'h':
-			usage();
-			break;
 		case 'f':
 			action = FREEZE;
 			break;
 		case 'u':
 			action = UNFREEZE;
 			break;
+
+		case 'h':
+			usage();
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			exit(EXIT_SUCCESS);
+			print_version(EXIT_SUCCESS);
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}
@@ -145,8 +144,7 @@ int main(int argc, char **argv)
 
 	rc = EXIT_SUCCESS;
 done:
-	if (fd >= 0)
-		close(fd);
+	close(fd);
 	return rc;
 }
 

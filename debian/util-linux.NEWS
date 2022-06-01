@@ -24,58 +24,61 @@ util-linux (2.32-0.4) unstable; urgency=medium
   plain 'su' is a really bad idea for many reasons, so using 'su -' is
   strongly recommended to always get a newly set up environment similar
   to a normal login. If you want to restore behaviour more similar to
-  the previous one you can add 'ALWAYS_SET_PATH yes' in /etc/login.defs.
+  the previous one you can add 'ALWAYS_SET_PATH=yes' in /etc/default/su.
 
  -- Andreas Henriksson <andreas@fatal.se>  Fri, 03 Aug 2018 10:52:22 +0200
 
 util-linux (2.29.2-3) experimental; urgency=medium
 
-  * The cfdisk, fdisk and sfdisk utilities has been split out into a
-    separate fdisk package. Any package needing these utilities should
-    add a dependency on: fdisk | util-linux (<< 2.29.2-3~)
-    (The second part of it makes the dependency also be fulfilled in case
-     of stretch-backports and should be considered optional.)
+  The cfdisk, fdisk and sfdisk utilities has been split out into a
+  separate fdisk package. Any package needing these utilities should
+  add a dependency on: fdisk | util-linux (<< 2.29.2-3~)
+  (The second part of it makes the dependency also be fulfilled in case
+   of stretch-backports and should be considered optional.)
 
  -- Andreas Henriksson <andreas@fatal.se>  Sun, 06 Aug 2017 14:59:02 +0200
 
 util-linux (2.29.2-2) unstable; urgency=medium
 
-  * The deprecated 'pg' utility is no longer shipped.
-    (Please use either 'more' or 'less' instead.)
-  * The deprecated 'tunelp' utility is no longer shipped.
-    (Parallell port printers are suspected to be extinct by now.)
-  * The deprecated 'line' utility is no longer shipped.
-    (Please use the 'head' utility instead.)
-  * The deprecated 'tailf' utility is no longer shipped.
-    (Please use 'tail -f' instead.)
+  The deprecated 'pg' utility is no longer shipped.
+  (Please use either 'more' or 'less' instead.)
+
+  The deprecated 'tunelp' utility is no longer shipped.
+  (Parallell port printers are suspected to be extinct by now.)
+
+  The deprecated 'line' utility is no longer shipped.
+  (Please use the 'head' utility instead.)
+
+  The deprecated 'tailf' utility is no longer shipped.
+  (Please use 'tail -f' instead.)
 
  -- Andreas Henriksson <andreas@fatal.se>  Mon, 13 Mar 2017 19:27:14 +0100
 
 util-linux (2.25.1~rc1-1) experimental; urgency=medium
 
-  * This version adds a number of patches which again makes
-    fsck available on non-linux architectures like kfreebsd.
+  This version adds a number of patches which again makes
+  fsck available on non-linux architectures like kfreebsd.
 
  -- Andreas Henriksson <andreas@fatal.se>  Sat, 30 Aug 2014 18:32:25 -0700
 
 util-linux (2.25-1) experimental; urgency=medium
 
-  * The cytune command is no longer available since it has
-    been removed upstream.
+  The cytune command is no longer available since it has
+  been removed upstream.
 
-  * Upstream Release Notes also includes these highlights:
+  Upstream Release Notes also includes these highlights:
 
-    The "swapon --summary" output format is deprecated in favor of the
-    "swapon --show[=<columns>]" that provides better control on output
-    formatting.
+  The "swapon --summary" output format is deprecated in favor of the
+  "swapon --show[=<columns>]" that provides better control on output
+  formatting.
 
-    cfdisk(8):
-    - the code been completely rewritten, now it uses libfdisk and
-      libsmartcols, supports GPT, SUN, SGI and BSD disk labels
-    - the command is no more based on CHS addressing
+  cfdisk(8):
+  - the code been completely rewritten, now it uses libfdisk and
+    libsmartcols, supports GPT, SUN, SGI and BSD disk labels
+  - the command is no more based on CHS addressing
 
-  * WARNING! The fsck command is no longer built on non-linux.
-    It relies on libmount, which needs porting.
+  WARNING! The fsck command is no longer built on non-linux.
+  It relies on libmount, which needs porting.
 
  -- Andreas Henriksson <andreas@fatal.se>  Wed, 23 Jul 2014 14:05:13 +0200
 

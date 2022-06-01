@@ -1,3 +1,340 @@
+util-linux (2.36.1-8+deb11u1) bullseye-security; urgency=high
+
+  * Non-maintainer upload by the Security Team.
+  * include/strutils: Add ul_strtou64() function
+  * libmount: fix UID check for FUSE umount [CVE-2021-3995]
+  * libmount: fix (deleted) suffix issue [CVE-2021-3996]
+
+ -- Salvatore Bonaccorso <carnil@debian.org>  Thu, 20 Jan 2022 21:10:35 +0100
+
+util-linux (2.36.1-8) unstable; urgency=medium
+
+  * Apply upstream patch for CVE-2021-37600 (Closes: #991619)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Wed, 28 Jul 2021 19:09:07 +0000
+
+util-linux (2.36.1-7) unstable; urgency=medium
+
+  * libmount: allow --read-only for not-root users.
+    Apply patch from upstream. (Closes: #980828)
+  * Cleanup Uploaders
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Sun, 07 Feb 2021 14:38:19 +0000
+
+util-linux (2.36.1-6) unstable; urgency=medium
+
+  * libmount: do not canonicalize ZFS source dataset.
+    Upstream patch. (Closes: #980273)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Sun, 17 Jan 2021 20:27:00 +0000
+
+util-linux (2.36.1-5) unstable; urgency=medium
+
+  * hwclock-set: remove useless source /etc/default/rcS
+  * hwclock-set: remove stamp file.
+    Since initramfs-tools 0.119 (jessie), hwclock-set is not installed
+    in the initramfs anymore. This was the original reason for having
+    the stamp file.
+  * man cfdisk: Add upstream patch documenting resize command.
+    Thanks to Vincent McIntyre <Vincent.Mcintyre@csiro.au>
+    (Closes: #915971, #906918)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Mon, 11 Jan 2021 22:03:06 +0000
+
+util-linux (2.36.1-4) unstable; urgency=medium
+
+  * bsdextrautils: Install colcrt (Closes: #977871)
+  * hwclock.sh: remove obsolete startup code.
+    Let the on startup code always be handled by the udev rule we install.
+    On any normal system, systemd or sysvinit, "hwclock.sh start" was a
+    no-op for the last few Debian releases already. Also, with initramfs,
+    hwclock.sh never got executed *before* fsck for root.
+    If your system does not have udev but has an RTC in localtime or one
+    needing drift adjustments, you will need to handle this yourself.
+  * hwclock: remove all broken settings.
+    Since buster, BADYEAR was broken, because upstream removed the code in
+    v2.30-rc1.
+    Since buster, the alpha cmos support was broken, because upstream
+    removed the code.
+    Since stretch, HWCLOCKACCESS=no was broken on udev systems, because the
+    helper ignored it.
+    Remove all those settings; also remove HCTOSYS_DEVICE from the
+    default-shipped /etc/default/hwclock, as changing it is extremely
+    difficult to get right.
+  * hwclock.sh: add comments when to use this init script
+  * Update advice on ALWAYS_SET_PATH to use /etc/default/su (Closes: #905564)
+  * Remove Suggests: console-tools. Gone since 2013.
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Tue, 29 Dec 2020 15:46:26 +0000
+
+util-linux (2.36.1-3) unstable; urgency=medium
+
+  [ Quentin PAGÈS ]
+  * Occitan translation for eject
+
+  [ Chris Hofstaedtler ]
+  * Bump Standards-Version to 4.5.1
+  * Refresh patches
+
+  [ Matthew Vernon ]
+  * getopt(1): explicitly say where examples are on Debian (Closes: #913049)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Sat, 19 Dec 2020 13:42:03 +0000
+
+util-linux (2.36.1-2) unstable; urgency=medium
+
+  [ Pino Toscano ]
+  * Register /bin/more as pager alternative only on Linux.
+  * Fix build on non-Linux architectures (Closes: #975008)
+
+  [ Chris Hofstaedtler ]
+  * Add upstream patch fixing user mounts on kernel < 5.10 (Closes: #975727)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Wed, 25 Nov 2020 21:07:38 +0000
+
+util-linux (2.36.1-1) unstable; urgency=medium
+
+  * New upstream stable release
+  * Remove upstream applied patches
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Mon, 16 Nov 2020 14:01:03 +0000
+
+util-linux (2.36-4) unstable; urgency=medium
+
+  [ Holger Wansing ]
+  * Re-add Tajik debconf translation file (somehow lost from eject package).
+    Taken from bug #890079.
+  * Update Norwegian Bokmål debconf translation according to last state in
+    eject package (taken from bug #923919).
+
+  [ Slimane Selyan Amiri ]
+  * Add Kabyle translation for eject (via Hoger Wansing)
+
+  [ Chris Hofstaedtler ]
+  * flock: keep -E exit status more restrictive (Closes: #973751)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Mon, 16 Nov 2020 09:18:06 +0000
+
+util-linux (2.36-3) unstable; urgency=medium
+
+  * Fix sfdisk regression with upstream patch (Closes: #966992)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Sat, 29 Aug 2020 12:32:39 +0000
+
+util-linux (2.36-2) unstable; urgency=medium
+
+  * Reinstate libblkid.a (Closes: #966330)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Sat, 01 Aug 2020 17:28:26 +0000
+
+util-linux (2.36-1) unstable; urgency=medium
+
+  * New upstream release. (Closes: #956739, #959783, #953065, #879024)
+    The new lsirq and irqtop tools are not installed for now, as without
+    per-CPU data they do not seem mature at this time.
+  * Use debhelper v13. (Closes: #963625)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Thu, 23 Jul 2020 22:56:45 +0000
+
+util-linux (2.35.2-9) unstable; urgency=medium
+
+  * Fix uname26 test, by applying upstream commit 2261cfdc26.
+    Thanks to Helge Deller <deller@gmx.de> (Closes: #961639)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Tue, 21 Jul 2020 20:32:19 +0000
+
+util-linux (2.35.2-8) unstable; urgency=medium
+
+  [ Simon McVittie ]
+  * d/tests: Explicitly return a value from main() (Closes: #964420)
+  * d/tests: Don't link with -lm
+  * d/tests: Don't save built binaries as artifacts
+
+  [ Chris Hofstaedtler ]
+  * Reenable verbose tests and drop arch exceptions on Linux
+  * Stop Recommending bsdmainutils (transitional)
+  * Stop providing static libraries for: libblkid, libfdisk, libmount,
+    libsmartcols. Also see #963933.
+
+  [ Sven Joachim ]
+  * Do not invoke dh_makeshlibs for libmount1 on non-linux arches
+    (Closes: #963625)
+
+  [ Samuel Thibault ]
+  * Enable write on all platforms, not just linux (Closes: #964393)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Tue, 21 Jul 2020 12:50:41 +0000
+
+util-linux (2.35.2-7) unstable; urgency=medium
+
+  [ Simon McVittie ]
+  * d/tests: Add a compile/link/run autopkgtest for each library
+
+  [ Chris Hofstaedtler ]
+  * Build-Conflict with libcryptsetup-dev.
+    Building with libcryptsetup-dev enables Verity support, but also makes
+    all programs using libmount1 pull in libcryptsetup12 and libjansson.
+    However, libjansson and libjson-c (used in many other "core" libraries)
+    export conflicting symbols today, causing various crashes. See Debian
+    bug #963932.
+    Also, libcryptsetup12 pulls in libssl1.1, which causes some
+    not-from-Debian software to crash (because of conflicting libssl
+    symbols).
+    Unfortunately this disables Verity support again, see Debian bug
+     #951048.
+  * Remove Important: yes from mount
+  * Take over look and write from bsdmainutils (Closes: #964242)
+
+  [ jan krcmar ]
+  * Fix group name in su's PAM config comment: The pam_wheel.so default group
+    is wheel, not root. Update the comment accordingly, to avoid confusion.
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Mon, 06 Jul 2020 15:22:50 +0000
+
+util-linux (2.35.2-6) unstable; urgency=medium
+
+  [ Pino Toscano ]
+  * Add libcryptsetup-dev dependency to libmount-dev (Closes: #963704)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Thu, 25 Jun 2020 16:56:12 +0000
+
+util-linux (2.35.2-5) unstable; urgency=medium
+
+  * Build with libcryptsetup-dev to enable dm-verity (Closes: #951048)
+  * hwclock: move files from /lib to /usr/lib
+  * Stop installing rename.ul at all (Closes: #926637)
+  * Make hd work like hexdump -C (Closes: #963491)
+  * Remove Build-Depends: dpkg-dev (>= 1.17.14), and version constraint on
+    dh-exec.  Both fulfilled in oldoldstable and newer
+  * Remove outdated Breaks/Replaces/Suggests.
+    Replaces: util-linux (<< 2.11b), bash-completion (<< 1:2.1-4.3~),
+    bash-completion (<< 1:2.1-4.1~), e2fsprogs (<< 1.34-1), e2fsprogs (<=
+    1.40.3-1ubuntu1), e2fslibs-dev (<< 1.15) and version on Suggests:
+    nfs-common (>= 1:1.1.0-13)
+    All fulfilled in oldoldstable.
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Thu, 25 Jun 2020 12:06:52 +0000
+
+util-linux (2.35.2-4) unstable; urgency=medium
+
+  * d/watch: update to find -rc versions
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Sun, 21 Jun 2020 01:28:37 +0000
+
+util-linux (2.35.2-3) unstable; urgency=medium
+
+  [ Holger Wansing ]
+  * po: Convert po files into UTF-8
+  * po: Correct charset declaration to UTF-8
+  * po: Add/fill/correct translation headers, to make msgfmt happy
+
+  [ Chris Hofstaedtler ]
+  * Introduce new bsdextrautils binary package:
+    Take over col, colcrt, colrm, column, hexdump, hd, look and ul from
+    bsdmainutils.
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Thu, 28 May 2020 13:01:05 +0000
+
+util-linux (2.35.2-2) unstable; urgency=medium
+
+  * umount bash-completion: avoid gawk Recommends. (Closes: #933934)
+    Pulled in upstream-applied patch from Étienne Mollier.
+    Thanks to Étienne Mollier <etienne.mollier@mailoo.org>
+    and Guillem Jover <guillem@debian.org>
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Fri, 22 May 2020 10:41:16 +0000
+
+util-linux (2.35.2-1) unstable; urgency=medium
+
+  * New upstream release (Closes: #960839).
+  * Drop all patches, applied upstream.
+  * mount: add Recommends: gawk for bash-completion.
+    The bash-completion for umount now explicitly uses gawk. Recommends:
+    should pull in gawk on new installs in a typical environment, and
+    users with Recommends turned off already know what they are doing.
+    (Closes: #933934)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Wed, 20 May 2020 22:21:26 +0000
+
+util-linux (2.35.1-5) unstable; urgency=medium
+
+  * libmount-dev: depend on libselinux1-dev (Closes: #960446)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Tue, 12 May 2020 17:11:40 +0000
+
+util-linux (2.35.1-4) unstable; urgency=medium
+
+  * fdisk: Drop Important: yes to avoid piuparts/apt problem.
+    Thanks to Andreas Beckmann.
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Tue, 12 May 2020 08:53:53 +0000
+
+util-linux (2.35.1-3) unstable; urgency=medium
+
+  [ Chris Hofstaedtler ]
+  * Improve fstrim.timer installation, probably fixes kfreebsd FTBFS
+  * d/copyright: update
+  * Add NEWS entry for eject change
+  * Mark eject(-udeb) as Priority: optional, as before
+
+  [ Michael Biebl ]
+  * Take over eject binary (Closes: #737658)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Sun, 10 May 2020 22:49:29 +0000
+
+util-linux (2.35.1-2) unstable; urgency=medium
+
+  [ Debian Janitor ]
+  * Trim trailing whitespace.
+  * Wrap long lines in changelog entries: 2.13.1-2, 2.13.1-1, 2.13-10,
+    2.13-1, 2.12p-1, 2.12l-1, 2.12-3, 2.11z-2, 2.10n-1, 2.10d-7, 2.10d-
+    4, 2.9x-1.
+  * Fill in Homepage field.
+  * Bump debhelper from old 11 to 12.
+  * Set debhelper-compat version in Build-Depends.
+  * Remove obsolete fields Contact, Name from debian/upstream/metadata
+    (already present in machine-readable debian/copyright).
+
+  [ Michael Biebl ]
+  * Move all libraries to /usr/lib (Closes: #959744)
+
+  [ Mark Hindley ]
+  * Fix fallocate test failure in pbuilder
+
+  [ Chris Hofstaedtler ]
+  * hwclock.sh: fix indent
+  * hwclock.sh: remove obsolete header
+  * Stop depending on fdisk (Closes: #947134)
+  * Remove Andreas Henriksson from Uploaders: per request
+  * Enable fstrim.timer by default
+  * Install runuser bash-completion symlink (Closes: #913098)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Wed, 06 May 2020 09:10:20 +0000
+
+util-linux (2.35.1-1) unstable; urgency=medium
+
+  * New upstream released. (Closes: #954002)
+  * Bump Standards-Version to 4.5.0
+  * Update Maintainers/Uploaders to reflect reality
+  * Run wrap-and-sort -a, fix tab/space mixup in debian/copyright
+  * Install new scriptlive(1) tool
+  * Apply patches from git HEAD:
+    hwclock: make glibc 2.31 compatible (Closes: #955559)
+    lsblk: fix -P regression from v2.34 (Closes: #951217)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Sun, 03 May 2020 13:45:56 +0000
+
+util-linux (2.34-0.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * New upstream release. (Closes: #931613)
+  * Do not ship new hardlink tool, would conflict with existing
+    hardlink package.
+  * Update symbol files.
+  * Bump Standards-Version to 4.4.0
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Sun, 28 Jul 2019 15:14:02 +0000
+
 util-linux (2.33.1-0.1pexip2) pexip; urgency=medium
 
   * Rebuild in buster environment
@@ -3345,7 +3682,8 @@ util-linux (2.13.1-2) unstable; urgency=low
 
   [Hamish Coleman]
 
-  * agetty: make username-in-uppercase feature optional (off by default.).  Closes: #156242
+  * agetty: make username-in-uppercase feature optional (off by default.).
+    Closes: #156242
 
   [Neil Williams]
 
@@ -3374,7 +3712,8 @@ util-linux (2.13.1-1) unstable; urgency=low
       - po: update sl.po (from translationproject.org) (Simon Mihevc)
       - po: update ru.po (from translationproject.org) (Pavel Maryanov)
       - po: update cs.po (from translationproject.org) (Petr Pisar)
-      - po: update pt_BR.po (from translationproject.org) (Rodrigo Stulzer Lopes)
+      - po: update pt_BR.po (from translationproject.org) (Rodrigo Stulzer
+        Lopes)
       - po: update id.po (from translationproject.org) (Arif E. Nugroho)
       - po: update es.po (from translationproject.org) (Santiago Vila Doncel)
       - po: update hu.po (from translationproject.org) (Gabor Kelemen)
@@ -3523,7 +3862,8 @@ util-linux (2.13-10) unstable; urgency=low
 
   [LaMont Jones]
 
-  * build: don't deliver col* and ul as part of bsdutils for now.  Closes: #446939
+  * build: don't deliver col* and ul as part of bsdutils for now.
+    Closes: #446939
 
  -- LaMont Jones <lamont@debian.org>  Mon, 29 Oct 2007 14:29:49 -0600
 
@@ -3643,7 +3983,8 @@ util-linux (2.13-1) unstable; urgency=low
     - ionice: clean up error handling
     - cytune: make the oneliner more specific the cyclades hw in question
     - docs: update TODO
-    - setarch: add --3gb option for compatibility with Debian linux{32,64} command
+    - setarch: add --3gb option for compatibility with Debian linux{32,64}
+      command
   * Revert "umount: only call update_mtab if mtab_is_writable().", since the
     fix is already present in a different way.
   * Have debian/rules deal with architectures that don't get packages.
@@ -4224,8 +4565,8 @@ util-linux (2.12p-1ubuntu1) hoary; urgency=low
 
 util-linux (2.12p-1) unstable; urgency=low
 
-  * New upstream version. (2.12p)
-    Closes: #182325, #270173, #192751, #229875, #230859, #214144, #254317, #272580
+  * New upstream version. (2.12p) Closes: #182325, #270173, #192751, #229875,
+    #230859, #214144, #254317, #272580
     - cfdisk: fix number of new partition when partitions not in disk order
     - fdisk: fix Sun label handling in sector mode
     - mkfs: never truncate filename (not that that ever happened)
@@ -4273,7 +4614,8 @@ util-linux (2.12l-1) unstable; urgency=low
     - Makefile: remove cat-id-tbl.c upon make clean
     - fdisk: fixed a bug that would cause a non-update of a sun disklabel
     - fdisk: use sectorsize instead of 512 for SGI (Eric Y. Theriault)
-    - fdisk: use __attribute__((packed)) for alpha, ARM: avoid unaligned accesses
+    - fdisk: use __attribute__((packed)) for alpha, ARM: avoid unaligned
+      accesses
     - hwclock: actually use HAVE_tm_gmtoff
     - swapon: fix priority handling
     - umount: refuse to unmount an empty string
@@ -4483,8 +4825,9 @@ util-linux (2.12-4) unstable; urgency=low
 
 util-linux (2.12-3) unstable; urgency=low
 
-  * Re-add support for kerneli (if cryptoapi is there, we use it.  If not, we assume
-    that -e <name> refers to kerneli).  Closes: #65068, #131044, #163639, #211534.
+  * Re-add support for kerneli (if cryptoapi is there, we use it.  If not, we
+    assume that -e <name> refers to kerneli).  Closes: #65068, #131044, #163639,
+    #211534.
 
  -- LaMont Jones <lamont@debian.org>  Fri, 19 Sep 2003 20:42:08 -0600
 
@@ -4556,7 +4899,8 @@ util-linux (2.11z-3) unstable; urgency=low
 util-linux (2.11z-2) unstable; urgency=low
 
   * add in hurd patch.  Closes: #153410
-  * Actually fixed in 2.11z-1 (or earlier)...  Closes: #81531, #138215, #138388, #185430
+  * Actually fixed in 2.11z-1 (or earlier)...  Closes: #81531, #138215, #138388,
+    #185430
   * Install line.  Closes: #141498
   * Suggest dosfstools (home of mkfs.vfat).  Closes: #175369
 
@@ -4964,13 +5308,13 @@ util-linux (2.10o-1) unstable; urgency=low
 
 util-linux (2.10n-1) unstable; urgency=low
 
-  * New upstream code.
-    closes: #68976 util-linux needs new upstream version.
-    closes: #64536 util-linux: [PATCH] mkswap refuses to create big swap partitions.
-    closes: #63747 Option parsing bug of 'mkswap' command Debian Package util-linux.
-    closes: #62935 mkswap BUG of option parsing in Debian Package util-linux.
-    closes: #59264 util-linux: mkswap: erroneous option parsing, documentation outdated.
-    closes: #64079 util-linux: mkswap's -v[01] option is broken.
+  * New upstream code. closes: #68976 util-linux needs new upstream version.
+    closes: #64536 util-linux: [PATCH] mkswap refuses to create big swap
+    partitions. closes: #63747 Option parsing bug of 'mkswap' command Debian
+    Package util-linux. closes: #62935 mkswap BUG of option parsing in Debian
+    Package util-linux. closes: #59264 util-linux: mkswap: erroneous option
+    parsing, documentation outdated. closes: #64079 util-linux: mkswap's -v[01]
+    option is broken.
 
  -- Vincent Renardias <vincent@debian.org>  Sun, 13 Aug 2000 00:54:51 +0200
 
@@ -5037,12 +5381,11 @@ util-linux (2.10f-1) unstable; urgency=low
 
 util-linux (2.10d-7) frozen unstable; urgency=low
 
-  * There is no real concensus about what we should do about the
-    hwclock issue. Now at least the problem is enough documented
-    to let the user decide. (Thanks to Henrique M Holschuh <hmh+debianml@rcm.org.br>
-    for the patch).
-    When this package is installed, I'll examine one by one which BR can
-    be closed.
+  * There is no real concensus about what we should do about the hwclock issue.
+    Now at least the problem is enough documented to let the user decide.
+    (Thanks to Henrique M Holschuh <hmh+debianml@rcm.org.br> for the patch).
+    When this package is installed, I'll examine one by one which BR can be
+    closed.
 
  -- Vincent Renardias <vincent@debian.org>  Mon, 31 Jan 2000 14:34:03 +0100
 
@@ -5069,8 +5412,8 @@ util-linux (2.10d-4) unstable; urgency=low
 
   * ipcrm now accepts multiple ids thanks to a patch from Topi Miettinen.
     closes: #15110: ipcrm doesn't work with xargs.
-  * fix postinst script:
-    closes: #53254: util-linux: ppc chunk of postinst script has syntactical error.
+  * fix postinst script: closes: #53254: util-linux: ppc chunk of postinst
+    script has syntactical error.
 
  -- Vincent Renardias <vincent@debian.org>  Wed, 22 Dec 1999 17:24:46 +0100
 
@@ -5168,14 +5511,12 @@ util-linux (2.10-1) unstable; urgency=low
 
 util-linux (2.9x-1) unstable; urgency=low
 
-  * New upstream release.
-    closes: #32916: hwclock freezes m68k system.
-    closes: #44986: util-linux: PAM support for kbdrate.
-    closes: #44821: util-linux: pam.d entry contains a path.
-    closes: #44727: util-linux: sfdisk examples are present twice in the package.
-    closes: #45565: removed /bin/kill. this is now provided by procps.
-    closes: #36332: problems with our /bin/kill.
-    closes: #41171: wall should be sgid tty, not root.
+  * New upstream release. closes: #32916: hwclock freezes m68k system. closes:
+    #44986: util-linux: PAM support for kbdrate. closes: #44821: util-linux:
+    pam.d entry contains a path. closes: #44727: util-linux: sfdisk examples are
+    present twice in the package. closes: #45565: removed /bin/kill. this is now
+    provided by procps. closes: #36332: problems with our /bin/kill. closes:
+    #41171: wall should be sgid tty, not root.
 
  -- Vincent Renardias <vincent@debian.org>  Tue, 21 Sep 1999 17:54:47 +0200
 

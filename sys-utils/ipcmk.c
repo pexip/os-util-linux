@@ -40,7 +40,7 @@ static int create_shm(size_t size, int permission)
 {
 	key_t key;
 
-	random_get_bytes(&key, sizeof(key));
+	ul_random_get_bytes(&key, sizeof(key));
 	return shmget(key, size, permission | IPC_CREAT);
 }
 
@@ -48,7 +48,7 @@ static int create_msg(int permission)
 {
 	key_t key;
 
-	random_get_bytes(&key, sizeof(key));
+	ul_random_get_bytes(&key, sizeof(key));
 	return msgget(key, permission | IPC_CREAT);
 }
 
@@ -56,7 +56,7 @@ static int create_sem(int nsems, int permission)
 {
 	key_t key;
 
-	random_get_bytes(&key, sizeof(key));
+	ul_random_get_bytes(&key, sizeof(key));
 	return semget(key, nsems, permission | IPC_CREAT);
 }
 
@@ -77,6 +77,10 @@ static void __attribute__((__noreturn__)) usage(void)
 
 	fputs(USAGE_SEPARATOR, out);
 	printf(USAGE_HELP_OPTIONS(26));
+
+	fputs(USAGE_ARGUMENTS, out);
+	printf(USAGE_ARG_SIZE(_("<size>")));
+
 	printf(USAGE_MAN_TAIL("ipcmk(1)"));
 
 	exit(EXIT_SUCCESS);
@@ -102,7 +106,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while((opt = getopt_long(argc, argv, "hM:QS:p:Vh", longopts, NULL)) != -1) {
 		switch(opt) {
@@ -120,12 +124,11 @@ int main(int argc, char **argv)
 		case 'p':
 			permission = strtoul(optarg, NULL, 8);
 			break;
+
 		case 'h':
 			usage();
-			break;
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}

@@ -33,7 +33,6 @@ taskset \- set or retrieve a process's CPU affinity
 .B \-p
 .RI [ mask ]\  pid
 .SH DESCRIPTION
-.PP
 .B taskset
 is used to set or retrieve the CPU affinity of a running process given its
 \fIpid\fR, or to launch a new \fIcommand\fR with a given CPU affinity.
@@ -71,6 +70,10 @@ is processors #1, #4, and #5,
 .TP
 .B \-\-cpu\-list\ 0-2,6
 is processors #0, #1, #2, and #6.
+.TP
+.B \-\-cpu\-list\ 0-10:2
+is processors #0, #2, #4, #6, #8 and #10. The suffix ":N" specifies stride in
+the range, for example 0-10:3 is interpreted as 0,3,6,9 list.
 .RE
 .PP
 When
@@ -115,6 +118,12 @@ A user must possess
 .B CAP_SYS_NICE
 to change the CPU affinity of a process belonging to another user.
 A user can retrieve the affinity mask of any process.
+.SH AUTHORS
+Written by Robert M. Love.
+.SH COPYRIGHT
+Copyright \(co 2004 Robert M. Love.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 .SH SEE ALSO
 .BR chrt (1),
 .BR nice (1),
@@ -125,12 +134,6 @@ A user can retrieve the affinity mask of any process.
 See
 .BR sched (7)
 for a description of the Linux scheduling scheme.
-.SH AUTHOR
-Written by Robert M. Love.
-.SH COPYRIGHT
-Copyright \(co 2004 Robert M. Love.
-This is free software; see the source for copying conditions.  There is NO
-warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 .SH AVAILABILITY
 The taskset command is part of the util-linux package and is available from
 https://www.kernel.org/pub/linux/utils/util-linux/.

@@ -60,7 +60,7 @@
 # define SCHED_FLAG_RESET_ON_FORK 0x01
 #endif
 
-#if defined (__linux__) && !defined(HAVE_SCHED_SETATTR)
+#if defined (__linux__)
 # include <sys/syscall.h>
 #endif
 
@@ -123,7 +123,7 @@ struct chrt_ctl {
 	uint64_t period;
 
 	unsigned int all_tasks : 1,		/* all threads of the PID */
-		     reset_on_fork : 1,		/* SCHED_RESET_ON_FORK */
+		     reset_on_fork : 1,		/* SCHED_RESET_ON_FORK or SCHED_FLAG_RESET_ON_FORK */
 		     altered : 1,		/* sched_set**() used */
 		     verbose : 1;		/* verbose output */
 };
@@ -347,7 +347,16 @@ static int set_sched_one_by_setscheduler(struct chrt_ctl *ctl, pid_t pid)
 	if (ctl->reset_on_fork)
 		policy |= SCHED_RESET_ON_FORK;
 # endif
+
+#if defined (__linux__) && defined(SYS_sched_setscheduler)
+	/* musl libc returns ENOSYS for its sched_setscheduler library
+	 * function, because the sched_setscheduler Linux kernel system call
+	 * does not conform to Posix; so we use the system call directly
+	 */
+	return syscall(SYS_sched_setscheduler, pid, policy, &sp);
+#else
 	return sched_setscheduler(pid, policy, &sp);
+#endif
 }
 
 
@@ -376,9 +385,10 @@ static int set_sched_one(struct chrt_ctl *ctl, pid_t pid)
 	sa.sched_period   = ctl->period;
 	sa.sched_deadline = ctl->deadline;
 
-# ifdef SCHED_RESET_ON_FORK
+# ifdef SCHED_FLAG_RESET_ON_FORK
+	/* Don't use SCHED_RESET_ON_FORK for sched_setattr()! */
 	if (ctl->reset_on_fork)
-		sa.sched_flags |= SCHED_RESET_ON_FORK;
+		sa.sched_flags |= SCHED_FLAG_RESET_ON_FORK;
 # endif
 	errno = 0;
 	return sched_setattr(pid, &sa, 0);
@@ -434,7 +444,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while((c = getopt_long(argc, argv, "+abdD:fiphmoP:T:rRvV", longopts, NULL)) != -1)
 	{
@@ -489,9 +499,9 @@ int main(int argc, char **argv)
 		case 'D':
 			ctl->deadline = strtou64_or_err(optarg, _("invalid deadline argument"));
 			break;
+
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		case 'h':
 			usage();
 		default:

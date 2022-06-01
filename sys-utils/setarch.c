@@ -131,7 +131,7 @@ static void __attribute__((__noreturn__)) usage(int archwrapper)
  */
 static struct arch_domain *init_arch_domains(void)
 {
-	struct utsname un;
+	static struct utsname un;
 	size_t i;
 
 	static struct arch_domain transitions[] =
@@ -194,6 +194,32 @@ static struct arch_domain *init_arch_domains(void)
 		{PER_LINUX,	"alphaev6",	"alpha"},
 		{PER_LINUX,	"alphaev67",	"alpha"},
 #endif
+#if defined(__e2k__)
+		{PER_LINUX,	"e2k",      "e2k"},
+		{PER_LINUX,	"e2kv4",	"e2k"},
+		{PER_LINUX,	"e2kv5",	"e2k"},
+		{PER_LINUX,	"e2kv6",	"e2k"},
+		{PER_LINUX,	"e2k4c",	"e2k"},
+		{PER_LINUX,	"e2k8c",	"e2k"},
+		{PER_LINUX,	"e2k1cp",	"e2k"},
+		{PER_LINUX,	"e2k8c2",	"e2k"},
+		{PER_LINUX,	"e2k12c",	"e2k"},
+		{PER_LINUX,	"e2k16c",	"e2k"},
+		{PER_LINUX,	"e2k2c3",	"e2k"},
+#endif
+#if defined(__arm__) || defined(__aarch64__)
+# ifdef __BIG_ENDIAN__
+		{PER_LINUX32,	"armv7b",	"arm"},
+		{PER_LINUX32,	"armv8b",	"arm"},
+# else
+		{PER_LINUX32,	"armv7l",	"arm"},
+		{PER_LINUX32,	"armv8l",	"arm"},
+# endif
+		{PER_LINUX32,	"armh",		"arm"},
+		{PER_LINUX32,	"arm",		"arm"},
+		{PER_LINUX,	"arm64",	"aarch64"},
+		{PER_LINUX,	"aarch64",	"aarch64"},
+#endif
 		/* place holder, will be filled up at runtime */
 		{-1,		NULL,		NULL},
 		{-1,		NULL,		NULL}
@@ -233,7 +259,7 @@ static struct arch_domain *get_arch_domain(struct arch_domain *doms, const char 
 {
 	struct arch_domain *d;
 
-	for (d = doms; d->perval >= 0; d++) {
+	for (d = doms; d && d->perval >= 0; d++) {
 		if (!strcmp(pers, d->target_arch))
 			break;
 	}
@@ -241,22 +267,30 @@ static struct arch_domain *get_arch_domain(struct arch_domain *doms, const char 
 	return !d || d->perval < 0 ? NULL : d;
 }
 
-static void verify_arch_domain(struct arch_domain *dom, const char *wanted)
+static void verify_arch_domain(struct arch_domain *doms, struct arch_domain *target, const char *wanted)
 {
 	struct utsname un;
 
-	if (!dom || !dom->result_arch)
+	if (!doms || !target || !target->result_arch)
 		return;
 
 	uname(&un);
-	if (strcmp(un.machine, dom->result_arch)) {
-		if (strcmp(dom->result_arch, "i386")
-		    || (strcmp(un.machine, "i486")
-			&& strcmp(un.machine, "i586")
-			&& strcmp(un.machine, "i686")
-			&& strcmp(un.machine, "athlon")))
-			errx(EXIT_FAILURE, _("Kernel cannot set architecture to %s"), wanted);
+
+	if (!strcmp(un.machine, target->result_arch))
+		return;
+
+	if (!strcmp(target->result_arch, "i386") ||
+	    !strcmp(target->result_arch, "arm")) {
+		struct arch_domain *dom;
+		for (dom = doms; dom->target_arch != NULL; dom++) {
+			if (!dom->result_arch || strcmp(dom->result_arch, target->result_arch))
+				continue;
+			if (!strcmp(dom->target_arch, un.machine))
+				return;
+		}
 	}
+
+	errx(EXIT_FAILURE, _("Kernel cannot set architecture to %s"), wanted);
 }
 
 int main(int argc, char *argv[])
@@ -266,7 +300,7 @@ int main(int argc, char *argv[])
 	int verbose = 0;
 	int archwrapper;
 	int c;
-	struct arch_domain *doms, *target;
+	struct arch_domain *doms = NULL, *target = NULL;
 	unsigned long pers_value = 0;
 	char *shell = NULL, *shell_arg = NULL;
 
@@ -302,7 +336,7 @@ int main(int argc, char *argv[])
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	if (argc < 1) {
 		warnx(_("Not enough arguments"));
@@ -330,12 +364,6 @@ int main(int argc, char *argv[])
 
 	while ((c = getopt_long(argc, argv, "+hVv3BFILRSTXZ", longopts, NULL)) != -1) {
 		switch (c) {
-		case 'h':
-			usage(archwrapper);
-			break;
-		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
 		case 'v':
 			verbose = 1;
 			break;
@@ -381,8 +409,13 @@ int main(int argc, char *argv[])
 			} else
 				warnx(_("unrecognized option '--list'"));
 			/* fallthrough */
+
 		default:
 			errtryhelp(EXIT_FAILURE);
+		case 'h':
+			usage(archwrapper);
+		case 'V':
+			print_version(EXIT_SUCCESS);
 		}
 	}
 
@@ -422,7 +455,7 @@ set_arch:
 
 	/* make sure architecture is set as expected */
 	if (arch)
-		verify_arch_domain(target, arch);
+		verify_arch_domain(doms, target, arch);
 
 	if (!argc) {
 		shell = "/bin/sh";
@@ -436,7 +469,7 @@ set_arch:
 
 	/* Execute shell */
 	if (shell) {
-		execl(shell, shell_arg, NULL);
+		execl(shell, shell_arg, (char *)NULL);
 		errexec(shell);
 	}
 

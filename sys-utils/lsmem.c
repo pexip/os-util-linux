@@ -344,7 +344,7 @@ static int memory_block_get_node(struct lsmem *lsmem, char *name)
 
 	node = -1;
 	while ((de = readdir(dir)) != NULL) {
-		if (strncmp("node", de->d_name, 4))
+		if (strncmp("node", de->d_name, 4) != 0)
 			continue;
 		if (!isdigit_string(de->d_name + 4))
 			continue;
@@ -431,6 +431,18 @@ static int is_mergeable(struct lsmem *lsmem, struct memory_block *blk)
 	return 1;
 }
 
+static void free_info(struct lsmem *lsmem)
+{
+	int i;
+
+	if (!lsmem)
+		return;
+	free(lsmem->blocks);
+	for (i = 0; i < lsmem->ndirs; i++)
+		free(lsmem->dirs[i]);
+	free(lsmem->dirs);
+}
+
 static void read_info(struct lsmem *lsmem)
 {
 	struct memory_block blk;
@@ -459,7 +471,7 @@ static void read_info(struct lsmem *lsmem)
 
 static int memory_block_filter(const struct dirent *de)
 {
-	if (strncmp("memory", de->d_name, 6))
+	if (strncmp("memory", de->d_name, 6) != 0)
 		return 0;
 	return isdigit_string(de->d_name + 6);
 }
@@ -518,7 +530,7 @@ static void __attribute__((__noreturn__)) usage(void)
 
 	printf(USAGE_MAN_TAIL("lsmem(1)"));
 
-	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char **argv)
@@ -563,7 +575,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while ((c = getopt_long(argc, argv, "abhJno:PrS:s:V", longopts, NULL)) != -1) {
 
@@ -575,9 +587,6 @@ int main(int argc, char **argv)
 			break;
 		case 'b':
 			lsmem->bytes = 1;
-			break;
-		case 'h':
-			usage();
 			break;
 		case 'J':
 			lsmem->json = 1;
@@ -607,9 +616,6 @@ int main(int argc, char **argv)
 		case 'S':
 			splitarg = optarg;
 			break;
-		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return 0;
 		case LSMEM_OPT_SUMARRY:
 			if (optarg) {
 				if (strcmp(optarg, "never") == 0)
@@ -623,6 +629,11 @@ int main(int argc, char **argv)
 			} else
 				lsmem->want_table = 0;
 			break;
+
+		case 'h':
+			usage();
+		case 'V':
+			print_version(EXIT_SUCCESS);
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}
@@ -643,6 +654,8 @@ int main(int argc, char **argv)
 		err(EXIT_FAILURE, _("failed to initialize %s handler"), _PATH_SYS_MEMORY);
 	if (prefix && ul_path_set_prefix(lsmem->sysmem, prefix) != 0)
 		err(EXIT_FAILURE, _("invalid argument to --sysroot"));
+	if (!ul_path_is_accessible(lsmem->sysmem))
+		err(EXIT_FAILURE, _("cannot open %s"), _PATH_SYS_MEMORY);
 
 	/* Shortcut to avoid scols machinery on --summary=only */
 	if (lsmem->want_table == 0 && lsmem->want_summary) {
@@ -743,5 +756,6 @@ int main(int argc, char **argv)
 
 	scols_unref_table(lsmem->table);
 	ul_unref_path(lsmem->sysmem);
+	free_info(lsmem);
 	return 0;
 }

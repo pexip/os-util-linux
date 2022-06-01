@@ -1,0 +1,37 @@
+From: Karel Zak <kzak@redhat.com>
+Date: Thu, 14 Jan 2021 12:45:28 +0100
+Subject: libmount: do not canonicalize ZFS source dataset
+
+Fixes: https://github.com/karelzak/util-linux/issues/1231
+Addresses: https://github.com/systemd/systemd/issues/18188
+Addresses: https://github.com/openzfs/zfs/pull/11295
+Signed-off-by: Karel Zak <kzak@redhat.com>
+---
+ libmount/src/context.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/libmount/src/context.c b/libmount/src/context.c
+index 6196c71..46e2010 100644
+--- a/libmount/src/context.c
++++ b/libmount/src/context.c
+@@ -1764,7 +1764,7 @@ int mnt_context_prepare_srcpath(struct libmnt_context *cxt)
+ {
+ 	const char *path = NULL;
+ 	struct libmnt_cache *cache;
+-	const char *t, *v, *src;
++	const char *t, *v, *src, *type;
+ 	int rc = 0;
+ 	struct libmnt_ns *ns_old;
+ 
+@@ -1786,6 +1786,11 @@ int mnt_context_prepare_srcpath(struct libmnt_context *cxt)
+ 	if (!src || mnt_fs_is_netfs(cxt->fs))
+ 		return 0;
+ 
++	/* ZFS source is always "dataset", not a real path */
++	type = mnt_fs_get_fstype(cxt->fs);
++	if (type && strcmp(type, "zfs") == 0)
++		return 0;
++
+ 	DBG(CXT, ul_debugobj(cxt, "srcpath '%s'", src));
+ 
+ 	ns_old = mnt_context_switch_target_ns(cxt);

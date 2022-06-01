@@ -419,7 +419,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_(" -o, --offset <num>            start at offset <num> into file\n"), out);
 	fputs(_("     --sizelimit <num>         device is limited to <num> bytes of the file\n"), out);
-	fputs(_(" -b  --sector-size <num>       set the logical sector size to <num>\n"), out);
+	fputs(_(" -b, --sector-size <num>       set the logical sector size to <num>\n"), out);
 	fputs(_(" -P, --partscan                create a partitioned loop device\n"), out);
 	fputs(_(" -r, --read-only               set up a read-only loop device\n"), out);
 	fputs(_("     --direct-io[=<on|off>]    open backing file with O_DIRECT\n"), out);
@@ -447,7 +447,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	exit(EXIT_SUCCESS);
 }
 
-static void warn_size(const char *filename, uint64_t size)
+static void warn_size(const char *filename, uint64_t size, uint64_t offset, int flags)
 {
 	struct stat st;
 
@@ -455,6 +455,9 @@ static void warn_size(const char *filename, uint64_t size)
 		if (stat(filename, &st) || S_ISBLK(st.st_mode))
 			return;
 		size = st.st_size;
+
+		if (flags & LOOPDEV_FL_OFFSET)
+			size -= offset;
 	}
 
 	if (size < 512)
@@ -469,10 +472,11 @@ static void warn_size(const char *filename, uint64_t size)
 
 static int create_loop(struct loopdev_cxt *lc,
 		       int nooverlap, int lo_flags, int flags,
-		       const char *file, uint64_t offset, uint64_t sizelimit)
+		       const char *file, uint64_t offset, uint64_t sizelimit,
+		       uint64_t blocksize)
 {
 	int hasdev = loopcxt_has_device(lc);
-	int rc = 0;
+	int rc = 0, ntries = 0;
 
 	/* losetup --find --noverlap file.img */
 	if (!hasdev && nooverlap) {
@@ -505,7 +509,7 @@ static int create_loop(struct loopdev_cxt *lc,
 			}
 
 			lc->info.lo_flags &= ~LO_FLAGS_AUTOCLEAR;
-			if (loopcxt_set_status(lc)) {
+			if (loopcxt_ioctl_status(lc)) {
 				loopcxt_deinit(lc);
 				errx(EXIT_FAILURE, _("%s: failed to re-use loop device"), file);
 			}
@@ -557,6 +561,9 @@ static int create_loop(struct loopdev_cxt *lc,
 			loopcxt_set_sizelimit(lc, sizelimit);
 		if (lo_flags)
 			loopcxt_set_flags(lc, lo_flags);
+		if (blocksize > 0)
+			loopcxt_set_blocksize(lc, blocksize);
+
 		if ((rc = loopcxt_set_backing_file(lc, file))) {
 			warn(_("%s: failed to use backing file"), file);
 			break;
@@ -565,8 +572,12 @@ static int create_loop(struct loopdev_cxt *lc,
 		rc = loopcxt_setup_device(lc);
 		if (rc == 0)
 			break;			/* success */
-		if (errno == EBUSY && !hasdev)
+
+		if (errno == EBUSY && !hasdev && ntries < 64) {
+			xusleep(200000);
+			ntries++;
 			continue;
+		}
 
 		/* errors */
 		errpre = hasdev && loopcxt_get_fd(lc) < 0 ?
@@ -635,7 +646,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	if (loopcxt_init(&lc, 0))
 		err(EXIT_FAILURE, _("failed to initialize loopcxt"));
@@ -675,9 +686,6 @@ int main(int argc, char **argv)
 			break;
 		case 'f':
 			act = A_FIND_FREE;
-			break;
-		case 'h':
-			usage();
 			break;
 		case 'J':
 			json = 1;
@@ -723,13 +731,15 @@ int main(int argc, char **argv)
 			break;
 		case 'v':
 			break;
-		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
 		case OPT_SIZELIMIT:			/* --sizelimit */
 			sizelimit = strtosize_or_err(optarg, _("failed to parse size"));
 			flags |= LOOPDEV_FL_SIZELIMIT;
                         break;
+
+		case 'h':
+			usage();
+		case 'V':
+			print_version(EXIT_SUCCESS);
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}
@@ -819,7 +829,7 @@ int main(int argc, char **argv)
 	    (sizelimit || lo_flags || showdev))
 		errx(EXIT_FAILURE,
 			_("the options %s are allowed during loop device setup only"),
-			"--{sizelimit,read-only,show}");
+			"--{sizelimit,partscan,read-only,show}");
 
 	if ((flags & LOOPDEV_FL_OFFSET) &&
 	    act != A_CREATE && (act != A_SHOW || !file))
@@ -831,13 +841,14 @@ int main(int argc, char **argv)
 
 	switch (act) {
 	case A_CREATE:
-		res = create_loop(&lc, no_overlap, lo_flags, flags, file, offset, sizelimit);
+		res = create_loop(&lc, no_overlap, lo_flags, flags, file,
+				  offset, sizelimit, blocksize);
 		if (res == 0) {
 			if (showdev)
 				printf("%s\n", loopcxt_get_device(&lc));
-			warn_size(file, sizelimit);
-			if (set_dio || set_blocksize)
-				goto lo_set_post;
+			warn_size(file, sizelimit, offset, flags);
+			if (set_dio)
+				goto lo_set_dio;
 		}
 		break;
 	case A_DELETE:
@@ -884,26 +895,23 @@ int main(int argc, char **argv)
 			warn("%s", loopcxt_get_device(&lc));
 		break;
 	case A_SET_CAPACITY:
-		res = loopcxt_set_capacity(&lc);
+		res = loopcxt_ioctl_capacity(&lc);
 		if (res)
 			warn(_("%s: set capacity failed"),
 			        loopcxt_get_device(&lc));
 		break;
 	case A_SET_DIRECT_IO:
+lo_set_dio:
+		res = loopcxt_ioctl_dio(&lc, use_dio);
+		if (res)
+			warn(_("%s: set direct io failed"),
+			        loopcxt_get_device(&lc));
+		break;
 	case A_SET_BLOCKSIZE:
- lo_set_post:
-		if (set_dio) {
-			res = loopcxt_set_dio(&lc, use_dio);
-			if (res)
-				warn(_("%s: set direct io failed"),
-				        loopcxt_get_device(&lc));
-		}
-		if (set_blocksize) {
-			res = loopcxt_set_blocksize(&lc, blocksize);
-			if (res)
-				warn(_("%s: set logical block size failed"),
-				        loopcxt_get_device(&lc));
-		}
+		res = loopcxt_ioctl_blocksize(&lc, blocksize);
+		if (res)
+			warn(_("%s: set logical block size failed"),
+			        loopcxt_get_device(&lc));
 		break;
 	default:
 		warnx(_("bad usage"));

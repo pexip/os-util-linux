@@ -88,7 +88,7 @@ typedef char CSET;
 typedef struct char_str {
 #define	CS_NORMAL	1
 #define	CS_ALTERNATE	2
-	short		c_column;	/* column character is in */
+	int		c_column;	/* column character is in */
 	CSET		c_set;		/* character set (currently only 2) */
 	wchar_t		c_char;		/* character in question */
 	int		c_width;	/* character width */
@@ -190,7 +190,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	max_bufd_lines = 128 * 2;
 	compress_spaces = 1;		/* compress spaces into tabs */
@@ -220,9 +220,9 @@ int main(int argc, char **argv)
 		case 'x':		/* do not compress spaces into tabs */
 			compress_spaces = 0;
 			break;
+
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		case 'H':
 			usage();
 		default:
@@ -243,7 +243,7 @@ int main(int argc, char **argv)
 		errno = 0;
 		if ((ch = getwchar()) == WEOF) {
 			if (errno == EILSEQ) {
-				warn(NULL);
+				warn(_("failed on line %d"), max_line + 1);
 				ret = EXIT_FAILURE;
 			}
 			break;
@@ -396,7 +396,7 @@ int main(int argc, char **argv)
 	/* goto the last line that had a character on it */
 	for (; l->l_next; l = l->l_next)
 		this_line++;
-	if (max_line == 0)
+	if (max_line == 0 && cur_col == 0)
 		return EXIT_SUCCESS;	/* no lines, so just exit */
 	flush_lines(this_line - nflushd_lines + extra_lines + 1);
 
@@ -476,8 +476,9 @@ void flush_line(LINE *l)
 	nchars = l->l_line_len;
 
 	if (l->l_needs_sort) {
-		static CHAR *sorted;
-		static int count_size, *count, i, save, sorted_size, tot;
+		static CHAR *sorted = NULL;
+		static int count_size = 0, *count = NULL, sorted_size = 0;
+		int i, tot;
 
 		/*
 		 * Do an O(n) sort on l->l_line by column being careful to
@@ -494,7 +495,7 @@ void flush_line(LINE *l)
 			    (unsigned)sizeof(int) * count_size);
 		}
 		memset(count, 0, sizeof(int) * l->l_max_col + 1);
-		for (i = nchars, c = l->l_line; --i >= 0; c++)
+		for (i = nchars, c = l->l_line; c && --i >= 0; c++)
 			count[c->c_column]++;
 
 		/*
@@ -502,7 +503,7 @@ void flush_line(LINE *l)
 		 * indices into new line.
 		 */
 		for (tot = 0, i = 0; i <= l->l_max_col; i++) {
-			save = count[i];
+			int save = count[i];
 			count[i] = tot;
 			tot += save;
 		}

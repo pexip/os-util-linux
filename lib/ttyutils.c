@@ -47,16 +47,16 @@ int get_terminal_dimension(int *cols, int *lines)
 		l = t_win.ts_lines;
 	}
 #endif
-
-	if (cols && c <= 0)
-		c = get_env_int("COLUMNS");
-	if (lines && l <= 0)
-		l = get_env_int("LINES");
-
-	if (cols)
+	if (cols) {
+		if (c <= 0)
+			c = get_env_int("COLUMNS");
 		*cols = c;
-	if (lines)
+	}
+	if (lines) {
+		if (l <= 0)
+			l = get_env_int("LINES");
 		*lines = l;
+	}
 	return 0;
 }
 
@@ -67,6 +67,18 @@ int get_terminal_width(int default_width)
 	get_terminal_dimension(&width, NULL);
 
 	return width > 0 ? width : default_width;
+}
+
+int get_terminal_stdfd(void)
+{
+	if (isatty(STDIN_FILENO))
+		return STDIN_FILENO;
+	if (isatty(STDOUT_FILENO))
+		return STDOUT_FILENO;
+	if (isatty(STDERR_FILENO))
+		return STDERR_FILENO;
+
+	return -EINVAL;
 }
 
 int get_terminal_name(const char **path,
@@ -85,21 +97,18 @@ int get_terminal_name(const char **path,
 	if (number)
 		*number = NULL;
 
-	if (isatty(STDIN_FILENO))
-		fd = STDIN_FILENO;
-	else if (isatty(STDOUT_FILENO))
-		fd = STDOUT_FILENO;
-	else if (isatty(STDERR_FILENO))
-		fd = STDERR_FILENO;
-	else
-		return -1;
+	fd = get_terminal_stdfd();
+	if (fd < 0)
+		return fd;	/* error */
 
 	tty = ttyname(fd);
 	if (!tty)
 		return -1;
+
 	if (path)
 		*path = tty;
-	tty = strncmp(tty, "/dev/", 5) == 0 ? tty + 5 : tty;
+	if (name || number)
+		tty = strncmp(tty, "/dev/", 5) == 0 ? tty + 5 : tty;
 	if (name)
 		*name = tty;
 	if (number) {

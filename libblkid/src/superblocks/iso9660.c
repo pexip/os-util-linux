@@ -182,6 +182,8 @@ static int probe_iso9660(blkid_probe pr, const struct blkid_idmag *mag)
 
 	memcpy(label, iso->volume_id, sizeof(label));
 
+	blkid_probe_set_block_size(pr, 2048);
+
 	if (!is_str_empty(iso->system_id, sizeof(iso->system_id)))
 		blkid_probe_set_id_label(pr, "SYSTEM_ID",
 				iso->system_id, sizeof(iso->system_id));
@@ -244,7 +246,7 @@ static int probe_iso9660(blkid_probe pr, const struct blkid_idmag *mag)
 			blkid_probe_set_utf8label(pr,
 					iso->volume_id,
 					sizeof(iso->volume_id),
-					BLKID_ENC_UTF16BE);
+					UL_ENCODE_UTF16BE);
 			goto has_label;
 		}
 		off += ISO_SECTOR_SIZE;

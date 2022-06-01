@@ -89,8 +89,12 @@ Display Sunday as the first day of the week.
 \fB\-m\fR, \fB\-\-monday\fR
 Display Monday as the first day of the week.
 .TP
+\fB\-v\fR, \fB\-\-vertical\fR
+Display using a vertical layout (aka ncal mode).
+.TP
 .B \-\-iso
-Display the proleptic Gregorian calendar exclusively.
+Display the proleptic Gregorian calendar exclusively.  This option does not affect
+week numbers and the first day of the week.
 .RB See\  \-\-reform\  below.
 .TP
 \fB\-j\fR, \fB\-\-julian\fR
@@ -151,7 +155,8 @@ Display a calendar for the whole year.
 Display a calendar for the next twelve months.
 .TP
 \fB\-w\fR, \fB\-\-week\fR[=\fInumber\fR]
-Display week numbers in the calendar (US or ISO-8601).
+Display week numbers in the calendar (US or ISO-8601).  See NOTES section
+for more details.
 .TP
 \fB\-\-color\fR[=\fIwhen\fR]
 Colorize the output.  The optional argument \fIwhen\fP
@@ -166,12 +171,12 @@ Display version information and exit.
 Display help text and exit.
 .SH PARAMETERS
 .TP
-\fBSingle digits-only parameter (e.g. 'cal 2020')\fR
+\fBSingle digits-only parameter (e.g., 'cal 2020')\fR
 Specifies the \fIyear\fR to be displayed; note the year must be fully specified:
 .B "cal 89"
 will not display a calendar for 1989.
 .TP
-\fBSingle string parameter (e.g. 'cal tomorrow' or 'cal August')\fR
+\fBSingle string parameter (e.g., 'cal tomorrow' or 'cal August')\fR
 Specifies \fItimestamp\fR or a \fImonth name\fR (or abbreviated name) according to the current
 locales.
 .sp
@@ -186,10 +191,10 @@ specified time span, for example '+2days'. Instead of prefixing the time span
 with "+" or "-", it may also be suffixed with a space and the word "left" or
 "ago" (for example '1 week ago').
 .TP
-\fBTwo parameters (e.g. 'cal 11 2020')\fR
+\fBTwo parameters (e.g., 'cal 11 2020')\fR
 Denote the \fImonth\fR (1 - 12) and \fIyear\fR.
 .TP
-\fBThree parameters (e.g. 'cal 25 11 2020')\fR
+\fBThree parameters (e.g., 'cal 25 11 2020')\fR
 Denote the \fIday\fR (1-31), \fImonth and \fIyear\fR, and the day will be
 highlighted if the calendar is displayed on a terminal.  If no parameters are
 specified, the current month's calendar is displayed.
@@ -200,22 +205,21 @@ locale or the
 .PP
 The week numbering depends on the choice of the first day of the week.  If it
 is Sunday then the customary North American numbering is used, where 1 January
-is in week number 1.  If it is Monday then the ISO 8601 standard week numbering
-is used, where the first Thursday is in week number 1.
+is in week number 1.  If it is Monday (\fB\-m\fR) then the ISO 8601 standard week
+numbering is used, where the first Thursday is in week number 1.
 .SH COLORS
 Implicit coloring can be disabled as follows:
 .RS
 
-.br
 .B touch /etc/terminal-colors.d/cal.disable
-.br
 
 .RE
 See
 .BR terminal-colors.d (5)
 for more details about colorization configuration.
+.SH HISTORY
+A cal command appeared in Version 6 AT&T UNIX.
 .SH BUGS
-.PP
 The default
 .B cal
 output uses 3 September 1752 as the Gregorian calendar reform date.  The
@@ -224,8 +228,6 @@ October 1582, are not implemented.
 .PP
 Alternative calendars, such as the Umm al-Qura, the Solar Hijri, the Ge'ez,
 or the lunisolar Hindu, are not supported.
-.SH HISTORY
-A cal command appeared in Version 6 AT&T UNIX.
 .SH AVAILABILITY
 The cal command is part of the util-linux package and is available from
 https://www.kernel.org/pub/linux/utils/util-linux/.

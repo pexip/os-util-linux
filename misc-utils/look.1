@@ -68,7 +68,7 @@ alphabetic characters is ignored.
 Use the alternative dictionary file.
 .TP
 .BR \-d , " \-\-alphanum"
-Use normal dictionary character set and order, i.e. only blanks and
+Use normal dictionary character set and order, i.e., only blanks and
 alphanumeric characters are compared.  This is on by default if no file is
 specified.
 
@@ -80,7 +80,7 @@ Ignore the case of alphabetic characters.  This is on by default if no file is
 specified.
 .TP
 .BR \-t , " \-\-terminate " \fIcharacter\fR
-Specify a string termination character, i.e. only the characters
+Specify a string termination character, i.e., only the characters
 in \fIstring\fR up to and including the first occurrence of \fIcharacter\fR
 are compared.
 .TP
@@ -94,13 +94,6 @@ The
 .B look
 utility exits 0 if one or more lines were found and displayed, 1 if
 no lines were found, and >1 if an error occurred.
-.SH EXAMPLE
-.RS
-.nf
-sort -d /etc/passwd -o /tmp/look.dict
-look -t: root:foobar /tmp/look.dict
-.nf
-.RE
 .SH ENVIRONMENT
 .TP
 .B WORDLIST
@@ -111,13 +104,20 @@ than the dictionary path defined in FILES segment.
 the dictionary
 .IP "\fB/usr/share/dict/web2\fR" 4
 the alternative dictionary
-.SH "SEE ALSO"
-.BR grep (1),
-.BR sort (1)
 .SH HISTORY
 The
 .B look
 utility appeared in Version 7 AT&T Unix.
+.SH EXAMPLES
+.RS
+.nf
+sort \-d /etc/passwd \-o /tmp/look.dict
+look \-t: root:foobar /tmp/look.dict
+.fi
+.RE
+.SH SEE ALSO
+.BR grep (1),
+.BR sort (1)
 .SH AVAILABILITY
 The look command is part of the util-linux package and is available from
 https://www.kernel.org/pub/linux/utils/util-linux/.

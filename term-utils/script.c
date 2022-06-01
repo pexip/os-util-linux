@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 1980 Regents of the University of California.
+ * Copyright (C) 1980      Regents of the University of California.
+ * Copyright (C) 2013-2019 Karel Zak <kzak@redhat.com>
+ *
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,17 +32,6 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-
-/*
- * 1999-02-22 Arkadiusz Miśkiewicz <misiek@pld.ORG.PL>
- * - added Native Language Support
- *
- * 2000-07-30 Per Andreas Buer <per@linpro.no> - added "q"-option
- *
- * 2014-05-30 Csaba Kos <csaba.kos@gmail.com>
- * - fixed a rare deadlock after child termination
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <paths.h>
@@ -72,25 +63,24 @@
 #include "monotonic.h"
 #include "timeutils.h"
 #include "strutils.h"
-
+#include "xalloc.h"
+#include "optutils.h"
+#include "signames.h"
+#include "pty-session.h"
 #include "debug.h"
 
 static UL_DEBUG_DEFINE_MASK(script);
 UL_DEBUG_DEFINE_MASKNAMES(script) = UL_DEBUG_EMPTY_MASKNAMES;
 
 #define SCRIPT_DEBUG_INIT	(1 << 1)
-#define SCRIPT_DEBUG_POLL	(1 << 2)
-#define SCRIPT_DEBUG_SIGNAL	(1 << 3)
-#define SCRIPT_DEBUG_IO		(1 << 4)
+#define SCRIPT_DEBUG_PTY	(1 << 2)
+#define SCRIPT_DEBUG_IO		(1 << 3)
+#define SCRIPT_DEBUG_SIGNAL	(1 << 4)
 #define SCRIPT_DEBUG_MISC	(1 << 5)
 #define SCRIPT_DEBUG_ALL	0xFFFF
 
 #define DBG(m, x)       __UL_DBG(script, SCRIPT_DEBUG_, m, x)
 #define ON_DBG(m, x)    __UL_DBG_CALL(script, SCRIPT_DEBUG_, m, x)
-
-#if defined(HAVE_LIBUTIL) && defined(HAVE_PTY_H)
-# include <pty.h>
-#endif
 
 #ifdef HAVE_LIBUTEMPTER
 # include <utempter.h>
@@ -98,44 +88,80 @@ UL_DEBUG_DEFINE_MASKNAMES(script) = UL_DEBUG_EMPTY_MASKNAMES;
 
 #define DEFAULT_TYPESCRIPT_FILENAME "typescript"
 
+/*
+ * Script is driven by stream (stdout/stdin) activity. It's possible to
+ * associate arbitrary number of log files with the stream. We have two basic
+ * types of log files: "timing file" (simple or multistream) and "data file"
+ * (raw).
+ *
+ * The same log file maybe be shared between both streams. For example
+ * multi-stream timing file is possible to use for stdin as well as for stdout.
+ */
+enum {
+	SCRIPT_FMT_RAW = 1,		/* raw slave/master data */
+	SCRIPT_FMT_TIMING_SIMPLE,	/* (classic) in format "<delta> <offset>" */
+	SCRIPT_FMT_TIMING_MULTI,	/* (advanced) multiple streams in format "<type> <delta> <offset|etc> */
+};
+
+struct script_log {
+	FILE	*fp;			/* file pointer (handler) */
+	int	format;			/* SCRIPT_FMT_* */
+	char	*filename;		/* on command line specified name */
+	struct timeval oldtime;		/* previous entry log time (SCRIPT_FMT_TIMING_* only) */
+	struct timeval starttime;
+
+	unsigned int	initialized : 1;
+};
+
+struct script_stream {
+	struct script_log **logs;	/* logs where to write data from stream */
+	size_t nlogs;			/* number of logs */
+	char ident;			/* stream identifier */
+};
+
 struct script_control {
-	char *shell;		/* shell to be executed */
-	char *command;		/* command to be executed */
-	char *fname;		/* output file path */
-	FILE *typescriptfp;	/* output file pointer */
-	char *tname;		/* timing file path */
-	FILE *timingfp;		/* timing file pointer */
-	uint64_t outsz;         /* current output file size */
-	uint64_t maxsz;		/* maximum output file size */
-	struct timeval oldtime;	/* previous write or command start time */
-	int master;		/* pseudoterminal master file descriptor */
-	int slave;		/* pseudoterminal slave file descriptor */
-	int poll_timeout;	/* poll() timeout, used in end of execution */
+	uint64_t outsz;		/* current output files size */
+	uint64_t maxsz;		/* maximum output files size */
+
+	struct script_stream	out;	/* output */
+	struct script_stream	in;	/* input */
+
+	struct script_log	*siglog;	/* log for signal entries */
+	struct script_log	*infolog;	/* log for info entries */
+
+	const char *ttyname;
+	const char *ttytype;
+	int ttycols;
+	int ttylines;
+
+	struct ul_pty *pty;	/* pseudo-terminal */
 	pid_t child;		/* child pid */
 	int childstatus;	/* child process exit value */
-	struct termios attrs;	/* slave terminal runtime attributes */
-	struct winsize win;	/* terminal window size */
-#if !HAVE_LIBUTIL || !HAVE_PTY_H
-	char *line;		/* terminal line */
-#endif
+
 	unsigned int
 	 append:1,		/* append output */
 	 rc_wanted:1,		/* return child exit value */
 	 flush:1,		/* flush after each write */
 	 quiet:1,		/* suppress most output */
-	 timing:1,		/* include timing file */
 	 force:1,		/* write output to links */
-	 isterm:1,		/* is child process running as terminal */
-	 die:1;			/* terminate program */
-
-	sigset_t sigset;	/* catch SIGCHLD and SIGWINCH with signalfd() */
-	sigset_t sigorg;	/* original signal mask */
-	int sigfd;		/* file descriptor for signalfd() */
+	 isterm:1;		/* is child process running as terminal */
 };
+
+static ssize_t log_info(struct script_control *ctl, const char *name, const char *msgfmt, ...);
 
 static void script_init_debug(void)
 {
 	__UL_INIT_DEBUG_FROM_ENV(script, SCRIPT_DEBUG_, 0, SCRIPT_DEBUG);
+}
+
+static void init_terminal_info(struct script_control *ctl)
+{
+	if (ctl->ttyname || !ctl->isterm)
+		return;		/* already initialized */
+
+	get_terminal_dimension(&ctl->ttycols, &ctl->ttylines);
+	get_terminal_name(&ctl->ttyname, NULL, NULL);
+	get_terminal_type(&ctl->ttytype);
 }
 
 /*
@@ -167,613 +193,583 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("Make a typescript of a terminal session.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
-	fputs(_(" -a, --append                  append the output\n"
-		" -c, --command <command>       run command rather than interactive shell\n"
-		" -e, --return                  return exit code of the child process\n"
-		" -f, --flush                   run flush after each write\n"
-		"     --force                   use output file even when it is a link\n"
-		" -o, --output-limit <size>     terminate if output files exceed size\n"
-		" -q, --quiet                   be quiet\n"
-		" -t[<file>], --timing[=<file>] output timing data to stderr or to FILE\n"
-		), out);
-	printf(USAGE_HELP_OPTIONS(31));
+	fputs(_(" -I, --log-in <file>           log stdin to file\n"), out);
+	fputs(_(" -O, --log-out <file>          log stdout to file (default)\n"), out);
+	fputs(_(" -B, --log-io <file>           log stdin and stdout to file\n"), out);
+	fputs(USAGE_SEPARATOR, out);
 
+	fputs(_(" -T, --log-timing <file>       log timing information to file\n"), out);
+	fputs(_(" -t[<file>], --timing[=<file>] deprecated alias to -T (default file is stderr)\n"), out);
+	fputs(_(" -m, --logging-format <name>   force to 'classic' or 'advanced' format\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+
+	fputs(_(" -a, --append                  append to the log file\n"), out);
+	fputs(_(" -c, --command <command>       run command rather than interactive shell\n"), out);
+	fputs(_(" -e, --return                  return exit code of the child process\n"), out);
+	fputs(_(" -f, --flush                   run flush after each write\n"), out);
+	fputs(_("     --force                   use output file even when it is a link\n"), out);
+	fputs(_(" -E, --echo <when>             echo input (auto, always or never)\n"), out);
+	fputs(_(" -o, --output-limit <size>     terminate if output files exceed size\n"), out);
+	fputs(_(" -q, --quiet                   be quiet\n"), out);
+
+	fputs(USAGE_SEPARATOR, out);
+	printf(USAGE_HELP_OPTIONS(31));
 	printf(USAGE_MAN_TAIL("script(1)"));
+
 	exit(EXIT_SUCCESS);
 }
 
-static void typescript_message_start(const struct script_control *ctl, time_t *tvec)
+static struct script_log *get_log_by_name(struct script_stream *stream,
+					  const char *name)
 {
-	char buf[FORMAT_TIMESTAMP_MAX];
-	int cols = 0, lines = 0;
-	const char *tty = NULL, *term = NULL;
+	size_t i;
 
-	if (!ctl->typescriptfp)
-		return;
-
-	strtime_iso(tvec, ISO_TIMESTAMP, buf, sizeof(buf));
-
-	fprintf(ctl->typescriptfp, _("Script started on %s ["), buf);
-
-	if (ctl->isterm) {
-		get_terminal_dimension(&cols, &lines);
-		get_terminal_name(&tty, NULL, NULL);
-		get_terminal_type(&term);
-
-		if (term)
-			fprintf(ctl->typescriptfp, "TERM=\"%s\" ", term);
-		if (tty)
-			fprintf(ctl->typescriptfp, "TTY=\"%s\" ", tty);
-
-		fprintf(ctl->typescriptfp, "COLUMNS=\"%d\" LINES=\"%d\"", cols, lines);
-	} else
-		fprintf(ctl->typescriptfp, _("<not executed on terminal>"));
-
-	fputs("]\n", ctl->typescriptfp);
-}
-
-static void typescript_message_done(const struct script_control *ctl, int status, const char *msg)
-{
-	char buf[FORMAT_TIMESTAMP_MAX];
-	time_t tvec;
-
-	if (!ctl->typescriptfp)
-		return;
-
-	tvec = script_time((time_t *)NULL);
-
-	strtime_iso(&tvec, ISO_TIMESTAMP, buf, sizeof(buf));
-
-	if (msg)
-		fprintf(ctl->typescriptfp, _("\nScript done on %s [<%s>]\n"), buf, msg);
-	else
-		fprintf(ctl->typescriptfp, _("\nScript done on %s [COMMAND_EXIT_CODE=\"%d\"]\n"), buf, status);
-}
-
-static void die_if_link(const struct script_control *ctl)
-{
-	struct stat s;
-
-	if (ctl->force)
-		return;
-	if (lstat(ctl->fname, &s) == 0 && (S_ISLNK(s.st_mode) || s.st_nlink > 1))
-		errx(EXIT_FAILURE,
-		     _("output file `%s' is a link\n"
-		       "Use --force if you really want to use it.\n"
-		       "Program not started."), ctl->fname);
-}
-
-static void restore_tty(struct script_control *ctl, int mode)
-{
-	struct termios rtt;
-
-	if (!ctl->isterm)
-		return;
-
-	rtt = ctl->attrs;
-	tcsetattr(STDIN_FILENO, mode, &rtt);
-}
-
-static void enable_rawmode_tty(struct script_control *ctl)
-{
-	struct termios rtt;
-
-	if (!ctl->isterm)
-		return;
-
-	rtt = ctl->attrs;
-	cfmakeraw(&rtt);
-	rtt.c_lflag &= ~ECHO;
-	tcsetattr(STDIN_FILENO, TCSANOW, &rtt);
-}
-
-static void __attribute__((__noreturn__)) done_log(struct script_control *ctl, const char *log_msg)
-{
-	int childstatus;
-
-	DBG(MISC, ul_debug("done!"));
-
-	restore_tty(ctl, TCSADRAIN);
-
-	if (WIFSIGNALED(ctl->childstatus))
-		childstatus = WTERMSIG(ctl->childstatus) + 0x80;
-	else
-		childstatus = WEXITSTATUS(ctl->childstatus);
-
-	if (ctl->typescriptfp) {
-		typescript_message_done(ctl, childstatus, log_msg);
-		if (!ctl->quiet)
-			printf(_("Script done, file is %s\n"), ctl->fname);
+	for (i = 0; i < stream->nlogs; i++) {
+		struct script_log *log = stream->logs[i];
+		if (strcmp(log->filename, name) == 0)
+			return log;
 	}
-#ifdef HAVE_LIBUTEMPTER
-	if (ctl->master >= 0)
-		utempter_remove_record(ctl->master);
-#endif
-	kill(ctl->child, SIGTERM);	/* make sure we don't create orphans */
-
-	if (ctl->timingfp && close_stream(ctl->timingfp) != 0)
-		err(EXIT_FAILURE, "write failed: %s", ctl->tname);
-	if (ctl->typescriptfp && close_stream(ctl->typescriptfp) != 0)
-		err(EXIT_FAILURE, "write failed: %s", ctl->fname);
-
-	exit(ctl->rc_wanted ? childstatus : EXIT_SUCCESS);
+	return NULL;
 }
 
-static void __attribute__((__noreturn__)) done(struct script_control *ctl)
+static struct script_log *log_associate(struct script_control *ctl,
+					struct script_stream *stream,
+					const char *filename, int format)
 {
-	done_log(ctl, NULL);
+	struct script_log *log;
+
+	DBG(MISC, ul_debug("associate %s with stream", filename));
+
+	assert(ctl);
+	assert(filename);
+	assert(stream);
+
+	log = get_log_by_name(stream, filename);
+	if (log)
+		return log;	/* already defined */
+
+	log = get_log_by_name(stream == &ctl->out ? &ctl->in : &ctl->out, filename);
+	if (!log) {
+		/* create a new log */
+		log = xcalloc(1, sizeof(*log));
+		log->filename = xstrdup(filename);
+		log->format = format;
+	}
+
+	/* add log to the stream */
+	stream->logs = xrealloc(stream->logs,
+			(stream->nlogs + 1) * sizeof(log));
+	stream->logs[stream->nlogs] = log;
+	stream->nlogs++;
+
+	/* remember where to write info about signals */
+	if (format == SCRIPT_FMT_TIMING_MULTI) {
+		if (!ctl->siglog)
+			ctl->siglog = log;
+		if (!ctl->infolog)
+			ctl->infolog = log;
+	}
+
+	return log;
 }
 
-static void __attribute__((__noreturn__)) fail(struct script_control *ctl)
+static int log_close(struct script_control *ctl,
+		      struct script_log *log,
+		      const char *msg,
+		      int status)
 {
-	DBG(MISC, ul_debug("fail!"));
-	kill(0, SIGTERM);
-	done(ctl);
-}
+	int rc = 0;
 
-static void wait_for_child(struct script_control *ctl, int wait)
-{
-	int status;
-	pid_t pid;
-	int options = wait ? 0 : WNOHANG;
+	if (!log || !log->initialized)
+		return 0;
 
-	DBG(MISC, ul_debug("waiting for child"));
+	DBG(MISC, ul_debug("closing %s", log->filename));
 
-	while ((pid = wait3(&status, options, NULL)) > 0)
-		if (pid == ctl->child)
-			ctl->childstatus = status;
-}
+	switch (log->format) {
+	case SCRIPT_FMT_RAW:
+	{
+		char buf[FORMAT_TIMESTAMP_MAX];
+		time_t tvec = script_time((time_t *)NULL);
 
-static void write_output(struct script_control *ctl, char *obuf,
-			    ssize_t bytes)
-{
-	int timing_bytes = 0;
-
-	DBG(IO, ul_debug(" writing output"));
-
-	if (ctl->timing && ctl->timingfp) {
+		strtime_iso(&tvec, ISO_TIMESTAMP, buf, sizeof(buf));
+		if (msg)
+			fprintf(log->fp, _("\nScript done on %s [<%s>]\n"), buf, msg);
+		else
+			fprintf(log->fp, _("\nScript done on %s [COMMAND_EXIT_CODE=\"%d\"]\n"), buf, status);
+		break;
+	}
+	case SCRIPT_FMT_TIMING_MULTI:
+	{
 		struct timeval now, delta;
 
-		DBG(IO, ul_debug("  writing timing info"));
+		gettime_monotonic(&now);
+		timersub(&now, &log->starttime, &delta);
+
+		log_info(ctl, "DURATION", "%ld.%06ld",
+			(long)delta.tv_sec, (long)delta.tv_usec);
+		log_info(ctl, "EXIT_CODE", "%d", status);
+		break;
+	}
+	case SCRIPT_FMT_TIMING_SIMPLE:
+		break;
+	}
+
+	if (close_stream(log->fp) != 0) {
+		warn(_("write failed: %s"), log->filename);
+		rc = -errno;
+	}
+
+	free(log->filename);
+	memset(log, 0, sizeof(*log));
+
+	return rc;
+}
+
+static int log_flush(struct script_control *ctl __attribute__((__unused__)), struct script_log *log)
+{
+
+	if (!log || !log->initialized)
+		return 0;
+
+	DBG(MISC, ul_debug("flushing %s", log->filename));
+
+	fflush(log->fp);
+	return 0;
+}
+
+static void log_free(struct script_control *ctl, struct script_log *log)
+{
+	size_t i;
+
+	if (!log)
+		return;
+
+	/* the same log is possible to reference from more places, remove all
+	 * (TODO: maybe use include/list.h to make it more elegant)
+	 */
+	if (ctl->siglog == log)
+		ctl->siglog = NULL;
+	else if (ctl->infolog == log)
+		ctl->infolog = NULL;
+
+	for (i = 0; i < ctl->out.nlogs; i++) {
+		if (ctl->out.logs[i] == log)
+			ctl->out.logs[i] = NULL;
+	}
+	for (i = 0; i < ctl->in.nlogs; i++) {
+		if (ctl->in.logs[i] == log)
+			ctl->in.logs[i] = NULL;
+	}
+	free(log);
+}
+
+static int log_start(struct script_control *ctl,
+		      struct script_log *log)
+{
+	if (log->initialized)
+		return 0;
+
+	DBG(MISC, ul_debug("opening %s", log->filename));
+
+	assert(log->fp == NULL);
+
+	/* open the log */
+	log->fp = fopen(log->filename,
+			ctl->append && log->format == SCRIPT_FMT_RAW ?
+			"a" UL_CLOEXECSTR :
+			"w" UL_CLOEXECSTR);
+	if (!log->fp) {
+		warn(_("cannot open %s"), log->filename);
+		return -errno;
+	}
+
+	/* write header, etc. */
+	switch (log->format) {
+	case SCRIPT_FMT_RAW:
+	{
+		char buf[FORMAT_TIMESTAMP_MAX];
+		time_t tvec = script_time((time_t *)NULL);
+
+		strtime_iso(&tvec, ISO_TIMESTAMP, buf, sizeof(buf));
+		fprintf(log->fp, _("Script started on %s ["), buf);
+
+		if (ctl->isterm) {
+			init_terminal_info(ctl);
+
+			if (ctl->ttytype)
+				fprintf(log->fp, "TERM=\"%s\" ", ctl->ttytype);
+			if (ctl->ttyname)
+				fprintf(log->fp, "TTY=\"%s\" ", ctl->ttyname);
+
+			fprintf(log->fp, "COLUMNS=\"%d\" LINES=\"%d\"", ctl->ttycols, ctl->ttylines);
+		} else
+			fprintf(log->fp, _("<not executed on terminal>"));
+
+		fputs("]\n", log->fp);
+		break;
+	}
+	case SCRIPT_FMT_TIMING_SIMPLE:
+	case SCRIPT_FMT_TIMING_MULTI:
+		gettime_monotonic(&log->oldtime);
+		gettime_monotonic(&log->starttime);
+		break;
+	}
+
+	log->initialized = 1;
+	return 0;
+}
+
+static int logging_start(struct script_control *ctl)
+{
+	size_t i;
+
+	/* start all output logs */
+	for (i = 0; i < ctl->out.nlogs; i++) {
+		int rc = log_start(ctl, ctl->out.logs[i]);
+		if (rc)
+			return rc;
+	}
+
+	/* start all input logs */
+	for (i = 0; i < ctl->in.nlogs; i++) {
+		int rc = log_start(ctl, ctl->in.logs[i]);
+		if (rc)
+			return rc;
+	}
+	return 0;
+}
+
+static ssize_t log_write(struct script_control *ctl,
+		      struct script_stream *stream,
+		      struct script_log *log,
+		      char *obuf, size_t bytes)
+{
+	int rc;
+	ssize_t ssz = 0;
+	struct timeval now, delta;
+
+	if (!log->fp)
+		return 0;
+
+	DBG(IO, ul_debug(" writing [file=%s]", log->filename));
+
+	switch (log->format) {
+	case SCRIPT_FMT_RAW:
+		DBG(IO, ul_debug("  log raw data"));
+		rc = fwrite_all(obuf, 1, bytes, log->fp);
+		if (rc) {
+			warn(_("cannot write %s"), log->filename);
+			return rc;
+		}
+		ssz = bytes;
+		break;
+
+	case SCRIPT_FMT_TIMING_SIMPLE:
+		DBG(IO, ul_debug("  log timing info"));
 
 		gettime_monotonic(&now);
-		timersub(&now, &ctl->oldtime, &delta);
-		timing_bytes = fprintf(ctl->timingfp, "%ld.%06ld %zd\n",
-		        (long)delta.tv_sec, (long)delta.tv_usec, bytes);
-		if (ctl->flush)
-			fflush(ctl->timingfp);
-		ctl->oldtime = now;
-		if (timing_bytes < 0)
-			timing_bytes = 0;
+		timersub(&now, &log->oldtime, &delta);
+		ssz = fprintf(log->fp, "%ld.%06ld %zd\n",
+			(long)delta.tv_sec, (long)delta.tv_usec, bytes);
+		if (ssz < 0)
+			return -errno;
+
+		log->oldtime = now;
+		break;
+
+	case SCRIPT_FMT_TIMING_MULTI:
+		DBG(IO, ul_debug("  log multi-stream timing info"));
+
+		gettime_monotonic(&now);
+		timersub(&now, &log->oldtime, &delta);
+		ssz = fprintf(log->fp, "%c %ld.%06ld %zd\n",
+			stream->ident,
+			(long)delta.tv_sec, (long)delta.tv_usec, bytes);
+		if (ssz < 0)
+			return -errno;
+
+		log->oldtime = now;
+		break;
+	default:
+		break;
 	}
 
-	DBG(IO, ul_debug("  writing to script file"));
-
-	if (fwrite_all(obuf, 1, bytes, ctl->typescriptfp)) {
-		warn(_("cannot write script file"));
-		fail(ctl);
-	}
 	if (ctl->flush)
-		fflush(ctl->typescriptfp);
-
-	DBG(IO, ul_debug("  writing to output"));
-
-	if (write_all(STDOUT_FILENO, obuf, bytes)) {
-		DBG(IO, ul_debug("  writing output *failed*"));
-		warn(_("write failed"));
-		fail(ctl);
-	}
-
-	if (ctl->maxsz != 0)
-		ctl->outsz += bytes + timing_bytes;
-
-	DBG(IO, ul_debug("  writing output *done*"));
+		fflush(log->fp);
+	return ssz;
 }
 
-static int write_to_shell(struct script_control *ctl,
-			  char *buf, size_t bufsz)
+static ssize_t log_stream_activity(
+			struct script_control *ctl,
+			struct script_stream *stream,
+			char *buf, size_t bytes)
 {
-	return write_all(ctl->master, buf, bufsz);
+	size_t i;
+	ssize_t outsz = 0;
+
+	for (i = 0; i < stream->nlogs; i++) {
+		ssize_t ssz = log_write(ctl, stream, stream->logs[i], buf, bytes);
+
+		if (ssz < 0)
+			return ssz;
+		outsz += ssz;
+	}
+
+	return outsz;
 }
 
-/*
- * The script(1) is usually faster than shell, so it's a good idea to wait until
- * the previous message has been already read by shell from slave before we
- * write to master. This is necessary especially for EOF situation when we can
- * send EOF to master before shell is fully initialized, to workaround this
- * problem we wait until slave is empty. For example:
- *
- *   echo "date" | script
- *
- * Unfortunately, the child (usually shell) can ignore stdin at all, so we
- * don't wait forever to avoid dead locks...
- *
- * Note that script is primarily designed for interactive sessions as it
- * maintains master+slave tty stuff within the session. Use pipe to write to
- * script(1) and assume non-interactive (tee-like) behavior is NOT well
- * supported.
- */
-static void write_eof_to_shell(struct script_control *ctl)
+static ssize_t log_signal(struct script_control *ctl, int signum, char *msgfmt, ...)
 {
-	unsigned int tries = 0;
-	struct pollfd fds[] = {
-	           { .fd = ctl->slave, .events = POLLIN }
-	};
-	char c = DEF_EOF;
+	struct script_log *log;
+	struct timeval now, delta;
+	char msg[BUFSIZ] = {0};
+	va_list ap;
+	ssize_t sz;
 
-	DBG(IO, ul_debug(" waiting for empty slave"));
-	while (poll(fds, 1, 10) == 1 && tries < 8) {
-		DBG(IO, ul_debug("   slave is not empty"));
-		xusleep(250000);
-		tries++;
+	assert(ctl);
+
+	log = ctl->siglog;
+	if (!log)
+		return 0;
+
+	assert(log->format == SCRIPT_FMT_TIMING_MULTI);
+	DBG(IO, ul_debug("  writing signal to multi-stream timing"));
+
+	gettime_monotonic(&now);
+	timersub(&now, &log->oldtime, &delta);
+
+	if (msgfmt) {
+		int rc;
+		va_start(ap, msgfmt);
+		rc = vsnprintf(msg, sizeof(msg), msgfmt, ap);
+		va_end(ap);
+		if (rc < 0)
+			*msg = '\0';;
 	}
-	if (tries < 8)
-		DBG(IO, ul_debug("   slave is empty now"));
 
-	DBG(IO, ul_debug(" sending EOF to master"));
-	write_to_shell(ctl, &c, sizeof(char));
+	if (*msg)
+		sz = fprintf(log->fp, "S %ld.%06ld SIG%s %s\n",
+			(long)delta.tv_sec, (long)delta.tv_usec,
+			signum_to_signame(signum), msg);
+	else
+		sz = fprintf(log->fp, "S %ld.%06ld SIG%s\n",
+			(long)delta.tv_sec, (long)delta.tv_usec,
+			signum_to_signame(signum));
+
+	log->oldtime = now;
+	return sz;
 }
 
-static void handle_io(struct script_control *ctl, int fd, int *eof)
+static ssize_t log_info(struct script_control *ctl, const char *name, const char *msgfmt, ...)
 {
-	char buf[BUFSIZ];
-	ssize_t bytes;
-	DBG(IO, ul_debug("%d FD active", fd));
-	*eof = 0;
+	struct script_log *log;
+	char msg[BUFSIZ] = {0};
+	va_list ap;
+	ssize_t sz;
 
-	/* read from active FD */
-	bytes = read(fd, buf, sizeof(buf));
-	if (bytes < 0) {
-		if (errno == EAGAIN || errno == EINTR)
-			return;
-		fail(ctl);
+	assert(ctl);
+
+	log = ctl->infolog;
+	if (!log)
+		return 0;
+
+	assert(log->format == SCRIPT_FMT_TIMING_MULTI);
+	DBG(IO, ul_debug("  writing info to multi-stream log"));
+
+	if (msgfmt) {
+		int rc;
+		va_start(ap, msgfmt);
+		rc = vsnprintf(msg, sizeof(msg), msgfmt, ap);
+		va_end(ap);
+		if (rc < 0)
+			*msg = '\0';;
 	}
 
-	if (bytes == 0) {
-		*eof = 1;
-		return;
+	if (*msg)
+		sz = fprintf(log->fp, "H %f %s %s\n", 0.0, name, msg);
+	else
+		sz = fprintf(log->fp, "H %f %s\n", 0.0, name);
+
+	return sz;
+}
+
+
+static void logging_done(struct script_control *ctl, const char *msg)
+{
+	int status;
+	size_t i;
+
+	DBG(MISC, ul_debug("stop logging"));
+
+	if (WIFSIGNALED(ctl->childstatus))
+		status = WTERMSIG(ctl->childstatus) + 0x80;
+	else
+		status = WEXITSTATUS(ctl->childstatus);
+
+	DBG(MISC, ul_debug(" status=%d", status));
+
+	/* close all output logs */
+	for (i = 0; i < ctl->out.nlogs; i++) {
+		struct script_log *log = ctl->out.logs[i];
+		log_close(ctl, log, msg, status);
+		log_free(ctl, log);
 	}
+	free(ctl->out.logs);
+	ctl->out.logs = NULL;
+	ctl->out.nlogs = 0;
+
+	/* close all input logs */
+	for (i = 0; i < ctl->in.nlogs; i++) {
+		struct script_log *log = ctl->in.logs[i];
+		log_close(ctl, log, msg, status);
+		log_free(ctl, log);
+	}
+	free(ctl->in.logs);
+	ctl->in.logs = NULL;
+	ctl->in.nlogs = 0;
+}
+
+static void callback_child_die(
+			void *data,
+			pid_t child __attribute__((__unused__)),
+			int status)
+{
+	struct script_control *ctl = (struct script_control *) data;
+
+	ctl->child = (pid_t) -1;
+	ctl->childstatus = status;
+}
+
+static void callback_child_sigstop(
+			void *data __attribute__((__unused__)),
+			pid_t child)
+{
+	DBG(SIGNAL, ul_debug(" child stop by SIGSTOP -- stop parent too"));
+	kill(getpid(), SIGSTOP);
+	DBG(SIGNAL, ul_debug(" resume"));
+	kill(child, SIGCONT);
+}
+
+static int callback_log_stream_activity(void *data, int fd, char *buf, size_t bufsz)
+{
+	struct script_control *ctl = (struct script_control *) data;
+	ssize_t ssz = 0;
+
+	DBG(IO, ul_debug("stream activity callback"));
 
 	/* from stdin (user) to command */
-	if (fd == STDIN_FILENO) {
-		DBG(IO, ul_debug(" stdin --> master %zd bytes", bytes));
-
-		if (write_to_shell(ctl, buf, bytes)) {
-			warn(_("write failed"));
-			fail(ctl);
-		}
-		/* without sync write_output() will write both input &
-		 * shell output that looks like double echoing */
-		fdatasync(ctl->master);
+	if (fd == STDIN_FILENO)
+		ssz = log_stream_activity(ctl, &ctl->in, buf, (size_t) bufsz);
 
 	/* from command (master) to stdout and log */
-	} else if (fd == ctl->master) {
-		DBG(IO, ul_debug(" master --> stdout %zd bytes", bytes));
-		write_output(ctl, buf, bytes);
+	else if (fd == ul_pty_get_childfd(ctl->pty))
+		ssz = log_stream_activity(ctl, &ctl->out, buf, (size_t) bufsz);
 
-		/* check output limit */
-		if (ctl->maxsz != 0 && ctl->outsz >= ctl->maxsz) {
-			if (!ctl->quiet)
-				printf(_("Script terminated, max output file size %"PRIu64" exceeded.\n"), ctl->maxsz);
-			DBG(IO, ul_debug("output size %"PRIu64", exceeded limit %"PRIu64, ctl->outsz, ctl->maxsz));
-			done_log(ctl, _("max output size exceeded"));
-		}
+	if (ssz < 0)
+		return (int) ssz;
+
+	DBG(IO, ul_debug(" append %ld bytes [summary=%zu, max=%zu]", ssz,
+				ctl->outsz, ctl->maxsz));
+
+	ctl->outsz += ssz;
+
+
+	/* check output limit */
+	if (ctl->maxsz != 0 && ctl->outsz >= ctl->maxsz) {
+		if (!ctl->quiet)
+			printf(_("Script terminated, max output files size %"PRIu64" exceeded.\n"), ctl->maxsz);
+		DBG(IO, ul_debug("output size %"PRIu64", exceeded limit %"PRIu64, ctl->outsz, ctl->maxsz));
+		logging_done(ctl, _("max output size exceeded"));
+		return 1;
 	}
+	return 0;
 }
 
-static void handle_signal(struct script_control *ctl, int fd)
+static int callback_log_signal(void *data, struct signalfd_siginfo *info, void *sigdata)
 {
-	struct signalfd_siginfo info;
-	ssize_t bytes;
+	struct script_control *ctl = (struct script_control *) data;
+	ssize_t ssz = 0;
 
-	DBG(SIGNAL, ul_debug("signal FD %d active", fd));
-
-	bytes = read(fd, &info, sizeof(info));
-	if (bytes != sizeof(info)) {
-		if (bytes < 0 && (errno == EAGAIN || errno == EINTR))
-			return;
-		fail(ctl);
-	}
-
-	switch (info.ssi_signo) {
-	case SIGCHLD:
-		DBG(SIGNAL, ul_debug(" get signal SIGCHLD [ssi_code=%d, ssi_status=%d]",
-							info.ssi_code, info.ssi_status));
-		if (info.ssi_code == CLD_EXITED
-		    || info.ssi_code == CLD_KILLED
-		    || info.ssi_code == CLD_DUMPED) {
-			wait_for_child(ctl, 0);
-			ctl->poll_timeout = 10;
-
-		/* In case of ssi_code is CLD_TRAPPED, CLD_STOPPED, or CLD_CONTINUED */
-		} else if (info.ssi_status == SIGSTOP && ctl->child) {
-			DBG(SIGNAL, ul_debug(" child stop by SIGSTOP -- stop parent too"));
-			kill(getpid(), SIGSTOP);
-			DBG(SIGNAL, ul_debug(" resume"));
-			kill(ctl->child, SIGCONT);
-		}
-		return;
+	switch (info->ssi_signo) {
 	case SIGWINCH:
-		DBG(SIGNAL, ul_debug(" get signal SIGWINCH"));
-		if (ctl->isterm) {
-			ioctl(STDIN_FILENO, TIOCGWINSZ, (char *)&ctl->win);
-			ioctl(ctl->slave, TIOCSWINSZ, (char *)&ctl->win);
-		}
+	{
+		struct winsize *win = (struct winsize *) sigdata;
+		ssz = log_signal(ctl, info->ssi_signo, "ROWS=%d COLS=%d",
+					win->ws_row, win->ws_col);
 		break;
+	}
 	case SIGTERM:
 		/* fallthrough */
 	case SIGINT:
 		/* fallthrough */
 	case SIGQUIT:
-		DBG(SIGNAL, ul_debug(" get signal SIG{TERM,INT,QUIT}"));
-		fprintf(stderr, _("\nSession terminated.\n"));
-		/* Child termination is going to generate SIGCHILD (see above) */
-		kill(ctl->child, SIGTERM);
-		return;
+		ssz = log_signal(ctl, info->ssi_signo, NULL);
+		break;
 	default:
-		abort();
+		/* no log */
+		break;
 	}
-	DBG(SIGNAL, ul_debug("signal handle on FD %d done", fd));
+
+	return ssz < 0 ? ssz : 0;
 }
 
-static void do_io(struct script_control *ctl)
+static int callback_flush_logs(void *data)
 {
-	int ret, eof = 0;
-	time_t tvec = script_time((time_t *)NULL);
-	enum {
-		POLLFD_SIGNAL = 0,
-		POLLFD_MASTER,
-		POLLFD_STDIN
+	struct script_control *ctl = (struct script_control *) data;
+	size_t i;
 
-	};
-	struct pollfd pfd[] = {
-		[POLLFD_SIGNAL] = { .fd = ctl->sigfd,   .events = POLLIN | POLLERR | POLLHUP },
-		[POLLFD_MASTER] = { .fd = ctl->master,  .events = POLLIN | POLLERR | POLLHUP },
-		[POLLFD_STDIN]	= { .fd = STDIN_FILENO, .events = POLLIN | POLLERR | POLLHUP }
-	};
-
-
-	if ((ctl->typescriptfp =
-	     fopen(ctl->fname, ctl->append ? "a" UL_CLOEXECSTR : "w" UL_CLOEXECSTR)) == NULL) {
-
-		restore_tty(ctl, TCSANOW);
-		warn(_("cannot open %s"), ctl->fname);
-		fail(ctl);
-	}
-	if (ctl->timing) {
-		const char *tname = ctl->tname ? ctl->tname : "/dev/stderr";
-
-		if (!(ctl->timingfp = fopen(tname, "w" UL_CLOEXECSTR))) {
-			restore_tty(ctl, TCSANOW);
-			warn(_("cannot open %s"), tname);
-			fail(ctl);
-		}
+	for (i = 0; i < ctl->out.nlogs; i++) {
+		int rc = log_flush(ctl, ctl->out.logs[i]);
+		if (rc)
+			return rc;
 	}
 
-
-	if (ctl->typescriptfp)
-		typescript_message_start(ctl, &tvec);
-
-	gettime_monotonic(&ctl->oldtime);
-
-	while (!ctl->die) {
-		size_t i;
-		int errsv;
-
-		DBG(POLL, ul_debug("calling poll()"));
-
-		/* wait for input or signal */
-		ret = poll(pfd, ARRAY_SIZE(pfd), ctl->poll_timeout);
-		errsv = errno;
-		DBG(POLL, ul_debug("poll() rc=%d", ret));
-
-		if (ret < 0) {
-			if (errsv == EAGAIN)
-				continue;
-			warn(_("poll failed"));
-			fail(ctl);
-		}
-		if (ret == 0) {
-			DBG(POLL, ul_debug("setting die=1"));
-			ctl->die = 1;
-			break;
-		}
-
-		for (i = 0; i < ARRAY_SIZE(pfd); i++) {
-			if (pfd[i].revents == 0)
-				continue;
-
-			DBG(POLL, ul_debug(" active pfd[%s].fd=%d %s %s %s",
-						i == POLLFD_STDIN  ? "stdin" :
-						i == POLLFD_MASTER ? "master" :
-						i == POLLFD_SIGNAL ? "signal" : "???",
-						pfd[i].fd,
-						pfd[i].revents & POLLIN  ? "POLLIN" : "",
-						pfd[i].revents & POLLHUP ? "POLLHUP" : "",
-						pfd[i].revents & POLLERR ? "POLLERR" : ""));
-			switch (i) {
-			case POLLFD_STDIN:
-			case POLLFD_MASTER:
-				/* data */
-				if (pfd[i].revents & POLLIN)
-					handle_io(ctl, pfd[i].fd, &eof);
-				/* EOF maybe detected by two ways:
-				 *	A) poll() return POLLHUP event after close()
-				 *	B) read() returns 0 (no data) */
-				if ((pfd[i].revents & POLLHUP) || eof) {
-					DBG(POLL, ul_debug(" ignore FD"));
-					pfd[i].fd = -1;
-					if (i == POLLFD_STDIN) {
-						write_eof_to_shell(ctl);
-						DBG(POLL, ul_debug("  ignore STDIN"));
-					}
-				}
-				continue;
-			case POLLFD_SIGNAL:
-				handle_signal(ctl, pfd[i].fd);
-				break;
-			}
-		}
+	for (i = 0; i < ctl->in.nlogs; i++) {
+		int rc = log_flush(ctl, ctl->in.logs[i]);
+		if (rc)
+			return rc;
 	}
-
-	DBG(POLL, ul_debug("poll() done"));
-
-	if (!ctl->die)
-		wait_for_child(ctl, 1);
-
-	done(ctl);
+	return 0;
 }
 
-static void getslave(struct script_control *ctl)
+static void die_if_link(struct script_control *ctl, const char *filename)
 {
-#ifndef HAVE_LIBUTIL
-	ctl->line[strlen("/dev/")] = 't';
-	ctl->slave = open(ctl->line, O_RDWR | O_CLOEXEC);
-	if (ctl->slave < 0) {
-		warn(_("cannot open %s"), ctl->line);
-		fail(ctl);
-	}
-	if (ctl->isterm) {
-		tcsetattr(ctl->slave, TCSANOW, &ctl->attrs);
-		ioctl(ctl->slave, TIOCSWINSZ, (char *)&ctl->win);
-	}
-#endif
-	setsid();
-	ioctl(ctl->slave, TIOCSCTTY, 0);
-}
+	struct stat s;
 
-/* don't use DBG() stuff here otherwise it will be in  the typescript file */
-static void __attribute__((__noreturn__)) do_shell(struct script_control *ctl)
-{
-	char *shname;
-
-	getslave(ctl);
-
-	/* close things irrelevant for this process */
-	close(ctl->master);
-	close(ctl->sigfd);
-
-	dup2(ctl->slave, STDIN_FILENO);
-	dup2(ctl->slave, STDOUT_FILENO);
-	dup2(ctl->slave, STDERR_FILENO);
-	close(ctl->slave);
-
-	ctl->master = -1;
-
-	shname = strrchr(ctl->shell, '/');
-	if (shname)
-		shname++;
-	else
-		shname = ctl->shell;
-
-	sigprocmask(SIG_SETMASK, &ctl->sigorg, NULL);
-
-	/*
-	 * When invoked from within /etc/csh.login, script spawns a csh shell
-	 * that spawns programs that cannot be killed with a SIGTERM. This is
-	 * because csh has a documented behavior wherein it disables all
-	 * signals when processing the /etc/csh.* files.
-	 *
-	 * Let's restore the default behavior.
-	 */
-	signal(SIGTERM, SIG_DFL);
-
-	if (access(ctl->shell, X_OK) == 0) {
-		if (ctl->command)
-			execl(ctl->shell, shname, "-c", ctl->command, NULL);
-		else
-			execl(ctl->shell, shname, "-i", NULL);
-	} else {
-		if (ctl->command)
-			execlp(shname, "-c", ctl->command, NULL);
-		else
-			execlp(shname, "-i", NULL);
-	}
-	warn(_("failed to execute %s"), ctl->shell);
-	fail(ctl);
-}
-
-
-static void getmaster(struct script_control *ctl)
-{
-#if defined(HAVE_LIBUTIL) && defined(HAVE_PTY_H)
-	int rc;
-
-	ctl->isterm = isatty(STDIN_FILENO);
-
-	if (ctl->isterm) {
-		if (tcgetattr(STDIN_FILENO, &ctl->attrs) != 0)
-			err(EXIT_FAILURE, _("failed to get terminal attributes"));
-		ioctl(STDIN_FILENO, TIOCGWINSZ, (char *)&ctl->win);
-		rc = openpty(&ctl->master, &ctl->slave, NULL, &ctl->attrs, &ctl->win);
-	} else
-		rc = openpty(&ctl->master, &ctl->slave, NULL, NULL, NULL);
-
-	if (rc < 0) {
-		warn(_("openpty failed"));
-		fail(ctl);
-	}
-#else
-	char *pty, *bank, *cp;
-
-	ctl->isterm = isatty(STDIN_FILENO);
-
-	pty = &ctl->line[strlen("/dev/ptyp")];
-	for (bank = "pqrs"; *bank; bank++) {
-		ctl->line[strlen("/dev/pty")] = *bank;
-		*pty = '0';
-		if (access(ctl->line, F_OK) != 0)
-			break;
-		for (cp = "0123456789abcdef"; *cp; cp++) {
-			*pty = *cp;
-			ctl->master = open(ctl->line, O_RDWR | O_CLOEXEC);
-			if (ctl->master >= 0) {
-				char *tp = &ctl->line[strlen("/dev/")];
-				int ok;
-
-				/* verify slave side is usable */
-				*tp = 't';
-				ok = access(ctl->line, R_OK | W_OK) == 0;
-				*tp = 'p';
-				if (ok) {
-					if (ctl->isterm) {
-						tcgetattr(STDIN_FILENO, &ctl->attrs);
-						ioctl(STDIN_FILENO, TIOCGWINSZ, (char *)&ctl->win);
-					}
-					return;
-				}
-				close(ctl->master);
-				ctl->master = -1;
-			}
-		}
-	}
-	ctl->master = -1;
-	warn(_("out of pty's"));
-	fail(ctl);
-#endif				/* not HAVE_LIBUTIL */
-
-	DBG(IO, ul_debug("master fd: %d", ctl->master));
+	if (ctl->force)
+		return;
+	if (lstat(filename, &s) == 0 && (S_ISLNK(s.st_mode) || s.st_nlink > 1))
+		errx(EXIT_FAILURE,
+		     _("output file `%s' is a link\n"
+		       "Use --force if you really want to use it.\n"
+		       "Program not started."), filename);
 }
 
 int main(int argc, char **argv)
 {
 	struct script_control ctl = {
-#if !HAVE_LIBUTIL || !HAVE_PTY_H
-		.line = "/dev/ptyXX",
-#endif
-		.master = -1,
-		.poll_timeout = -1
+		.out = { .ident = 'O' },
+		.in  = { .ident = 'I' },
 	};
-	int ch;
+	struct ul_pty_callbacks *cb;
+	int ch, format = 0, caught_signal = 0, rc = 0, echo = 0;
+	const char *outfile = NULL, *infile = NULL;
+	const char *timingfile = NULL, *shell = NULL, *command = NULL;
 
 	enum { FORCE_OPTION = CHAR_MAX + 1 };
 
 	static const struct option longopts[] = {
 		{"append", no_argument, NULL, 'a'},
 		{"command", required_argument, NULL, 'c'},
+		{"echo", required_argument, NULL, 'E'},
 		{"return", no_argument, NULL, 'e'},
 		{"flush", no_argument, NULL, 'f'},
 		{"force", no_argument, NULL, FORCE_OPTION,},
+		{"log-in", required_argument, NULL, 'I'},
+		{"log-out", required_argument, NULL, 'O'},
+		{"log-io", required_argument, NULL, 'B'},
+		{"log-timing", required_argument, NULL, 'T'},
+		{"logging-format", required_argument, NULL, 'm'},
 		{"output-limit", required_argument, NULL, 'o'},
 		{"quiet", no_argument, NULL, 'q'},
 		{"timing", optional_argument, NULL, 't'},
@@ -781,7 +777,11 @@ int main(int argc, char **argv)
 		{"help", no_argument, NULL, 'h'},
 		{NULL, 0, NULL, 0}
 	};
-
+	static const ul_excl_t excl[] = {       /* rows and cols in ASCII order */
+		{ 'T', 't' },
+		{ 0 }
+	};
+	int excl_st[ARRAY_SIZE(excl)] = UL_EXCL_STATUS_INIT;
 	setlocale(LC_ALL, "");
 	/*
 	 * script -t prints time delays as floating point numbers.  The example
@@ -793,17 +793,38 @@ int main(int argc, char **argv)
 	setlocale(LC_NUMERIC, "C");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	script_init_debug();
+	ON_DBG(PTY, ul_pty_init_debug(0xFFFF));
 
-	while ((ch = getopt_long(argc, argv, "ac:efo:qt::Vh", longopts, NULL)) != -1)
+	/* The default is to keep ECHO flag when stdin is not terminal. We need
+	 * it to make stdin (in case of "echo foo | script") log-able and
+	 * visible on terminal, and for backward compatibility.
+	 */
+	ctl.isterm = isatty(STDIN_FILENO);
+	echo = ctl.isterm ? 0 : 1;
+
+	while ((ch = getopt_long(argc, argv, "aB:c:eE:fI:O:o:qm:T:t::Vh", longopts, NULL)) != -1) {
+
+		err_exclusive_options(ch, longopts, excl, excl_st);
+
 		switch (ch) {
 		case 'a':
 			ctl.append = 1;
 			break;
 		case 'c':
-			ctl.command = optarg;
+			command = optarg;
+			break;
+		case 'E':
+			if (strcmp(optarg, "auto") == 0)
+				; /* keep default */
+			else if (strcmp(optarg, "never") == 0)
+				echo = 0;
+			else if (strcmp(optarg, "always") == 0)
+				echo = 1;
+			else
+				errx(EXIT_FAILURE, _("unssuported echo mode: '%s'"), optarg);
 			break;
 		case 'e':
 			ctl.rc_wanted = 1;
@@ -814,82 +835,234 @@ int main(int argc, char **argv)
 		case FORCE_OPTION:
 			ctl.force = 1;
 			break;
+		case 'B':
+			log_associate(&ctl, &ctl.in, optarg, SCRIPT_FMT_RAW);
+			log_associate(&ctl, &ctl.out, optarg, SCRIPT_FMT_RAW);
+			infile = outfile = optarg;
+			break;
+		case 'I':
+			log_associate(&ctl, &ctl.in, optarg, SCRIPT_FMT_RAW);
+			infile = optarg;
+			break;
+		case 'O':
+			log_associate(&ctl, &ctl.out, optarg, SCRIPT_FMT_RAW);
+			outfile = optarg;
+			break;
 		case 'o':
 			ctl.maxsz = strtosize_or_err(optarg, _("failed to parse output limit size"));
 			break;
 		case 'q':
 			ctl.quiet = 1;
 			break;
+		case 'm':
+			if (strcasecmp(optarg, "classic") == 0)
+				format = SCRIPT_FMT_TIMING_SIMPLE;
+			else if (strcasecmp(optarg, "advanced") == 0)
+				format = SCRIPT_FMT_TIMING_MULTI;
+			else
+				errx(EXIT_FAILURE, _("unsupported logging format: '%s'"), optarg);
+			break;
 		case 't':
-			if (optarg)
-				ctl.tname = optarg;
-			ctl.timing = 1;
+			if (optarg && *optarg == '=')
+				optarg++;
+			timingfile = optarg ? optarg : "/dev/stderr";
+			break;
+		case 'T' :
+			timingfile = optarg;
 			break;
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			exit(EXIT_SUCCESS);
-			break;
+			print_version(EXIT_SUCCESS);
 		case 'h':
 			usage();
-			break;
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}
+	}
 	argc -= optind;
 	argv += optind;
 
-	if (argc > 0)
-		ctl.fname = argv[0];
-	else {
-		ctl.fname = DEFAULT_TYPESCRIPT_FILENAME;
-		die_if_link(&ctl);
+	/* default if no --log-* specified */
+	if (!outfile && !infile) {
+		if (argc > 0)
+			outfile = argv[0];
+		else {
+			die_if_link(&ctl, DEFAULT_TYPESCRIPT_FILENAME);
+			outfile = DEFAULT_TYPESCRIPT_FILENAME;
+		}
+
+		/* associate stdout with typescript file */
+		log_associate(&ctl, &ctl.out, outfile, SCRIPT_FMT_RAW);
 	}
 
-	ctl.shell = getenv("SHELL");
-	if (ctl.shell == NULL)
-		ctl.shell = _PATH_BSHELL;
+	if (timingfile) {
+		/* the old SCRIPT_FMT_TIMING_SIMPLE should be used when
+		 * recoding output only (just for backward compatibility),
+		 * otherwise switch to new format. */
+		if (!format)
+			format = infile || (outfile && infile) ?
+					SCRIPT_FMT_TIMING_MULTI :
+					SCRIPT_FMT_TIMING_SIMPLE;
 
-	getmaster(&ctl);
-	if (!ctl.quiet)
-		printf(_("Script started, file is %s\n"), ctl.fname);
-	enable_rawmode_tty(&ctl);
+		else if (format == SCRIPT_FMT_TIMING_SIMPLE && outfile && infile)
+			errx(EXIT_FAILURE, _("log multiple streams is mutually "
+					     "exclusive with 'classic' format"));
+		if (outfile)
+			log_associate(&ctl, &ctl.out, timingfile, format);
+		if (infile)
+			log_associate(&ctl, &ctl.in, timingfile, format);
+	}
+
+	shell = getenv("SHELL");
+	if (!shell)
+		shell = _PATH_BSHELL;
+
+	ctl.pty = ul_new_pty(ctl.isterm);
+	if (!ctl.pty)
+		err(EXIT_FAILURE, "failed to allocate PTY handler");
+
+	ul_pty_slave_echo(ctl.pty, echo);
+
+	ul_pty_set_callback_data(ctl.pty, (void *) &ctl);
+	cb = ul_pty_get_callbacks(ctl.pty);
+	cb->child_die = callback_child_die;
+	cb->child_sigstop = callback_child_sigstop;
+	cb->log_stream_activity = callback_log_stream_activity;
+	cb->log_signal = callback_log_signal;
+	cb->flush_logs = callback_flush_logs;
+
+	if (!ctl.quiet) {
+		printf(_("Script started"));
+		if (outfile)
+			printf(_(", output log file is '%s'"), outfile);
+		if (infile)
+			printf(_(", input log file is '%s'"), infile);
+		if (timingfile)
+			printf(_(", timing file is '%s'"), timingfile);
+		printf(_(".\n"));
+	}
 
 #ifdef HAVE_LIBUTEMPTER
-	utempter_add_record(ctl.master, NULL);
+	utempter_add_record(ul_pty_get_childfd(ctl.pty), NULL);
 #endif
-	/* setup signal handler */
-	sigemptyset(&ctl.sigset);
-	sigaddset(&ctl.sigset, SIGCHLD);
-	sigaddset(&ctl.sigset, SIGWINCH);
-	sigaddset(&ctl.sigset, SIGTERM);
-	sigaddset(&ctl.sigset, SIGINT);
-	sigaddset(&ctl.sigset, SIGQUIT);
 
-	/* block signals used for signalfd() to prevent the signals being
-	 * handled according to their default dispositions */
-	sigprocmask(SIG_BLOCK, &ctl.sigset, &ctl.sigorg);
-
-	if ((ctl.sigfd = signalfd(-1, &ctl.sigset, SFD_CLOEXEC)) < 0)
-		err(EXIT_FAILURE, _("cannot set signal handler"));
-
-	DBG(SIGNAL, ul_debug("signal fd=%d", ctl.sigfd));
+	if (ul_pty_setup(ctl.pty))
+		err(EXIT_FAILURE, _("failed to create pseudo-terminal"));
 
 	fflush(stdout);
-	ctl.child = fork();
 
-	switch (ctl.child) {
+	/*
+	 * We have terminal, do not use err() from now, use "goto done"
+	 */
+
+	switch ((int) (ctl.child = fork())) {
 	case -1: /* error */
-		warn(_("fork failed"));
-		fail(&ctl);
-		break;
+		warn(_("cannot create child process"));
+		rc = -errno;
+		goto done;
+
 	case 0: /* child */
-		do_shell(&ctl);
+	{
+		const char *shname;
+
+		ul_pty_init_slave(ctl.pty);
+
+		signal(SIGTERM, SIG_DFL); /* because /etc/csh.login */
+
+		shname = strrchr(shell, '/');
+		shname = shname ? shname + 1 : shell;
+
+		if (access(shell, X_OK) == 0) {
+			if (command)
+				execl(shell, shname, "-c", command, (char *)NULL);
+			else
+				execl(shell, shname, "-i", (char *)NULL);
+		} else {
+			if (command)
+				execlp(shname, "-c", command, (char *)NULL);
+			else
+				execlp(shname, "-i", (char *)NULL);
+		}
+
+		err(EXIT_FAILURE, "failed to execute %s", shell);
 		break;
-	default: /* parent */
-		do_io(&ctl);
+	}
+	default:
 		break;
 	}
 
-	/* should not happen, all used functions are non-return */
-	return EXIT_FAILURE;
+	/* parent */
+	ul_pty_set_child(ctl.pty, ctl.child);
+
+	rc = logging_start(&ctl);
+	if (rc)
+		goto done;
+
+	/* add extra info to advanced timing file */
+	if (timingfile && format == SCRIPT_FMT_TIMING_MULTI) {
+		char buf[FORMAT_TIMESTAMP_MAX];
+		time_t tvec = script_time((time_t *)NULL);
+
+		strtime_iso(&tvec, ISO_TIMESTAMP, buf, sizeof(buf));
+		log_info(&ctl, "START_TIME", buf);
+
+		if (ctl.isterm) {
+			init_terminal_info(&ctl);
+			log_info(&ctl, "TERM", ctl.ttytype);
+			log_info(&ctl, "TTY", ctl.ttyname);
+			log_info(&ctl, "COLUMNS", "%d", ctl.ttycols);
+			log_info(&ctl, "LINES", "%d", ctl.ttylines);
+		}
+		log_info(&ctl, "SHELL", shell);
+		if (command)
+			log_info(&ctl, "COMMAND", command);
+		log_info(&ctl, "TIMING_LOG", timingfile);
+		if (outfile)
+			log_info(&ctl, "OUTPUT_LOG", outfile);
+		if (infile)
+			log_info(&ctl, "INPUT_LOG", infile);
+	}
+
+        /* this is the main loop */
+	rc = ul_pty_proxy_master(ctl.pty);
+
+	/* all done; cleanup and kill */
+	caught_signal = ul_pty_get_delivered_signal(ctl.pty);
+
+	if (!caught_signal && ctl.child != (pid_t)-1)
+		ul_pty_wait_for_child(ctl.pty);	/* final wait */
+
+	if (caught_signal && ctl.child != (pid_t)-1) {
+		fprintf(stderr, "\nSession terminated, killing shell...");
+		kill(ctl.child, SIGTERM);
+		sleep(2);
+		kill(ctl.child, SIGKILL);
+		fprintf(stderr, " ...killed.\n");
+	}
+
+done:
+	ul_pty_cleanup(ctl.pty);
+	logging_done(&ctl, NULL);
+
+	if (!ctl.quiet)
+		printf(_("Script done.\n"));
+
+#ifdef HAVE_LIBUTEMPTER
+	if (ul_pty_get_childfd(ctl.pty) >= 0)
+		utempter_remove_record(ul_pty_get_childfd(ctl.pty));
+#endif
+	ul_free_pty(ctl.pty);
+
+	/* default exit code */
+	rc = rc ? EXIT_FAILURE : EXIT_SUCCESS;
+
+	/* exit code based on child status */
+	if (ctl.rc_wanted && rc == EXIT_SUCCESS) {
+		if (WIFSIGNALED(ctl.childstatus))
+			rc = WTERMSIG(ctl.childstatus) + 0x80;
+		else
+			rc = WEXITSTATUS(ctl.childstatus);
+	}
+
+	DBG(MISC, ul_debug("done [rc=%d]", rc));
+	return rc;
 }

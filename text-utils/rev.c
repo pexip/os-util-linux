@@ -103,6 +103,7 @@ int main(int argc, char *argv[])
 	size_t len, bufsiz = BUFSIZ;
 	FILE *fp = stdin;
 	int ch, rval = EXIT_SUCCESS;
+	uintmax_t line;
 
 	static const struct option longopts[] = {
 		{ "version",    no_argument,       NULL, 'V' },
@@ -113,7 +114,7 @@ int main(int argc, char *argv[])
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	signal(SIGINT, sig_handler);
 	signal(SIGTERM, sig_handler);
@@ -121,8 +122,7 @@ int main(int argc, char *argv[])
 	while ((ch = getopt_long(argc, argv, "Vh", longopts, NULL)) != -1)
 		switch(ch) {
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			exit(EXIT_SUCCESS);
+			print_version(EXIT_SUCCESS);
 		case 'h':
 			usage();
 		default:
@@ -145,6 +145,7 @@ int main(int argc, char *argv[])
 			filename = *argv++;
 		}
 
+		line = 0;
 		while (fgetws(buf, bufsiz, fp)) {
 			len = wcslen(buf);
 
@@ -169,12 +170,14 @@ int main(int argc, char *argv[])
 				buf[len--] = '\0';
 			reverse_str(buf, len);
 			fputws(buf, stdout);
+			line++;
 		}
 		if (ferror(fp)) {
-			warn("%s", filename);
+			warn("%s: %ju", filename, line);
 			rval = EXIT_FAILURE;
 		}
-		fclose(fp);
+		if (fp != stdin)
+			fclose(fp);
 	} while(*argv);
 
 	free(buf);

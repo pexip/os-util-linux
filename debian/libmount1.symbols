@@ -11,6 +11,8 @@ libmount.so.1 libmount1 #MINVER#
  MOUNT_2.28@MOUNT_2.28 2.28~rc1
  MOUNT_2.30@MOUNT_2.30 2.30.2
  MOUNT_2.33@MOUNT_2.33 2.33
+ MOUNT_2.34@MOUNT_2.34 2.34
+ MOUNT_2_35@MOUNT_2_35 2.35.1
  mnt_cache_device_has_tag@MOUNT_2.19 2.19.1
  mnt_cache_find_tag_value@MOUNT_2.19 2.19.1
  mnt_cache_read_tags@MOUNT_2.19 2.19.1
@@ -35,6 +37,7 @@ libmount.so.1 libmount1 #MINVER#
  (arch=linux-any)mnt_context_finalize_mount@MOUNT_2.19 2.19.1
  (arch=linux-any)mnt_context_finalize_umount@MOUNT_2.19 2.19.1
  (arch=linux-any)mnt_context_find_umount_fs@MOUNT_2.23 2.24.2
+ (arch=linux-any)mnt_context_force_unrestricted@MOUNT_2_35 2.35.1
  (arch=linux-any)mnt_context_forced_rdonly@MOUNT_2.30 2.30.2
  (arch=linux-any)mnt_context_get_cache@MOUNT_2.19 2.19.1
  (arch=linux-any)mnt_context_get_excode@MOUNT_2.30 2.30.2
@@ -57,6 +60,7 @@ libmount.so.1 libmount1 #MINVER#
  (arch=linux-any)mnt_context_get_table@MOUNT_2.20 2.20.1
  (arch=linux-any)mnt_context_get_target@MOUNT_2.19 2.19.1
  (arch=linux-any)mnt_context_get_target_ns@MOUNT_2.33 2.33
+ (arch=linux-any)mnt_context_get_target_prefix@MOUNT_2_35 2.35.1
  (arch=linux-any)mnt_context_get_user_mflags@MOUNT_2.19 2.19.1
  (arch=linux-any)mnt_context_helper_executed@MOUNT_2.21 2.24.2
  (arch=linux-any)mnt_context_helper_setopt@MOUNT_2.19 2.19.1
@@ -80,6 +84,7 @@ libmount.so.1 libmount1 #MINVER#
  (arch=linux-any)mnt_context_is_verbose@MOUNT_2.19 2.19.1
  (arch=linux-any)mnt_context_mount@MOUNT_2.19 2.19.1
  (arch=linux-any)mnt_context_next_mount@MOUNT_2.20 2.20.1
+ (arch=linux-any)mnt_context_next_remount@MOUNT_2.34 2.34
  (arch=linux-any)mnt_context_next_umount@MOUNT_2.21 2.24.2
  (arch=linux-any)mnt_context_prepare_mount@MOUNT_2.19 2.19.1
  (arch=linux-any)mnt_context_prepare_umount@MOUNT_2.19 2.19.1
@@ -100,6 +105,7 @@ libmount.so.1 libmount1 #MINVER#
  (arch=linux-any)mnt_context_set_tables_errcb@MOUNT_2.20 2.20.1
  (arch=linux-any)mnt_context_set_target@MOUNT_2.19 2.19.1
  (arch=linux-any)mnt_context_set_target_ns@MOUNT_2.33 2.33
+ (arch=linux-any)mnt_context_set_target_prefix@MOUNT_2_35 2.35.1
  (arch=linux-any)mnt_context_set_user_mflags@MOUNT_2.19 2.19.1
  (arch=linux-any)mnt_context_strerror@MOUNT_2.19 2.19.1
  (arch=linux-any)mnt_context_switch_ns@MOUNT_2.33 2.33
@@ -144,6 +150,7 @@ libmount.so.1 libmount1 #MINVER#
  mnt_fs_get_source@MOUNT_2.19 2.19.1
  mnt_fs_get_srcpath@MOUNT_2.19 2.19.1
  mnt_fs_get_swaptype@MOUNT_2.22 2.24.2
+ mnt_fs_get_table@MOUNT_2.34 2.34
  mnt_fs_get_tag@MOUNT_2.19 2.19.1
  mnt_fs_get_target@MOUNT_2.19 2.19.1
  mnt_fs_get_tid@MOUNT_2.22 2.24.2
@@ -188,6 +195,7 @@ libmount.so.1 libmount1 #MINVER#
  mnt_get_mountpoint@MOUNT_2.22 2.24.2
  mnt_get_mtab_path@MOUNT_2.19 2.19.1
  mnt_get_swaps_path@MOUNT_2.22 2.24.2
+ mnt_guess_system_root@MOUNT_2.34 2.34
  mnt_has_regular_mtab@MOUNT_2.19 2.19.1
  mnt_init_debug@MOUNT_2.19 2.19.1
  mnt_iter_get_direction@MOUNT_2.19 2.19.1
@@ -245,6 +253,7 @@ libmount.so.1 libmount1 #MINVER#
  mnt_table_append_trailing_comment@MOUNT_2.24 2.24.2
  mnt_table_enable_comments@MOUNT_2.24 2.24.2
  mnt_table_find_devno@MOUNT_2.22 2.24.2
+ mnt_table_find_fs@MOUNT_2.34 2.34
  mnt_table_find_mountpoint@MOUNT_2.23 2.24.2
  mnt_table_find_next_fs@MOUNT_2.19 2.19.1
  mnt_table_find_pair@MOUNT_2.19 2.19.1
@@ -260,9 +269,11 @@ libmount.so.1 libmount1 #MINVER#
  mnt_table_get_root_fs@MOUNT_2.19 2.19.1
  mnt_table_get_trailing_comment@MOUNT_2.24 2.24.2
  mnt_table_get_userdata@MOUNT_2.24 2.24.2
+ mnt_table_insert_fs@MOUNT_2.34 2.34
  mnt_table_is_empty@MOUNT_2.24 2.24.2
  mnt_table_is_fs_mounted@MOUNT_2.20 2.20.1
  mnt_table_last_fs@MOUNT_2.24 2.24.2
+ mnt_table_move_fs@MOUNT_2.34 2.34
  mnt_table_next_child_fs@MOUNT_2.19 2.19.1
  mnt_table_next_fs@MOUNT_2.19 2.19.1
  mnt_table_parse_dir@MOUNT_2.21 2.24.2

@@ -19,7 +19,7 @@ are necessary.
 .PP
 The command prints all block devices (except RAM disks) in a tree-like format
 by default.  Use
-.B "lsblk --help"
+.B "lsblk \-\-help"
 to get a list of all available columns.
 .PP
 The default output, as well as the default output from options like
@@ -30,6 +30,8 @@ is subject to change.  So whenever possible, you should avoid using default
 outputs in your scripts.  Always explicitly define expected columns by using
 .B \-\-output
 .I columns-list
+and
+.B \-\-list
 in environments where a stable output is required.
 .PP
 Note that
@@ -51,22 +53,27 @@ Print the SIZE column in bytes rather than in a human-readable format.
 .BR \-D , " \-\-discard"
 Print information about the discarding capabilities (TRIM, UNMAP) for each device.
 .TP
-.BR \-z , " \-\-zoned"
-Print the zone model for each device.
-.TP
 .BR \-d , " \-\-nodeps"
-Do not print holder devices or slaves.  For example, \fBlsblk --nodeps /dev/sda\fR prints
+Do not print holder devices or slaves.  For example, \fBlsblk \-\-nodeps /dev/sda\fR prints
 information about the sda device only.
+.TP
+.BR \-E , " \-\-dedup " \fIcolumn\fP
+Use \fIcolumn\fP as a de-duplication key to de-duplicate output tree. If the
+key is not available for the device, or the device is a partition and parental
+whole-disk device provides the same key than the device is always printed.
+
+The usual use case is to de-duplicate output on system multi-path devices, for
+example by \fB\-E WWN\fR.
 .TP
 .BR \-e , " \-\-exclude " \fIlist\fP
 Exclude the devices specified by the comma-separated \fIlist\fR of major device numbers.
-Note that RAM disks (major=1) are excluded by default if \fB\-\-all\fR is no specified.
-The filter is applied to the top-level devices only. This maybe be confusing for
+Note that RAM disks (major=1) are excluded by default if \fB\-\-all\fR is not specified.
+The filter is applied to the top-level devices only. This may be confusing for
 \fB\-\-list\fR output format where hierarchy of the devices is not obvious.
 .TP
 .BR \-f , " \-\-fs"
 Output info about filesystems.  This option is equivalent to
-.BR -o\ NAME,FSTYPE,LABEL,UUID,MOUNTPOINT .
+.BR \-o\ NAME,FSTYPE,LABEL,UUID,FSAVAIL,FSUSE%,MOUNTPOINT .
 The authoritative information about filesystems and raids is provided by the
 .BR blkid (8)
 command.
@@ -76,21 +83,29 @@ Display help text and exit.
 .TP
 .BR \-I , " \-\-include " \fIlist\fP
 Include devices specified by the comma-separated \fIlist\fR of major device numbers.
-The filter is applied to the top-level devices only. This maybe be confusing for
+The filter is applied to the top-level devices only. This may be confusing for
 \fB\-\-list\fR output format where hierarchy of the devices is not obvious.
 .TP
 .BR \-i , " \-\-ascii"
 Use ASCII characters for tree formatting.
 .TP
 .BR \-J , " \-\-json"
-Use JSON output format.
+Use JSON output format.  It's strongly recommended to use \fB\-\-output\fR and
+also \fB\-\-tree\fR if necessary.
 .TP
 .BR \-l , " \-\-list"
-Produce output in the form of a list.
+Produce output in the form of a list. The output does not provide information
+about relationships between devices and since version 2.34 every device is
+printed only once if \fB\-\-pairs\fR or \fB\-\-raw\fR not specified (the
+parsable outputs are maintained in backwardly compatible way).
+.TP
+.BR \-M , " \-\-merge"
+Group parents of sub-trees to provide more readable output for RAIDs and
+Multi-path devices. The tree-like output is required.
 .TP
 .BR \-m , " \-\-perms"
 Output info about device owner, group and mode.  This option is equivalent to
-.BR -o\ NAME,SIZE,OWNER,GROUP,MODE .
+.BR \-o\ NAME,SIZE,OWNER,GROUP,MODE .
 .TP
 .BR \-n , " \-\-noheadings"
 Do not print a header line.
@@ -98,23 +113,25 @@ Do not print a header line.
 .BR \-o , " \-\-output " \fIlist\fP
 Specify which output columns to print.  Use
 .B \-\-help
-to get a list of all supported columns.
+to get a list of all supported columns.  The columns may affect tree-like output.
+The default is to use tree for the column 'NAME' (see also \fB\-\-tree\fR).
 
 The default list of columns may be extended if \fIlist\fP is
-specified in the format \fI+list\fP (e.g. \fBlsblk -o +UUID\fP).
+specified in the format \fI+list\fP (e.g., \fBlsblk \-o +UUID\fP).
 .TP
-.BR \-O , " \-\-output\-all "
+.BR \-O , " \-\-output\-all"
 Output all available columns.
 .TP
 .BR \-P , " \-\-pairs"
-Produce output in the form of key="value" pairs.
-All potentially unsafe characters are hex-escaped (\\x<code>).
+Produce output in the form of key="value" pairs.  The output lines are still ordered by
+dependencies.  All potentially unsafe characters are hex-escaped (\\x<code>).
 .TP
 .BR \-p , " \-\-paths"
 Print full device paths.
 .TP
 .BR \-r , " \-\-raw"
-Produce output in raw format.  All potentially unsafe characters are hex-escaped
+Produce output in raw format.  The output lines are still ordered by
+dependencies.  All potentially unsafe characters are hex-escaped
 (\\x<code>) in the NAME, KNAME, LABEL, PARTLABEL and MOUNTPOINT columns.
 .TP
 .BR \-S , " \-\-scsi"
@@ -124,10 +141,14 @@ Output info about SCSI devices only.  All partitions, slaves and holder devices 
 Print dependencies in inverse order. If the \fB\-\-list\fR output is requested then
 the lines are still ordered by dependencies.
 .TP
+.BR \-T , " \-\-tree" [ =\fIcolumn ]
+Force tree-like output format.  If \fIcolumn\fP is specified, then a tree is printed in the column.
+The default is NAME column.
+.TP
 .BR \-t , " \-\-topology"
 Output info about block-device topology.
 This option is equivalent to
-.BR -o\ NAME,ALIGNMENT,MIN-IO,OPT-IO,PHY-SEC,LOG-SEC,ROTA,SCHED,RQ-SIZE,RA,WSAME .
+.BR \-o\ NAME,ALIGNMENT,MIN-IO,OPT-IO,PHY-SEC,LOG-SEC,ROTA,SCHED,RQ-SIZE,RA,WSAME .
 .TP
 .BR \-V , " \-\-version"
 Display version information and exit.
@@ -137,25 +158,16 @@ Sort output lines by \fIcolumn\fP. This option enables \fB\-\-list\fR output for
 It is possible to use the option \fI\-\-tree\fP to force tree-like output and
 than the tree branches are sorted by the \fIcolumn\fP.
 .TP
+.BR \-z , " \-\-zoned"
+Print the zone model for each device.
+.TP
 .BR " \-\-sysroot " \fIdirectory\fP
 Gather data for a Linux instance other than the instance from which the lsblk
 command is issued.  The specified directory is the system root of the Linux
-instance to be inspected.  This option is designed for the testing purpose.
+instance to be inspected.  The real device nodes in the target directory can
+be replaced by text files with udev attributes.
 
-.SH NOTES
-For partitions, some information (e.g. queue attributes) is inherited from the
-parent device.
-.PP
-The
-.B lsblk
-command needs to be able to look up each block device by major:minor numbers,
-which is done by using
-.IR /sys/dev/block .
-This sysfs block directory appeared in kernel 2.6.27 (October 2008).
-In case of problems with a new enough kernel, check that CONFIG_SYSFS
-was enabled at the time of the kernel build.
-
-.SH RETURN CODES
+.SH EXIT STATUS
 .IP 0
 success
 .IP 1
@@ -165,11 +177,6 @@ none of specified devices found
 .IP 64
 some specified devices found, some not found
 
-.SH AUTHORS
-.nf
-Milan Broz <mbroz@redhat.com>
-Karel Zak <kzak@redhat.com>
-.fi
 .SH ENVIRONMENT
 .IP LSBLK_DEBUG=all
 enables lsblk debug output.
@@ -181,6 +188,24 @@ enables libmount debug output.
 enables libsmartcols debug output.
 .IP LIBSMARTCOLS_DEBUG_PADDING=on
 use visible padding characters. Requires enabled LIBSMARTCOLS_DEBUG.
+.SH NOTES
+For partitions, some information (e.g., queue attributes) is inherited from the
+parent device.
+.PP
+The
+.B lsblk
+command needs to be able to look up each block device by major:minor numbers,
+which is done by using
+.IR /sys/dev/block .
+This sysfs block directory appeared in kernel 2.6.27 (October 2008).
+In case of problems with a new enough kernel, check that CONFIG_SYSFS
+was enabled at the time of the kernel build.
+
+.SH AUTHORS
+.nf
+Milan Broz <mbroz@redhat.com>
+Karel Zak <kzak@redhat.com>
+.fi
 .SH SEE ALSO
 .BR ls (1),
 .BR blkid (8),

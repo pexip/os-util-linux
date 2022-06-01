@@ -1,10 +1,9 @@
 /*
- * Security checks of environment
- * Added from shadow-utils package
- * by Arkadiusz Miśkiewicz <misiek@pld.ORG.PL>
+ * environ[] array cleanup code and getenv() wappers
  *
+ * No copyright is claimed.  This code is in the public domain; do with
+ * it what you wish.
  */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,13 +55,15 @@ sanitize_env(void)
         char **envp = environ;
         char * const *bad;
         char **cur;
-        char **move;
+        int last = 0;
+
+        for (cur = envp; *cur; cur++)
+                last++;
 
         for (cur = envp; *cur; cur++) {
                 for (bad = forbid; *bad; bad++) {
                         if (strncmp(*cur, *bad, strlen(*bad)) == 0) {
-                                for (move = cur; *move; move++)
-                                        *move = *(move + 1);
+                                last = remote_entry(envp, cur - envp, last);
                                 cur--;
                                 break;
                         }
@@ -75,8 +76,7 @@ sanitize_env(void)
                                 continue;
                         if (!strchr(*cur, '/'))
                                 continue;  /* OK */
-                        for (move = cur; *move; move++)
-                                *move = *(move + 1);
+                        last = remote_entry(envp, cur - envp, last);
                         cur--;
                         break;
                 }
@@ -107,3 +107,34 @@ return secure_getenv(arg);
 	return getenv(arg);
 #endif
 }
+
+#ifdef TEST_PROGRAM
+int main(void)
+{
+	char *const *bad;
+	char copy[32];
+	char *p;
+	int retval = EXIT_SUCCESS;
+
+	for (bad = forbid; *bad; bad++) {
+		strcpy(copy, *bad);
+		p = strchr(copy, '=');
+		if (p)
+			*p = '\0';
+		setenv(copy, copy, 1);
+	}
+	sanitize_env();
+	for (bad = forbid; *bad; bad++) {
+		strcpy(copy, *bad);
+		p = strchr(copy, '=');
+		if (p)
+			*p = '\0';
+		p = getenv(copy);
+		if (p) {
+			warnx("%s was not removed", copy);
+			retval = EXIT_FAILURE;
+		}
+	}
+	return retval;
+}
+#endif

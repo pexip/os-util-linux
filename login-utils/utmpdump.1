@@ -51,15 +51,14 @@ out utmp/wtmp to an ASCII file, which can then be edited to remove
 bogus entries, and reintegrated using:
 .PP
 .RS
-.B utmpdump -r < ascii_file > wtmp
+.B utmpdump \-r < ascii_file > wtmp
 .RE
 .PP
 But be warned,
 .B utmpdump
 was written for debugging purposes only.
 .SS File formats
-.PP
-The only binary version of the
+Only the binary version of the
 .BR utmp (5)
 is standardised.  Textual dumps may become incompatible in future.
 .PP
@@ -78,9 +77,9 @@ option, as the format for the utmp/wtmp files strongly depends on the input
 format.  This tool was
 .B not
 written for normal use, but for debugging only.
-.SH AUTHOR
+.SH AUTHORS
 Michael Krapp
-.SH "SEE ALSO"
+.SH SEE ALSO
 .BR last (1),
 .BR w (1),
 .BR who (1),

@@ -167,6 +167,10 @@ tomorrow	(time is set to 00:00:00)
 +5min
 -5days
 .TE
+.SH FILES
+/var/log/wtmp
+.br
+/var/log/btmp
 .SH NOTES
 The files
 .I wtmp
@@ -178,21 +182,17 @@ files to be used, they can be created with a simple
 .BR touch (1)
 command (for example,
 .IR "touch /var/log/wtmp" ).
-.SH FILES
-/var/log/wtmp
-.br
-/var/log/btmp
-.SH AUTHOR
+.SH AUTHORS
 .MT miquels@cistron.nl
 Miquel van Smoorenburg
 .ME
+.SH SEE ALSO
+.BR login (1),
+.BR wtmp (5),
+.BR init (8),
+.BR shutdown (8)
 .SH AVAILABILITY
 The last command is part of the util-linux package and is available from
 .UR https://\:www.kernel.org\:/pub\:/linux\:/utils\:/util-linux/
 Linux Kernel Archive
 .UE .
-.SH "SEE ALSO"
-.BR login (1),
-.BR wtmp (5),
-.BR init (8),
-.BR shutdown (8)

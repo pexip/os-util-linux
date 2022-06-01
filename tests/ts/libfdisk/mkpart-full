@@ -31,13 +31,13 @@ ts_check_test_command "$TS_CMD_WIPEFS"
 TEST_IMAGE_NAME=$(ts_image_init 15)
 
 ts_init_subtest "mbr-primary"
-$TESTPROG --label mbr --device ${TEST_IMAGE_NAME} \
+ts_run $TESTPROG --label mbr --device ${TEST_IMAGE_NAME} \
 	1,2048,2048 \
 	2,4096,2048 \
 	3,6144,2048 \
 	4,8192,22528 \
-	>> $TS_OUTPUT 2>&1
-$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>&1
+	>> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>> $TS_ERRLOG
 ts_fdisk_clean ${TEST_IMAGE_NAME}
 ts_finalize_subtest
 
@@ -45,13 +45,13 @@ $TS_CMD_WIPEFS --all --force ${TEST_IMAGE_NAME} &> /dev/null
 
 
 ts_init_subtest "mbr-primary-nopartno"
-$TESTPROG --label mbr --device ${TEST_IMAGE_NAME} -- \
+ts_run $TESTPROG --label mbr --device ${TEST_IMAGE_NAME} -- \
 	-,2048,2048 \
 	-,4096,2048 \
 	-,6144,2048 \
 	-,8192,22528 \
-	>> $TS_OUTPUT 2>&1
-$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>&1
+	>> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>> $TS_ERRLOG
 ts_fdisk_clean ${TEST_IMAGE_NAME}
 ts_finalize_subtest
 
@@ -59,12 +59,12 @@ $TS_CMD_WIPEFS --all --force ${TEST_IMAGE_NAME} &> /dev/null
 
 ## no extended but partno > 4 requested
 ts_init_subtest "mbr-err-primary"
-$TESTPROG --label mbr --device ${TEST_IMAGE_NAME} \
+ts_run $TESTPROG --label mbr --device ${TEST_IMAGE_NAME} \
 	1,2048,2048 \
 	2,4096,2048 \
 	7,6144,2048 \
-	>> $TS_OUTPUT 2>&1
-$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>&1
+	>> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>> $TS_ERRLOG
 ts_fdisk_clean ${TEST_IMAGE_NAME}
 ts_finalize_subtest
 
@@ -72,12 +72,12 @@ $TS_CMD_WIPEFS --all --force ${TEST_IMAGE_NAME} &> /dev/null
 
 ## no extended but partno > 4 requested
 ts_init_subtest "mbr-err-nospace"
-$TESTPROG --label mbr --device ${TEST_IMAGE_NAME} \
+ts_run $TESTPROG --label mbr --device ${TEST_IMAGE_NAME} \
 	1,2048,2048 \
 	2,4096,2048 \
 	3,4096,2048 \
-	>> $TS_OUTPUT 2>&1
-$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>&1
+	>> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>> $TS_ERRLOG
 ts_fdisk_clean ${TEST_IMAGE_NAME}
 ts_finalize_subtest
 
@@ -85,7 +85,7 @@ $TS_CMD_WIPEFS --all --force ${TEST_IMAGE_NAME} &> /dev/null
 
 
 ts_init_subtest "mbr-logical"
-$TESTPROG --label mbr --device ${TEST_IMAGE_NAME} \
+ts_run $TESTPROG --label mbr --device ${TEST_IMAGE_NAME} \
 	1,2048,2048 \
 	2,4096,2048 \
 	3,6144,2048 \
@@ -93,15 +93,15 @@ $TESTPROG --label mbr --device ${TEST_IMAGE_NAME} \
 	5,10240,2048 \
 	6,14336,2048 \
 	7,18432,12288 \
-       	>> $TS_OUTPUT 2>&1
-$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>&1
+       	>> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>> $TS_ERRLOG
 ts_fdisk_clean ${TEST_IMAGE_NAME}
 ts_finalize_subtest
 
 $TS_CMD_WIPEFS --all --force ${TEST_IMAGE_NAME} &> /dev/null
 
 ts_init_subtest "mbr-nopartno"
-$TESTPROG --label mbr --device ${TEST_IMAGE_NAME} -- \
+ts_run $TESTPROG --label mbr --device ${TEST_IMAGE_NAME} -- \
 	-,2048,2048 \
 	-,4096,2048 \
 	-,6144,2048 \
@@ -109,8 +109,8 @@ $TESTPROG --label mbr --device ${TEST_IMAGE_NAME} -- \
 	-,10240,2048 \
 	-,14336,2048 \
 	-,18432,12288 \
-       	>> $TS_OUTPUT 2>&1
-$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>&1
+       	>> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>> $TS_ERRLOG
 ts_fdisk_clean ${TEST_IMAGE_NAME}
 ts_finalize_subtest
 
@@ -118,7 +118,7 @@ $TS_CMD_WIPEFS --all --force ${TEST_IMAGE_NAME} &> /dev/null
 
 ### 6th partition (logical) out of extended
 ts_init_subtest "mbr-err-logical"
-$TESTPROG --label mbr --device ${TEST_IMAGE_NAME} \
+ts_run $TESTPROG --label mbr --device ${TEST_IMAGE_NAME} \
 	1,2048,2048 \
 	2,4096,2048 \
 	3,6144,2048 \
@@ -126,27 +126,27 @@ $TESTPROG --label mbr --device ${TEST_IMAGE_NAME} \
 	5,10240,2048 \
 	6,4096,2048 \
 	7,18432,12288 \
-       	>> $TS_OUTPUT 2>&1
-$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>&1
+       	>> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>> $TS_ERRLOG
 ts_fdisk_clean ${TEST_IMAGE_NAME}
 ts_finalize_subtest
 
 $TS_CMD_WIPEFS --all --force ${TEST_IMAGE_NAME} &> /dev/null
 
 ts_init_subtest "mbr-space-gap"
-$TESTPROG --label mbr --device ${TEST_IMAGE_NAME} \
+ts_run $TESTPROG --label mbr --device ${TEST_IMAGE_NAME} \
 	1,2048,2048 \
 	2,6144,2048 \
 	3,8192,2048 \
-	>> $TS_OUTPUT 2>&1
-$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>&1
+	>> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>> $TS_ERRLOG
 ts_fdisk_clean ${TEST_IMAGE_NAME}
 ts_finalize_subtest
 
 $TS_CMD_WIPEFS --all --force ${TEST_IMAGE_NAME} &> /dev/null
 
 ts_init_subtest "gpt"
-$TESTPROG --label gpt --device ${TEST_IMAGE_NAME} \
+ts_run $TESTPROG --label gpt --device ${TEST_IMAGE_NAME} \
 	1,2048,2048 \
 	2,4096,2048 \
 	3,6144,2048 \
@@ -154,15 +154,15 @@ $TESTPROG --label gpt --device ${TEST_IMAGE_NAME} \
 	5,10240,2048 \
 	6,12288,2048 \
 	7,14336,2048 \
-       	>> $TS_OUTPUT 2>&1
-$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>&1
+       	>> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>> $TS_ERRLOG
 ts_fdisk_clean ${TEST_IMAGE_NAME}
 ts_finalize_subtest
 
 $TS_CMD_WIPEFS --all --force ${TEST_IMAGE_NAME} &> /dev/null
 
 ts_init_subtest "gpt-nopartno"
-$TESTPROG --label gpt --device ${TEST_IMAGE_NAME} -- \
+ts_run $TESTPROG --label gpt --device ${TEST_IMAGE_NAME} -- \
 	-,2048,2048 \
 	-,4096,2048 \
 	-,6144,2048 \
@@ -170,8 +170,8 @@ $TESTPROG --label gpt --device ${TEST_IMAGE_NAME} -- \
 	-,10240,2048 \
 	-,12288,2048 \
 	-,14336,2048 \
-       	>> $TS_OUTPUT 2>&1
-$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>&1
+       	>> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>> $TS_ERRLOG
 ts_fdisk_clean ${TEST_IMAGE_NAME}
 ts_finalize_subtest
 
@@ -179,7 +179,7 @@ $TS_CMD_WIPEFS --all --force ${TEST_IMAGE_NAME} &> /dev/null
 
 ### 4th partition overlap 4th and 5th
 ts_init_subtest "gpt-err-overlap"
-$TESTPROG --label gpt --device ${TEST_IMAGE_NAME} \
+ts_run $TESTPROG --label gpt --device ${TEST_IMAGE_NAME} \
 	1,2048,2048 \
 	2,4096,2048 \
 	3,6144,2048 \
@@ -187,15 +187,15 @@ $TESTPROG --label gpt --device ${TEST_IMAGE_NAME} \
 	5,10240,2048 \
 	6,12288,2048 \
 	7,14336,2048 \
-       	>> $TS_OUTPUT 2>&1
-$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>&1
+       	>> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>> $TS_ERRLOG
 ts_fdisk_clean ${TEST_IMAGE_NAME}
 ts_finalize_subtest
 
 $TS_CMD_WIPEFS --all --force ${TEST_IMAGE_NAME} &> /dev/null
 
 ts_init_subtest "gpt-partno-gap"
-$TESTPROG --label gpt --device ${TEST_IMAGE_NAME} \
+ts_run $TESTPROG --label gpt --device ${TEST_IMAGE_NAME} \
 	1,2048,2048 \
 	2,4096,2048 \
 	4,6144,2048 \
@@ -203,25 +203,23 @@ $TESTPROG --label gpt --device ${TEST_IMAGE_NAME} \
 	7,10240,2048 \
 	8,12288,2048 \
 	9,14336,2048 \
-       	>> $TS_OUTPUT 2>&1
-$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>&1
+       	>> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>> $TS_ERRLOG
 ts_fdisk_clean ${TEST_IMAGE_NAME}
 ts_finalize_subtest
 
 $TS_CMD_WIPEFS --all --force ${TEST_IMAGE_NAME} &> /dev/null
 
 ts_init_subtest "gpt-space-gap"
-$TESTPROG --label gpt --device ${TEST_IMAGE_NAME} \
+ts_run $TESTPROG --label gpt --device ${TEST_IMAGE_NAME} \
 	1,2048,2048 \
 	2,6144,2048 \
 	3,8192,2048 \
 	4,12288,2048 \
 	5,14336,2048 \
-       	>> $TS_OUTPUT 2>&1
-$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>&1
+       	>> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SFDISK --list ${TEST_IMAGE_NAME} >> $TS_OUTPUT 2>> $TS_ERRLOG
 ts_fdisk_clean ${TEST_IMAGE_NAME}
 ts_finalize_subtest
-
-
 
 ts_finalize

@@ -110,6 +110,7 @@ struct libscols_column *scols_copy_column(const struct libscols_column *cl)
 	ret->width_hint	= cl->width_hint;
 	ret->flags	= cl->flags;
 	ret->is_extreme = cl->is_extreme;
+	ret->is_groups  = cl->is_groups;
 
 	return ret;
 err:
@@ -337,11 +338,15 @@ size_t scols_wrapnl_chunksize(const struct libscols_column *cl __attribute__((un
 
 		p = strchr(data, '\n');
 		if (p) {
-			sz = mbs_safe_nwidth(data, p - data, NULL);
+			sz = cl->table && scols_table_is_noencoding(cl->table) ?
+					mbs_nwidth(data, p - data) :
+					mbs_safe_nwidth(data, p - data, NULL);
 			p++;
-		} else
-			sz = mbs_safe_width(data);
-
+		} else {
+			sz = cl->table && scols_table_is_noencoding(cl->table) ?
+					mbs_width(data) :
+					mbs_safe_width(data);
+		}
 		sum = max(sum, sz);
 		data = p;
 	}
@@ -378,7 +383,7 @@ int scols_column_set_cmpfunc(struct libscols_column *cl,
  * @wrap_nextchunk: function to return next zero terminated data
  * @userdata: optional stuff for callbacks
  *
- * Extends SCOLS_FL_WRAP and allows to set custom wrap function. The default
+ * Extends SCOLS_FL_WRAP and can be used to set custom wrap function. The default
  * is to wrap by column size, but you can create functions to wrap for example
  * after \n or after words, etc.
  *

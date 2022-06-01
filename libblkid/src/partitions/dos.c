@@ -14,6 +14,7 @@
 #include <stdint.h>
 
 #include "partitions.h"
+#include "superblocks/superblocks.h"
 #include "aix.h"
 
 /* see superblocks/vfat.c */
@@ -55,7 +56,7 @@ static int parse_dos_extended(blkid_probe pr, blkid_parttable tab,
 
 	while (1) {
 		struct dos_partition *p, *p0;
-		uint32_t start, size;
+		uint32_t start = 0, size;
 
 		if (++ct_nodata > 100)
 			return BLKID_PROBE_OK;
@@ -219,6 +220,12 @@ static int probe_dos_pt(blkid_probe pr,
 	 */
 	if (blkid_probe_is_vfat(pr) == 1) {
 		DBG(LOWPROBE, ul_debug("probably FAT -- ignore"));
+		goto nothing;
+	}
+
+	/* Another false positive is NTFS */
+	if (blkid_probe_is_ntfs(pr) == 1) {
+		DBG(LOWPROBE, ul_debug("probably NTFS -- ignore"));
 		goto nothing;
 	}
 

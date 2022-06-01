@@ -145,9 +145,9 @@ void blkid__scan_dir(char *dirname, dev_t devno, struct dir_list **list,
 		if (dp->d_type == DT_UNKNOWN)
 #endif
 		{
-			if (fstatat(dirfd(dir), dp->d_name, &st, 1) ||
+			if (fstatat(dirfd(dir), dp->d_name, &st, AT_SYMLINK_NOFOLLOW) ||
 			    !S_ISDIR(st.st_mode))
-				continue;	/* symlink or lstat() failed */
+				continue;	/* symlink or fstatat() failed */
 		}
 
 		if (*dp->d_name == '.' || (
@@ -161,7 +161,6 @@ void blkid__scan_dir(char *dirname, dev_t devno, struct dir_list **list,
 		add_to_dirlist(dirname, dp->d_name, list);
 	}
 	closedir(dir);
-	return;
 }
 
 /* Directories where we will try to search for device numbers */

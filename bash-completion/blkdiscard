@@ -16,6 +16,7 @@ _blkdiscard_module()
 	case $cur in
 		-*)
 			OPTS="
+				--force
 				--offset
 				--length
 				--step
@@ -29,6 +30,7 @@ _blkdiscard_module()
 			return 0
 			;;
 	esac
+	compopt -o bashdefault -o default
 	COMPREPLY=( $(compgen -W "$(lsblk -pnro name)" -- $cur) )
 	return 0
 }

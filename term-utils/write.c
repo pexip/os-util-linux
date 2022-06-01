@@ -179,7 +179,7 @@ static void search_utmp(struct write_control *ctl)
 		if (ctl->src_uid && !tty_writeable)
 			/* skip ttys with msgs off */
 			continue;
-		if (strcmp(u->ut_line, ctl->src_tty_name) == 0) {
+		if (memcmp(u->ut_line, ctl->src_tty_name, strlen(ctl->src_tty_name) + 1) == 0) {
 			user_is_me = 1;
 			/* don't write to yourself */
 			continue;
@@ -275,7 +275,7 @@ static void do_write(const struct write_control *ctl)
 	tm = localtime(&now);
 	/* print greeting */
 	printf("\r\n\a\a\a");
-	if (strcmp(login, pwuid))
+	if (strcmp(login, pwuid) != 0)
 		printf(_("Message from %s@%s (as %s) on %s at %02d:%02d ..."),
 		       login, host, pwuid, ctl->src_tty_name,
 		       tm->tm_hour, tm->tm_min);
@@ -308,13 +308,12 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while ((c = getopt_long(argc, argv, "Vh", longopts, NULL)) != -1)
 		switch (c) {
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		case 'h':
 			usage();
 		default:

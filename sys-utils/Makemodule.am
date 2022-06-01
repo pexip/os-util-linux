@@ -50,6 +50,33 @@ ipcs_SOURCES =	sys-utils/ipcs.c \
 ipcs_LDADD = $(LDADD) libcommon.la
 endif
 
+if BUILD_IRQTOP
+usrbin_exec_PROGRAMS += irqtop
+dist_man_MANS += sys-utils/irqtop.1
+irqtop_SOURCES = sys-utils/irqtop.c \
+		 sys-utils/irq-common.c \
+		 sys-utils/irq-common.h \
+		 lib/monotonic.c
+irqtop_LDADD = $(LDADD) libcommon.la $(REALTIME_LIBS) libsmartcols.la
+irqtop_CFLAGS = $(AM_CFLAGS) -I$(ul_libsmartcols_incdir)
+if HAVE_SLANG
+irqtop_LDADD += -lslang
+else
+irqtop_CFLAGS += $(NCURSES_CFLAGS)
+irqtop_LDADD += $(NCURSES_LIBS)
+endif
+endif
+
+if BUILD_LSIRQ
+usrbin_exec_PROGRAMS += lsirq
+dist_man_MANS += sys-utils/lsirq.1
+lsirq_SOURCES =	sys-utils/lsirq.c \
+		sys-utils/irq-common.c \
+		sys-utils/irq-common.h
+lsirq_LDADD = $(LDADD) libcommon.la libsmartcols.la
+lsirq_CFLAGS = $(AM_CFLAGS) -I$(ul_libsmartcols_incdir)
+endif
+
 if BUILD_LSIPC
 usrbin_exec_PROGRAMS += lsipc
 dist_man_MANS += sys-utils/lsipc.1
@@ -138,7 +165,8 @@ if BUILD_BLKDISCARD
 sbin_PROGRAMS += blkdiscard
 dist_man_MANS += sys-utils/blkdiscard.8
 blkdiscard_SOURCES = sys-utils/blkdiscard.c lib/monotonic.c
-blkdiscard_LDADD = $(LDADD) libcommon.la $(REALTIME_LIBS)
+blkdiscard_LDADD = $(LDADD) libblkid.la libcommon.la $(REALTIME_LIBS)
+blkdiscard_CFLAGS = $(AM_CFLAGS) -I$(ul_libblkid_incdir)
 endif
 
 if BUILD_BLKZONE
@@ -248,7 +276,8 @@ endif # BUILD_LOSETUP
 if BUILD_ZRAMCTL
 sbin_PROGRAMS += zramctl
 dist_man_MANS += sys-utils/zramctl.8
-zramctl_SOURCES = sys-utils/zramctl.c
+zramctl_SOURCES = sys-utils/zramctl.c \
+		  lib/ismounted.c
 zramctl_LDADD = $(LDADD) libcommon.la libsmartcols.la
 zramctl_CFLAGS = $(AM_CFLAGS) -I$(ul_libsmartcols_incdir)
 endif
@@ -416,7 +445,9 @@ endif
 if BUILD_UNSHARE
 usrbin_exec_PROGRAMS += unshare
 dist_man_MANS += sys-utils/unshare.1
-unshare_SOURCES = sys-utils/unshare.c
+unshare_SOURCES = sys-utils/unshare.c \
+		  lib/caputils.c \
+		  lib/exec_shell.c
 unshare_LDADD = $(LDADD) libcommon.la
 unshare_CFLAGS = $(AM_CFLAGS) -I$(ul_libmount_incdir)
 
@@ -432,7 +463,7 @@ endif
 if BUILD_NSENTER
 usrbin_exec_PROGRAMS += nsenter
 dist_man_MANS += sys-utils/nsenter.1
-nsenter_SOURCES = sys-utils/nsenter.c
+nsenter_SOURCES = sys-utils/nsenter.c lib/exec_shell.c
 nsenter_LDADD = $(LDADD) libcommon.la $(SELINUX_LIBS)
 
 if HAVE_STATIC_NSENTER
@@ -451,12 +482,23 @@ dist_man_MANS += \
 PATHFILES += sys-utils/hwclock.8
 hwclock_SOURCES = \
 	sys-utils/hwclock.c \
-	sys-utils/hwclock.h \
-	sys-utils/hwclock-cmos.c
-if LINUX
-hwclock_SOURCES += sys-utils/hwclock-rtc.c
+	sys-utils/hwclock.h
+if USE_HWCLOCK_GPLv3_DATETIME
+hwclock_SOURCES += \
+	sys-utils/hwclock-parse-date.y
 endif
 hwclock_LDADD = $(LDADD) libcommon.la -lm
+hwclock_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_srcdir)/sys-utils
+if USE_HWCLOCK_CMOS
+hwclock_SOURCES += \
+	sys-utils/hwclock-cmos.c
+endif
+if LINUX
+hwclock_SOURCES += \
+	sys-utils/hwclock-rtc.c \
+	lib/monotonic.c
+hwclock_LDADD += $(REALTIME_LIBS)
+endif
 if HAVE_AUDIT
 hwclock_LDADD += -laudit
 endif
@@ -465,6 +507,7 @@ endif # BUILD_HWCLOCK
 if BUILD_SETPRIV
 usrbin_exec_PROGRAMS += setpriv
 dist_man_MANS += sys-utils/setpriv.1
-setpriv_SOURCES = sys-utils/setpriv.c
+setpriv_SOURCES = sys-utils/setpriv.c \
+		  lib/caputils.c
 setpriv_LDADD = $(LDADD) -lcap-ng libcommon.la
 endif

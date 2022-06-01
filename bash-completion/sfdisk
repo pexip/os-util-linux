@@ -6,6 +6,7 @@ _sfdisk_module()
 	prev="${COMP_WORDS[COMP_CWORD-1]}"
 	case $prev in
 		'-d'|'--dump'|'-J'|'--json'|'-l'|'--list'|'-F'|'--list-free'|'-r'|'--reorder'|'-s'|'--show-size'|'-V'|'--verify'|'-A'|'--activate'|'--delete')
+			compopt -o bashdefault -o default
 			COMPREPLY=( $(compgen -W "$(lsblk -dpnro name)" -- $cur) )
 			return 0
 			;;
@@ -57,10 +58,12 @@ _sfdisk_module()
 				--show-geometry
 				--list
 				--list-free
+				--disk-id
 				--reorder
 				--show-size
 				--list-types
 				--verify
+				--relocate
 				--delete
 				--part-label
 				--part-type
@@ -72,6 +75,7 @@ _sfdisk_module()
 				--move-data
 				--force
 				--color
+				--lock
 				--partno
 				--no-act
 				--no-reread
@@ -90,6 +94,7 @@ _sfdisk_module()
 			return 0
 			;;
 	esac
+	compopt -o bashdefault -o default
 	COMPREPLY=( $(compgen -W "$(lsblk -pnro name)" -- $cur) )
 	return 0
 }

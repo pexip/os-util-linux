@@ -263,7 +263,9 @@ static int uread(FILE *fp, struct utmpx *u,  int *quit, const char *filename)
  */
 static char *showdate(void)
 {
-	char *s = ctime(&lastdate);
+	static char s[CTIME_BUFSIZ];
+
+	ctime_r(&lastdate, s);
 	s[16] = 0;
 	return s;
 }
@@ -339,15 +341,22 @@ static int time_formatter(int fmt, char *dst, size_t dlen, time_t *when)
 		break;
 	case LAST_TIMEFTM_HHMM:
 	{
-		struct tm *tm = localtime(when);
-		if (!snprintf(dst, dlen, "%02d:%02d", tm->tm_hour, tm->tm_min))
+		struct tm tm;
+
+		localtime_r(when, &tm);
+		if (!snprintf(dst, dlen, "%02d:%02d", tm.tm_hour, tm.tm_min))
 			ret = -1;
 		break;
 	}
 	case LAST_TIMEFTM_CTIME:
-		snprintf(dst, dlen, "%s", ctime(when));
+	{
+		char buf[CTIME_BUFSIZ];
+
+		ctime_r(when, buf);
+		snprintf(dst, dlen, "%s", buf);
 		ret = rtrim_whitespace((unsigned char *) dst);
 		break;
+	}
 	case LAST_TIMEFTM_ISO8601:
 		ret = strtime_iso(when, ISO_TIMESTAMP_T, dst, dlen);
 		break;
@@ -394,8 +403,7 @@ static int list(const struct last_control *ctl, struct utmpx *p, time_t logout_t
 	/*
 	 *	uucp and ftp have special-type entries
 	 */
-	utline[0] = 0;
-	strncat(utline, p->ut_line, sizeof(utline) - 1);
+	mem2strcpy(utline, p->ut_line, sizeof(p->ut_line), sizeof(utline));
 	if (strncmp(utline, "ftp", 3) == 0 && isdigit(utline[3]))
 		utline[3] = 0;
 	if (strncmp(utline, "uucp", 4) == 0 && isdigit(utline[4]))
@@ -458,7 +466,7 @@ static int list(const struct last_control *ctl, struct utmpx *p, time_t logout_t
 	} else if (hours) {
 		sprintf(length, " (%02d:%02d)", hours, abs(mins));  /* mins always shown as positive (w/o minus sign!) even if secs < 0 */
 	} else if (secs >= 0) {
-		sprintf(length, " (%02d:%02d)", hours, mins); 
+		sprintf(length, " (%02d:%02d)", hours, mins);
 	} else {
 		sprintf(length, " (-00:%02d)", abs(mins));  /* mins always shown as positive (w/o minus sign!) even if secs < 0 */
 	}
@@ -600,10 +608,11 @@ static int is_phantom(const struct last_control *ctl, struct utmpx *ut)
 
 	if (ut->ut_tv.tv_sec < ctl->boot_time.tv_sec)
 		return 1;
+	ut->ut_user[sizeof(ut->ut_user) - 1] = '\0';
 	pw = getpwnam(ut->ut_user);
 	if (!pw)
 		return 1;
-	sprintf(path, "/proc/%u/loginuid", ut->ut_pid);
+	snprintf(path, sizeof(path), "/proc/%u/loginuid", ut->ut_pid);
 	if (access(path, R_OK) == 0) {
 		unsigned int loginuid;
 		FILE *f = NULL;
@@ -617,8 +626,11 @@ static int is_phantom(const struct last_control *ctl, struct utmpx *ut)
 			return 1;
 	} else {
 		struct stat st;
+		char utline[sizeof(ut->ut_line) + 1];
 
-		sprintf(path, "/dev/%s", ut->ut_line);
+		mem2strcpy(utline, ut->ut_line, sizeof(ut->ut_line), sizeof(utline));
+
+		snprintf(path, sizeof(path), "/dev/%s", utline);
 		if (stat(path, &st))
 			return 1;
 		if (pw->pw_uid != st.st_uid)
@@ -938,7 +950,7 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 	/*
 	 * Which file do we want to read?
 	 */
@@ -953,8 +965,7 @@ int main(int argc, char **argv)
 			usage(&ctl);
 			break;
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		case 'R':
 			ctl.showhost = 0;
 			break;

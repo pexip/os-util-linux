@@ -3,7 +3,7 @@
  *
  * This file is part of libmount from util-linux project.
  *
- * Copyright (C) 2011-2018 Karel Zak <kzak@redhat.com> 
+ * Copyright (C) 2011-2018 Karel Zak <kzak@redhat.com>
  *
  * libmount is free software; you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by
@@ -341,3 +341,18 @@ MOUNT_2.33 {
 	mnt_context_switch_origin_ns;
 	mnt_context_switch_target_ns;
 } MOUNT_2.30;
+
+MOUNT_2.34 {
+	mnt_context_next_remount;
+	mnt_fs_get_table;
+	mnt_guess_system_root;
+	mnt_table_find_fs;
+	mnt_table_insert_fs;
+	mnt_table_move_fs;
+} MOUNT_2.33;
+
+MOUNT_2_35 {
+	mnt_context_force_unrestricted;
+	mnt_context_get_target_prefix;
+	mnt_context_set_target_prefix;
+} MOUNT_2.34;

@@ -9,7 +9,6 @@ agetty \- alternative Linux getty
 
 .SH DESCRIPTION
 .ad
-.fi
 \fBagetty\fP opens a tty port, prompts for a login name and invokes
 the /bin/login command.  It is normally invoked by \fBinit\fP(8).
 
@@ -32,7 +31,7 @@ Optionally does not hang up when it is given an already opened line
 .IP \(bu
 Optionally does not display the contents of the \fI/etc/issue\fP file.
 .IP \(bu
-Optionally displays an alternative issue file or directory instead of \fI/etc/issue\fP or \fI/etc/issue.d\fP.
+Optionally displays an alternative issue files or directories instead of \fI/etc/issue\fP or \fI/etc/issue.d\fP.
 .IP \(bu
 Optionally does not ask for a login name.
 .IP \(bu
@@ -117,12 +116,19 @@ is added to the \fB/bin/login\fP command line.
 .IP
 See \fB\-\-login\-options\fR.
 .TP
-\-f, \-\-issue\-file \fIfile|directory\fP
-Display the contents of \fIfile\fP instead of \fI/etc/issue\fP.  If the
-specified path is a \fIdirectory\fP then displays all files with .issue file
-extension in version-sort order from the directory.  This allows custom
-messages to be displayed on different terminals.  The
-\-\-noissue option will override this option.
+\-f, \-\-issue\-file \fIpath\fP
+Specifies a ":" delimited list of files and directories to be displayed instead
+of \fI/etc/issue\fP (or other).  All specified files and directories are displayed,
+missing or empty files are silently ignored.   If the specified path is a
+directory then display all files with .issue file extension in version-sort
+order from the directory.  This allows custom messages to be displayed on
+different terminals.  The \fB\-\-noissue\fP option will override this option.
+.TP
+\-\-show\-issue
+Display the current issue file (or other) on the current terminal and exit.
+Use this option to review the current setting, it is not designed for any other
+purpose.  Note that output may use some default or incomplete information as
+proper output depends on terminal and agetty command line.
 .TP
 \-h, \-\-flow\-control
 Enable hardware (RTS/CTS) flow control.  It is left up to the
@@ -210,11 +216,11 @@ program that \fBagetty\fR starts (usually /bin/login) is run as root.
 Do not print a newline before writing out /etc/issue.
 .TP
 \-o, \-\-login\-options "\fIlogin_options\fP"
-Options  and arguments that  are passed to \fBlogin\fP(1). Where \\u is
+Options and arguments that  are passed to \fBlogin\fP(1). Where \eu is
 replaced by the login name. For example:
 .RS
 .IP "" 4
-.B "\-\-login\-options '-h darkstar -- \\\u'"
+.B "\-\-login\-options '\-h darkstar \-\- \eu'"
 .PP
 See \fB\-\-autologin\fR, \fB\-\-login\-program\fR and \fB\-\-remote\fR.
 .PP
@@ -232,8 +238,11 @@ Change root to the specified directory.
 Call vhangup() to do a virtual hangup of the specified terminal.
 .TP
 \-s, \-\-keep\-baud
-Try to keep the existing baud rate.  The baud rates from
-the command line are used when agetty receives a BREAK character.
+Try to keep the existing baud rate.  The baud rates from the command line are
+used when agetty receives a BREAK character.  If another baud rates specified
+then the original baud rate is also saved to the end of the wanted baud rates
+list.
+This can be used to return to the original baud rate after unexpected BREAKs.
 .TP
 \-t, \-\-timeout \fItimeout\fP
 Terminate if no user name could be read within \fItimeout\fP seconds.
@@ -295,8 +304,7 @@ Display version information and exit.
 .TP
 \-\-help
 Display help text and exit.
-.PP
-.SH EXAMPLES
+.SH EXAMPLE
 This section shows examples for the process field of an entry in the
 \fI/etc/inittab\fP file.  You'll have to prepend appropriate values
 for the other fields.  See \fIinittab(5)\fP for more details.
@@ -340,7 +348,7 @@ for a leading "\-" and makes sure the logname gets passed as one parameter
 on how the login binary parses the command line that might not be sufficient.
 Check that the used login program cannot be abused this way.
 .PP
-Some  programs use "\-\-" to indicate that the rest of the commandline should
+Some  programs use "\-\-" to indicate that the rest of the command line should
 not be interpreted as options.  Use this feature if available by passing "\-\-"
 before the username gets passed by \\u.
 
@@ -349,16 +357,28 @@ The default issue file is \fI/etc/issue\fP. If the file exists then agetty also
 checks for \fI/etc/issue.d\fP directory. The directory is optional extension to
 the default issue file and content of the directory is printed after
 \fI/etc/issue\fP content. If the \fI/etc/issue\fP does not exist than the
-directory is ignored. All files with .issue extension from the directory are
-printed in version-sort order. The directory allow to maintain 3rd-party
+directory is ignored. All files \fBwith .issue extension\fP from the directory are
+printed in version-sort order. The directory can be used to maintain 3rd-party
 messages independently on the primary system \fI/etc/issue\fP file.
 
+Since version 2.35 additional locations for issue file and directory are
+supported. If the default \fI/etc/issue\fP does not exist than agetty checks
+for \fI/run/issue\fP and \fI/run/issue.d\fP, thereafter for
+\fI/usr/lib/issue\fP and \fI/usr/lib/issue.d\fP.  The directory /etc is
+expected for host specific configuration, /run is expected for generated stuff
+and /usr/lib for static distribution maintained configuration.
+
 The default path maybe overridden by \fB\-\-issue\-file\fP option. In this case
-specified path has to be file or directory and the default \fI/etc/issue\fP as
-well as \fI/etc/issue.d\fP are ignored.
+specified path has to be file or directory and all the default issue file and
+directory locations are ignored.
+
+The issue file feature is possible to completely disable by \fB\-\-noissue\fP option.
+
+It is possible to review the current issue file by \fBagetty \-\-show\-issue\fP
+on the current terminal.
 
 The issue files may contain certain escape codes to display the system name, date, time
-etcetera.  All escape codes consist of a backslash (\\) immediately
+et cetera.  All escape codes consist of a backslash (\\) immediately
 followed by one of the characters listed below.
 
 .TP
@@ -383,7 +403,7 @@ Translate the human-readable \fIname\fP to an escape sequence and insert it
 not specified, then insert \\033.  The currently supported names are: black,
 blink, blue, bold, brown, cyan,
 darkgray, gray, green, halfbright, lightblue, lightcyan, lightgray, lightgreen,
-lightmagenta, lightred, magenta, red, reset, reverse, and yellow.  All unknown
+lightmagenta, lightred, magenta, red, reset, reverse, yellow and white.  All unknown
 names are silently ignored.
 .TP
 s
@@ -394,7 +414,7 @@ S or S{VARIABLE}
 Insert the VARIABLE data from \fI/etc/os-release\fP.  If this file does not exist
 then fall back to \fI/usr/lib/os-release\fP.  If the VARIABLE argument is not
 specified, then use PRETTY_NAME from the file or the system name (see \\s).
-This escape code allows to keep \fI/etc/issue\fP distribution and release
+This escape code can be used to keep \fI/etc/issue\fP distribution and release
 independent.  Note that \\S{ANSI_COLOR} is converted to the real terminal
 escape sequence.
 .TP
@@ -465,7 +485,6 @@ problem reports (if syslog(3) is not used).
 \fIinit\fP(8) configuration file for SysV-style init daemon.
 .SH BUGS
 .ad
-.fi
 The baud-rate detection feature (the \fB\-\-extract\-baud\fP option) requires that
 \fBagetty\fP be scheduled soon enough after completion of a dial-in
 call (within 30 ms with modems that talk at 2400 baud).  For robustness,
@@ -479,7 +498,6 @@ The baud-rate detection feature (the \fB\-\-extract\-baud\fP option) requires th
 the modem emits its status message \fIafter\fP raising the DCD line.
 .SH DIAGNOSTICS
 .ad
-.fi
 Depending on how the program was configured, all diagnostics are
 written to the console device or reported via the \fBsyslog\fR(3) facility.
 Error messages are produced if the \fIport\fP argument does not

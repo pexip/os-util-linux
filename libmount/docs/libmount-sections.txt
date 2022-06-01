@@ -40,6 +40,7 @@ mnt_context_enable_rwonly_mount
 mnt_context_enable_sloppy
 mnt_context_enable_verbose
 mnt_context_forced_rdonly
+mnt_context_force_unrestricted
 mnt_context_get_cache
 mnt_context_get_excode
 mnt_context_get_fs
@@ -61,6 +62,7 @@ mnt_context_get_syscall_errno
 mnt_context_get_table
 mnt_context_get_target
 mnt_context_get_target_ns
+mnt_context_get_target_prefix
 mnt_context_get_user_mflags
 mnt_context_helper_executed
 mnt_context_helper_setopt
@@ -99,6 +101,7 @@ mnt_context_set_syscall_status
 mnt_context_set_tables_errcb
 mnt_context_set_target
 mnt_context_set_target_ns
+mnt_context_set_target_prefix
 mnt_context_set_user_mflags
 mnt_context_strerror
 mnt_context_switch_ns
@@ -135,6 +138,7 @@ mnt_context_do_mount
 mnt_context_finalize_mount
 mnt_context_mount
 mnt_context_next_mount
+mnt_context_next_remount
 mnt_context_prepare_mount
 <SUBSECTION>
 MNT_MS_COMMENT
@@ -153,6 +157,14 @@ MNT_MS_USER
 MNT_MS_USERS
 MNT_MS_XCOMMENT
 MNT_MS_XFSTABCOMM
+MNT_MS_HASH_DEVICE
+MNT_MS_ROOT_HASH
+MNT_MS_HASH_OFFSET
+MNT_MS_ROOT_HASH_FILE
+MNT_MS_FEC_DEVICE
+MNT_MS_FEC_OFFSET
+MNT_MS_FEC_ROOTS
+MNT_MS_ROOT_HASH_SIG
 <SUBSECTION>
 MS_BIND
 MS_DIRSYNC
@@ -226,6 +238,7 @@ mnt_fs_get_source
 mnt_fs_get_srcpath
 mnt_fs_get_swaptype
 mnt_fs_get_tag
+mnt_fs_get_table
 mnt_fs_get_target
 mnt_fs_get_tid
 mnt_fs_get_usedsize
@@ -328,6 +341,7 @@ mnt_table_append_intro_comment
 mnt_table_append_trailing_comment
 mnt_table_enable_comments
 mnt_table_find_devno
+mnt_table_find_fs
 mnt_table_find_mountpoint
 mnt_table_find_next_fs
 mnt_table_find_pair
@@ -343,9 +357,11 @@ mnt_table_get_nents
 mnt_table_get_root_fs
 mnt_table_get_trailing_comment
 mnt_table_get_userdata
+mnt_table_insert_fs
 mnt_table_is_empty
 mnt_table_is_fs_mounted
 mnt_table_last_fs
+mnt_table_move_fs
 mnt_table_next_child_fs
 mnt_table_next_fs
 mnt_table_parse_dir
@@ -361,8 +377,8 @@ mnt_table_set_iter
 mnt_table_set_parser_errcb
 mnt_table_set_trailing_comment
 mnt_table_set_userdata
-mnt_table_with_comments
 mnt_table_uniq_fs
+mnt_table_with_comments
 </SECTION>
 
 <SECTION>
@@ -398,6 +414,7 @@ mnt_get_fstab_path
 mnt_get_mountpoint
 mnt_get_mtab_path
 mnt_get_swaps_path
+mnt_guess_system_root
 mnt_has_regular_mtab
 mnt_mangle
 mnt_match_fstype

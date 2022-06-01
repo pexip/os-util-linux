@@ -9,7 +9,7 @@
     <title>libfdisk Reference Manual</title>
     <releaseinfo>for libfdisk version &version;</releaseinfo>
     <copyright>
-      <year>2014-2018</year>
+      <year>2014-2020</year>
       <holder>Karel Zak &lt;kzak@redhat.com&gt;</holder>
     </copyright>
   </bookinfo>
@@ -78,5 +78,17 @@ available from https://www.kernel.org/pub/linux/utils/util-linux/.
   <index role="2.32">
     <title>Index of new symbols in 2.32</title>
     <xi:include href="xml/api-index-2.32.xml"><xi:fallback /></xi:include>
+  </index>
+  <index role="2.33">
+    <title>Index of new symbols in 2.33</title>
+    <xi:include href="xml/api-index-2.33.xml"><xi:fallback /></xi:include>
+  </index>
+  <index role="2.35">
+    <title>Index of new symbols in 2.35</title>
+    <xi:include href="xml/api-index-2.35.xml"><xi:fallback /></xi:include>
+  </index>
+  <index role="2.36">
+    <title>Index of new symbols in 2.36</title>
+    <xi:include href="xml/api-index-2.36.xml"><xi:fallback /></xi:include>
   </index>
 </book>

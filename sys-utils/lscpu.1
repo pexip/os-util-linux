@@ -1,12 +1,9 @@
-.TH LSCPU 1 "November 2015" "util-linux" "User Commands"
+.TH LSCPU 1 "March 2019" "util-linux" "User Commands"
 .SH NAME
 lscpu \- display information about the CPU architecture
 .SH SYNOPSIS
 .B lscpu
-.RB [ \-a | \-b | \-c | \-J "] [" \-x "] [" \-y "] [" \-s " \fIdirectory\fP] [" \-e [=\fIlist\fP]| \-p [=\fIlist\fP]]
-.br
-.B lscpu
-.BR \-h | \-V
+[options]
 .SH DESCRIPTION
 .B lscpu
 gathers CPU architecture information from sysfs, /proc/cpuinfo and any
@@ -32,7 +29,15 @@ column labels are not case sensitive.
 .sp
 Not all columns are supported on all architectures.  If an unsupported column is
 specified, \fBlscpu\fP prints the column but does not provide any data for it.
-
+.sp
+The default output formatting on terminal maybe optimized for better
+readability.  The output for non-terminals (e.g., pipes) is never affected by
+this optimization and it is always in "Field: data\\n" format.
+.sp
+The cache sizes are reported as summary from all CPUs.  The versions before
+v2.34 reported per-core sizes, but this output was confusing due to complicated
+CPUs topology and the way how caches are shared between CPUs. For more details
+about caches see \fB\-\-cache\fP.
 .SS COLUMNS
 Note that topology elements (core, socket, etc.) use a sequential unique ID
 starting from zero, but CPU logical numbers follow the kernel where there is
@@ -99,16 +104,30 @@ Minimum megahertz value for the CPU.
 .SH OPTIONS
 .TP
 .BR \-a , " \-\-all"
-Include lines for online and offline CPUs in the output (default for \fB-e\fR).
-This option may only be specified together with option \fB-e\fR or \fB-p\fR.
+Include lines for online and offline CPUs in the output (default for \fB\-e\fR).
+This option may only be specified together with option \fB\-e\fR or \fB\-p\fR.
+.TP
+.BR \-B , " \-\-bytes"
+Print the sizes in bytes rather than in a human-readable format.
 .TP
 .BR \-b , " \-\-online"
-Limit the output to online CPUs (default for \fB-p\fR).
-This option may only be specified together with option \fB-e\fR or \fB-p\fR.
+Limit the output to online CPUs (default for \fB\-p\fR).
+This option may only be specified together with option \fB\-e\fR or \fB\-p\fR.
+.TP
+.BR \-C , " \-\-caches" [=\fIlist\fP]
+Display details about CPU caches.  For details about available information see \fB\-\-help\fR
+output.
+
+If the \fIlist\fP argument is omitted, all columns for which data is available
+are included in the command output.
+
+When specifying the \fIlist\fP argument, the string of option, equal sign (=), and
+\fIlist\fP must not contain any blanks or other whitespace.
+Examples: '\fB\-C=NAME,ONE-SIZE\fP' or '\fB\-\-caches=NAME,ONE-SIZE\fP'.
 .TP
 .BR \-c , " \-\-offline"
 Limit the output to offline CPUs.
-This option may only be specified together with option \fB-e\fR or \fB-p\fR.
+This option may only be specified together with option \fB\-e\fR or \fB\-p\fR.
 .TP
 .BR \-e , " \-\-extended" [=\fIlist\fP]
 Display the CPU information in human-readable format.
@@ -118,7 +137,7 @@ are included in the command output.
 
 When specifying the \fIlist\fP argument, the string of option, equal sign (=), and
 \fIlist\fP must not contain any blanks or other whitespace.
-Examples: '\fB-e=cpu,node\fP' or '\fB--extended=cpu,node\fP'.
+Examples: '\fB\-e=cpu,node\fP' or '\fB\-\-extended=cpu,node\fP'.
 .TP
 .BR \-h , " \-\-help"
 Display help text and exit.
@@ -137,7 +156,7 @@ If the \fIlist\fP argument is used, cache columns are separated with a colon (:)
 
 When specifying the \fIlist\fP argument, the string of option, equal sign (=), and
 \fIlist\fP must not contain any blanks or other whitespace.
-Examples: '\fB-p=cpu,node\fP' or '\fB--parse=cpu,node\fP'.
+Examples: '\fB\-p=cpu,node\fP' or '\fB\-\-parse=cpu,node\fP'.
 .TP
 .BR \-s , " \-\-sysroot " \fIdirectory\fP
 Gather CPU data for a Linux instance other than the instance from which the
@@ -145,8 +164,9 @@ Gather CPU data for a Linux instance other than the instance from which the
 of the Linux instance to be inspected.
 .TP
 .BR \-x , " \-\-hex"
-Use hexadecimal masks for CPU sets (for example 0x3).  The default is to print
-the sets in list format (for example 0,1).
+Use hexadecimal masks for CPU sets (for example "ff").  The default is to print
+the sets in list format (for example 0,1).  Note that before version 2.30 the mask
+has been printed with 0x prefix.
 .TP
 .BR \-y , " \-\-physical"
 Display physical IDs for all columns with topology elements (core, socket, etc.).
@@ -163,7 +183,7 @@ Display version information and exit.
 .TP
 .B \-\-output\-all
 Output all available columns.  This option must be combined with either
-.BR \-\-extended " or " \-\-parse .
+.BR \-\-extended ", " \-\-parse " or " \-\-caches .
 .SH BUGS
 The basic overview of CPU family, model, etc. is always based on the first
 CPU only.
@@ -171,13 +191,13 @@ CPU only.
 Sometimes in Xen Dom0 the kernel reports wrong data.
 
 On virtual hardware the number of cores per socket, etc. can be wrong.
-.SH AUTHOR
+.SH AUTHORS
 .nf
 Cai Qian <qcai@redhat.com>
 Karel Zak <kzak@redhat.com>
 Heiko Carstens <heiko.carstens@de.ibm.com>
 .fi
-.SH "SEE ALSO"
+.SH SEE ALSO
 .BR chcpu (8)
 .SH AVAILABILITY
 The lscpu command is part of the util-linux package and is available from

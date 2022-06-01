@@ -281,7 +281,7 @@ static PyObject *Table_find_srcpath(TableObject *self, PyObject *args, PyObject 
 #define Table_find_tag_HELP "find_tag(tag, val, [direction])\n\n" \
 		"Try to lookup an entry in given tab, first attempt is lookup by tag and\n" \
 		"val, for the second attempt the tag is evaluated (converted to the device\n" \
-		"name) and Tab.find_srcpath() is preformed. The second attempt is not\n" \
+		"name) and Tab.find_srcpath() is performed. The second attempt is not\n" \
 		"performed when tb cache is not set (not implemented yet).\n" \
 		"\n" \
 		"Returns a tab entry or NULL."
@@ -492,7 +492,9 @@ static PyObject *Table_next_fs(TableObject *self)
 	if (rc == 1) {
 		mnt_reset_iter(self->iter, MNT_ITER_FORWARD);
 		Py_RETURN_NONE;
-	} else if (rc)
+	}
+
+	if (rc)
 		return UL_RaiseExc(-rc);
 
 	return PyObjectResultFs(fs);
@@ -733,7 +735,7 @@ PyTypeObject TableType = {
 	sizeof(TableObject), /*tp_basicsize*/
 	0, /*tp_itemsize*/
 	(destructor)Table_destructor, /*tp_dealloc*/
-	NULL, /*tp_print*/
+	0, /*tp_print*/
 	NULL, /*tp_getattr*/
 	NULL, /*tp_setattr*/
 	NULL, /*tp_compare*/

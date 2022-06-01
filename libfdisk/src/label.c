@@ -8,7 +8,7 @@
  * @short_description: disk label (PT) specific data and functions
  *
  * The fdisk_new_context() initializes all label drivers, and allocate
- * per-label specific data struct. This concept allows to store label specific
+ * per-label specific data struct. This concept can be used to store label specific
  * settings to the label driver independently on the currently active label
  * driver. Note that label struct cannot be deallocated, so there is no
  * reference counting for fdisk_label objects. All is destroyed by
@@ -247,7 +247,8 @@ const struct fdisk_field *fdisk_label_get_field_by_name(
  * fdisk_write_disklabel:
  * @cxt: fdisk context
  *
- * Write in-memory changes to disk. Be careful!
+ * This function wipes the device (if enabled by fdisk_enable_wipe()) and then
+ * it writes in-memory changes to disk. Be careful!
  *
  * Returns: 0 on success, otherwise, a corresponding error.
  */
@@ -268,7 +269,7 @@ int fdisk_write_disklabel(struct fdisk_context *cxt)
  *
  * Verifies the partition table.
  *
- * Returns: 0 on success, otherwise, a corresponding error.
+ * Returns: 0 on success, <1 runtime or option errors, >0 number of detected issues
  */
 int fdisk_verify_disklabel(struct fdisk_context *cxt)
 {
@@ -480,7 +481,27 @@ int fdisk_set_disklabel_id(struct fdisk_context *cxt)
 		return -ENOSYS;
 
 	DBG(CXT, ul_debugobj(cxt, "setting %s disk ID", cxt->label->name));
-	return cxt->label->op->set_id(cxt);
+	return cxt->label->op->set_id(cxt, NULL);
+}
+
+/**
+ * fdisk_set_disklabel_id_from_string
+ * @cxt: fdisk context
+ * @str: new Id
+ *
+ * Returns: 0 on success, otherwise, a corresponding error.
+ *
+ * Since: 2.36
+ */
+int fdisk_set_disklabel_id_from_string(struct fdisk_context *cxt, const char *str)
+{
+	if (!cxt || !cxt->label || !str)
+		return -EINVAL;
+	if (!cxt->label->op->set_id)
+		return -ENOSYS;
+
+	DBG(CXT, ul_debugobj(cxt, "setting %s disk ID from '%s'", cxt->label->name, str));
+	return cxt->label->op->set_id(cxt, str);
 }
 
 /**
@@ -595,7 +616,6 @@ void fdisk_label_set_changed(struct fdisk_label *lb, int changed)
  */
 int fdisk_label_is_changed(const struct fdisk_label *lb)
 {
-	assert(lb);
 	return lb ? lb->changed : 0;
 }
 
@@ -636,7 +656,7 @@ int fdisk_label_is_disabled(const struct fdisk_label *lb)
  * @ma: maximal number
  *
  * The function provides minimal and maximal geometry supported for the label,
- * if no range defined by library than returns -ENOSYS.
+ * if no range defined by library then returns -ENOSYS.
  *
  * Since: 2.32
  *
@@ -661,7 +681,7 @@ int fdisk_label_get_geomrange_sectors(const struct fdisk_label *lb,
  * @ma: maximal number
  *
  * The function provides minimal and maximal geometry supported for the label,
- * if no range defined by library than returns -ENOSYS.
+ * if no range defined by library then returns -ENOSYS.
  *
  * Since: 2.32
  *
@@ -686,7 +706,7 @@ int fdisk_label_get_geomrange_heads(const struct fdisk_label *lb,
  * @ma: maximal number
  *
  * The function provides minimal and maximal geometry supported for the label,
- * if no range defined by library than returns -ENOSYS.
+ * if no range defined by library then returns -ENOSYS.
  *
  * Since: 2.32
  *

@@ -16,6 +16,7 @@
 #include "fileutils.h"
 #include "all-io.h"
 #include "debug.h"
+#include "strutils.h"
 
 static void sysfs_blkdev_deinit_path(struct path_cxt *pc);
 static int  sysfs_blkdev_enoent_redirect(struct path_cxt *pc, const char *path, int *dirfd);
@@ -119,7 +120,7 @@ static void sysfs_blkdev_deinit_path(struct path_cxt *pc)
 	if (!blk)
 		return;
 
-	ul_ref_path(blk->parent);
+	ul_unref_path(blk->parent);
 	free(blk);
 
 	ul_path_set_dialect(pc, NULL, NULL);
@@ -198,21 +199,6 @@ char *sysfs_blkdev_get_name(struct path_cxt *pc, char *buf, size_t bufsiz)
 	memcpy(buf, name, sz + 1);
 	sysfs_devname_sys_to_dev(buf);
 	return buf;
-}
-
-static struct dirent *xreaddir(DIR *dp)
-{
-	struct dirent *d;
-
-	while ((d = readdir(dp))) {
-		if (!strcmp(d->d_name, ".") ||
-		    !strcmp(d->d_name, ".."))
-			continue;
-
-		/* blacklist here? */
-		break;
-	}
-	return d;
 }
 
 int sysfs_blkdev_is_partition_dirent(DIR *dir, struct dirent *d, const char *parent_name)
@@ -504,10 +490,8 @@ static int get_dm_wholedisk(struct path_cxt *pc, char *diskname,
     if (!name)
         return -1;
 
-    if (diskname && len) {
-        strncpy(diskname, name, len);
-        diskname[len - 1] = '\0';
-    }
+    if (diskname && len)
+        xstrncpy(diskname, name, len);
 
     if (diskdevno) {
         *diskdevno = __sysfs_devname_to_devno(ul_path_get_prefix(pc), name, NULL);
@@ -594,10 +578,8 @@ int sysfs_blkdev_get_wholedisk(	struct path_cxt *pc,
             goto err;
 
 	sysfs_devname_sys_to_dev(name);
-        if (diskname && len) {
-            strncpy(diskname, name, len);
-            diskname[len - 1] = '\0';
-        }
+        if (diskname && len)
+            xstrncpy(diskname, name, len);
 
         if (diskdevno) {
             *diskdevno = __sysfs_devname_to_devno(ul_path_get_prefix(pc), name, NULL);
@@ -857,6 +839,38 @@ static dev_t read_devno(const char *path)
 	return dev;
 }
 
+int sysfs_devname_is_hidden(const char *prefix, const char *name)
+{
+	char buf[PATH_MAX];
+	int rc = 0, hidden = 0, len;
+	FILE *f;
+
+	if (strncmp("/dev/", name, 5) == 0)
+		return 0;
+
+	if (!prefix)
+		prefix = "";
+	/*
+	 * Create path to /sys/block/<name>/hidden
+	 */
+	len = snprintf(buf, sizeof(buf),
+			"%s" _PATH_SYS_BLOCK "/%s/hidden",
+			prefix, name);
+
+	if (len < 0 || (size_t) len + 1 > sizeof(buf))
+		return 0;
+
+	f = fopen(buf, "r" UL_CLOEXECSTR);
+	if (!f)
+		return 0;
+
+	rc = fscanf(f, "%d", &hidden);
+	fclose(f);
+
+	return rc == 1 ? hidden : 0;
+}
+
+
 dev_t __sysfs_devname_to_devno(const char *prefix, const char *name, const char *parent)
 {
 	char buf[PATH_MAX];
@@ -879,7 +893,7 @@ dev_t __sysfs_devname_to_devno(const char *prefix, const char *name, const char 
 			dev = st.st_rdev;
 			goto done;
 		}
-		name += 5;	/* unaccesible, or not node in /dev */
+		name += 5;	/* unaccessible, or not node in /dev */
 	}
 
 	_name = strdup(name);
@@ -887,16 +901,14 @@ dev_t __sysfs_devname_to_devno(const char *prefix, const char *name, const char 
 		goto done;
 	sysfs_devname_dev_to_sys(_name);
 
-	if (parent && strncmp("dm-", name, 3)) {
+	if (parent && strncmp("dm-", name, 3) != 0) {
 		/*
 		 * Create path to /sys/block/<parent>/<name>/dev
 		 */
 		char *_parent = strdup(parent);
 
-		if (!_parent) {
-			free(_parent);
+		if (!_parent)
 			goto done;
-		}
 		sysfs_devname_dev_to_sys(_parent);
 		len = snprintf(buf, sizeof(buf),
 				"%s" _PATH_SYS_BLOCK "/%s/%s/dev",
@@ -999,6 +1011,20 @@ char *sysfs_devno_to_devname(dev_t devno, char *buf, size_t bufsiz)
 	return res;
 }
 
+int sysfs_devno_count_partitions(dev_t devno)
+{
+	struct path_cxt *pc = ul_new_sysfs_path(devno, NULL, NULL);
+	int n = 0;
+
+	if (pc) {
+		char buf[PATH_MAX + 1];
+		char *name = sysfs_blkdev_get_name(pc, buf, sizeof(buf));
+
+		n = sysfs_blkdev_count_partitions(pc, name);
+		ul_unref_path(pc);
+	}
+	return n;
+}
 
 
 #ifdef TEST_PROGRAM_SYSFS

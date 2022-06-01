@@ -1,5 +1,10 @@
 /*
- * hwclock.c
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * Since 7a3000f7ba548cf7d74ac77cc63fe8de228a669e (v2.30) hwclock is linked
+ * with parse_date.y from gnullib. This gnulib code is distributed with GPLv3.
+ * Use --disable-hwclock-gplv3 to exclude this code.
+ *
  *
  * clock.c was written by Charles Hedrick, hedrick@cs.rutgers.edu, Apr 1992
  * Modified for clock adjustments - Rob Hooft <hooft@chem.ruu.nl>, Nov 1992
@@ -24,7 +29,7 @@
  * Change of local time handling, Stefan Ring <e9725446@stud3.tuwien.ac.at>
  * Change of adjtime handling, James P. Rutledge <ao112@rgfn.epcc.edu>.
  *
- * Distributed under GPL
+ *
  */
 /*
  * Explanation of `adjusting' (Rob Hooft):
@@ -66,6 +71,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/syscall.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -503,7 +509,7 @@ set_hardware_clock_exact(const struct hwclock_control *ctl,
 	 * in the future) to both the time for which we are waiting and the
 	 * time that we will apply to the Hardware Clock, and start waiting
 	 * again.
-	 * 
+	 *
 	 * For example, the caller requests that we set the Hardware Clock to
 	 * 1:02:03, with reference time (current system time) = 6:07:08.250.
 	 * We want the Hardware Clock to update to 1:02:04 at 6:07:09.250 on
@@ -603,9 +609,8 @@ set_hardware_clock_exact(const struct hwclock_control *ctl,
 	}
 
 	newhwtime = sethwtime
-		    + (int)(time_diff(nowsystime, refsystime)
-			    - delay /* don't count this */
-			    + 0.5 /* for rounding */);
+		    + ceil(time_diff(nowsystime, refsystime)
+			    - delay /* don't count this */);
 	if (ctl->verbose)
 		printf(_("%ld.%06ld is close enough to %ld.%06ld (%.6f < %.6f)\n"
 			 "Set RTC to %ld (%ld + %d; refsystime = %ld.%06ld)\n"),
@@ -638,17 +643,16 @@ display_time(struct timeval hwctime)
  * tz.tz_minuteswest argument and sets PCIL (see below). At boot settimeofday(2)
  * has one-shot access to this function as shown in the table below.
  *
- * +-------------------------------------------------------------------+
- * |                       settimeofday(tv, tz)                        |
- * |-------------------------------------------------------------------|
- * |     Arguments     |  System Time  | PCIL |           | warp_clock |
- * |   tv    |   tz    | set  | warped | set  | firsttime |   locked   |
- * |---------|---------|---------------|------|-----------|------------|
- * | pointer | NULL    |  yes |   no   |  no  |     1     |    no      |
- * | pointer | pointer |  yes |   no   |  no  |     0     |    yes     |
- * | NULL    | ptr2utc |  no  |   no   |  no  |     0     |    yes     |
- * | NULL    | pointer |  no  |   yes  |  yes |     0     |    yes     |
- * +-------------------------------------------------------------------+
+ * +-------------------------------------------------------------------------+
+ * |                           settimeofday(tv, tz)                          |
+ * |-------------------------------------------------------------------------|
+ * |     Arguments     |  System Time  | TZ  | PCIL |           | warp_clock |
+ * |   tv    |   tz    | set  | warped | set | set  | firsttime |   locked   |
+ * |---------|---------|---------------|-----|------|-----------|------------|
+ * | pointer | NULL    |  yes |   no   | no  |  no  |     1     |    no      |
+ * | NULL    | ptr2utc |  no  |   no   | yes |  no  |     0     |    yes     |
+ * | NULL    | pointer |  no  |   yes  | yes |  yes |     0     |    yes     |
+ * +-------------------------------------------------------------------------+
  * ptr2utc: tz.tz_minuteswest is zero (UTC).
  * PCIL: persistent_clock_is_local, sets the "11 minute mode" timescale.
  * firsttime: locks the warp_clock function (initialized to 1 at boot).
@@ -658,11 +662,37 @@ display_time(struct timeval hwctime)
  * |---------|-----------|-----------------------------------------------------|
  * | systz   |   Local   | 1) warps system time*, sets PCIL* and kernel tz     |
  * | systz   |   UTC     | 1st) locks warp_clock* 2nd) sets kernel tz          |
- * | hctosys |   Local   | 1st) sets PCIL* 2nd) sets system time and kernel tz |
- * | hctosys |   UTC     | 1) sets system time and kernel tz                   |
+ * | hctosys |   Local   | 1st) sets PCIL* & kernel tz   2nd) sets system time |
+ * | hctosys |   UTC     | 1st) locks warp* 2nd) sets tz 3rd) sets system time |
  * +---------------------------------------------------------------------------+
  *                         * only on first call after boot
+ *
+ * POSIX 2008 marked TZ in settimeofday() as deprecated. Unfortunately,
+ * different C libraries react to this deprecation in a different way. Since
+ * glibc v2.31 settimeofday() will fail if both args are not NULL, Musl-C
+ * ignores TZ at all, etc. We use __set_time() and __set_timezone() to hide
+ * these portability issues and to keep code readable.
  */
+#define __set_time(_tv)		settimeofday(_tv, NULL)
+
+#ifndef SYS_settimeofday
+# ifdef __NR_settimeofday
+#  define SYS_settimeofday	__NR_settimeofday
+# else
+#  define SYS_settimeofday	__NR_settimeofday_time32
+# endif
+#endif
+
+static inline int __set_timezone(const struct timezone *tz)
+{
+#ifdef SYS_settimeofday
+	errno = 0;
+	return syscall(SYS_settimeofday, NULL, tz);
+#else
+	return settimeofday(NULL, tz);
+#endif
+}
+
 static int
 set_system_clock(const struct hwclock_control *ctl,
 		 const struct timeval newtime)
@@ -670,41 +700,44 @@ set_system_clock(const struct hwclock_control *ctl,
 	struct tm broken;
 	int minuteswest;
 	int rc = 0;
-	const struct timezone tz_utc = { 0 };
 
 	localtime_r(&newtime.tv_sec, &broken);
 	minuteswest = -get_gmtoff(&broken) / 60;
 
 	if (ctl->verbose) {
-		if (ctl->hctosys && !ctl->universal)
-			printf(_("Calling settimeofday(NULL, %d) to set "
-				 "persistent_clock_is_local.\n"), minuteswest);
-		if (ctl->systz && ctl->universal)
+		if (ctl->universal) {
 			puts(_("Calling settimeofday(NULL, 0) "
-				"to lock the warp function."));
+			       "to lock the warp_clock function."));
+			if (!( ctl->universal && !minuteswest ))
+				printf(_("Calling settimeofday(NULL, %d) "
+					 "to set the kernel timezone.\n"),
+				       minuteswest);
+		} else
+			printf(_("Calling settimeofday(NULL, %d) to warp "
+				 "System time, set PCIL and the kernel tz.\n"),
+			       minuteswest);
+
 		if (ctl->hctosys)
-			printf(_("Calling settimeofday(%ld.%06ld, %d)\n"),
-			       newtime.tv_sec, newtime.tv_usec, minuteswest);
-		else {
-			printf(_("Calling settimeofday(NULL, %d) "), minuteswest);
-			if (ctl->universal)
-				 puts(_("to set the kernel timezone."));
-			else
-				 puts(_("to warp System time."));
-		}
+			printf(_("Calling settimeofday(%ld.%06ld, NULL) "
+				 "to set the System time.\n"),
+			       newtime.tv_sec, newtime.tv_usec);
 	}
 
 	if (!ctl->testing) {
+		const struct timezone tz_utc = { 0 };
 		const struct timezone tz = { minuteswest };
 
-		if (ctl->hctosys && !ctl->universal)	/* set PCIL */
-			rc = settimeofday(NULL, &tz);
-		if (ctl->systz && ctl->universal)	/* lock warp_clock */
-			rc = settimeofday(NULL, &tz_utc);
-		if (!rc && ctl->hctosys)
-			rc = settimeofday(&newtime, &tz);
-		else if (!rc)
-			rc = settimeofday(NULL, &tz);
+		/* If UTC RTC: lock warp_clock and PCIL */
+		if (ctl->universal)
+			rc = __set_timezone(&tz_utc);
+
+		/* Set kernel tz; if localtime RTC: warp_clock and set PCIL */
+		if (!rc && !( ctl->universal && !minuteswest ))
+			rc = __set_timezone(&tz);
+
+		/* Set the System Clock */
+		if ((!rc || errno == ENOSYS) && ctl->hctosys)
+			rc = __set_time(&newtime);
 
 		if (rc) {
 			warn(_("settimeofday() failed"));
@@ -868,7 +901,9 @@ static int save_adjtime(const struct hwclock_control *ctl,
 		if (fp == NULL) {
 			warn(_("cannot open %s"), ctl->adj_file_name);
 			return EXIT_FAILURE;
-		} else if (fputs(content, fp) < 0 || close_stream(fp) != 0) {
+		}
+
+		if (fputs(content, fp) < 0 || close_stream(fp) != 0) {
 			warn(_("cannot update %s"), ctl->adj_file_name);
 			return EXIT_FAILURE;
 		}
@@ -925,8 +960,10 @@ static void determine_clock_access_method(const struct hwclock_control *ctl)
 {
 	ur = NULL;
 
+#ifdef USE_HWCLOCK_CMOS
 	if (ctl->directisa)
 		ur = probe_for_cmos_clock();
+#endif
 #ifdef __linux__
 	if (!ur)
 		ur = probe_for_rtc_clock(ctl);
@@ -938,8 +975,10 @@ static void determine_clock_access_method(const struct hwclock_control *ctl)
 	} else {
 		if (ctl->verbose)
 			printf(_("No usable clock interface found.\n"));
+
 		warnx(_("Cannot access the Hardware Clock via "
 			"any known method."));
+
 		if (!ctl->verbose)
 			warnx(_("Use the --verbose option to see the "
 				"details of our search for an access "
@@ -954,7 +993,7 @@ manipulate_clock(const struct hwclock_control *ctl, const time_t set_time,
 		 const struct timeval startup_time, struct adjtime *adjtime)
 {
 	/* The time at which we read the Hardware Clock */
-	struct timeval read_time;
+	struct timeval read_time = { 0 };
 	/*
 	 * The Hardware Clock gives us a valid time, or at
 	 * least something close enough to fool mktime().
@@ -971,7 +1010,7 @@ manipulate_clock(const struct hwclock_control *ctl, const time_t set_time,
 	 */
 	struct timeval startup_hclocktime = { 0 };
 	/* Total Hardware Clock drift correction needed. */
-	struct timeval tdrift;
+	struct timeval tdrift = { 0 };
 
 	if ((ctl->set || ctl->systohc || ctl->adjust) &&
 	    (adjtime->local_utc == UTC) != ctl->universal) {
@@ -1041,7 +1080,9 @@ manipulate_clock(const struct hwclock_control *ctl, const time_t set_time,
 	}
 	if (ctl->show || ctl->get) {
 		return display_time(startup_hclocktime);
-	} else if (ctl->set) {
+	}
+
+	if (ctl->set) {
 		set_hardware_clock_exact(ctl, set_time, startup_time);
 		if (!ctl->noadjfile)
 			adjust_drift_factor(ctl, adjtime, t2tv(set_time),
@@ -1162,7 +1203,6 @@ int main(int argc, char **argv)
 	};
 	struct timeval startup_time;
 	struct adjtime adjtime = { 0 };
-	struct timespec when = { 0 };
 	/*
 	 * The time we started up, in seconds into the epoch, including
 	 * fractions.
@@ -1259,7 +1299,7 @@ int main(int argc, char **argv)
 #endif
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while ((c = getopt_long(argc, argv,
 				"hvVDd:alrsuwf:", longopts, NULL)) != -1) {
@@ -1359,9 +1399,9 @@ int main(int argc, char **argv)
 			ctl.rtc_dev_name = optarg;	/* --rtc */
 			break;
 #endif
+
 		case 'V':			/* --version */
-			out_version();
-			return 0;
+			print_version(EXIT_SUCCESS);
 		case 'h':			/* --help */
 			usage();
 		default:
@@ -1390,11 +1430,22 @@ int main(int argc, char **argv)
 
 	if (ctl.set || ctl.predict) {
 		if (!ctl.date_opt) {
-		warnx(_("--date is required for --set or --predict"));
-		exit(EXIT_FAILURE);
+			warnx(_("--date is required for --set or --predict"));
+			exit(EXIT_FAILURE);
 		}
+#ifdef USE_HWCLOCK_GPLv3_DATETIME
+		/* date(1) compatible GPLv3 parser */
+		struct timespec when = { 0 };
+
 		if (parse_date(&when, ctl.date_opt, NULL))
 			set_time = when.tv_sec;
+#else
+		/* minimalistic GPLv2 based parser */
+		usec_t usec;
+
+		if (parse_timestamp(ctl.date_opt, &usec) == 0)
+			set_time = (time_t) (usec / 1000000);
+#endif
 		else {
 			warnx(_("invalid date '%s'"), ctl.date_opt);
 			exit(EXIT_FAILURE);
@@ -1442,7 +1493,7 @@ hwclock_exit(const struct hwclock_control *ctl
 	if (ctl->hwaudit_on && !ctl->testing) {
 		audit_log_user_message(hwaudit_fd, AUDIT_USYS_CONFIG,
 				       "op=change-system-time", NULL, NULL, NULL,
-				       status);
+				       status == EXIT_SUCCESS ? 1  : 0);
 	}
 	close(hwaudit_fd);
 #endif

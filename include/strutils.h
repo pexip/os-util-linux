@@ -93,37 +93,93 @@ static inline char *mem2strcpy(char *dest, const void *src, size_t n, size_t nma
 	return dest;
 }
 
+/* Reallocate @str according to @newstr and copy @newstr to @str; returns new @str.
+ * The @str is not modified if reallocation failed (like classic realloc()).
+ */
+static inline char * __attribute__((warn_unused_result))
+strrealloc(char *str, const char *newstr)
+{
+	size_t nsz, osz;
+
+	if (!str)
+		return newstr ? strdup(newstr) : NULL;
+	if (!newstr)
+		return NULL;
+
+	osz = strlen(str);
+	nsz = strlen(newstr);
+
+	if (nsz > osz)
+		str = realloc(str, nsz + 1);
+	if (str)
+		memcpy(str, newstr, nsz + 1);
+	return str;
+}
+
+/* Copy string @str to struct @stru to member addressed by @offset */
 static inline int strdup_to_offset(void *stru, size_t offset, const char *str)
 {
-	char *n = NULL;
 	char **o;
+	char *p = NULL;
 
 	if (!stru)
 		return -EINVAL;
 
 	o = (char **) ((char *) stru + offset);
 	if (str) {
-		n = strdup(str);
-		if (!n)
+		p = strdup(str);
+		if (!p)
 			return -ENOMEM;
 	}
 
 	free(*o);
-	*o = n;
+	*o = p;
 	return 0;
 }
 
+/* Copy string __str to struct member _m of the struct _s */
 #define strdup_to_struct_member(_s, _m, _str) \
 		strdup_to_offset((void *) _s, offsetof(__typeof__(*(_s)), _m), _str)
+
+/* Copy string addressed by @offset between two structs */
+static inline int strdup_between_offsets(void *stru_dst, void *stru_src, size_t offset)
+{
+	char **src;
+	char **dst;
+	char *p = NULL;
+
+	if (!stru_src || !stru_dst)
+		return -EINVAL;
+
+	src = (char **) ((char *) stru_src + offset);
+	dst = (char **) ((char *) stru_dst + offset);
+
+	if (*src) {
+		p = strdup(*src);
+		if (!p)
+			return -ENOMEM;
+	}
+
+	free(*dst);
+	*dst = p;
+	return 0;
+}
+
+/* Copy string addressed by struct member between two instances of the same
+ * struct type */
+#define strdup_between_structs(_dst, _src, _m) \
+		strdup_between_offsets((void *)_dst, (void *)_src, offsetof(__typeof__(*(_src)), _m))
+
 
 extern char *xstrmode(mode_t mode, char *str);
 
 /* Options for size_to_human_string() */
 enum
 {
-        SIZE_SUFFIX_1LETTER = 0,
-        SIZE_SUFFIX_3LETTER = 1,
-        SIZE_SUFFIX_SPACE   = 2
+	SIZE_SUFFIX_1LETTER  = 0,
+	SIZE_SUFFIX_3LETTER  = (1 << 0),
+	SIZE_SUFFIX_SPACE    = (1 << 1),
+	SIZE_DECIMAL_2DIGITS = (1 << 2)
 };
 
 extern char *size_to_human_string(int options, uint64_t bytes);
@@ -245,6 +301,25 @@ static inline size_t ltrim_whitespace(unsigned char *str)
 		memmove(str, p, len + 1);
 
 	return len;
+}
+
+static inline void strrep(char *s, int find, int replace)
+{
+	while (s && *s && (s = strchr(s, find)) != NULL)
+		*s++ = replace;
+}
+
+static inline void strrem(char *s, int rem)
+{
+	char *p;
+
+	if (!s)
+		return;
+	for (p = s; *s; s++) {
+		if (*s != rem)
+			*p++ = *s;
+	}
+	*p = '\0';
 }
 
 extern char *strnappend(const char *s, const char *suffix, size_t b);

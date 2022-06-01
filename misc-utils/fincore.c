@@ -59,7 +59,7 @@ enum {
 
 static struct colinfo infos[] = {
 	[COL_PAGES]  = { "PAGES",    1, SCOLS_FL_RIGHT, N_("file data resident in memory in pages")},
-	[COL_RES]    = { "RES",      5, SCOLS_FL_RIGHT, N_("file data resident in memory in bytes")}, 
+	[COL_RES]    = { "RES",      5, SCOLS_FL_RIGHT, N_("file data resident in memory in bytes")},
 	[COL_SIZE]   = { "SIZE",     5, SCOLS_FL_RIGHT, N_("size of the file")},
 	[COL_FILE]   = { "FILE",     4, 0, N_("file name")},
 };
@@ -196,7 +196,6 @@ static int fincore_fd (struct fincore_control *ctl,
 	size_t window_size = N_PAGES_IN_WINDOW * ctl->pagesize;
 	off_t file_offset, len;
 	int rc = 0;
-	int warned_once = 0;
 
 	for (file_offset = 0; file_offset < file_size; file_offset += len) {
 		void  *window = NULL;
@@ -207,11 +206,8 @@ static int fincore_fd (struct fincore_control *ctl,
 
 		window = mmap(window, len, PROT_NONE, MAP_PRIVATE, fd, file_offset);
 		if (window == MAP_FAILED) {
-			if (!warned_once) {
-				rc = -EINVAL;
-				warn(_("failed to do mmap: %s"), name);
-				warned_once = 1;
-			}
+			rc = -EINVAL;
+			warn(_("failed to do mmap: %s"), name);
 			break;
 		}
 
@@ -310,7 +306,7 @@ int main(int argc, char ** argv)
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
-	atexit(close_stdout);
+	close_stdout_atexit();
 
 	while ((c = getopt_long (argc, argv, "bno:JrVh", longopts, NULL)) != -1) {
 		switch (c) {
@@ -330,8 +326,7 @@ int main(int argc, char ** argv)
 			ctl.raw = 1;
 			break;
 		case 'V':
-			printf(UTIL_LINUX_VERSION);
-			return EXIT_SUCCESS;
+			print_version(EXIT_SUCCESS);
 		case 'h':
 			usage();
 		default:
