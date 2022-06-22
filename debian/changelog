@@ -1,8 +1,11 @@
 util-linux (2.36.1-8+deb11u1pexip1) pexip; urgency=medium
 
   * Initial bullseye build
+  * Disable building of raw command.  The raw.h header is no longer
+    exposed by the kernel in newer linux-libc-dev versions.  See
+    Debian bugs #994798 for more details.
 
- -- Mark Hymers <mark.hymers@pexip.com>  Thu, 02 Jun 2022 14:43:01 +0100
+ -- Mark Hymers <mark.hymers@pexip.com>  Wed, 22 Jun 2022 21:04:14 +0100
 
 util-linux (2.36.1-8+deb11u1) bullseye-security; urgency=high
 

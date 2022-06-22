@@ -4,7 +4,7 @@ include /usr/share/dpkg/architecture.mk
 include /usr/share/dpkg/pkg-info.mk
 
 ifeq ($(DEB_HOST_ARCH_OS),linux)
-CONFOPTS += --enable-raw
+CONFOPTS += --disable-raw
 CONFOPTS += --with-selinux
 CONFOPTS += --with-smack
 CONFOPTS += --enable-partx
