@@ -153,6 +153,7 @@ int mnt_reset_context(struct libmnt_context *cxt)
 
 	free(cxt->helper);
 	free(cxt->orig_user);
+	free(cxt->subdir);
 
 	cxt->fs = NULL;
 	cxt->mtab = NULL;
@@ -162,6 +163,7 @@ int mnt_reset_context(struct libmnt_context *cxt)
 	cxt->mountflags = 0;
 	cxt->user_mountflags = 0;
 	cxt->mountdata = NULL;
+	cxt->subdir = NULL;
 	cxt->flags = MNT_FL_DEFAULT;
 
 	/* free additional mounts list */
@@ -291,6 +293,8 @@ struct libmnt_context *mnt_copy_context(struct libmnt_context *o)
 	if (strdup_between_structs(n, o, helper))
 		goto failed;
 	if (strdup_between_structs(n, o, orig_user))
+		goto failed;
+	if (strdup_between_structs(n, o, subdir))
 		goto failed;
 
 	n->mountflags = o->mountflags;
@@ -1298,6 +1302,16 @@ int mnt_context_get_mtab(struct libmnt_context *cxt, struct libmnt_table **tb)
 					cxt->table_fltrcb_data);
 
 		mnt_table_set_cache(cxt->mtab, mnt_context_get_cache(cxt));
+	}
+
+	/* Read the table; it's empty, because this first mnt_context_get_mtab()
+	 * call, or because /proc was not accessible in previous calls */
+	if (mnt_table_is_empty(cxt->mtab)) {
+		if (!ns_old) {
+			ns_old = mnt_context_switch_target_ns(cxt);
+			if (!ns_old)
+				return -MNT_ERR_NAMESPACE;
+		}
 
 		/*
 		 * Note that mtab_path is NULL if mtab is useless or unsupported
@@ -1764,7 +1778,7 @@ int mnt_context_prepare_srcpath(struct libmnt_context *cxt)
 {
 	const char *path = NULL;
 	struct libmnt_cache *cache;
-	const char *t, *v, *src;
+	const char *t, *v, *src, *type;
 	int rc = 0;
 	struct libmnt_ns *ns_old;
 
@@ -1772,7 +1786,7 @@ int mnt_context_prepare_srcpath(struct libmnt_context *cxt)
 	assert(cxt->fs);
 	assert((cxt->flags & MNT_FL_MOUNTFLAGS_MERGED));
 
-	DBG(CXT, ul_debugobj(cxt, "preparing source path"));
+	DBG(CXT, ul_debugobj(cxt, "--> preparing source path"));
 
 	src = mnt_fs_get_source(cxt->fs);
 
@@ -1784,6 +1798,11 @@ int mnt_context_prepare_srcpath(struct libmnt_context *cxt)
 	 * where the source is a quasi-path (//foo/bar)
 	 */
 	if (!src || mnt_fs_is_netfs(cxt->fs))
+		return 0;
+
+	/* ZFS source is always "dataset", not a real path */
+	type = mnt_fs_get_fstype(cxt->fs);
+	if (type && strcmp(type, "zfs") == 0)
 		return 0;
 
 	DBG(CXT, ul_debugobj(cxt, "srcpath '%s'", src));
@@ -1855,6 +1874,39 @@ end:
 	return rc;
 }
 
+static int is_subdir_required(struct libmnt_context *cxt, int *rc)
+{
+	char *dir;
+	size_t sz;
+
+	assert(cxt);
+	assert(rc);
+
+	*rc = 0;
+
+	if (!cxt->fs
+	    || !cxt->fs->user_optstr
+	    || mnt_optstr_get_option(cxt->fs->user_optstr,
+				  "X-mount.subdir", &dir, &sz) != 0)
+		return 0;
+
+	if (dir && *dir == '"')
+		dir++, sz-=2;
+
+	if (!dir || sz < 1) {
+		DBG(CXT, ul_debug("failed to parse X-mount.subdir '%s'", dir));
+		*rc = -MNT_ERR_MOUNTOPT;
+	} else {
+		cxt->subdir = strndup(dir, sz);
+		if (!cxt->subdir)
+			*rc = -ENOMEM;
+
+		DBG(CXT, ul_debug("subdir %s wanted", dir));
+	}
+
+	return *rc == 0;
+}
+
 static int is_mkdir_required(const char *tgt, struct libmnt_fs *fs, mode_t *mode, int *rc)
 {
 	char *mstr = NULL;
@@ -1880,6 +1932,9 @@ static int is_mkdir_required(const char *tgt, struct libmnt_fs *fs, mode_t *mode
 
 	if (mstr && mstr_sz) {
 		char *end = NULL;
+
+		if (*mstr == '"')
+			mstr++, mstr_sz-=2;
 
 		errno = 0;
 		*mode = strtol(mstr, &end, 8);
@@ -1910,7 +1965,7 @@ int mnt_context_prepare_target(struct libmnt_context *cxt)
 	assert(cxt->fs);
 	assert((cxt->flags & MNT_FL_MOUNTFLAGS_MERGED));
 
-	DBG(CXT, ul_debugobj(cxt, "preparing target path"));
+	DBG(CXT, ul_debugobj(cxt, "--> preparing target path"));
 
 	tgt = mnt_fs_get_target(cxt->fs);
 	if (!tgt)
@@ -1951,7 +2006,7 @@ int mnt_context_prepare_target(struct libmnt_context *cxt)
 
 		/* supported only for root or non-suid mount(8) */
 		if (!mnt_context_is_restricted(cxt)) {
-			rc = mkdir_p(tgt, mode);
+			rc = ul_mkdir_p(tgt, mode);
 			if (rc)
 				DBG(CXT, ul_debug("mkdir %s failed: %m", tgt));
 		} else
@@ -1968,6 +2023,16 @@ int mnt_context_prepare_target(struct libmnt_context *cxt)
 				rc = mnt_fs_set_target(cxt->fs, path);
 		}
 	}
+
+	/* X-mount.subdir= target */
+	if (rc == 0
+	    && cxt->action == MNT_ACT_MOUNT
+	    && (cxt->user_mountflags & MNT_MS_XFSTABCOMM)
+	    && is_subdir_required(cxt, &rc)) {
+
+		DBG(CXT, ul_debugobj(cxt, "subdir %s required", cxt->subdir));
+	}
+
 
 	if (!mnt_context_switch_ns(cxt, ns_old))
 		return -MNT_ERR_NAMESPACE;
@@ -2045,7 +2110,7 @@ int mnt_context_guess_fstype(struct libmnt_context *cxt)
 	assert(cxt->fs);
 	assert((cxt->flags & MNT_FL_MOUNTFLAGS_MERGED));
 
-	DBG(CXT, ul_debugobj(cxt, "preparing fstype"));
+	DBG(CXT, ul_debugobj(cxt, "--> preparing fstype"));
 
 	if ((cxt->mountflags & (MS_BIND | MS_MOVE))
 	    || mnt_context_propagation_only(cxt))
@@ -2095,6 +2160,11 @@ int mnt_context_prepare_helper(struct libmnt_context *cxt, const char *name,
 	assert(cxt);
 	assert(cxt->fs);
 	assert((cxt->flags & MNT_FL_MOUNTFLAGS_MERGED));
+
+	if (cxt->helper) {
+		free(cxt->helper);
+		cxt->helper = NULL;
+	}
 
 	if (!type)
 		type = mnt_fs_get_fstype(cxt->fs);
@@ -2199,7 +2269,7 @@ int mnt_context_prepare_update(struct libmnt_context *cxt)
 	assert(cxt->action);
 	assert((cxt->flags & MNT_FL_MOUNTFLAGS_MERGED));
 
-	DBG(CXT, ul_debugobj(cxt, "prepare update"));
+	DBG(CXT, ul_debugobj(cxt, "--> prepare update"));
 
 	if (mnt_context_propagation_only(cxt)) {
 		DBG(CXT, ul_debugobj(cxt, "skip update: only MS_PROPAGATION"));
@@ -2314,9 +2384,12 @@ end:
 	return rc;
 }
 
-/* apply @fs to @cxt -- use mnt_context_apply_fstab() if not sure
+/* apply @fs to @cxt;
+ *
+ * @mflags are mount flags as specified on command-line -- used only to save
+ * MS_RDONLY which is allowed for non-root users.
  */
-int mnt_context_apply_fs(struct libmnt_context *cxt, struct libmnt_fs *fs)
+static int apply_fs(struct libmnt_context *cxt, struct libmnt_fs *fs, unsigned long mflags)
 {
 	int rc;
 
@@ -2328,6 +2401,7 @@ int mnt_context_apply_fs(struct libmnt_context *cxt, struct libmnt_fs *fs)
 			DBG(CXT, ul_debugobj(cxt, "use default optsmode"));
 			cxt->optsmode = MNT_OMODE_AUTO;
 		}
+
 	}
 
 	DBG(CXT, ul_debugobj(cxt, "apply entry:"));
@@ -2355,9 +2429,15 @@ int mnt_context_apply_fs(struct libmnt_context *cxt, struct libmnt_fs *fs)
 
 	if (cxt->optsmode & MNT_OMODE_IGNORE)
 		;
-	else if (cxt->optsmode & MNT_OMODE_REPLACE)
+	else if (cxt->optsmode & MNT_OMODE_REPLACE) {
 		rc = mnt_fs_set_options(cxt->fs, mnt_fs_get_options(fs));
 
+		/* mount --read-only for non-root users is allowed */
+		if (rc == 0 && (mflags & MS_RDONLY)
+		    && mnt_context_is_restricted(cxt)
+		    && cxt->optsmode == MNT_OMODE_USER)
+			rc = mnt_fs_append_options(cxt->fs, "ro");
+	}
 	else if (cxt->optsmode & MNT_OMODE_APPEND)
 		rc = mnt_fs_append_options(cxt->fs, mnt_fs_get_options(fs));
 
@@ -2375,7 +2455,7 @@ done:
 }
 
 static int apply_table(struct libmnt_context *cxt, struct libmnt_table *tb,
-		     int direction)
+		     int direction, unsigned long mflags)
 {
 	struct libmnt_fs *fs = NULL;
 	const char *src, *tgt;
@@ -2413,7 +2493,14 @@ static int apply_table(struct libmnt_context *cxt, struct libmnt_table *tb,
 	if (!fs)
 		return -MNT_ERR_NOFSTAB;	/* not found */
 
-	return mnt_context_apply_fs(cxt, fs);
+	return apply_fs(cxt, fs, mflags);
+}
+
+/* apply @fs to @cxt -- use mnt_context_apply_fstab() if not sure
+ */
+int mnt_context_apply_fs(struct libmnt_context *cxt, struct libmnt_fs *fs)
+{
+	return apply_fs(cxt, fs, 0);
 }
 
 /**
@@ -2493,7 +2580,7 @@ int mnt_context_apply_fstab(struct libmnt_context *cxt)
 		DBG(CXT, ul_debugobj(cxt, "trying to apply fstab (src=%s, target=%s)", src, tgt));
 		rc = mnt_context_get_fstab(cxt, &tab);
 		if (!rc)
-			rc = apply_table(cxt, tab, MNT_ITER_FORWARD);
+			rc = apply_table(cxt, tab, MNT_ITER_FORWARD, mflags);
 	}
 
 	/* try mtab */
@@ -2505,7 +2592,7 @@ int mnt_context_apply_fstab(struct libmnt_context *cxt)
 		else
 			rc = mnt_context_get_mtab(cxt, &tab);
 		if (!rc)
-			rc = apply_table(cxt, tab, MNT_ITER_BACKWARD);
+			rc = apply_table(cxt, tab, MNT_ITER_BACKWARD, mflags);
 	}
 
 	if (!mnt_context_switch_ns(cxt, ns_old))
@@ -2675,7 +2762,7 @@ int mnt_context_strerror(struct libmnt_context *cxt __attribute__((__unused__)),
 }
 
 
-int mnt_context_get_generic_excode(int rc, char *buf, size_t bufsz, char *fmt, ...)
+int mnt_context_get_generic_excode(int rc, char *buf, size_t bufsz, const char *fmt, ...)
 {
 	va_list va;
 
@@ -2722,6 +2809,9 @@ int mnt_context_get_generic_excode(int rc, char *buf, size_t bufsz, char *fmt, .
  * returns some crazy undocumented codes...  See mnt_context_helper_executed()
  * and mnt_context_get_helper_status(). Note that mount(8) and umount(8) utils
  * always return code from helper without extra care about it.
+ *
+ * The current implementation does not read error message from external
+ * helper into @buf.
  *
  * If the argument @buf is not NULL then error message is generated (if
  * anything failed).
@@ -2844,7 +2934,7 @@ int mnt_context_is_fs_mounted(struct libmnt_context *cxt,
 			      struct libmnt_fs *fs, int *mounted)
 {
 	struct libmnt_table *mtab, *orig;
-	int rc;
+	int rc = 0;
 	struct libmnt_ns *ns_old;
 
 	if (!cxt || !fs || !mounted)
@@ -2863,18 +2953,17 @@ int mnt_context_is_fs_mounted(struct libmnt_context *cxt,
 			cxt->mtab = NULL;
 		}
 		*mounted = 0;
-		return 0;	/* /proc not mounted */
-	}
+		rc = 0;			/* /proc not mounted */
 
-	if (rc)
-		return rc;
-
-	*mounted = __mnt_table_is_fs_mounted(mtab, fs,
+	} else if (rc == 0) {
+		*mounted = __mnt_table_is_fs_mounted(mtab, fs,
 				mnt_context_get_target_prefix(cxt));
+
+	}
 
 	if (!mnt_context_switch_ns(cxt, ns_old))
 		return -MNT_ERR_NAMESPACE;
-	return 0;
+	return rc;
 }
 
 static int mnt_context_add_child(struct libmnt_context *cxt, pid_t pid)

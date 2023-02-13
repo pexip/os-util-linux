@@ -60,6 +60,14 @@ Files: disk-utils/raw.c
 Copyright: 1999, 2000, Red Hat Software
 License: GPL-2
 
+Files: sys-utils/hwclock-parse-date.y
+Copyright: Steven M. Bellovin <smb@research.att.com>
+           Unknown Authors on Usenet
+           1990 Rich $alz <rsalz@bbn.com>
+           1990 Jim Berets <jberets@bbn.com>
+           1999, 2004 Paul Eggert <eggert@twinsun.com>
+License: GPL-3+
+
 Files: sys-utils/nsenter.c
 Copyright: 2012-2013 Eric Biederman <ebiederm@xmission.com>
 License: GPL-2
@@ -69,12 +77,10 @@ Files: disk-utils/mkfs.minix.c
 Copyright: 1991, 1992 Linus Torvalds
 License: GPL-2
 
-Files: lib/at.c
-       lib/blkdev.c
+Files: lib/blkdev.c
        lib/loopdev.c
        lib/sysfs.c
        lib/ttyutils.c
-       lib/xgetpass.c
        misc-utils/mcookie.c
        sys-utils/setsid.c
        text-utils/line.c
@@ -110,26 +116,18 @@ Copyright: 1980, 1983, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994
            2014 Karel Zak <kzak@redhat.com>
 License: BSD-4-clause
 
-Files: text-utils/tailf.c
-Copyright: 1996, 2003 Rickard E. Faith (faith@acm.org)
-License: MIT
-
 Files: sys-utils/flock.c
 Copyright: 2003-2005 H. Peter Anvin
 License: MIT
 
 Files: text-utils/pg.c
 Copyright: 2000-2001 Gunnar Ritter
-License: BSD-2-clause
-
-Files: login-utils/last-deprecated.c
-Copyright: 1987 Regents of the University of California
-License: BSD-2-clause
+License: BSD-3-clause
 
 Files: login-utils/login.c
 Copyright: 1980, 1987, 1988 The Regents of the University of California.
            2011 Karel Zak <kzak@redhat.com>
-License: BSD-2-clause
+License: BSLA
 
 Files: login-utils/logindefs.c
 Copyright: 2003, 2004, 2005 Thorsten Kukuk
@@ -167,7 +165,6 @@ License: LGPL-2.1+
 Files: lib/cpuset.c
        */match.*
        lib/canonicalize.c
-       include/at.h
 Copyright: 2008-2009, 2010, 2011, 2012 Karel Zak <kzak@redhat.com>
 License: LGPL-2.1+
 
@@ -175,10 +172,6 @@ Files: */mbsalign.*
 Copyright: 2009-2010 Free Software Foundation, Inc.
            2010-2013 Karel Zak <kzak@redhat.com>
 License: LGPL-2.1+
-
-Files: */readutmp.*
-Copyright: 1992-2007, 2009-2014 Free Software Foundation, Inc.
-License: GPL-3+
 
 Files: */timeutils.*
 Copyright: 2010 Lennart Poettering
@@ -399,16 +392,6 @@ License: GPL-3+
  On Debian systems, the complete text of the GNU General Public
  License version 3 can be found in `/usr/share/common-licenses/GPL-3'.
 
-License: BSD-2-clause
- Redistribution and use in source and binary forms, with or without
- modification, are permitted provided that the following conditions
- are met:
- 1. Redistributions of source code must retain the above copyright
-    notice, this list of conditions and the following disclaimer.
- 2. Redistributions in binary form must reproduce the above copyright
-    notice, this list of conditions and the following disclaimer in the
-    documentation and/or other materials provided with the distribution.
-
 License: BSD-3-clause
  Redistribution and use in source and binary forms, with or without
  modification, are permitted provided that the following conditions are met:
@@ -464,6 +447,19 @@ License: BSD-4-clause
  LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  SUCH DAMAGE.
+
+License: BSLA
+ Redistribution and use in source and binary forms are permitted
+ provided that the above copyright notice and this paragraph are
+ duplicated in all such forms and that any documentation,
+ advertising materials, and other materials related to such
+ distribution and use acknowledge that the software was developed
+ by the University of California, Berkeley.  The name of the
+ University may not be used to endorse or promote products derived
+ from this software without specific prior written permission.
+ THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
+ IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
+ WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 
 License: LGPL
  This file may be redistributed under the terms of the

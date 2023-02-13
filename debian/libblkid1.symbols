@@ -11,6 +11,7 @@ libblkid.so.1 libblkid1 #MINVER#
  BLKID_2.30@BLKID_2.30 2.30.2
  BLKID_2_31@BLKID_2_31 2.31.1
  BLKID_2_36@BLKID_2_36 2.36
+ BLKID_2_37@BLKID_2_37 2.37.2
  blkid_dev_devname@BLKID_1.0 2.16
  blkid_dev_has_tag@BLKID_1.0 2.16
  blkid_dev_iterate_begin@BLKID_1.0 2.16
@@ -95,9 +96,11 @@ libblkid.so.1 libblkid1 #MINVER#
  blkid_probe_numof_values@BLKID_2.15 2.16
  blkid_probe_reset_buffers@BLKID_2_31 2.31.1
  blkid_probe_reset_filter@BLKID_2.15 2.16
+ blkid_probe_reset_hints@BLKID_2_37 2.37.2
  blkid_probe_reset_partitions_filter@BLKID_2.17 2.17.2
  blkid_probe_reset_superblocks_filter@BLKID_2.17 2.17.2
  blkid_probe_set_device@BLKID_2.15 2.16
+ blkid_probe_set_hint@BLKID_2_37 2.37.2
  blkid_probe_set_partitions_flags@BLKID_2.17 2.17.2
  blkid_probe_set_request@BLKID_2.15 2.16
  blkid_probe_set_sectorsize@BLKID_2.30 2.30.2

@@ -27,6 +27,7 @@
 
 #include "strutils.h"
 #include "mountP.h"
+#include "buffer.h"
 
 /*
  * Option location
@@ -39,7 +40,7 @@ struct libmnt_optloc {
 	size_t  namesz;
 };
 
-#define mnt_init_optloc(_ol)	(memset((_ol), 0, sizeof(struct libmnt_optloc)))
+#define MNT_INIT_OPTLOC	{ .begin = NULL }
 
 #define mnt_optmap_entry_novalue(e) \
 		(e && (e)->name && !strchr((e)->name, '=') && !((e)->mask & MNT_PREFIX))
@@ -174,47 +175,24 @@ int mnt_optstr_next_option(char **optstr, char **name, size_t *namesz,
 	return mnt_optstr_parse_next(optstr, name, namesz, value, valuesz);
 }
 
-static int __mnt_optstr_append_option(char **optstr,
-			const char *name, size_t nsz,
-			const char *value, size_t vsz)
+static int __buffer_append_option(struct ul_buffer *buf,
+			const char *name, size_t namesz,
+			const char *val, size_t valsz)
 {
-	char *p;
-	size_t sz, osz;
+	int rc = 0;
 
-	assert(name);
-	assert(*name);
-	assert(nsz);
-	assert(optstr);
-
-	osz = *optstr ? strlen(*optstr) : 0;
-
-	sz = osz + nsz + 1;		/* 1: '\0' */
-	if (osz)
-		sz++;			/* ',' options separator */
-	if (value)
-		sz += vsz + 1;		/* 1: '=' */
-
-	p = realloc(*optstr, sz);
-	if (!p)
-		return -ENOMEM;
-	*optstr = p;
-
-	if (osz) {
-		p += osz;
-		*p++ = ',';
+	if (!ul_buffer_is_empty(buf))
+		rc = ul_buffer_append_data(buf, ",", 1);
+	if (!rc)
+		rc = ul_buffer_append_data(buf, name, namesz);
+	if (val && !rc) {
+		/* we need to append '=' is value is empty string, see
+		 * 727c689908c5e68c92aa1dd65e0d3bdb6d91c1e5 */
+		rc = ul_buffer_append_data(buf, "=", 1);
+		if (!rc && valsz)
+			rc = ul_buffer_append_data(buf, val, valsz);
 	}
-
-	memcpy(p, name, nsz);
-	p += nsz;
-
-	if (value) {
-		*p++ = '=';
-		memcpy(p, value, vsz);
-		p += vsz;
-	}
-	*p = '\0';
-
-	return 0;
+	return rc;
 }
 
 /**
@@ -228,7 +206,9 @@ static int __mnt_optstr_append_option(char **optstr,
  */
 int mnt_optstr_append_option(char **optstr, const char *name, const char *value)
 {
-	size_t vsz, nsz;
+	struct ul_buffer buf = UL_INIT_BUFFER;
+	int rc;
+	size_t nsz, vsz, osz;
 
 	if (!optstr)
 		return -EINVAL;
@@ -236,11 +216,17 @@ int mnt_optstr_append_option(char **optstr, const char *name, const char *value)
 		return 0;
 
 	nsz = strlen(name);
+	osz = *optstr ? strlen(*optstr) : 0;
 	vsz = value ? strlen(value) : 0;
 
-	return __mnt_optstr_append_option(optstr, name, nsz, value, vsz);
-}
+	ul_buffer_refer_string(&buf, *optstr);
+	ul_buffer_set_chunksize(&buf, osz + nsz + vsz + 3);	/* to call realloc() only once */
 
+	rc = __buffer_append_option(&buf, name, nsz, value, vsz);
+
+	*optstr = ul_buffer_get_data(&buf, NULL, NULL);
+	return rc;
+}
 /**
  * mnt_optstr_prepend_option:
  * @optstr: option string or NULL, returns a reallocated string
@@ -252,30 +238,30 @@ int mnt_optstr_append_option(char **optstr, const char *name, const char *value)
  */
 int mnt_optstr_prepend_option(char **optstr, const char *name, const char *value)
 {
-	int rc = 0;
-	char *tmp;
+	struct ul_buffer buf = UL_INIT_BUFFER;
+	size_t nsz, vsz, osz;
+	int rc;
 
 	if (!optstr)
 		return -EINVAL;
 	if (!name || !*name)
 		return 0;
 
-	tmp = *optstr;
-	*optstr = NULL;
+	nsz = strlen(name);
+	osz = *optstr ? strlen(*optstr) : 0;
+	vsz = value ? strlen(value) : 0;
 
-	rc = mnt_optstr_append_option(optstr, name, value);
-	if (!rc && tmp && *tmp)
-		rc = mnt_optstr_append_option(optstr, tmp, NULL);
-	if (!rc) {
-		free(tmp);
-		return 0;
+	ul_buffer_set_chunksize(&buf, osz + nsz + vsz + 3);   /* to call realloc() only once */
+
+	rc = __buffer_append_option(&buf, name, nsz, value, vsz);
+	if (*optstr && !rc) {
+		rc = ul_buffer_append_data(&buf, ",", 1);
+		if (!rc)
+			rc = ul_buffer_append_data(&buf, *optstr, osz);
+		free(*optstr);
 	}
 
-	free(*optstr);
-	*optstr = tmp;
-
-	DBG(OPTIONS, ul_debug("failed to prepend '%s[=%s]' to '%s'",
-				name, value, *optstr));
+	*optstr = ul_buffer_get_data(&buf, NULL, NULL);
 	return rc;
 }
 
@@ -292,13 +278,11 @@ int mnt_optstr_prepend_option(char **optstr, const char *name, const char *value
 int mnt_optstr_get_option(const char *optstr, const char *name,
 			  char **value, size_t *valsz)
 {
-	struct libmnt_optloc ol;
+	struct libmnt_optloc ol = MNT_INIT_OPTLOC;
 	int rc;
 
 	if (!optstr || !name)
 		return -EINVAL;
-
-	mnt_init_optloc(&ol);
 
 	rc = mnt_optstr_locate_option((char *) optstr, name, &ol);
 	if (!rc) {
@@ -330,9 +314,7 @@ int mnt_optstr_deduplicate_option(char **optstr, const char *name)
 
 	opt = *optstr;
 	do {
-		struct libmnt_optloc ol;
-
-		mnt_init_optloc(&ol);
+		struct libmnt_optloc ol = MNT_INIT_OPTLOC;
 
 		rc = mnt_optstr_locate_option(opt, name, &ol);
 		if (!rc) {
@@ -439,14 +421,12 @@ insert_value(char **str, char *pos, const char *substr, char **next)
  */
 int mnt_optstr_set_option(char **optstr, const char *name, const char *value)
 {
-	struct libmnt_optloc ol;
+	struct libmnt_optloc ol = MNT_INIT_OPTLOC;
 	char *nameend;
 	int rc = 1;
 
 	if (!optstr || !name)
 		return -EINVAL;
-
-	mnt_init_optloc(&ol);
 
 	if (*optstr)
 		rc = mnt_optstr_locate_option(*optstr, name, &ol);
@@ -486,13 +466,11 @@ int mnt_optstr_set_option(char **optstr, const char *name, const char *value)
  */
 int mnt_optstr_remove_option(char **optstr, const char *name)
 {
-	struct libmnt_optloc ol;
+	struct libmnt_optloc ol = MNT_INIT_OPTLOC;
 	int rc;
 
 	if (!optstr || !name)
 		return -EINVAL;
-
-	mnt_init_optloc(&ol);
 
 	rc = mnt_optstr_locate_option(*optstr, name, &ol);
 	if (rc != 0)
@@ -526,9 +504,13 @@ int mnt_optstr_remove_option(char **optstr, const char *name)
 int mnt_split_optstr(const char *optstr, char **user, char **vfs,
 		     char **fs, int ignore_user, int ignore_vfs)
 {
+	int rc = 0;
 	char *name, *val, *str = (char *) optstr;
-	size_t namesz, valsz;
+	size_t namesz, valsz, chunsz;
 	struct libmnt_optmap const *maps[2];
+	struct ul_buffer xvfs = UL_INIT_BUFFER,
+			 xfs = UL_INIT_BUFFER,
+			 xuser = UL_INIT_BUFFER;
 
 	if (!optstr)
 		return -EINVAL;
@@ -536,15 +518,10 @@ int mnt_split_optstr(const char *optstr, char **user, char **vfs,
 	maps[0] = mnt_get_builtin_optmap(MNT_LINUX_MAP);
 	maps[1] = mnt_get_builtin_optmap(MNT_USERSPACE_MAP);
 
-	if (vfs)
-		*vfs = NULL;
-	if (fs)
-		*fs = NULL;
-	if (user)
-		*user = NULL;
+	chunsz = strlen(optstr) / 2;
 
 	while (!mnt_optstr_next_option(&str, &name, &namesz, &val, &valsz)) {
-		int rc = 0;
+		struct ul_buffer *buf = NULL;
 		const struct libmnt_optmap *ent = NULL;
 		const struct libmnt_optmap *m =
 			 mnt_optmap_get_entry(maps, 2, name, namesz, &ent);
@@ -559,34 +536,40 @@ int mnt_split_optstr(const char *optstr, char **user, char **vfs,
 		if (ent && m && m == maps[0] && vfs) {
 			if (ignore_vfs && (ent->mask & ignore_vfs))
 				continue;
-			rc = __mnt_optstr_append_option(vfs, name, namesz,
-								val, valsz);
+			if (vfs)
+				buf = &xvfs;
 		} else if (ent && m && m == maps[1] && user) {
 			if (ignore_user && (ent->mask & ignore_user))
 				continue;
-			rc = __mnt_optstr_append_option(user, name, namesz,
-								val, valsz);
-		} else if (!m && fs)
-			rc = __mnt_optstr_append_option(fs, name, namesz,
-								val, valsz);
-		if (rc) {
-			if (vfs) {
-				free(*vfs);
-				*vfs = NULL;
-			}
-			if (fs) {
-				free(*fs);
-				*fs = NULL;
-			}
-			if (user) {
-				free(*user);
-				*user = NULL;
-			}
-			return rc;
+			if (user)
+				buf = &xuser;
+		} else if (!m && fs) {
+			if (fs)
+				buf = &xfs;
 		}
+
+		if (buf) {
+			if (ul_buffer_is_empty(buf))
+				ul_buffer_set_chunksize(buf, chunsz);
+			rc = __buffer_append_option(buf, name, namesz, val, valsz);
+		}
+		if (rc)
+			break;
 	}
 
-	return 0;
+	if (vfs)
+		*vfs  = rc ? NULL : ul_buffer_get_data(&xvfs, NULL, NULL);
+	if (fs)
+		*fs   = rc ? NULL : ul_buffer_get_data(&xfs, NULL, NULL);
+	if (user)
+		*user = rc ? NULL : ul_buffer_get_data(&xuser, NULL, NULL);
+	if (rc) {
+		ul_buffer_free_data(&xvfs);
+		ul_buffer_free_data(&xfs);
+		ul_buffer_free_data(&xuser);
+	}
+
+	return rc;
 }
 
 /**
@@ -611,17 +594,19 @@ int mnt_optstr_get_options(const char *optstr, char **subset,
 			    const struct libmnt_optmap *map, int ignore)
 {
 	struct libmnt_optmap const *maps[1];
+	struct ul_buffer buf = UL_INIT_BUFFER;
 	char *name, *val, *str = (char *) optstr;
 	size_t namesz, valsz;
+	int rc = 0;
 
 	if (!optstr || !subset)
 		return -EINVAL;
 
 	maps[0] = map;
-	*subset = NULL;
 
-	while(!mnt_optstr_next_option(&str, &name, &namesz, &val, &valsz)) {
-		int rc = 0;
+	ul_buffer_set_chunksize(&buf, strlen(optstr)/2);
+
+	while (!mnt_optstr_next_option(&str, &name, &namesz, &val, &valsz)) {
 		const struct libmnt_optmap *ent;
 
 		mnt_optmap_get_entry(maps, 1, name, namesz, &ent);
@@ -636,14 +621,15 @@ int mnt_optstr_get_options(const char *optstr, char **subset,
 		if (valsz && mnt_optmap_entry_novalue(ent))
 			continue;
 
-		rc = __mnt_optstr_append_option(subset, name, namesz, val, valsz);
-		if (rc) {
-			free(*subset);
-			return rc;
-		}
+		rc = __buffer_append_option(&buf, name, namesz, val, valsz);
+		if (rc)
+			break;
 	}
 
-	return 0;
+	*subset  = rc ? NULL : ul_buffer_get_data(&buf, NULL, NULL);
+	if (rc)
+		ul_buffer_free_data(&buf);
+	return rc;
 }
 
 
@@ -738,7 +724,7 @@ int mnt_optstr_apply_flags(char **optstr, unsigned long flags,
 {
 	struct libmnt_optmap const *maps[1];
 	char *name, *next, *val;
-	size_t namesz = 0, valsz = 0;
+	size_t namesz = 0, valsz = 0, multi = 0;
 	unsigned long fl;
 	int rc = 0;
 
@@ -808,7 +794,11 @@ int mnt_optstr_apply_flags(char **optstr, unsigned long flags,
 						goto err;
 				}
 				if (!(ent->mask & MNT_INVERT)) {
-					fl &= ~ent->id;
+					/* allow options with prefix (X-mount.foo,X-mount.bar) more than once */
+					if (ent->mask & MNT_PREFIX)
+						multi |= ent->id;
+					else
+						fl &= ~ent->id;
 					if (ent->id & MS_REC)
 						fl |= MS_REC;
 				}
@@ -816,10 +806,18 @@ int mnt_optstr_apply_flags(char **optstr, unsigned long flags,
 		}
 	}
 
+	/* remove from flags options which are allowed more than once */
+	fl &= ~multi;
+
 	/* add missing options (but ignore fl if contains MS_REC only) */
 	if (fl && fl != MS_REC) {
+
 		const struct libmnt_optmap *ent;
+		struct ul_buffer buf = UL_INIT_BUFFER;
+		size_t sz;
 		char *p;
+
+		ul_buffer_refer_string(&buf, *optstr);
 
 		for (ent = map; ent && ent->name; ent++) {
 			if ((ent->mask & MNT_INVERT)
@@ -834,17 +832,16 @@ int mnt_optstr_apply_flags(char **optstr, unsigned long flags,
 					p--;			/* name[=] */
 				else
 					continue;		/* name= */
-
-				p = strndup(ent->name, p - ent->name);
-				if (!p) {
-					rc = -ENOMEM;
-					goto err;
-				}
-				mnt_optstr_append_option(optstr, p, NULL);
-				free(p);
+				sz = p - ent->name;
 			} else
-				mnt_optstr_append_option(optstr, ent->name, NULL);
+				sz = strlen(ent->name);
+
+			rc = __buffer_append_option(&buf, ent->name, sz, NULL, 0);
+			if (rc)
+				goto err;
 		}
+
+		*optstr = ul_buffer_get_data(&buf, NULL, NULL);
 	}
 
 	DBG(CXT, ul_debug("new optstr '%s'", *optstr));
@@ -881,9 +878,7 @@ int mnt_optstr_fix_secontext(char **optstr,
 			     char **next)
 {
 	int rc = 0;
-
-	security_context_t raw = NULL;
-	char *p, *val, *begin, *end;
+	char *p, *val, *begin, *end, *raw = NULL;
 	size_t sz;
 
 	if (!optstr || !*optstr || !value || !valsz)
@@ -908,7 +903,7 @@ int mnt_optstr_fix_secontext(char **optstr,
 
 
 	/* translate the context */
-	rc = selinux_trans_to_raw_context((security_context_t) p, &raw);
+	rc = selinux_trans_to_raw_context(p, &raw);
 
 	DBG(CXT, ul_debug("SELinux context '%s' translated to '%s'",
 			p, rc == -1 ? "FAILED" : (char *) raw));
@@ -920,12 +915,16 @@ int mnt_optstr_fix_secontext(char **optstr,
 
 	/* create a quoted string from the raw context */
 	sz = strlen((char *) raw);
-	if (!sz)
+	if (!sz) {
+		freecon(raw);
 		return -EINVAL;
+	}
 
 	p = val = malloc(valsz + 3);
-	if (!val)
+	if (!val) {
+		freecon(raw);
 		return -ENOMEM;
+	}
 
 	*p++ = '"';
 	memcpy(p, raw, sz);
@@ -1062,12 +1061,10 @@ int mnt_optstr_fix_gid(char **optstr, char *value, size_t valsz, char **next)
 int mnt_optstr_fix_user(char **optstr)
 {
 	char *username;
-	struct libmnt_optloc ol;
+	struct libmnt_optloc ol = MNT_INIT_OPTLOC;
 	int rc = 0;
 
 	DBG(CXT, ul_debug("fixing user"));
-
-	mnt_init_optloc(&ol);
 
 	rc = mnt_optstr_locate_option(*optstr, "user", &ol);
 	if (rc)
@@ -1087,6 +1084,48 @@ int mnt_optstr_fix_user(char **optstr)
 	}
 
 	free(username);
+	return rc;
+}
+
+/*
+ * Converts value from @optstr addressed by @name to uid.
+ *
+ * Returns: 0 on success, 1 if not found, <0 on error
+ */
+int mnt_optstr_get_uid(const char *optstr, const char *name, uid_t *uid)
+{
+	char *value = NULL;
+	size_t valsz = 0;
+	char buf[sizeof(stringify_value(UINT64_MAX))];
+	int rc;
+	uint64_t num;
+
+	assert(optstr);
+	assert(name);
+	assert(uid);
+
+	rc = mnt_optstr_get_option(optstr, name, &value, &valsz);
+	if (rc != 0)
+		goto fail;
+
+	if (valsz > sizeof(buf) - 1) {
+		rc = -ERANGE;
+		goto fail;
+	}
+	mem2strcpy(buf, value, valsz, sizeof(buf));
+
+	rc = ul_strtou64(buf, &num, 10);
+	if (rc != 0)
+		goto fail;
+	if (num > ULONG_MAX || (uid_t) num != num) {
+		rc = -ERANGE;
+		goto fail;
+	}
+	*uid = (uid_t) num;
+
+	return 0;
+fail:
+	DBG(UTILS, ul_debug("failed to convert '%s'= to number [rc=%d]", name, rc));
 	return rc;
 }
 
@@ -1177,6 +1216,7 @@ int mnt_match_options(const char *optstr, const char *pattern)
 }
 
 #ifdef TEST_PROGRAM
+#include "xalloc.h"
 
 static int test_append(struct libmnt_test *ts, int argc, char *argv[])
 {
@@ -1186,7 +1226,7 @@ static int test_append(struct libmnt_test *ts, int argc, char *argv[])
 
 	if (argc < 3)
 		return -EINVAL;
-	optstr = strdup(argv[1]);
+	optstr = xstrdup(argv[1]);
 	name = argv[2];
 
 	if (argc == 4)
@@ -1207,7 +1247,7 @@ static int test_prepend(struct libmnt_test *ts, int argc, char *argv[])
 
 	if (argc < 3)
 		return -EINVAL;
-	optstr = strdup(argv[1]);
+	optstr = xstrdup(argv[1]);
 	name = argv[2];
 
 	if (argc == 4)
@@ -1228,7 +1268,7 @@ static int test_split(struct libmnt_test *ts, int argc, char *argv[])
 	if (argc < 2)
 		return -EINVAL;
 
-	optstr = strdup(argv[1]);
+	optstr = xstrdup(argv[1]);
 
 	rc = mnt_split_optstr(optstr, &user, &vfs, &fs, 0, 0);
 	if (!rc) {
@@ -1253,7 +1293,7 @@ static int test_flags(struct libmnt_test *ts, int argc, char *argv[])
 	if (argc < 2)
 		return -EINVAL;
 
-	optstr = strdup(argv[1]);
+	optstr = xstrdup(argv[1]);
 
 	rc = mnt_optstr_get_flags(optstr, &fl, mnt_get_builtin_optmap(MNT_LINUX_MAP));
 	if (rc)
@@ -1288,7 +1328,7 @@ static int test_apply(struct libmnt_test *ts, int argc, char *argv[])
 		return -EINVAL;
 	}
 
-	optstr = strdup(argv[2]);
+	optstr = xstrdup(argv[2]);
 	flags = strtoul(argv[3], NULL, 16);
 
 	printf("flags:  0x%08lx\n", flags);
@@ -1308,7 +1348,7 @@ static int test_set(struct libmnt_test *ts, int argc, char *argv[])
 
 	if (argc < 3)
 		return -EINVAL;
-	optstr = strdup(argv[1]);
+	optstr = xstrdup(argv[1]);
 	name = argv[2];
 
 	if (argc == 4)
@@ -1358,7 +1398,7 @@ static int test_remove(struct libmnt_test *ts, int argc, char *argv[])
 
 	if (argc < 3)
 		return -EINVAL;
-	optstr = strdup(argv[1]);
+	optstr = xstrdup(argv[1]);
 	name = argv[2];
 
 	rc = mnt_optstr_remove_option(&optstr, name);
@@ -1376,7 +1416,7 @@ static int test_dedup(struct libmnt_test *ts, int argc, char *argv[])
 
 	if (argc < 3)
 		return -EINVAL;
-	optstr = strdup(argv[1]);
+	optstr = xstrdup(argv[1]);
 	name = argv[2];
 
 	rc = mnt_optstr_deduplicate_option(&optstr, name);
@@ -1396,7 +1436,7 @@ static int test_fix(struct libmnt_test *ts, int argc, char *argv[])
 	if (argc < 2)
 		return -EINVAL;
 
-	next = optstr = strdup(argv[1]);
+	next = optstr = xstrdup(argv[1]);
 
 	printf("optstr: %s\n", optstr);
 

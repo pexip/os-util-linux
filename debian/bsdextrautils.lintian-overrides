@@ -1,1 +1,1 @@
-bsdextrautils: setgid-binary usr/bin/write.ul 2755 root/tty
+bsdextrautils: setgid-binary usr/bin/write 2755 root/tty

@@ -36,6 +36,11 @@
 #include <sys/wait.h>
 #include <syslog.h>
 #include <utmpx.h>
+#include <sys/time.h>
+
+#ifdef HAVE_SYS_RESOURCE_H
+# include <sys/resource.h>
+#endif
 
 #ifdef HAVE_PTY
 # include <pty.h>
@@ -82,7 +87,6 @@ UL_DEBUG_DEFINE_MASKNAMES(su) = UL_DEBUG_EMPTY_MASKNAMES;
 #define DBG(m, x)       __UL_DBG(su, SU_DEBUG_, m, x)
 #define ON_DBG(m, x)    __UL_DBG_CALL(su, SU_DEBUG_, m, x)
 
-
 /* name of the pam configuration files. separate configs for su and su -  */
 #define PAM_SRVNAME_SU "su"
 #define PAM_SRVNAME_SU_L "su-l"
@@ -128,6 +132,7 @@ struct su_context {
 	struct passwd	*pwd;			/* new user info */
 	char		*pwdbuf;		/* pwd strings */
 
+	const char	*tty_path;		/* tty device path */
 	const char	*tty_name;		/* tty_path without /dev prefix */
 	const char	*tty_number;		/* end of the tty_path */
 
@@ -178,7 +183,7 @@ static void init_tty(struct su_context *su)
 	su->isterm = isatty(STDIN_FILENO) ? 1 : 0;
 	DBG(TTY, ul_debug("initialize [is-term=%s]", su->isterm ? "true" : "false"));
 	if (su->isterm)
-		get_terminal_name(NULL, &su->tty_name, &su->tty_number);
+		get_terminal_name(&su->tty_path, &su->tty_name, &su->tty_number);
 }
 
 /*
@@ -254,6 +259,26 @@ static void wait_for_child_cb(
 {
 	wait_for_child((struct su_context *) data);
 }
+
+static void chownmod_pty(struct su_context *su)
+{
+	gid_t gid = su->pwd->pw_gid;
+	mode_t mode = (mode_t) getlogindefs_num("TTYPERM", TTY_MODE);
+	const char *grname = getlogindefs_str("TTYGROUP", TTYGRPNAME);
+
+	if (grname && *grname) {
+		struct group *gr = getgrnam(grname);
+		if (gr)	/* group by name */
+			gid = gr->gr_gid;
+		else	/* group by ID */
+			gid = (gid_t) getlogindefs_num("TTYGROUP", gid);
+	}
+
+	if (ul_pty_chownmod_slave(su->pty,
+				  su->pwd->pw_uid,
+				  gid, mode))
+		warn(_("change owner or mode for pseudo-terminal failed"));
+}
 #endif
 
 /* Log the fact that someone has run su to the user given by PW;
@@ -263,7 +288,7 @@ static void log_syslog(struct su_context *su, bool successful)
 {
 	DBG(LOG, ul_debug("syslog logging"));
 
-	openlog(program_invocation_short_name, 0, LOG_AUTH);
+	openlog(program_invocation_short_name, LOG_PID, LOG_AUTH);
 	syslog(LOG_NOTICE, "%s(to %s) %s on %s",
 	       successful ? "" :
 	       su->runuser ? "FAILED RUNUSER " : "FAILED SU ",
@@ -366,8 +391,8 @@ static void supam_authenticate(struct su_context *su)
 	if (is_pam_failure(rc))
 		goto done;
 
-	if (su->tty_name) {
-		rc = pam_set_item(su->pamh, PAM_TTY, su->tty_name);
+	if (su->tty_path) {
+		rc = pam_set_item(su->pamh, PAM_TTY, su->tty_path);
 		if (is_pam_failure(rc))
 			goto done;
 	}
@@ -495,9 +520,9 @@ static void parent_setup_signals(struct su_context *su)
 	}
 }
 
-
 static void create_watching_parent(struct su_context *su)
 {
+	struct sigaction action;
 	int status;
 
 	DBG(MISC, ul_debug("forking..."));
@@ -512,12 +537,27 @@ static void create_watching_parent(struct su_context *su)
 		cb->child_wait    = wait_for_child_cb;
 		cb->child_sigstop = wait_for_child_cb;
 
+		ul_pty_slave_echo(su->pty, 1);
+
 		/* create pty */
 		if (ul_pty_setup(su->pty))
 			err(EXIT_FAILURE, _("failed to create pseudo-terminal"));
 	}
 #endif
 	fflush(stdout);			/* ??? */
+
+	/* set default handler for SIGCHLD */
+	sigemptyset(&action.sa_mask);
+	action.sa_flags = 0;
+	action.sa_handler = SIG_DFL;
+	if (sigaction(SIGCHLD, &action, NULL)) {
+		supam_cleanup(su, PAM_ABORT);
+#ifdef USE_PTY
+		if (su->force_pty)
+			ul_pty_cleanup(su->pty);
+#endif
+		err(EXIT_FAILURE, _("cannot set child signal handler"));
+	}
 
 	switch ((int) (su->child = fork())) {
 	case -1: /* error */
@@ -550,8 +590,7 @@ static void create_watching_parent(struct su_context *su)
 	if (su->force_pty) {
 		ul_pty_set_child(su->pty, su->child);
 
-		if (ul_pty_proxy_master(su->pty) != 0)
-			caught_signal = true;
+		ul_pty_proxy_master(su->pty);
 
 		/* ul_pty_proxy_master() keeps classic signal handler are out of game */
 		caught_signal = ul_pty_get_delivered_signal(su->pty);
@@ -934,6 +973,35 @@ static int is_not_root(void)
 	return (uid_t) 0 == ruid && ruid == euid ? 0 : 1;
 }
 
+/* Don't rely on PAM and reset the most important limits. */
+static void sanitize_prlimits(void)
+{
+#ifdef HAVE_SYS_RESOURCE_H
+	struct rlimit lm = { .rlim_cur = 0, .rlim_max = 0 };
+
+	/* reset to zero */
+#ifdef RLIMIT_NICE
+	setrlimit(RLIMIT_NICE, &lm);
+#endif
+#ifdef RLIMIT_RTPRIO
+	setrlimit(RLIMIT_RTPRIO, &lm);
+#endif
+
+	/* reset to unlimited */
+	lm.rlim_cur = RLIM_INFINITY;
+	lm.rlim_max = RLIM_INFINITY;
+	setrlimit(RLIMIT_FSIZE, &lm);
+	setrlimit(RLIMIT_AS, &lm);
+
+	/* reset soft limit only */
+	getrlimit(RLIMIT_NOFILE, &lm);
+	if (lm.rlim_cur != FD_SETSIZE) {
+		lm.rlim_cur = FD_SETSIZE;
+		setrlimit(RLIMIT_NOFILE, &lm);
+	}
+#endif
+}
+
 static gid_t add_supp_group(const char *name, gid_t **groups, size_t *ngroups)
 {
 	struct group *gr;
@@ -1175,6 +1243,8 @@ int su_main(int argc, char **argv, int mode)
 	if (!su->simulate_login || command)
 		su->suppress_pam_info = 1;	/* don't print PAM info messages */
 
+	sanitize_prlimits();
+
 	supam_open_session(su);
 
 #ifdef USE_PTY
@@ -1189,6 +1259,10 @@ int su_main(int argc, char **argv, int mode)
 	create_watching_parent(su);
 	/* Now we're in the child.  */
 
+#ifdef USE_PTY
+	if (su->force_pty)
+		chownmod_pty(su);
+#endif
 	change_identity(su->pwd);
 	if (!su->same_session) {
 		/* note that on --pty we call setsid() in ul_pty_init_slave() */
@@ -1206,6 +1280,9 @@ int su_main(int argc, char **argv, int mode)
 
 	if (su->simulate_login && chdir(su->pwd->pw_dir) != 0)
 		warn(_("warning: cannot change directory to %s"), su->pwd->pw_dir);
+
+	/* http://www.linux-pam.org/Linux-PAM-html/adg-interface-by-app-expected.html#adg-pam_end */
+	(void) pam_end(su->pamh, PAM_SUCCESS|PAM_DATA_SILENT);
 
 	if (shell)
 		run_shell(su, shell, command, argv + optind, max(0, argc - optind));

@@ -10,6 +10,7 @@ libfdisk.so.1 libfdisk1 #MINVER#
  FDISK_2.33@FDISK_2.33 2.33
  FDISK_2.35@FDISK_2.35 2.35
  FDISK_2.36@FDISK_2.36 2.36
+ FDISK_2.38@FDISK_2.38 2.38
  fdisk_add_partition@FDISK_2.26 2.26.2
  fdisk_align_lba@FDISK_2.26 2.26.2
  fdisk_align_lba_in_range@FDISK_2.26 2.26.2
@@ -57,6 +58,7 @@ libfdisk.so.1 libfdisk1 #MINVER#
  fdisk_device_is_used@FDISK_2.31 2.31.1
  fdisk_disable_dialogs@FDISK_2.31 2.31.1
  fdisk_dos_enable_compatible@FDISK_2.26 2.26.2
+ fdisk_dos_fix_chs@FDISK_2.38 2.38
  fdisk_dos_is_compatible@FDISK_2.26 2.26.2
  fdisk_dos_move_begin@FDISK_2.26 2.26.2
  fdisk_enable_bootbits_protection@FDISK_2.27 2.26.2

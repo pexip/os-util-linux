@@ -13,9 +13,12 @@ set -u
 #set -x
 
 PACKAGES="util-linux bsdutils mount"
-# 10k should be large enough to not trigger false positives. Bump this
-# up if needed.
-CHUNKSIZELIMIT="10000"
+# 80k should be large enough to not trigger false positives. Bump this
+# up if needed. Andreas committed this with 10k, and it was fine until
+# July 2022 on arm* architectures. Suddenly an empty chunk of 56k size
+# appeared in /bin/dmesg. In the interest of having util-linux migrate
+# to testing, Chris has increased this limit and mailed the arm porters.
+CHUNKSIZELIMIT="80000"
 
 CURRENT=""
 LAST=""
@@ -53,6 +56,7 @@ do
 		#echo "I: Both start and stop should now be located." >&2
 		STOP="${CURRENT[0]}"
 		CHUNKSIZE=$(chunk_size "$START" "$STOP")
+		echo "I: file $FILE has empty chunk starting at $START sized $CHUNKSIZE"
 		if [ "$CHUNKSIZE" -gt "$CHUNKSIZELIMIT" ]; then
 			echo "E: oversized chunk found in $FILE !"
 			((RET++))

@@ -8,6 +8,9 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <errno.h>
+#include <time.h>
+
+#include "c.h"
 
 /* initialize a custom exit code for all *_or_err functions */
 extern void strutils_set_exitcode(int exit_code);
@@ -16,25 +19,35 @@ extern int parse_size(const char *str, uintmax_t *res, int *power);
 extern int strtosize(const char *str, uintmax_t *res);
 extern uintmax_t strtosize_or_err(const char *str, const char *errmesg);
 
-extern int16_t strtos16_or_err(const char *str, const char *errmesg);
-extern uint16_t strtou16_or_err(const char *str, const char *errmesg);
-extern uint16_t strtox16_or_err(const char *str, const char *errmesg);
+extern int ul_strtos64(const char *str, int64_t *num, int base);
+extern int ul_strtou64(const char *str, uint64_t *num, int base);
+extern int ul_strtos32(const char *str, int32_t *num, int base);
+extern int ul_strtou32(const char *str, uint32_t *num, int base);
 
-extern int32_t strtos32_or_err(const char *str, const char *errmesg);
-extern uint32_t strtou32_or_err(const char *str, const char *errmesg);
-extern uint32_t strtox32_or_err(const char *str, const char *errmesg);
+extern int64_t str2num_or_err(const char *str, int base, const char *errmesg, int64_t low, int64_t up);
+extern uint64_t str2unum_or_err(const char *str, int base, const char *errmesg, uint64_t up);
 
-extern int64_t strtos64_or_err(const char *str, const char *errmesg);
-extern uint64_t strtou64_or_err(const char *str, const char *errmesg);
-extern uint64_t strtox64_or_err(const char *str, const char *errmesg);
+#define strtos64_or_err(_s, _e)	str2num_or_err(_s, 10, _e, 0, 0)
+#define strtou64_or_err(_s, _e)	str2unum_or_err(_s, 10, _e, 0)
+#define strtox64_or_err(_s, _e)	str2unum_or_err(_s, 16, _e, 0)
+
+#define strtos32_or_err(_s, _e)	(int32_t) str2num_or_err(_s, 10, _e, INT32_MIN, INT32_MAX)
+#define strtou32_or_err(_s, _e)	(uint32_t) str2unum_or_err(_s, 10, _e, UINT32_MAX)
+#define strtox32_or_err(_s, _e)	(uint32_t) str2unum_or_err(_s, 16, _e, UINT32_MAX)
+
+#define strtos16_or_err(_s, _e)	(int16_t) str2num_or_err(_s, 10, _e, INT16_MIN, INT16_MAX)
+#define strtou16_or_err(_s, _e)	(uint16_t) str2unum_or_err(_s, 10, _e, UINT16_MAX)
+#define strtox16_or_err(_s, _e)	(uint16_t) str2unum_or_err(_s, 16, _e, UINT16_MAX)
 
 extern double strtod_or_err(const char *str, const char *errmesg);
+extern long double strtold_or_err(const char *str, const char *errmesg);
 
 extern long strtol_or_err(const char *str, const char *errmesg);
 extern unsigned long strtoul_or_err(const char *str, const char *errmesg);
 
 extern void strtotimeval_or_err(const char *str, struct timeval *tv,
 		const char *errmesg);
+extern time_t strtotime_or_err(const char *str, const char *errmesg);
 
 extern int isdigit_strend(const char *str, const char **end);
 #define isdigit_string(_s)	isdigit_strend(_s, NULL)
@@ -61,8 +74,13 @@ extern char *strnchr(const char *s, size_t maxlen, int c);
 /* caller guarantees n > 0 */
 static inline void xstrncpy(char *dest, const char *src, size_t n)
 {
-	strncpy(dest, src, n-1);
-	dest[n-1] = 0;
+	size_t len = src ? strlen(src) : 0;
+
+	if (!len)
+		return;
+	len = min(len, n - 1);
+	memcpy(dest, src, len);
+	dest[len] = 0;
 }
 
 /* This is like strncpy(), but based on memcpy(), so compilers and static
@@ -72,7 +90,8 @@ static inline void xstrncpy(char *dest, const char *src, size_t n)
  * Use this function to copy string to logs with fixed sizes (wtmp/utmp. ...)
  * where string terminator is optional.
  */
-static inline void *str2memcpy(void *dest, const char *src, size_t n)
+static inline void * __attribute__((nonnull (1)))
+str2memcpy(void *dest, const char *src, size_t n)
 {
 	size_t bytes = strlen(src) + 1;
 
@@ -83,13 +102,14 @@ static inline void *str2memcpy(void *dest, const char *src, size_t n)
 	return dest;
 }
 
-static inline char *mem2strcpy(char *dest, const void *src, size_t n, size_t nmax)
+static inline char * __attribute__((nonnull (1)))
+mem2strcpy(char *dest, const void *src, size_t n, size_t nmax)
 {
 	if (n + 1 > nmax)
 		n = nmax - 1;
 
+	memset(dest, '\0', nmax);
 	memcpy(dest, src, n);
-	dest[nmax-1] = '\0';
 	return dest;
 }
 
@@ -303,6 +323,44 @@ static inline size_t ltrim_whitespace(unsigned char *str)
 	return len;
 }
 
+/* Removes left-hand, right-hand and repeating whitespaces.
+ */
+static inline size_t __normalize_whitespace(
+				const unsigned char *src,
+				size_t sz,
+				unsigned char *dst,
+				size_t len)
+{
+	size_t i, x = 0;
+	int nsp = 0, intext = 0;
+
+	if (!sz)
+		goto done;
+
+	for (i = 0, x = 0; i < sz && x < len - 1;  ) {
+		if (isspace(src[i]))
+			nsp++;
+		else
+			nsp = 0, intext = 1;
+
+		if (nsp > 1 || (nsp && !intext))
+			i++;
+		else
+			dst[x++] = src[i++];
+	}
+	if (nsp && x > 0)		/* tailing space */
+		x--;
+done:
+	dst[x] = '\0';
+	return x;
+}
+
+static inline size_t normalize_whitespace(unsigned char *str)
+{
+	size_t sz = strlen((char *) str);
+	return __normalize_whitespace(str, sz, str, sz + 1);
+}
+
 static inline void strrep(char *s, int find, int replace)
 {
 	while (s && *s && (s = strchr(s, find)) != NULL)
@@ -322,12 +380,18 @@ static inline void strrem(char *s, int rem)
 	*p = '\0';
 }
 
-extern char *strnappend(const char *s, const char *suffix, size_t b);
-extern char *strappend(const char *s, const char *suffix);
-extern char *strfappend(const char *s, const char *format, ...)
-		 __attribute__ ((__format__ (__printf__, 2, 0)));
+extern char *strnconcat(const char *s, const char *suffix, size_t b);
+extern char *strconcat(const char *s, const char *suffix);
+extern char *strfconcat(const char *s, const char *format, ...)
+		 __attribute__ ((__format__ (__printf__, 2, 3)));
+
+extern int strappend(char **a, const char *b);
+
 extern const char *split(const char **state, size_t *l, const char *separator, int quoted);
 
+extern char *ul_strchr_escaped(const char *s, int c);
+
 extern int skip_fline(FILE *fp);
+extern int ul_stralnumcmp(const char *p1, const char *p2);
 
 #endif

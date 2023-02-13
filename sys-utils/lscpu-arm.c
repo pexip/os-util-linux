@@ -22,6 +22,7 @@
  *  - Linux kernel: arch/armX/include/asm/cputype.h
  *  - GCC sources: config/arch/arch-cores.def
  *  - Ancient wisdom
+ *  - SMBIOS tables (if applicable)
  */
 #include "lscpu.h"
 
@@ -78,8 +79,14 @@ static const struct id_part arm_part[] = {
     { 0xd13, "Cortex-R52" },
     { 0xd20, "Cortex-M23" },
     { 0xd21, "Cortex-M33" },
+    { 0xd40, "Neoverse-V1" },
     { 0xd41, "Cortex-A78" },
     { 0xd42, "Cortex-A78AE" },
+    { 0xd44, "Cortex-X1" },
+    { 0xd46, "Cortex-510" },
+    { 0xd47, "Cortex-710" },
+    { 0xd48, "Cortex-X2" },
+    { 0xd49, "Neoverse-N2" },
     { 0xd4a, "Neoverse-E1" },
     { 0xd4b, "Cortex-A78C" },
     { -1, "unknown" },
@@ -146,6 +153,12 @@ static const struct id_part marvell_part[] = {
     { -1, "unknown" },
 };
 
+static const struct id_part apple_part[] = {
+    { 0x022, "Icestorm" },
+    { 0x023, "Firestorm" },
+    { -1, "unknown" },
+};
+
 static const struct id_part faraday_part[] = {
     { 0x526, "FA526" },
     { 0x626, "FA626" },
@@ -187,6 +200,14 @@ static const struct id_part hisi_part[] = {
     { -1, "unknown" },
 };
 
+static const struct id_part ft_part[] = {
+    { 0x660, "FTC660" },
+    { 0x661, "FTC661" },
+    { 0x662, "FTC662" },
+    { 0x663, "FTC663" },
+    { -1, "unknown" },
+};
+
 static const struct id_part unknown_part[] = {
     { -1, "unknown" },
 };
@@ -204,71 +225,147 @@ static const struct hw_impl hw_implementer[] = {
     { 0x44, dec_part,     "DEC" },
     { 0x46, fujitsu_part, "FUJITSU" },
     { 0x48, hisi_part,    "HiSilicon" },
-    { 0x4e, nvidia_part,  "Nvidia" },
+    { 0x49, unknown_part, "Infineon" },
+    { 0x4d, unknown_part, "Motorola/Freescale" },
+    { 0x4e, nvidia_part,  "NVIDIA" },
     { 0x50, apm_part,     "APM" },
     { 0x51, qcom_part,    "Qualcomm" },
     { 0x53, samsung_part, "Samsung" },
     { 0x56, marvell_part, "Marvell" },
+    { 0x61, apple_part,   "Apple" },
     { 0x66, faraday_part, "Faraday" },
     { 0x69, intel_part,   "Intel" },
+    { 0x70, ft_part,      "Phytium" },
+    { 0xc0, unknown_part, "Ampere" },
     { -1,   unknown_part, "unknown" },
 };
 
-void arm_cpu_decode(struct lscpu_desc *desc)
+static int parse_id(const char *str)
 {
-	int j, impl, part;
+	int id;
+	char *end = NULL;
+
+	if (!str || strncmp(str, "0x",2) != 0)
+		return -EINVAL;
+
+	errno = 0;
+	id = (int) strtol(str, &end, 0);
+	if (errno || str == end)
+		return -EINVAL;
+
+	return id;
+}
+
+#define parse_model_id(_cxt)		(parse_id((_cxt)->model))
+
+static inline int parse_implementer_id(struct lscpu_cputype *ct)
+{
+	if (ct->vendor_id)
+		return ct->vendor_id;
+	ct->vendor_id = parse_id(ct->vendor);
+	return ct->vendor_id;
+}
+
+/*
+ * Use model and vendor IDs to decode to human readable names.
+ */
+static int arm_ids_decode(struct lscpu_cputype *ct)
+{
+	int impl, part, j;
 	const struct id_part *parts = NULL;
-	char *end;
 
-	if (desc->vendor == NULL || desc->model == NULL)
-		return;
-	if ((strncmp(desc->vendor,"0x",2) != 0 || strncmp(desc->model,"0x",2) ))
-		return;
+	impl = parse_implementer_id(ct);
+	if (impl <= 0)
+		return -EINVAL;	/* no ARM or missing ID */
 
-	errno = 0;
-	impl = (int) strtol(desc->vendor, &end, 0);
-	if (errno || desc->vendor == end)
-		return;
-
-	errno = 0;
-	part = (int) strtol(desc->model, &end, 0);
-	if (errno || desc->model == end)
-		return;
-
+	/* decode vendor */
 	for (j = 0; hw_implementer[j].id != -1; j++) {
 		if (hw_implementer[j].id == impl) {
 			parts = hw_implementer[j].parts;
-			desc->vendor = (char *) hw_implementer[j].name;
+			free(ct->vendor);
+			ct->vendor = xstrdup(hw_implementer[j].name);
 			break;
 		}
 	}
 
-	if (parts == NULL)
-		return;
+	/* decode model */
+	if (!parts)
+		goto done;
+
+	part = parse_model_id(ct);
+	if (part <= 0)
+		goto done;
 
 	for (j = 0; parts[j].id != -1; j++) {
 		if (parts[j].id == part) {
-			desc->modelname = (char *) parts[j].name;
+			free(ct->modelname);
+			ct->modelname = xstrdup(parts[j].name);
 			break;
 		}
 	}
+done:
+	return 0;
+}
 
-	/* Print out the rXpY string for ARM cores */
-	if (impl == 0x41 && desc->revision && desc->stepping) {
-		int revision, variant;
-		char buf[8];
+/* use "rXpY" string as stepping */
+static int arm_rXpY_decode(struct lscpu_cputype *ct)
+{
+	int impl, revision, variant;
+	char *end = NULL;
+	char buf[8];
 
-		errno = 0;
-		revision = (int) strtol(desc->revision, &end, 10);
-		if (errno || desc->revision == end)
-			return;
+	impl = parse_implementer_id(ct);
 
-		errno = 0;
-		variant = (int) strtol(desc->stepping, &end, 0);
-		if (errno || desc->stepping == end)
-			return;
+	if (impl != 0x41 || !ct->revision || !ct->stepping)
+		return -EINVAL;
 
-		snprintf(buf, sizeof(buf), "r%dp%d", variant, revision);
-		desc->stepping = xstrdup(buf);
-	}
+	errno = 0;
+	revision = (int) strtol(ct->revision, &end, 10);
+	if (errno || ct->revision == end)
+		return -EINVAL;
+
+	errno = 0;
+	variant = (int) strtol(ct->stepping, &end, 0);
+	if (errno || ct->stepping == end)
+		return -EINVAL;
+
+	snprintf(buf, sizeof(buf), "r%dp%d", variant, revision);
+	free(ct->stepping);
+	ct->stepping = xstrdup(buf);
+
+	return 0;
+}
+
+static void arm_decode(struct lscpu_cxt *cxt, struct lscpu_cputype *ct)
+{
+	if (!cxt->noalive && access(_PATH_SYS_DMI, R_OK) == 0)
+		dmi_decode_cputype(ct);
+
+	arm_ids_decode(ct);
+	arm_rXpY_decode(ct);
+
+	if (!cxt->noalive && cxt->is_cluster)
+		ct->nr_socket_on_cluster = get_number_of_physical_sockets_from_dmi();
+}
+
+static int is_cluster_arm(struct lscpu_cxt *cxt)
+{
+	struct stat st;
+
+	if (!cxt->noalive
+	    && strcmp(cxt->arch->name, "aarch64") == 0
+	    && stat(_PATH_ACPI_PPTT, &st) < 0 && cxt->ncputypes == 1)
+		return 1;
+	else
+		return 0;
+}
+
+void lscpu_decode_arm(struct lscpu_cxt *cxt)
+{
+	size_t i;
+
+	cxt->is_cluster = is_cluster_arm(cxt);
+
+	for (i = 0; i < cxt->ncputypes; i++)
+		arm_decode(cxt, cxt->cputypes[i]);
 }

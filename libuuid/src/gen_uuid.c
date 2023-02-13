@@ -443,6 +443,7 @@ int __uuid_generate_time(uuid_t out, int *num)
 static int uuid_generate_time_generic(uuid_t out) {
 #ifdef HAVE_TLS
 	THREAD_LOCAL int		num = 0;
+	THREAD_LOCAL int		cache_size = 1;
 	THREAD_LOCAL struct uuid	uu;
 	THREAD_LOCAL time_t		last_time = 0;
 	time_t				now;
@@ -453,7 +454,15 @@ static int uuid_generate_time_generic(uuid_t out) {
 			num = 0;
 	}
 	if (num <= 0) {
-		num = 1000;
+		/*
+		 * num + OP_BULK provides a local cache in each application.
+		 * Start with a small cache size to cover short running applications
+		 * and increment the cache size over the runntime.
+		 */
+		if (cache_size < 1000000)
+			cache_size *= 10;
+		num = cache_size;
+
 		if (get_uuid_via_daemon(UUIDD_OP_BULK_TIME_UUID,
 					out, &num) == 0) {
 			last_time = time(NULL);
@@ -499,11 +508,11 @@ int uuid_generate_time_safe(uuid_t out)
 }
 
 
-void __uuid_generate_random(uuid_t out, int *num)
+int __uuid_generate_random(uuid_t out, int *num)
 {
 	uuid_t	buf;
 	struct uuid uu;
-	int i, n;
+	int i, n, r = 0;
 
 	if (!num || !*num)
 		n = 1;
@@ -511,7 +520,8 @@ void __uuid_generate_random(uuid_t out, int *num)
 		n = *num;
 
 	for (i = 0; i < n; i++) {
-		ul_random_get_bytes(buf, sizeof(buf));
+		if (ul_random_get_bytes(buf, sizeof(buf)))
+			r = -1;
 		uuid_unpack(buf, &uu);
 
 		uu.clock_seq = (uu.clock_seq & 0x3FFF) | 0x8000;
@@ -520,6 +530,8 @@ void __uuid_generate_random(uuid_t out, int *num)
 		uuid_pack(&uu, out);
 		out += sizeof(uuid_t);
 	}
+
+	return r;
 }
 
 void uuid_generate_random(uuid_t out)
@@ -531,27 +543,15 @@ void uuid_generate_random(uuid_t out)
 }
 
 /*
- * Check whether good random source (/dev/random or /dev/urandom)
- * is available.
- */
-static int have_random_source(void)
-{
-	return (access("/dev/random", R_OK) == 0 ||
-		access("/dev/urandom", R_OK) == 0);
-}
-
-
-/*
- * This is the generic front-end to uuid_generate_random and
- * uuid_generate_time.  It uses uuid_generate_random only if
- * /dev/urandom is available, since otherwise we won't have
- * high-quality randomness.
+ * This is the generic front-end to __uuid_generate_random and
+ * uuid_generate_time.  It uses __uuid_generate_random output
+ * only if high-quality randomness is available.
  */
 void uuid_generate(uuid_t out)
 {
-	if (have_random_source())
-		uuid_generate_random(out);
-	else
+	int num = 1;
+
+	if (__uuid_generate_random(out, &num))
 		uuid_generate_time(out);
 }
 

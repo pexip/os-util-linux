@@ -45,6 +45,9 @@
 /* Define to 1 if you have the `clock_gettime' function. */
 #undef HAVE_CLOCK_GETTIME
 
+/* Define to 1 if you have the `close_range' function. */
+#undef HAVE_CLOSE_RANGE
+
 /* Define to 1 if the system has the type `cpu_set_t'. */
 #undef HAVE_CPU_SET_T
 
@@ -60,6 +63,10 @@
 /* Define if the GNU dcgettext() function is already present or preinstalled.
    */
 #undef HAVE_DCGETTEXT
+
+/* Define to 1 if you have the declaration of `BLK_ZONE_REP_CAPACITY', and to
+   0 if you don't. */
+#undef HAVE_DECL_BLK_ZONE_REP_CAPACITY
 
 /* Define to 1 if you have the declaration of `CPU_ALLOC', and to 0 if you
    don't. */
@@ -116,9 +123,6 @@
 /* Define to 1 if you have the <fcntl.h> header file. */
 #undef HAVE_FCNTL_H
 
-/* Define to 1 if you have the `fmemopen' function. */
-#undef HAVE_FMEMOPEN
-
 /* Define to 1 if you have the `fpurge' function. */
 #undef HAVE_FPURGE
 
@@ -160,6 +164,9 @@
 
 /* Define if the GNU gettext() function is already present or preinstalled. */
 #undef HAVE_GETTEXT
+
+/* Define to 1 if you have the `getttynam' function. */
+#undef HAVE_GETTTYNAM
 
 /* Define to 1 if you have the `getusershell' function. */
 #undef HAVE_GETUSERSHELL
@@ -203,6 +210,9 @@
 /* Define to 1 if you have the `lchown' function. */
 #undef HAVE_LCHOWN
 
+/* Define to 1 if you have the `lgetxattr' function. */
+#undef HAVE_LGETXATTR
+
 /* Define to 1 if you have the `audit' library (-laudit). */
 #undef HAVE_LIBAUDIT
 
@@ -211,9 +221,6 @@
 
 /* Define to 1 if you have the `cap-ng' library (-lcap-ng). */
 #undef HAVE_LIBCAP_NG
-
-/* Do we need -lcrypt? */
-#undef HAVE_LIBCRYPT
 
 /* Define if libeconf is available */
 #undef HAVE_LIBECONF
@@ -284,17 +291,29 @@
 /* Define to 1 if you have the <linux/fd.h> header file. */
 #undef HAVE_LINUX_FD_H
 
+/* Define to 1 if you have the <linux/fiemap.h> header file. */
+#undef HAVE_LINUX_FIEMAP_H
+
 /* Define to 1 if you have the <linux/fs.h> header file. */
 #undef HAVE_LINUX_FS_H
 
 /* Define to 1 if you have the <linux/gsmmux.h> header file. */
 #undef HAVE_LINUX_GSMMUX_H
 
+/* Define to 1 if you have the <linux/if_alg.h> header file. */
+#undef HAVE_LINUX_IF_ALG_H
+
+/* Define to 1 if you have the <linux/kcmp.h> header file. */
+#undef HAVE_LINUX_KCMP_H
+
 /* Define to 1 if you have the <linux/major.h> header file. */
 #undef HAVE_LINUX_MAJOR_H
 
 /* Define to 1 if you have the <linux/net_namespace.h> header file. */
 #undef HAVE_LINUX_NET_NAMESPACE_H
+
+/* Define to 1 if you have the <linux/nsfs.h> header file. */
+#undef HAVE_LINUX_NSFS_H
 
 /* Define to 1 if you have the <linux/raw.h> header file. */
 #undef HAVE_LINUX_RAW_H
@@ -311,6 +330,9 @@
 /* Define to 1 if you have the <linux/watchdog.h> header file. */
 #undef HAVE_LINUX_WATCHDOG_H
 
+/* Define to 1 if you have the `llistxattr' function. */
+#undef HAVE_LLISTXATTR
+
 /* Define to 1 if you have the `llseek' function. */
 #undef HAVE_LLSEEK
 
@@ -323,11 +345,11 @@
 /* Define to 1 if you have the libmagic present. */
 #undef HAVE_MAGIC
 
-/* Define to 1 if you have the <memory.h> header file. */
-#undef HAVE_MEMORY_H
-
 /* Define to 1 if you have the `mempcpy' function. */
 #undef HAVE_MEMPCPY
+
+/* Define to 1 if you have the <minix/config.h> header file. */
+#undef HAVE_MINIX_CONFIG_H
 
 /* Define to 1 if you have the `mkostemp' function. */
 #undef HAVE_MKOSTEMP
@@ -362,6 +384,9 @@
 /* Define to 1 if you have the <net/if.h> header file. */
 #undef HAVE_NET_IF_H
 
+/* Define to 1 if you have the `newlocale' function. */
+#undef HAVE_NEWLOCALE
+
 /* Define to 1 if you have the `ntp_gettime' function. */
 #undef HAVE_NTP_GETTIME
 
@@ -373,9 +398,6 @@
 
 /* Define to 1 if you have the <paths.h> header file. */
 #undef HAVE_PATHS_H
-
-/* Define if libpcre2 is available */
-#undef HAVE_PCRE
 
 /* Define to 1 if you have the `personality' function. */
 #undef HAVE_PERSONALITY
@@ -395,7 +417,7 @@
 /* Define to 1 if you have the `prctl' function. */
 #undef HAVE_PRCTL
 
-/* Define to 1 if you have the `prlimit' function. */
+/* Have valid prlimit() function */
 #undef HAVE_PRLIMIT
 
 /* Define if program_invocation_short_name is defined */
@@ -446,10 +468,13 @@
 /* Define to 1 if you have the <security/pam_misc.h> header file. */
 #undef HAVE_SECURITY_PAM_MISC_H
 
+/* Define to 1 if you have the `sendfile' function. */
+#undef HAVE_SENDFILE
+
 /* Define to 1 if you have the `setitimer' function. */
 #undef HAVE_SETITIMER
 
-/* Define to 1 if you have the `setns' function. */
+/* Have valid setns() function */
 #undef HAVE_SETNS
 
 /* Define to 1 if you have the `setprogname' function. */
@@ -494,6 +519,9 @@
 /* Define to 1 if you have the <stdio_ext.h> header file. */
 #undef HAVE_STDIO_EXT_H
 
+/* Define to 1 if you have the <stdio.h> header file. */
+#undef HAVE_STDIO_H
+
 /* Define to 1 if you have the <stdlib.h> header file. */
 #undef HAVE_STDLIB_H
 
@@ -514,6 +542,9 @@
 
 /* Define to 1 if have strsignal function prototype */
 #undef HAVE_STRSIGNAL_DECL
+
+/* Define to 1 if you have the `strtod_l' function. */
+#undef HAVE_STRTOD_L
 
 /* Define to 1 if `st_mtim.tv_nsec' is a member of `struct stat'. */
 #undef HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
@@ -572,6 +603,9 @@
 /* Define to 1 if you have the <sys/resource.h> header file. */
 #undef HAVE_SYS_RESOURCE_H
 
+/* Define to 1 if you have the <sys/sendfile.h> header file. */
+#undef HAVE_SYS_SENDFILE_H
+
 /* Define to 1 if you have the <sys/signalfd.h> header file. */
 #undef HAVE_SYS_SIGNALFD_H
 
@@ -611,6 +645,9 @@
 /* Define to 1 if you have the <sys/un.h> header file. */
 #undef HAVE_SYS_UN_H
 
+/* Define to 1 if you have the <sys/xattr.h> header file. */
+#undef HAVE_SYS_XATTR_H
+
 /* Define to 1 if you have the <term.h> header file. */
 #undef HAVE_TERM_H
 
@@ -643,11 +680,14 @@
 /* Define to 1 if you have the `unlinkat' function. */
 #undef HAVE_UNLINKAT
 
-/* Define to 1 if you have the `unshare' function. */
+/* Have valid unshare() function */
 #undef HAVE_UNSHARE
 
 /* Define to 1 if you have the `updwtmpx' function. */
 #undef HAVE_UPDWTMPX
+
+/* Define to 1 if you have the `uselocale' function. */
+#undef HAVE_USELOCALE
 
 /* Define if curses library has the use_default_colors(). */
 #undef HAVE_USE_DEFAULT_COLORS
@@ -675,6 +715,9 @@
 
 /* Define to 1 if you have the `warnx' function. */
 #undef HAVE_WARNX
+
+/* Define to 1 if you have the <wchar.h> header file. */
+#undef HAVE_WCHAR_H
 
 /* Do we have wide character support? */
 #undef HAVE_WIDECHAR
@@ -748,8 +791,13 @@
 /* Should pg ring the bell on invalid keys? */
 #undef PG_BELL
 
-/* Define to 1 if you have the ANSI C header files. */
+/* Define to 1 if all of the C90 standard headers exist (not just the ones
+   required in a freestanding environment). This macro is provided for
+   backward compatibility; new code need not use it. */
 #undef STDC_HEADERS
+
+/* Fallback syscall number for close_range */
+#undef SYS_close_range
 
 /* Fallback syscall number for fallocate */
 #undef SYS_fallocate
@@ -811,28 +859,97 @@
 /* Enable plymouth support feature for sulogin and aggety */
 #undef USE_PLYMOUTH_SUPPORT
 
-/* Should sulogin use a emergency mount of /dev and /proc? */
+/* Should sulogin use an emergency mount of /dev and /proc? */
 #undef USE_SULOGIN_EMERGENCY_MOUNT
+
+/* Define if systemd support is wanted */
+#undef USE_SYSTEMD
 
 /* Enable extensions on AIX 3, Interix.  */
 #ifndef _ALL_SOURCE
 # undef _ALL_SOURCE
 #endif
+/* Enable general extensions on macOS.  */
+#ifndef _DARWIN_C_SOURCE
+# undef _DARWIN_C_SOURCE
+#endif
+/* Enable general extensions on Solaris.  */
+#ifndef __EXTENSIONS__
+# undef __EXTENSIONS__
+#endif
 /* Enable GNU extensions on systems that have them.  */
 #ifndef _GNU_SOURCE
 # undef _GNU_SOURCE
 #endif
-/* Enable threading extensions on Solaris.  */
+/* Enable X/Open compliant socket functions that do not require linking
+   with -lxnet on HP-UX 11.11.  */
+#ifndef _HPUX_ALT_XOPEN_SOCKET_API
+# undef _HPUX_ALT_XOPEN_SOCKET_API
+#endif
+/* Identify the host operating system as Minix.
+   This macro does not affect the system headers' behavior.
+   A future release of Autoconf may stop defining this macro.  */
+#ifndef _MINIX
+# undef _MINIX
+#endif
+/* Enable general extensions on NetBSD.
+   Enable NetBSD compatibility extensions on Minix.  */
+#ifndef _NETBSD_SOURCE
+# undef _NETBSD_SOURCE
+#endif
+/* Enable OpenBSD compatibility extensions on NetBSD.
+   Oddly enough, this does nothing on OpenBSD.  */
+#ifndef _OPENBSD_SOURCE
+# undef _OPENBSD_SOURCE
+#endif
+/* Define to 1 if needed for POSIX-compatible behavior.  */
+#ifndef _POSIX_SOURCE
+# undef _POSIX_SOURCE
+#endif
+/* Define to 2 if needed for POSIX-compatible behavior.  */
+#ifndef _POSIX_1_SOURCE
+# undef _POSIX_1_SOURCE
+#endif
+/* Enable POSIX-compatible threading on Solaris.  */
 #ifndef _POSIX_PTHREAD_SEMANTICS
 # undef _POSIX_PTHREAD_SEMANTICS
+#endif
+/* Enable extensions specified by ISO/IEC TS 18661-5:2014.  */
+#ifndef __STDC_WANT_IEC_60559_ATTRIBS_EXT__
+# undef __STDC_WANT_IEC_60559_ATTRIBS_EXT__
+#endif
+/* Enable extensions specified by ISO/IEC TS 18661-1:2014.  */
+#ifndef __STDC_WANT_IEC_60559_BFP_EXT__
+# undef __STDC_WANT_IEC_60559_BFP_EXT__
+#endif
+/* Enable extensions specified by ISO/IEC TS 18661-2:2015.  */
+#ifndef __STDC_WANT_IEC_60559_DFP_EXT__
+# undef __STDC_WANT_IEC_60559_DFP_EXT__
+#endif
+/* Enable extensions specified by ISO/IEC TS 18661-4:2015.  */
+#ifndef __STDC_WANT_IEC_60559_FUNCS_EXT__
+# undef __STDC_WANT_IEC_60559_FUNCS_EXT__
+#endif
+/* Enable extensions specified by ISO/IEC TS 18661-3:2015.  */
+#ifndef __STDC_WANT_IEC_60559_TYPES_EXT__
+# undef __STDC_WANT_IEC_60559_TYPES_EXT__
+#endif
+/* Enable extensions specified by ISO/IEC TR 24731-2:2010.  */
+#ifndef __STDC_WANT_LIB_EXT2__
+# undef __STDC_WANT_LIB_EXT2__
+#endif
+/* Enable extensions specified by ISO/IEC 24747:2009.  */
+#ifndef __STDC_WANT_MATH_SPEC_FUNCS__
+# undef __STDC_WANT_MATH_SPEC_FUNCS__
 #endif
 /* Enable extensions on HP NonStop.  */
 #ifndef _TANDEM_SOURCE
 # undef _TANDEM_SOURCE
 #endif
-/* Enable general extensions on Solaris.  */
-#ifndef __EXTENSIONS__
-# undef __EXTENSIONS__
+/* Enable X/Open extensions.  Define to 500 only if necessary
+   to make mbstate_t available.  */
+#ifndef _XOPEN_SOURCE
+# undef _XOPEN_SOURCE
 #endif
 
 
@@ -863,11 +980,6 @@
 /* Enable MAP_ANON in sys/mman.h on Mac OS X */
 #undef _DARWIN_C_SOURCE
 
-/* Enable large inode numbers on Mac OS X 10.5.  */
-#ifndef _DARWIN_USE_64_BIT_INODE
-# define _DARWIN_USE_64_BIT_INODE 1
-#endif
-
 /* Number of bits in a file offset, on hosts where this is settable. */
 #undef _FILE_OFFSET_BITS
 
@@ -876,16 +988,6 @@
 
 /* Define for large files, on AIX-style hosts. */
 #undef _LARGE_FILES
-
-/* Define to 1 if on MINIX. */
-#undef _MINIX
-
-/* Define to 2 if the system does not provide POSIX.1 features except with
-   this defined. */
-#undef _POSIX_1_SOURCE
-
-/* Define to 1 if you need to in order for `stat' and other things to work. */
-#undef _POSIX_SOURCE
 
 /* Define to empty if `const' does not conform to ANSI C. */
 #undef const

@@ -188,28 +188,6 @@ static void init_output(struct wipe_control *ctl)
 
 static void finalize_output(struct wipe_control *ctl)
 {
-	if (ctl->parsable && !ctl->no_headings
-	    && !scols_table_is_empty(ctl->outtab)) {
-		struct libscols_iter *itr = scols_new_iter(SCOLS_ITER_FORWARD);
-		struct libscols_column *cl;
-		int i = 0;
-
-		if (!itr)
-			err_oom();
-
-		fputs("# ", stdout);
-		while (scols_table_next_column(ctl->outtab, itr, &cl) == 0) {
-			struct libscols_cell *hdr = scols_column_get_header(cl);
-			const char *name = scols_cell_get_data(hdr);
-
-			if (i)
-				fputc(',', stdout);
-			fputs(name, stdout);
-			i++;
-		}
-		fputc('\n', stdout);
-		scols_free_iter(itr);
-	}
 	scols_print_table(ctl->outtab);
 	scols_unref_table(ctl->outtab);
 }
@@ -334,7 +312,10 @@ static struct wipe_desc *get_desc_for_probe(struct wipe_control *ctl,
 	} else
 		return NULL;
 
+	errno = 0;
 	*offset = strtoll(off, NULL, 10);
+	if (errno)
+		return NULL;
 
 	/* Filter out by -t <type> */
 	if (ctl->type_pattern && !match_fstype(type, ctl->type_pattern))
@@ -521,7 +502,7 @@ static void rereadpt(int fd, const char *devname)
 		 * without delay is uncuccesful. The reason is probably kernel
 		 * and/or udevd.  Let's wait a moment and try more attempts.
 		 */
-		xusleep(25000);
+		xusleep(250000);
 
 		errno = 0;
 		ioctl(fd, BLKRRPART);
@@ -684,6 +665,7 @@ main(int argc, char **argv)
 {
 	struct wipe_control ctl = { .devname = NULL };
 	int c;
+	size_t i;
 	char *outarg = NULL;
 	enum {
 		OPT_LOCK = CHAR_MAX + 1,
@@ -835,7 +817,7 @@ main(int argc, char **argv)
 		/* Re-read partition tables on whole-disk devices. This is
 		 * postponed until all is done to avoid conflicts.
 		 */
-		for (size_t i = 0; i < ctl.nrereads; i++) {
+		for (i = 0; i < ctl.nrereads; i++) {
 			char *devname = ctl.reread[i];
 			int fd = open(devname, O_RDONLY);
 

@@ -1,11 +1,248 @@
-util-linux (2.36.1-8+deb11u1) bullseye-security; urgency=high
+util-linux (2.38.1-5) unstable; urgency=medium
 
-  * Non-maintainer upload by the Security Team.
-  * include/strutils: Add ul_strtou64() function
-  * libmount: fix UID check for FUSE umount [CVE-2021-3995]
-  * libmount: fix (deleted) suffix issue [CVE-2021-3996]
+  * Apply upstream patch to fix logger timestamp for stdin (Closes: #1030285)
 
- -- Salvatore Bonaccorso <carnil@debian.org>  Thu, 20 Jan 2022 21:10:35 +0100
+ -- Chris Hofstaedtler <zeha@debian.org>  Mon, 13 Feb 2023 08:48:21 +0000
+
+util-linux (2.38.1-4) unstable; urgency=medium
+
+  [ Helmut Grohne ]
+  * Build-Depend on libcrypt-dev explicitly (Closes: #1024794)
+
+  [ Chris Hofstaedtler ]
+  * script: abort if unused arguments given (Closes: #1016193)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Fri, 25 Nov 2022 15:19:08 +0000
+
+util-linux (2.38.1-3) unstable; urgency=medium
+
+  * Apply "rfkill: (man) List options for supported device types"
+    (Closes: #1019007)
+  * Apply "lib/pty: Put master PTY into non-blocking mode and buffer its output to avoid deadlock"
+    (Closes: #1003095)
+  * Gift /var/lib/libuuid to uuid-runtime.  uuidd should be its only user, and
+    this should avoid piuparts errors.
+  * Remove pre-stable NEWS entries
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Sat, 19 Nov 2022 15:48:44 +0000
+
+util-linux (2.38.1-2) unstable; urgency=medium
+
+  * Import upstream patches
+    * fsck: Processes may kill other processes.
+    * lscpu: Add Kryo 3XX Gold core
+    * lscpu: Even more Arm part numbers
+    * Remove closing braces in Apple cores names
+    * lscpu: (arm) don't use space in names
+    * lscpu: add missing Apple parts
+    * lscpu: make Apple part names human-friendly
+    * Fix formatting.
+    * Adding Apple core names, distinguish by SoC/SiP name
+    * Add Makalu/Makalu-ELP (A715/X3)
+    * lscpu: Add Snapdragon parts
+    * sfdisk: inform about failed fsync() [coverity scan]
+    * libfdisk: (gpt) don't ignore fsync() errors
+    * sfdisk: improve code readability for coverity scan
+    * libfdisk: make scripts portable between different sector sizes
+    * fdisk: make it more obvious that DOS means MBR
+    * fdisk: fix --output option parsing
+    * kill: Support mandating the presence of a userspace signal handler
+    * lib/procfs: add function to parse /proc/#/stat
+    * lsblk: fix endless loop if device specified more than once
+    * libuuid: check clock value from LIBUUID_CLOCK_FILE
+    * uuidd: fix random UUIDs
+    * libuuid: Implement continuous clock handling for time based UUIDs
+    * lib/path: ul_path_cpuparse: fix parsing of empty sysfs files
+    * libblkid: ntfs: avoid UB in signed shift
+    * libblkid: iso9660: allocate enough space for UTF16 decoding
+  * Make /var/lib/libuuid writable by uuidd (Closes: #1021657)
+  * Add new __uuid_generate_time_cont@UUIDD_PRIVATE symbol
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Wed, 16 Nov 2022 10:32:57 +0000
+
+util-linux (2.38.1-1.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Restore /usr/bin/rename.ul per TC decision in #1003653
+
+ -- Matthew Vernon <matthew@debian.org>  Sat, 08 Oct 2022 14:17:31 +0100
+
+util-linux (2.38.1-1) unstable; urgency=medium
+
+  * New upstream release.
+    * Rebase patches, drop upstream applied patches
+  * uuid-runtime: Quiet adduser warnings.
+    Thanks to Diederik de Haas <didi.debian@cknow.org> (Closes: #1016372)
+  * d/README.source: fix tarball name in example
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Thu, 04 Aug 2022 16:18:17 +0000
+
+util-linux (2.38-6) unstable; urgency=medium
+
+  * autopkgtest: bump oversized-chunk size limit, empty chunks have
+    regressed on arm64, armel, armhf. Cf. #785075
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Thu, 28 Jul 2022 10:28:10 +0000
+
+util-linux (2.38-5) unstable; urgency=medium
+
+  * Use sensible-pager instead of less by default.
+    Adds Recommends: sensible-utils, so sensible-pager is available in
+    default installations. (Closes: #1014368)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Thu, 14 Jul 2022 09:56:00 +0000
+
+util-linux (2.38-4) unstable; urgency=medium
+
+  * Ship empty /var/lib/libuuid again.
+    In 2014 we stopped creating this directory as part of the package. For
+    some more time, this was the home directory of the uuid runtime user,
+    but that got changed to /run/uuidd then. Ship this directory again,
+    as libuuid puts a file there, and since 2.38 the uuidd.service
+    definition also wants to bind-mount it. (Closes: #1009686)
+  * Update libfdisk1, libmount1, libsmartcols1 symbol files
+  * util-linux-extra: fix misc:Pre-Depends mixup in Depends:
+  * Use different method to install lsfd into /usr/bin
+  * Install lsirq into util-linux-extra
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Thu, 14 Apr 2022 11:50:55 +0000
+
+util-linux (2.38-3) unstable; urgency=medium
+
+  * Update fdisk test data for ppc64le, fixing FTBFS there.
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Wed, 13 Apr 2022 20:33:06 +0000
+
+util-linux (2.38-2) unstable; urgency=medium
+
+  * hardlink tests: set known failed
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Tue, 12 Apr 2022 20:37:24 +0000
+
+util-linux (2.38-1) unstable; urgency=medium
+
+  * New upstream release.
+    * Rebase patches, drop upstream applied patches
+  * Introduce util-linux-extra binary package with Priority: standard,
+    which I expect to move a number of programs from util-linux to
+    in the future. For upgrade considerations, this is pseudo-Essential.
+  * Move fincore, hwclock to util-linux-extra.
+  * tests/functions.sh: Use non-deprecated chown syntax (Closes: #1007139)
+  * Install lsfd into util-linux-extra (Closes: #1009284)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Tue, 12 Apr 2022 15:49:35 +0000
+
+util-linux (2.37.3-1) unstable; urgency=medium
+
+  * New upstream release:
+    * libmount: fix UID check for FUSE umount, fixes CVE-2021-3995
+    * libmount: fix (deleted) suffix issue, fixes CVE-2021-3996
+  * d/bsdextrautils.install: remove useless use of dh-exec
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Mon, 24 Jan 2022 13:25:57 +0000
+
+util-linux (2.37.2-6) unstable; urgency=medium
+
+  * Import upstream patch to make agetty and systemd v250 play nice.
+    Fixes: #1003595
+    Thanks to Sven Joachim
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Wed, 12 Jan 2022 12:07:45 +0000
+
+util-linux (2.37.2-5) unstable; urgency=medium
+
+  * Stop supporting alternatives for /usr/bin/write (Closes: #995667)
+  * Install disabled logcheck file for util-linux.
+    I do not feel comfortable enough to install this by default (and also
+    it would be a new conffile). Users can symlink it. (Closes: #997822)
+  * Update copyright file (Closes: #990067)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Fri, 24 Dec 2021 12:41:50 +0000
+
+util-linux (2.37.2-4) unstable; urgency=medium
+
+  [ Debian Janitor ]
+  * Use secure URI in Homepage field.
+  * Remove 1 obsolete maintscript entry.
+  * Re-export upstream signing key without extra signatures.
+
+  [ Chris Hofstaedtler ]
+  * Add upstream-applied patches for requested features
+    * Use more passive wording in hardlink.1
+    * fallocate: Let user choose larger buffers for IO reading
+    * Update HiFive partition names
+      Thanks to Alexandre Ghiti, Eduard Bloch (Closes: #994941)
+    * more: add upstream patch for "Erase line before writing the filename"
+      Thanks to Vincent Smeets (Closes: #992516)
+  * Apply upstream patch to remove accidental nbsp from blockdev output
+    (Closes: #996751)
+  * Apply upstreamed patch to fix FTBFS with mkswap on ext3 in cowbuilder.
+    Thanks to Mark Hindley <mark@hindley.org.uk> (Closes: #996764)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Tue, 19 Oct 2021 14:02:14 +0000
+
+util-linux (2.37.2-3) unstable; urgency=medium
+
+  * Disable --enable-raw (Closes: #994798)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Tue, 21 Sep 2021 12:58:03 +0000
+
+util-linux (2.37.2-2) unstable; urgency=medium
+
+  [ Chris Hofstaedtler ]
+  * Take over hardlink binary (Closes: #992498)
+  * Tidy up installed example files
+
+  [ Luca Boccassi ]
+  * Build with libcryptsetup-dev in dlopen mode to enable dm-verity.
+    Re-enable dm-verity support. Use the new dlopen configure flag, so that
+    instead of linking against libcryptsetup.so, it is loaded dynamically
+    at runtime, and only if the verity feature options (-o verity...) are
+    used, to avoid the dependency on the libcryptsetup package being pulled
+    in unconditionally. Add it as a Suggests on cryptsetup-bin.
+    (Closes: #951048)
+
+  [ Chris Hofstaedtler ]
+  * Remove obsolete upgrade code
+  * Introduce pkg.util-linux.noverity build profile, disables dm-verity
+    support. Add debian/README.build-profiles.
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Sun, 05 Sep 2021 15:15:21 +0000
+
+util-linux (2.37.2-1) unstable; urgency=medium
+
+  [ Chris Hofstaedtler ]
+  * Update to upstream version 2.37.2, rebase patches
+    * Skip lsns/ioctl_ns test if unshare fails
+    * Stop installing fdformat, following upstream
+    * Follow upstream rename of getopt examples
+    * libblkid1: update symbols
+    * libmount1: update symbols
+    * Install new uclampset binary
+  * Depend on asciidoctor for man pages.
+    We should figure out how to skip asciidoctor for stage1 builds, as it is
+    not strictly necessary except for some edge cases.
+  * d/copyright: remove non-existing files (Closes: #987942)
+  * d/rules: fix space/tab confusion in stage1 part
+  * Disable GPL3+ parts in hwclock (Closes: #987944)
+  * Explicitly conflict with libedit-dev, causes build failures
+  * Install linux32, linux64 manpages as upstream intended (section 8)
+  * Remove relations that are fulfilled in at least buster
+  * Bump Standards-Version to 4.6.0
+
+  [ Matthias Klose ]
+  * Allow building without udeb packages (Closes: #983557)
+    Tag all *-udeb packages with the !noudeb build-profile to
+    allow building without the udebs.
+
+  [ Andreas Henriksson ]
+  * bsdextrautils: Make shlibs:Depends regular Depends
+    As described in the bug report, bsdextrautils is a normal
+    package (not Essential: yes), so doesn't need to Pre-Depend
+    on libraries. Thanks to Sven Joachim for a keen eye to catch
+    this detail. (Closes: #982557)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Fri, 20 Aug 2021 09:31:11 +0000
 
 util-linux (2.36.1-8) unstable; urgency=medium
 

@@ -415,6 +415,9 @@ static int generate_helper_optstr(struct libmnt_context *cxt, char **optstr)
 		 * string, because there is nothing like MS_EXEC (we only have
 		 * MS_NOEXEC in mount flags and we don't care about the original
 		 * mount string in libmount for VFS options).
+		 *
+		 * This use-case makes sense for MS_SECURE flags only (see
+		 * mnt_optstr_get_flags() and mnt_context_merge_mflags()).
 		 */
 		if (!(cxt->mountflags & MS_NOEXEC))
 			mnt_optstr_append_option(optstr, "exec", NULL);
@@ -422,10 +425,7 @@ static int generate_helper_optstr(struct libmnt_context *cxt, char **optstr)
 			mnt_optstr_append_option(optstr, "suid", NULL);
 		if (!(cxt->mountflags & MS_NODEV))
 			mnt_optstr_append_option(optstr, "dev", NULL);
-		if (!(cxt->mountflags & MS_NOSYMFOLLOW))
-			mnt_optstr_append_option(optstr, "symfollow", NULL);
 	}
-
 
 	if (cxt->flags & MNT_FL_SAVED_USER)
 		rc = mnt_optstr_set_option(optstr, "user", cxt->orig_user);
@@ -645,10 +645,7 @@ static int exec_helper(struct libmnt_context *cxt)
 		const char *args[14], *type;
 		int i = 0;
 
-		if (setgid(getgid()) < 0)
-			_exit(EXIT_FAILURE);
-
-		if (setuid(getuid()) < 0)
+		if (drop_permissions() != 0)
 			_exit(EXIT_FAILURE);
 
 		if (!mnt_context_switch_origin_ns(cxt))
@@ -715,6 +712,7 @@ static int exec_helper(struct libmnt_context *cxt)
 	}
 
 	free(o);
+	free(namespace);
 	return rc;
 }
 
@@ -755,6 +753,29 @@ static int do_mount_additional(struct libmnt_context *cxt,
 	return 0;
 }
 
+static int do_mount_subdir(struct libmnt_context *cxt,
+			   const char *root,
+			   const char *subdir,
+			   const char *target)
+{
+	char *src = NULL;
+	int rc = 0;
+
+	if (asprintf(&src, "%s/%s", root, subdir) < 0)
+		return -ENOMEM;
+
+	DBG(CXT, ul_debugobj(cxt, "mount subdir %s to %s", src, target));
+	if (mount(src, target, NULL, MS_BIND | MS_REC, NULL) != 0)
+		rc = -MNT_ERR_APPLYFLAGS;
+
+	DBG(CXT, ul_debugobj(cxt, "umount old root %s", root));
+	if (umount(root) != 0)
+		rc = -MNT_ERR_APPLYFLAGS;
+
+	free(src);
+	return rc;
+}
+
 /*
  * The default is to use fstype from cxt->fs, this could be overwritten by
  * @try_type argument. If @try_type is specified then mount with MS_SILENT.
@@ -765,7 +786,7 @@ static int do_mount_additional(struct libmnt_context *cxt,
  */
 static int do_mount(struct libmnt_context *cxt, const char *try_type)
 {
-	int rc = 0;
+	int rc = 0, old_ns_fd = -1;
 	const char *src, *target, *type;
 	unsigned long flags;
 
@@ -773,7 +794,7 @@ static int do_mount(struct libmnt_context *cxt, const char *try_type)
 	assert(cxt->fs);
 	assert((cxt->flags & MNT_FL_MOUNTFLAGS_MERGED));
 
-	if (try_type && !cxt->helper) {
+	if (try_type) {
 		rc = mnt_context_prepare_helper(cxt, "mount", try_type);
 		if (rc)
 			return rc;
@@ -808,18 +829,18 @@ static int do_mount(struct libmnt_context *cxt, const char *try_type)
 	if (try_type)
 		flags |= MS_SILENT;
 
-	DBG(CXT, ul_debugobj(cxt, "%smount(2) "
-			"[source=%s, target=%s, type=%s, "
-			" mountflags=0x%08lx, mountdata=%s]",
-			mnt_context_is_fake(cxt) ? "(FAKE) " : "",
-			src, target, type,
-			flags, cxt->mountdata ? "yes" : "<none>"));
 
 	if (mnt_context_is_fake(cxt)) {
 		/*
 		 * fake
 		 */
 		cxt->syscall_status = 0;
+
+		DBG(CXT, ul_debugobj(cxt, "FAKE mount(2) "
+				"[source=%s, target=%s, type=%s, "
+				" mountflags=0x%08lx, mountdata=%s]",
+				src, target, type,
+				flags, cxt->mountdata ? "yes" : "<none>"));
 
 	} else if (mnt_context_propagation_only(cxt)) {
 		/*
@@ -831,13 +852,29 @@ static int do_mount(struct libmnt_context *cxt, const char *try_type)
 		/*
 		 * regular mount
 		 */
+
+		/* create unhared temporary target */
+		if (cxt->subdir) {
+			rc = mnt_tmptgt_unshare(&old_ns_fd);
+			if (rc)
+				return rc;
+			target = MNT_PATH_TMPTGT;
+		}
+
+		DBG(CXT, ul_debugobj(cxt, "mount(2) "
+			"[source=%s, target=%s, type=%s, "
+			" mountflags=0x%08lx, mountdata=%s]",
+			src, target, type,
+			flags, cxt->mountdata ? "yes" : "<none>"));
+
 		if (mount(src, target, type, flags, cxt->mountdata)) {
 			cxt->syscall_status = -errno;
 			DBG(CXT, ul_debugobj(cxt, "mount(2) failed [errno=%d %m]",
 							-cxt->syscall_status));
-			return -cxt->syscall_status;
+			rc = -cxt->syscall_status;
+			goto done;
 		}
-		DBG(CXT, ul_debugobj(cxt, "  success"));
+		DBG(CXT, ul_debugobj(cxt, "  mount(2) success"));
 		cxt->syscall_status = 0;
 
 		/*
@@ -847,7 +884,20 @@ static int do_mount(struct libmnt_context *cxt, const char *try_type)
 		    && do_mount_additional(cxt, target, flags, NULL)) {
 
 			/* TODO: call umount? */
-			return -MNT_ERR_APPLYFLAGS;
+			rc = -MNT_ERR_APPLYFLAGS;
+			goto done;
+		}
+
+		/*
+		 * bind subdir to the real target, umount temporary target
+		 */
+		if (cxt->subdir) {
+			target = mnt_fs_get_target(cxt->fs);
+			rc = do_mount_subdir(cxt, MNT_PATH_TMPTGT, cxt->subdir, target);
+			if (rc)
+				goto done;
+			mnt_tmptgt_cleanup(old_ns_fd);
+			old_ns_fd = -1;
 		}
 	}
 
@@ -857,7 +907,22 @@ static int do_mount(struct libmnt_context *cxt, const char *try_type)
 			rc = mnt_fs_set_fstype(fs, try_type);
 	}
 
+done:
+	if (old_ns_fd >= 0)
+		mnt_tmptgt_cleanup(old_ns_fd);
+
 	return rc;
+}
+
+static int is_success_status(struct libmnt_context *cxt)
+{
+	if (mnt_context_helper_executed(cxt))
+		return mnt_context_get_helper_status(cxt) == 0;
+
+	if (mnt_context_syscall_called(cxt))
+		return mnt_context_get_status(cxt) == 1;
+
+	return 0;
 }
 
 /* try mount(2) for all items in comma separated list of the filesystem @types */
@@ -900,7 +965,7 @@ static int do_mount_by_types(struct libmnt_context *cxt, const char *types)
 			rc = do_mount(cxt, p);
 		p = end ? end + 1 : NULL;
 		free(autotype);
-	} while (!mnt_context_get_status(cxt) && p);
+	} while (!is_success_status(cxt) && p);
 
 	free(p0);
 	return rc;
@@ -943,8 +1008,9 @@ static int do_mount_by_pattern(struct libmnt_context *cxt, const char *pattern)
 		return -MNT_ERR_NOFSTYPE;
 
 	for (fp = filesystems; *fp; fp++) {
+		DBG(CXT, ul_debugobj(cxt, " ##### trying '%s'", *fp));
 		rc = do_mount(cxt, *fp);
-		if (mnt_context_get_status(cxt))
+		if (is_success_status(cxt))
 			break;
 		if (mnt_context_get_syscall_errno(cxt) != EINVAL &&
 		    mnt_context_get_syscall_errno(cxt) != ENODEV)
@@ -1387,8 +1453,15 @@ int mnt_context_next_mount(struct libmnt_context *cxt,
 
 	/* ignore already mounted filesystems */
 	rc = mnt_context_is_fs_mounted(cxt, *fs, &mounted);
-	if (rc)
+	if (rc) {
+		if (mnt_table_is_empty(cxt->mtab)) {
+			DBG(CXT, ul_debugobj(cxt, "next-mount: no mount table [rc=%d], ignore", rc));
+			rc = 0;
+			if (ignored)
+				*ignored = 1;
+		}
 		return rc;
+	}
 	if (mounted) {
 		if (ignored)
 			*ignored = 2;
@@ -1701,10 +1774,20 @@ int mnt_context_get_mount_excode(
 			}
 			return MNT_EX_USAGE;
 		case -MNT_ERR_MOUNTOPT:
-			if (buf)
-				snprintf(buf, bufsz, errno ?
+			if (buf) {
+				const char *opts = mnt_context_get_options(cxt);
+
+				if (!opts)
+					opts = "";
+				if (opts)
+					snprintf(buf, bufsz, errno ?
+						_("failed to parse mount options '%s': %m") :
+						_("failed to parse mount options '%s'"), opts);
+				else
+					snprintf(buf, bufsz, errno ?
 						_("failed to parse mount options: %m") :
 						_("failed to parse mount options"));
+			}
 			return MNT_EX_USAGE;
 		case -MNT_ERR_LOOPDEV:
 			if (buf)

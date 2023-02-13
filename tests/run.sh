@@ -154,20 +154,29 @@ if [ -z "$top_srcdir" ]; then
 fi
 if [ -z "$top_builddir" ]; then
 	top_builddir="$TS_TOPDIR/.."
+	if [ -e "$top_builddir/build/meson.conf" ]; then
+		top_builddir="$TS_TOPDIR/../build"
+	fi
 fi
 
 OPTS="$OPTS --srcdir=$top_srcdir --builddir=$top_builddir"
 
 # Auto-enable ASAN to avoid conflicts between tests and binaries
 if [ -z "$has_asan_opt" ]; then
-	asan=$(awk '/^ASAN_LDFLAGS/ { print $3 }' $top_builddir/Makefile)
+        if [ -e "$top_builddir/Makefile" ]; then
+	    asan=$(awk '/^ASAN_LDFLAGS/ { print $3 }' $top_builddir/Makefile)
+        elif [ -f "$top_builddir/meson.conf" ]; then
+            . "$top_builddir/meson.conf"
+        fi
 	if [ -n "$asan" ]; then
 		OPTS="$OPTS --memcheck-asan"
 	fi
 fi
 
 if [ -z "$has_ubsan_opt" ]; then
-	ubsan=$(awk '/^UBSAN_LDFLAGS/ { print $3 }' $top_builddir/Makefile)
+	if [ -e "$top_builddir/Makefile" ]; then
+		ubsan=$(awk '/^UBSAN_LDFLAGS/ { print $3 }' $top_builddir/Makefile)
+	fi
 	if [ -n "$ubsan" ]; then
 		OPTS="$OPTS --memcheck-ubsan"
 	fi
@@ -186,7 +195,7 @@ if [ -n "$SUBTESTS" ]; then
 	done
 else
 	if [ -z "$SYSCOMMANDS" -a ! -f "$top_builddir/test_ttyutils" ]; then
-		echo "Tests not compiled! Run 'make check' to fix the problem."
+		echo "Tests not compiled! Run 'make check-programs' to fix the problem."
 		exit 1
 	fi
 
@@ -236,18 +245,19 @@ if [ "$paraller_jobs" -ne 1 ]; then
 fi
 
 count=0
+mkdir -p $top_builddir/tests/
 >| $top_builddir/tests/failures
 printf "%s\n" ${comps[*]} |
 	sort |
 	xargs -I '{}' -P $paraller_jobs -n 1 bash -c "'{}' \"$OPTS\" ||
-		echo 1 >> $top_builddir/tests/failures"
+		echo '{}' >> $top_builddir/tests/failures"
 if [ $? != 0 ]; then
 	echo "xargs error" >&2
 	exit 1
 fi
+
 declare -a fail_file
 fail_file=( $( < $top_builddir/tests/failures ) ) || exit 1
-rm -f $top_builddir/tests/failures
 echo
 echo "---------------------------------------------------------------------"
 if [ ${#fail_file[@]} -eq 0 ]; then
@@ -255,7 +265,16 @@ if [ ${#fail_file[@]} -eq 0 ]; then
 	res=0
 else
 	echo "  ${#fail_file[@]} tests of ${#comps[@]} FAILED"
+
+	echo
+	for ts in ${fail_file[@]}; do
+		NAME=$(basename $ts)
+		COMPONENT=$(basename $(dirname $ts))
+		echo "      $COMPONENT/$NAME"
+	done
 	res=1
 fi
 echo "---------------------------------------------------------------------"
+
+rm -f $top_builddir/tests/failures
 exit $res

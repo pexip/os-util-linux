@@ -31,7 +31,7 @@
 #include "nls.h"
 #include "strutils.h"
 #include "xalloc.h"
-#include "procutils.h"
+#include "procfs.h"
 #include "c.h"
 #include "closestream.h"
 
@@ -117,7 +117,7 @@ static void do_taskset(struct taskset *ts, size_t setsize, cpu_set_t *set)
 	/* read the current mask */
 	if (ts->pid) {
 		if (sched_getaffinity(ts->pid, ts->setsize, ts->set) < 0)
-			err_affinity(ts->pid, 1);
+			err_affinity(ts->pid, 0);
 		print_affinity(ts, FALSE);
 	}
 
@@ -228,10 +228,13 @@ int main(int argc, char **argv)
 	}
 
 	if (all_tasks && pid) {
-		struct proc_tasks *tasks = proc_open_tasks(pid);
-		while (!proc_next_tid(tasks, &ts.pid))
+		DIR *sub = NULL;
+		struct path_cxt *pc = ul_new_procfs_path(pid, NULL);
+
+		while (pc && procfs_process_next_tid(pc, &sub, &ts.pid) == 0)
 			do_taskset(&ts, new_setsize, new_set);
-		proc_close_tasks(tasks);
+
+		ul_unref_path(pc);
 	} else {
 		ts.pid = pid;
 		do_taskset(&ts, new_setsize, new_set);

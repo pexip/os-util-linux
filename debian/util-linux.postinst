@@ -7,8 +7,4 @@ if [ "$(uname -s)" = "Linux" ]; then
 		/usr/share/man/man1/more.1.gz
 fi
 
-# We stopped shipping the 'pg' utility, so remove it as a pager
-# alternative on upgrades from Stretch.
-update-alternatives --remove pager /usr/bin/pg
-
 #DEBHELPER#
