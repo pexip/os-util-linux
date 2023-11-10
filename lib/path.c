@@ -339,23 +339,27 @@ int ul_path_accessf(struct path_cxt *pc, int mode, const char *path, ...)
 	return !p ? -errno : ul_path_access(pc, mode, p);
 }
 
-int ul_path_stat(struct path_cxt *pc, struct stat *sb, const char *path)
+int ul_path_stat(struct path_cxt *pc, struct stat *sb, int flags, const char *path)
 {
 	int rc;
 
 	if (!pc) {
-		rc = stat(path, sb);
+		rc = path ? stat(path, sb) : -EINVAL;
 		DBG(CXT, ul_debug("stat '%s' [no context, rc=%d]", path, rc));
 	} else {
 		int dir = ul_path_get_dirfd(pc);
 		if (dir < 0)
 			return dir;
-		if (*path == '/')
-			path++;
+		if (path) {
+			if  (*path == '/')
+				path++;
+			rc = fstatat(dir, path, sb, flags);
 
-		rc = fstatat(dir, path, sb, 0);
+		} else
+			rc = fstat(dir, sb);	/* dir itself */
 
 		if (rc && errno == ENOENT
+		    && path
 		    && pc->redirect_on_enoent
 		    && pc->redirect_on_enoent(pc, path, &dir) == 0)
 			rc = fstatat(dir, path, sb, 0);
@@ -369,6 +373,8 @@ int ul_path_open(struct path_cxt *pc, int flags, const char *path)
 {
 	int fd;
 
+	if (!path)
+		return -EINVAL;
 	if (!pc) {
 		fd = open(path, flags);
 		DBG(CXT, ul_debug("opening '%s' [no context]", path));
@@ -542,22 +548,27 @@ DIR *ul_path_opendirf(struct path_cxt *pc, const char *path, ...)
 ssize_t ul_path_readlink(struct path_cxt *pc, char *buf, size_t bufsiz, const char *path)
 {
 	int dirfd;
+	ssize_t ssz;
 
 	if (!path) {
 		const char *p = get_absdir(pc);
 		if (!p)
 			return -errno;
-		return readlink(p, buf, bufsiz);
+		ssz = readlink(p, buf, bufsiz - 1);
+	} else {
+		dirfd = ul_path_get_dirfd(pc);
+		if (dirfd < 0)
+			return dirfd;
+
+		if (*path == '/')
+			path++;
+
+		ssz = readlinkat(dirfd, path, buf, bufsiz - 1);
 	}
 
-	dirfd = ul_path_get_dirfd(pc);
-	if (dirfd < 0)
-		return dirfd;
-
-	if (*path == '/')
-		path++;
-
-	return readlinkat(dirfd, path, buf, bufsiz);
+	if (ssz >= 0)
+		buf[ssz] = '\0';
+	return ssz;
 }
 
 /*
@@ -617,7 +628,7 @@ int ul_path_readf(struct path_cxt *pc, char *buf, size_t len, const char *path, 
  * Returns newly allocated buffer with data from file. Maximal size is BUFSIZ
  * (send patch if you need something bigger;-)
  *
- * Returns size of the string!
+ * Returns size of the string without \0, nothing is allocated if returns <= 0.
  */
 int ul_path_read_string(struct path_cxt *pc, char **str, const char *path)
 {
@@ -635,6 +646,8 @@ int ul_path_read_string(struct path_cxt *pc, char **str, const char *path)
 	/* Remove tailing newline (usual in sysfs) */
 	if (rc > 0 && *(buf + rc - 1) == '\n')
 		--rc;
+	if (rc == 0)
+		return 0;
 
 	buf[rc] = '\0';
 	*str = strdup(buf);
@@ -659,14 +672,17 @@ int ul_path_readf_string(struct path_cxt *pc, char **str, const char *path, ...)
 int ul_path_read_buffer(struct path_cxt *pc, char *buf, size_t bufsz, const char *path)
 {
 	int rc = ul_path_read(pc, buf, bufsz - 1, path);
-	if (rc < 0)
-		return rc;
 
-	/* Remove tailing newline (usual in sysfs) */
-	if (rc > 0 && *(buf + rc - 1) == '\n')
-		buf[--rc] = '\0';
-	else
-		buf[rc - 1] = '\0';
+	if (rc == 0)
+		buf[0] = '\0';
+
+	else if (rc > 0) {
+		/* Remove tailing newline (usual in sysfs) */
+		if (*(buf + rc - 1) == '\n')
+			buf[--rc] = '\0';
+		else
+			buf[rc - 1] = '\0';
+	}
 
 	return rc;
 }
@@ -799,7 +815,7 @@ int ul_path_readf_s32(struct path_cxt *pc, int *res, const char *path, ...)
 int ul_path_read_u32(struct path_cxt *pc, unsigned int *res, const char *path)
 {
 	int rc;
-	unsigned int x;
+	unsigned int x = 0;
 
 	rc = ul_path_scanf(pc, path, "%u", &x);
 	if (rc != 1)
@@ -823,7 +839,7 @@ int ul_path_readf_u32(struct path_cxt *pc, unsigned int *res, const char *path, 
 
 int ul_path_read_majmin(struct path_cxt *pc, dev_t *res, const char *path)
 {
-	int rc, maj, min;
+	int rc, maj = 0, min = 0;
 
 	rc = ul_path_scanf(pc, path, "%d:%d", &maj, &min);
 	if (rc != 2)
@@ -956,6 +972,27 @@ int ul_path_countf_dirents(struct path_cxt *pc, const char *path, ...)
 	va_end(ap);
 
 	return !p ? -errno : ul_path_count_dirents(pc, p);
+}
+
+/* first call (when @sub is NULL) opens the directory, last call closes the diretory */
+int ul_path_next_dirent(struct path_cxt *pc, DIR **sub, const char *dirname, struct dirent **d)
+{
+	if (!pc || !sub || !d)
+		return -EINVAL;
+
+	if (!*sub) {
+		*sub = ul_path_opendir(pc, dirname);
+		if (!*sub)
+			return -errno;
+	}
+
+	*d = xreaddir(*sub);
+	if (*d)
+		return 0;
+
+	closedir(*sub);
+	*sub = NULL;
+	return 1;
 }
 
 /*
@@ -1099,7 +1136,7 @@ int main(int argc, char *argv[])
 
 	ul_path_init_debug();
 
-	pc = ul_new_path(dir);
+	pc = ul_new_path("%s", dir);
 	if (!pc)
 		err(EXIT_FAILURE, "failed to initialize path context");
 	if (prefix)
@@ -1191,11 +1228,11 @@ int main(int argc, char *argv[])
 			errx(EXIT_FAILURE, "<file> not defined");
 		file = argv[optind++];
 
-		if (ul_path_read_string(pc, &res, file) < 0)
+		if (ul_path_read_string(pc, &res, file) <= 0)
 			err(EXIT_FAILURE, "read string failed");
 		printf("read:  %s: %s\n", file, res);
 
-		if (ul_path_readf_string(pc, &res, "%s", file) < 0)
+		if (ul_path_readf_string(pc, &res, "%s", file) <= 0)
 			err(EXIT_FAILURE, "readf string failed");
 		printf("readf: %s: %s\n", file, res);
 

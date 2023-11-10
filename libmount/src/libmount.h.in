@@ -471,6 +471,7 @@ extern int mnt_fs_get_option(struct libmnt_fs *fs, const char *name,
 extern const char *mnt_fs_get_fs_options(struct libmnt_fs *fs);
 extern const char *mnt_fs_get_vfs_options(struct libmnt_fs *fs);
 extern const char *mnt_fs_get_user_options(struct libmnt_fs *fs);
+extern char *mnt_fs_get_vfs_options_all(struct libmnt_fs *fs);
 
 extern const char *mnt_fs_get_attributes(struct libmnt_fs *fs);
 extern int mnt_fs_set_attributes(struct libmnt_fs *fs, const char *optstr);
@@ -514,6 +515,7 @@ extern int mnt_fs_is_kernel(struct libmnt_fs *fs);
 extern int mnt_fs_is_swaparea(struct libmnt_fs *fs);
 extern int mnt_fs_is_netfs(struct libmnt_fs *fs);
 extern int mnt_fs_is_pseudofs(struct libmnt_fs *fs);
+extern int mnt_fs_is_regularfs(struct libmnt_fs *fs);
 
 extern void mnt_free_mntent(struct mntent *mnt);
 extern int mnt_fs_to_mntent(struct libmnt_fs *fs, struct mntent **mnt);
@@ -569,6 +571,8 @@ extern int mnt_table_move_fs(struct libmnt_table *src, struct libmnt_table *dst,
 extern int mnt_table_remove_fs(struct libmnt_table *tb, struct libmnt_fs *fs);
 extern int mnt_table_first_fs(struct libmnt_table *tb, struct libmnt_fs **fs);
 extern int mnt_table_last_fs(struct libmnt_table *tb, struct libmnt_fs **fs);
+extern int mnt_table_over_fs(struct libmnt_table *tb, struct libmnt_fs *parent,
+                             struct libmnt_fs **child);
 extern int mnt_table_next_fs(struct libmnt_table *tb, struct libmnt_iter *itr,
 			     struct libmnt_fs **fs);
 extern int mnt_table_next_child_fs(struct libmnt_table *tb, struct libmnt_iter *itr,
@@ -913,6 +917,7 @@ extern int mnt_context_set_syscall_status(struct libmnt_context *cxt, int status
 #define MNT_MS_FEC_OFFSET (1 << 23)
 #define MNT_MS_FEC_ROOTS (1 << 24)
 #define MNT_MS_ROOT_HASH_SIG (1 << 25)
+#define MNT_MS_VERITY_ON_CORRUPTION (1 << 26)
 
 /*
  * mount(2) MS_* masks (MNT_MAP_LINUX map)

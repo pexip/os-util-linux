@@ -46,6 +46,8 @@
 #define XALLOC_EXIT_CODE    BLKID_EXIT_OTHER    /* x.*alloc(), xstrndup() */
 #include "xalloc.h"
 
+#include "sysfs.h"
+
 struct blkid_control {
 	int output;
 	uintmax_t offset;
@@ -90,6 +92,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(	"Low-level probing options:\n"), out);
 	fputs(_(	" -p, --probe                low-level superblocks probing (bypass cache)\n"), out);
 	fputs(_(	" -i, --info                 gather information about I/O limits\n"), out);
+	fputs(_(        " -H, --hint <value>         set hint for probing function\n"), out);
 	fputs(_(	" -S, --size <size>          overwrite device size\n"), out);
 	fputs(_(	" -O, --offset <offset>      probe at the given offset\n"), out);
 	fputs(_(	" -u, --usages <list>        filter by \"usage\" (e.g. -u filesystem,raid)\n"), out);
@@ -254,7 +257,16 @@ static void print_udev_format(const char *name, const char *value)
 
 	*safe = *enc = '\0';
 
-	if (!strcmp(name, "TYPE") || !strcmp(name, "VERSION")) {
+	if (!strcmp(name, "TYPE")
+	    || !strcmp(name, "VERSION")
+	    || !strcmp(name, "SYSTEM_ID")
+	    || !strcmp(name, "PUBLISHER_ID")
+	    || !strcmp(name, "APPLICATION_ID")
+	    || !strcmp(name, "BOOT_SYSTEM_ID")
+	    || !strcmp(name, "VOLUME_ID")
+	    || !strcmp(name, "LOGICAL_VOLUME_ID")
+	    || !strcmp(name, "VOLUME_SET_ID")
+	    || !strcmp(name, "DATA_PREPARER_ID")) {
 		blkid_encode_string(value, enc, sizeof(enc));
 		printf("ID_FS_%s=%s\n", name, enc);
 
@@ -659,7 +671,7 @@ int main(int argc, char **argv)
 	blkid_cache cache = NULL;
 	char **devices = NULL;
 	char *search_type = NULL, *search_value = NULL;
-	char *read = NULL;
+	char *read = NULL, *hint = NULL;
 	int fltr_usage = 0;
 	char **fltr_type = NULL;
 	int fltr_flag = BLKID_FLTR_ONLYIN;
@@ -681,6 +693,7 @@ int main(int argc, char **argv)
 		{ "label",	      required_argument, NULL, 'L' },
 		{ "uuid",	      required_argument, NULL, 'U' },
 		{ "probe",	      no_argument,	 NULL, 'p' },
+		{ "hint",	      required_argument, NULL, 'H' },
 		{ "info",	      no_argument,	 NULL, 'i' },
 		{ "size",	      required_argument, NULL, 'S' },
 		{ "offset",	      required_argument, NULL, 'O' },
@@ -705,7 +718,7 @@ int main(int argc, char **argv)
 	strutils_set_exitcode(BLKID_EXIT_OTHER);
 
 	while ((c = getopt_long (argc, argv,
-			    "c:DdghilL:n:ko:O:ps:S:t:u:U:w:Vv", longopts, NULL)) != -1) {
+			    "c:DdgH:hilL:n:ko:O:ps:S:t:u:U:w:Vv", longopts, NULL)) != -1) {
 
 		err_exclusive_options(c, NULL, excl, excl_st);
 
@@ -718,6 +731,9 @@ int main(int argc, char **argv)
 			break;
 		case 'D':
 			ctl.no_part_details = 1;
+			break;
+		case 'H':
+			hint = optarg;
 			break;
 		case 'L':
 			ctl.eval = 1;
@@ -822,8 +838,35 @@ int main(int argc, char **argv)
 	/* The rest of the args are device names */
 	if (optind < argc) {
 		devices = xcalloc(argc - optind, sizeof(char *));
-		while (optind < argc)
-			devices[numdev++] = argv[optind++];
+		while (optind < argc) {
+			char *dev = argv[optind++];
+			struct stat sb;
+
+			if (stat(dev, &sb) != 0)
+				continue;
+			else if (S_ISBLK(sb.st_mode))
+				;
+			else if (S_ISREG(sb.st_mode))
+				;
+			else if (S_ISCHR(sb.st_mode)) {
+				char buf[PATH_MAX];
+
+				if (!sysfs_chrdev_devno_to_devname(
+						sb.st_rdev, buf, sizeof(buf)))
+					continue;
+				if (strncmp(buf, "ubi", 3) != 0)
+					continue;
+			} else
+				continue;
+
+			devices[numdev++] = dev;
+		}
+
+		if (!numdev) {
+			/* only unsupported devices specified */
+			err = BLKID_EXIT_NOTFOUND;
+			goto exit;
+		}
 	}
 
 	/* convert LABEL/UUID lookup to evaluate request */
@@ -869,6 +912,10 @@ int main(int argc, char **argv)
 		pr = blkid_new_probe();
 		if (!pr)
 			goto exit;
+		if (hint && blkid_probe_set_hint(pr, hint, 0) != 0) {
+			warn(_("Failed to use probing hint: %s"), hint);
+			goto exit;
+		}
 
 		if (ctl.lowprobe_superblocks) {
 			blkid_probe_set_superblocks_flags(pr,

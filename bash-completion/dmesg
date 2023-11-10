@@ -41,6 +41,7 @@ _dmesg_module()
 		--file
 		--facility
 		--human
+		--json
 		--kernel
 		--color
 		--level
@@ -57,6 +58,8 @@ _dmesg_module()
 		--follow
 		--follow-new
 		--decode
+		--since
+		--until
 		--help
 		--version"
 	COMPREPLY=( $(compgen -W "${OPTS[*]}" -- $cur) )

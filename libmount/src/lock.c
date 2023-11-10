@@ -148,9 +148,6 @@ int mnt_lock_use_simplelock(struct libmnt_lock *ml, int enable)
 	sz = strlen(ml->lockfile);
 	assert(sz);
 
-	if (sz < 1)
-		return -EINVAL;
-
 	/* Change lock name:
 	 *
 	 *	flock:     "<name>.lock"
@@ -277,7 +274,7 @@ static void mnt_lockalrm_handler(int sig __attribute__((__unused__)))
  */
 static int mnt_wait_mtab_lock(struct libmnt_lock *ml, struct flock *fl, time_t maxtime)
 {
-	struct timeval now;
+	struct timeval now = { 0 };
 	struct sigaction sa, osa;
 	int ret = 0;
 
@@ -394,8 +391,8 @@ static void unlock_mtab(struct libmnt_lock *ml)
 static int lock_mtab(struct libmnt_lock *ml)
 {
 	int i, rc = -1;
-	struct timespec waittime;
-	struct timeval maxtime;
+	struct timespec waittime = { 0 };;
+	struct timeval maxtime = { 0 };
 	const char *lockfile, *linkfile;
 
 	if (!ml)
@@ -443,7 +440,7 @@ static int lock_mtab(struct libmnt_lock *ml)
 
 	/* Repeat until it was us who made the link */
 	while (!ml->locked) {
-		struct timeval now;
+		struct timeval now = { 0 };
 		struct flock flock;
 		int j;
 

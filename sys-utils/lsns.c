@@ -31,11 +31,18 @@
 #include <libmount.h>
 
 #ifdef HAVE_LINUX_NET_NAMESPACE_H
-#include <stdbool.h>
-#include <sys/socket.h>
-#include <linux/netlink.h>
-#include <linux/rtnetlink.h>
-#include <linux/net_namespace.h>
+# include <stdbool.h>
+# include <sys/socket.h>
+# include <linux/netlink.h>
+# include <linux/rtnetlink.h>
+# include <linux/net_namespace.h>
+#endif
+
+#ifdef HAVE_LINUX_NSFS_H
+# include <linux/nsfs.h>
+# if defined(NS_GET_NSTYPE) && defined(NS_GET_OWNER_UID)
+#  define USE_NS_GET_API	1
+# endif
 #endif
 
 #include "pathnames.h"
@@ -45,10 +52,11 @@
 #include "list.h"
 #include "closestream.h"
 #include "optutils.h"
-#include "procutils.h"
+#include "procfs.h"
 #include "strutils.h"
 #include "namespace.h"
 #include "idcache.h"
+#include "fileutils.h"
 
 #include "debug.h"
 
@@ -83,6 +91,8 @@ enum {
 	COL_USER,
 	COL_NETNSID,
 	COL_NSFS,
+	COL_PNS,		/* parent namespace */
+	COL_ONS,		/* owner namespace */
 };
 
 /* column names */
@@ -106,7 +116,9 @@ static const struct colinfo infos[] = {
 	[COL_UID]     = { "UID",     0, SCOLS_FL_RIGHT, N_("UID of the PID"), SCOLS_JSON_NUMBER},
 	[COL_USER]    = { "USER",    0, 0, N_("username of the PID")},
 	[COL_NETNSID] = { "NETNSID", 0, SCOLS_FL_RIGHT, N_("namespace ID as used by network subsystem")},
-	[COL_NSFS]    = { "NSFS",    0, SCOLS_FL_WRAP, N_("nsfs mountpoint (usually used network subsystem)")}
+	[COL_NSFS]    = { "NSFS",    0, SCOLS_FL_WRAP, N_("nsfs mountpoint (usually used network subsystem)")},
+	[COL_PNS]     = { "PNS",   10, SCOLS_FL_RIGHT, N_("parent namespace identifier (inode number)"), SCOLS_JSON_NUMBER },
+	[COL_ONS]     = { "ONS",   10, SCOLS_FL_RIGHT, N_("owner namespace identifier (inode number)"), SCOLS_JSON_NUMBER },
 };
 
 static int columns[ARRAY_SIZE(infos) * 2];
@@ -134,13 +146,24 @@ static char *ns_names[] = {
 	[LSNS_ID_TIME] = "time"
 };
 
+enum {
+      RELA_PARENT,
+      RELA_OWNER,
+      MAX_RELA
+};
+
 struct lsns_namespace {
 	ino_t id;
 	int type;			/* LSNS_* */
 	int nprocs;
 	int netnsid;
+	ino_t related_id[MAX_RELA];
 
 	struct lsns_process *proc;
+
+	struct lsns_namespace *related_ns[MAX_RELA];
+	struct libscols_line *ns_outline;
+	uid_t uid_fallback;	/* refer this member if `proc' is NULL. */
 
 	struct list_head namespaces;	/* lsns->processes member */
 	struct list_head processes;	/* head of lsns_process *siblings */
@@ -154,6 +177,9 @@ struct lsns_process {
 	uid_t uid;
 
 	ino_t            ns_ids[ARRAY_SIZE(ns_names)];
+	ino_t            ns_pids[ARRAY_SIZE(ns_names)];
+	ino_t            ns_oids[ARRAY_SIZE(ns_names)];
+
 	struct list_head ns_siblings[ARRAY_SIZE(ns_names)];
 
 	struct list_head processes;	/* list of processes */
@@ -162,6 +188,14 @@ struct lsns_process {
 	struct lsns_process *parent;
 
 	int netnsid;
+};
+
+
+enum {
+      LSNS_TREE_NONE,
+      LSNS_TREE_PROCESS,
+      LSNS_TREE_OWNER,
+      LSNS_TREE_PARENT,
 };
 
 struct lsns {
@@ -175,11 +209,11 @@ struct lsns {
 
 	unsigned int raw	: 1,
 		     json	: 1,
-		     tree	: 1,
-		     list	: 1,
+		     tree	: 2,
 		     no_trunc	: 1,
 		     no_headings: 1,
 		     no_wrap    : 1;
+
 
 	struct libmnt_table *tab;
 };
@@ -251,7 +285,7 @@ static inline const struct colinfo *get_column_info(unsigned num)
 	return &infos[ get_column_id(num) ];
 }
 
-static int get_ns_ino(int dir, const char *nsname, ino_t *ino)
+static int get_ns_ino(int dir, const char *nsname, ino_t *ino, ino_t *pino, ino_t *oino)
 {
 	struct stat st;
 	char path[16];
@@ -261,6 +295,47 @@ static int get_ns_ino(int dir, const char *nsname, ino_t *ino)
 	if (fstatat(dir, path, &st, 0) != 0)
 		return -errno;
 	*ino = st.st_ino;
+
+	*pino = 0;
+	*oino = 0;
+
+#ifdef USE_NS_GET_API
+	int fd, pfd, ofd;
+	fd = openat(dir, path, 0);
+	if (fd < 0)
+		return -errno;
+	if (strcmp(nsname, "pid") == 0 || strcmp(nsname, "user") == 0) {
+		if ((pfd = ioctl(fd, NS_GET_PARENT)) < 0) {
+			if (errno == EPERM)
+				goto user;
+			close(fd);
+			return -errno;
+		}
+		if (fstat(pfd, &st) < 0) {
+			close(pfd);
+			close(fd);
+			return -errno;
+		}
+		*pino = st.st_ino;
+		close(pfd);
+	}
+ user:
+	if ((ofd = ioctl(fd, NS_GET_USERNS)) < 0) {
+		if (errno == EPERM)
+			goto out;
+		close(fd);
+		return -errno;
+	}
+	if (fstat(ofd, &st) < 0) {
+		close(ofd);
+		close(fd);
+		return -errno;
+	}
+	*oino = st.st_ino;
+	close(ofd);
+ out:
+	close(fd);
+#endif
 	return 0;
 }
 
@@ -466,7 +541,8 @@ static int read_process(struct lsns *ls, pid_t pid)
 		if (!ls->fltr_types[i])
 			continue;
 
-		rc = get_ns_ino(dirfd(dir), ns_names[i], &p->ns_ids[i]);
+		rc = get_ns_ino(dirfd(dir), ns_names[i], &p->ns_ids[i],
+				&p->ns_pids[i], &p->ns_oids[i]);
 		if (rc && rc != -EACCES && rc != -ENOENT)
 			goto done;
 		if (i == LSNS_ID_NET)
@@ -489,26 +565,32 @@ done:
 
 static int read_processes(struct lsns *ls)
 {
-	struct proc_processes *proc = NULL;
-	pid_t pid;
+	DIR *dir;
+	struct dirent *d;
 	int rc = 0;
 
 	DBG(PROC, ul_debug("opening /proc"));
 
-	if (!(proc = proc_open_processes())) {
-		rc = -errno;
-		goto done;
-	}
+	dir = opendir(_PATH_PROC);
+	if (!dir)
+		return -errno;
 
-	while (proc_next_pid(proc, &pid) == 0) {
+	while ((d = xreaddir(dir))) {
+		pid_t pid = 0;
+
+		if (procfs_dirent_get_pid(d, &pid) != 0)
+			continue;
+
+		/* TODO: use ul_new_procfs_path(pid, NULL) to read files from /proc/pid/
+		 */
 		rc = read_process(ls, pid);
 		if (rc && rc != -EACCES && rc != -ENOENT)
 			break;
 		rc = 0;
 	}
-done:
+
 	DBG(PROC, ul_debug("closing /proc"));
-	proc_close_processes(proc);
+	closedir(dir);
 	return rc;
 }
 
@@ -538,7 +620,8 @@ static int namespace_has_process(struct lsns_namespace *ns, pid_t pid)
 	return 0;
 }
 
-static struct lsns_namespace *add_namespace(struct lsns *ls, int type, ino_t ino)
+static struct lsns_namespace *add_namespace(struct lsns *ls, int type, ino_t ino,
+					    ino_t parent_ino, ino_t owner_ino)
 {
 	struct lsns_namespace *ns = xcalloc(1, sizeof(*ns));
 
@@ -552,6 +635,8 @@ static struct lsns_namespace *add_namespace(struct lsns *ls, int type, ino_t ino
 
 	ns->type = type;
 	ns->id = ino;
+	ns->related_id[RELA_PARENT] = parent_ino;
+	ns->related_id[RELA_OWNER] = owner_ino;
 
 	list_add_tail(&ns->namespaces, &ls->namespaces);
 	return ns;
@@ -602,6 +687,179 @@ static int netnsid_xasputs(char **str, int netnsid)
 	return 0;
 }
 
+#ifdef USE_NS_GET_API
+static int clone_type_to_lsns_type(int clone_type)
+{
+	switch (clone_type) {
+	case CLONE_NEWNS:
+		return LSNS_ID_MNT;
+	case CLONE_NEWCGROUP:
+		return LSNS_ID_CGROUP;
+	case CLONE_NEWUTS:
+		return LSNS_ID_UTS;
+	case CLONE_NEWIPC:
+		return LSNS_ID_IPC;
+	case CLONE_NEWUSER:
+		return LSNS_ID_USER;
+	case CLONE_NEWPID:
+		return LSNS_ID_PID;
+	case CLONE_NEWNET:
+		return LSNS_ID_NET;
+	default:
+		return -1;
+	}
+}
+
+static struct lsns_namespace *add_namespace_for_nsfd(struct lsns *ls, int fd, ino_t ino)
+{
+	int fd_owner = -1, fd_parent = -1;
+	struct stat st_owner, st_parent;
+	ino_t ino_owner = 0, ino_parent = 0;
+	struct lsns_namespace *ns;
+	int clone_type, lsns_type;
+
+	clone_type = ioctl(fd, NS_GET_NSTYPE);
+	if (clone_type < 0)
+		return NULL;
+	lsns_type = clone_type_to_lsns_type(clone_type);
+	if (lsns_type < 0)
+		return NULL;
+
+	fd_owner = ioctl(fd, NS_GET_USERNS);
+	if (fd_owner < 0)
+		goto parent;
+	if (fstat(fd_owner, &st_owner) < 0)
+		goto parent;
+	ino_owner = st_owner.st_ino;
+
+ parent:
+	fd_parent = ioctl(fd, NS_GET_PARENT);
+	if (fd_parent < 0)
+		goto add_ns;
+	if (fstat(fd_parent, &st_parent) < 0)
+		goto add_ns;
+	ino_parent = st_parent.st_ino;
+
+ add_ns:
+	ns = add_namespace(ls, lsns_type, ino, ino_parent, ino_owner);
+	ioctl(fd, NS_GET_OWNER_UID, &ns->uid_fallback);
+	add_uid(uid_cache, ns->uid_fallback);
+
+	if ((lsns_type == LSNS_ID_USER || lsns_type == LSNS_ID_PID)
+	    && ino_parent != ino && ino_parent != 0) {
+		ns->related_ns[RELA_PARENT] = get_namespace(ls, ino_parent);
+		if (!ns->related_ns[RELA_PARENT]) {
+			ns->related_ns[RELA_PARENT] = add_namespace_for_nsfd(ls, fd_parent, ino_parent);
+			if (ino_parent == ino_owner)
+				ns->related_ns[RELA_OWNER] = ns->related_ns[RELA_PARENT];
+		}
+	}
+
+	if (ns->related_ns[RELA_OWNER] == NULL && ino_owner != 0) {
+		ns->related_ns[RELA_OWNER] = get_namespace(ls, ino_owner);
+		if (!ns->related_ns[RELA_OWNER])
+			ns->related_ns[RELA_OWNER] = add_namespace_for_nsfd(ls, fd_owner, ino_owner);
+	}
+
+	if (fd_owner >= 0)
+		close(fd_owner);
+	if (fd_parent >= 0)
+		close(fd_parent);
+
+	return ns;
+}
+
+static void interpolate_missing_namespaces(struct lsns *ls, struct lsns_namespace *orphan, int rela)
+{
+	const int cmd[MAX_RELA] = {
+		[RELA_PARENT] = NS_GET_PARENT,
+		[RELA_OWNER] = NS_GET_USERNS
+	};
+	char buf[BUFSIZ];
+	int fd_orphan, fd_missing;
+	struct stat st;
+
+	orphan->related_ns[rela] = get_namespace(ls, orphan->related_id[rela]);
+	if (orphan->related_ns[rela])
+		return;
+
+	snprintf(buf, sizeof(buf), "/proc/%d/ns/%s", orphan->proc->pid, ns_names[orphan->type]);
+	fd_orphan = open(buf, O_RDONLY);
+	if (fd_orphan < 0)
+		return;
+
+	fd_missing = ioctl(fd_orphan, cmd[rela]);
+	close(fd_orphan);
+	if (fd_missing < 0)
+		return;
+
+	if (fstat(fd_missing, &st) < 0
+	    || st.st_ino != orphan->related_id[rela]) {
+		close(fd_missing);
+		return;
+	}
+
+	orphan->related_ns[rela] = add_namespace_for_nsfd(ls, fd_missing, orphan->related_id[rela]);
+	close(fd_missing);
+}
+
+static void read_related_namespaces(struct lsns *ls)
+{
+	struct list_head *p;
+	struct lsns_namespace *orphan[2] = {NULL, NULL};
+	int rela;
+
+	list_for_each(p, &ls->namespaces) {
+		struct lsns_namespace *ns = list_entry(p, struct lsns_namespace, namespaces);
+		struct list_head *pp;
+		list_for_each(pp, &ls->namespaces) {
+			struct lsns_namespace *pns = list_entry(pp, struct lsns_namespace, namespaces);
+			if (ns->type == LSNS_ID_USER
+			    || ns->type == LSNS_ID_PID) {
+				if (ns->related_id[RELA_PARENT] == pns->id)
+					ns->related_ns[RELA_PARENT] = pns;
+				if (ns->related_id[RELA_OWNER] == pns->id)
+					ns->related_ns[RELA_OWNER] = pns;
+				if (ns->related_ns[RELA_PARENT] && ns->related_ns[RELA_OWNER])
+					break;
+			} else {
+				if (ns->related_id[RELA_OWNER] == pns->id) {
+					ns->related_ns[RELA_OWNER] = pns;
+					break;
+				}
+			}
+		}
+
+		/* lsns scans /proc/[0-9]+ for finding namespaces.
+		 * So if a namespace has no process, lsns cannot
+		 * find it. Here we call it a missing namespace.
+		 *
+		 * If the id for a related namesspce is known but
+		 * namespace for the id is not found, there must
+		 * be orphan namespaces. A missing namespace is an
+		 * owner or a parent of the orphan namespace.
+		 */
+		for (rela = 0; rela < MAX_RELA; rela++) {
+			if (ns->related_id[rela] != 0
+			    && ns->related_ns[rela] == NULL) {
+				ns->related_ns[rela] = orphan[rela];
+				orphan[rela] = ns;
+			}
+		}
+	}
+
+	for (rela = 0; rela < MAX_RELA; rela++) {
+		while (orphan[rela]) {
+			struct lsns_namespace *current = orphan[rela];
+			orphan[rela] = orphan[rela]->related_ns[rela];
+			current->related_ns[rela] = NULL;
+			interpolate_missing_namespaces(ls, current, rela);
+		}
+	}
+}
+
+#endif /* USE_NS_GET_API */
+
 static int read_namespaces(struct lsns *ls)
 {
 	struct list_head *p;
@@ -617,7 +875,8 @@ static int read_namespaces(struct lsns *ls)
 			if (proc->ns_ids[i] == 0)
 				continue;
 			if (!(ns = get_namespace(ls, proc->ns_ids[i]))) {
-				ns = add_namespace(ls, i, proc->ns_ids[i]);
+				ns = add_namespace(ls, i, proc->ns_ids[i],
+						   proc->ns_pids[i], proc->ns_oids[i]);
 				if (!ns)
 					return -ENOMEM;
 			}
@@ -625,6 +884,10 @@ static int read_namespaces(struct lsns *ls)
 		}
 	}
 
+#ifdef USE_NS_GET_API
+	if (ls->tree == LSNS_TREE_OWNER || ls->tree == LSNS_TREE_PARENT)
+		read_related_namespaces(ls);
+#endif
 	list_sort(&ls->namespaces, cmp_namespaces, NULL);
 
 	return 0;
@@ -715,7 +978,10 @@ static void add_scols_line(struct lsns *ls, struct libscols_table *table,
 	assert(table);
 
 	line = scols_table_new_line(table,
-			ls->tree && proc->parent ? proc->parent->outline : NULL);
+			(ls->tree == LSNS_TREE_PROCESS && proc) && proc->parent ? proc->parent->outline:
+			(ls->tree == LSNS_TREE_PARENT)  && ns->related_ns[RELA_PARENT] ? ns->related_ns[RELA_PARENT]->ns_outline:
+			(ls->tree == LSNS_TREE_OWNER)   && ns->related_ns[RELA_OWNER]  ? ns->related_ns[RELA_OWNER]->ns_outline:
+			NULL);
 	if (!line) {
 		warn(_("failed to add line to output"));
 		return;
@@ -729,10 +995,12 @@ static void add_scols_line(struct lsns *ls, struct libscols_table *table,
 			xasprintf(&str, "%ju", (uintmax_t)ns->id);
 			break;
 		case COL_PID:
-			xasprintf(&str, "%d", (int) proc->pid);
+			if (proc)
+				xasprintf(&str, "%d", (int) proc->pid);
 			break;
 		case COL_PPID:
-			xasprintf(&str, "%d", (int) proc->ppid);
+			if (proc)
+				xasprintf(&str, "%d", (int) proc->ppid);
 			break;
 		case COL_TYPE:
 			xasprintf(&str, "%s", ns_names[ns->type]);
@@ -741,25 +1009,37 @@ static void add_scols_line(struct lsns *ls, struct libscols_table *table,
 			xasprintf(&str, "%d", ns->nprocs);
 			break;
 		case COL_COMMAND:
-			str = proc_get_command(proc->pid);
+			if (!proc)
+				break;
+			str = pid_get_cmdline(proc->pid);
 			if (!str)
-				str = proc_get_command_name(proc->pid);
+				str = pid_get_cmdname(proc->pid);
 			break;
 		case COL_PATH:
+			if (!proc)
+				break;
 			xasprintf(&str, "/proc/%d/ns/%s", (int) proc->pid, ns_names[ns->type]);
 			break;
 		case COL_UID:
-			xasprintf(&str, "%d", (int) proc->uid);
+			xasprintf(&str, "%d", proc? (int) proc->uid: (int) ns->uid_fallback);
 			break;
 		case COL_USER:
-			xasprintf(&str, "%s", get_id(uid_cache, proc->uid)->name);
+			xasprintf(&str, "%s", get_id(uid_cache, proc? proc->uid: ns->uid_fallback)->name);
 			break;
 		case COL_NETNSID:
+			if (!proc)
+				break;
 			if (ns->type == LSNS_ID_NET)
 				netnsid_xasputs(&str, proc->netnsid);
 			break;
 		case COL_NSFS:
 			nsfs_xasputs(&str, ns, ls->tab, ls->no_wrap ? ',' : '\n');
+			break;
+		case COL_PNS:
+			xasprintf(&str, "%ju", (uintmax_t)ns->related_id[RELA_PARENT]);
+			break;
+		case COL_ONS:
+			xasprintf(&str, "%ju", (uintmax_t)ns->related_id[RELA_OWNER]);
 			break;
 		default:
 			break;
@@ -769,7 +1049,10 @@ static void add_scols_line(struct lsns *ls, struct libscols_table *table,
 			err_oom();
 	}
 
-	proc->outline = line;
+	if (ls->tree == LSNS_TREE_OWNER || ls->tree == LSNS_TREE_PARENT)
+		ns->ns_outline = line;
+	else if (proc)
+		proc->outline = line;
 }
 
 static struct libscols_table *init_scols_table(struct lsns *ls)
@@ -797,10 +1080,15 @@ static struct libscols_table *init_scols_table(struct lsns *ls)
 
 		if (ls->no_trunc)
 		       flags &= ~SCOLS_FL_TRUNC;
-		if (ls->tree && get_column_id(i) == COL_COMMAND)
+		if (ls->tree == LSNS_TREE_PROCESS && get_column_id(i) == COL_COMMAND)
 			flags |= SCOLS_FL_TREE;
 		if (ls->no_wrap)
 			flags &= ~SCOLS_FL_WRAP;
+		if ((ls->tree == LSNS_TREE_OWNER || ls->tree == LSNS_TREE_PARENT)
+		    && get_column_id(i) == COL_NS) {
+			flags |= SCOLS_FL_TREE;
+			flags &= ~SCOLS_FL_RIGHT;
+		}
 
 		cl = scols_table_new_column(tab, col->name, col->whint, flags);
 		if (cl == NULL) {
@@ -825,6 +1113,28 @@ err:
 	return NULL;
 }
 
+static void show_namespace(struct lsns *ls, struct libscols_table *tab,
+			   struct lsns_namespace *ns, struct lsns_process *proc)
+{
+	/*
+	 * create a tree from owner->owned and/or parent->child relation
+	 */
+	if (ls->tree == LSNS_TREE_OWNER
+	    && ns->related_ns[RELA_OWNER]
+	    && !ns->related_ns[RELA_OWNER]->ns_outline)
+		show_namespace(ls, tab, ns->related_ns[RELA_OWNER], ns->related_ns[RELA_OWNER]->proc);
+	else if (ls->tree == LSNS_TREE_PARENT) {
+		if (ns->related_ns[RELA_PARENT]) {
+			if (!ns->related_ns[RELA_PARENT]->ns_outline)
+				show_namespace(ls, tab, ns->related_ns[RELA_PARENT], ns->related_ns[RELA_PARENT]->proc);
+		}
+		else if (ns->related_ns[RELA_OWNER] && !ns->related_ns[RELA_OWNER]->ns_outline)
+			show_namespace(ls, tab, ns->related_ns[RELA_OWNER], ns->related_ns[RELA_OWNER]->proc);
+	}
+
+	add_scols_line(ls, tab, ns, proc);
+}
+
 static int show_namespaces(struct lsns *ls)
 {
 	struct libscols_table *tab;
@@ -841,7 +1151,8 @@ static int show_namespaces(struct lsns *ls)
 		if (ls->fltr_pid != 0 && !namespace_has_process(ns, ls->fltr_pid))
 			continue;
 
-		add_scols_line(ls, tab, ns, ns->proc);
+		if (!ns->ns_outline)
+			show_namespace(ls, tab, ns, ns->proc);
 	}
 
 	scols_print_table(tab);
@@ -856,7 +1167,7 @@ static void show_process(struct lsns *ls, struct libscols_table *tab,
 	 * create a tree from parent->child relation, but only if the parent is
 	 * within the same namespace
 	 */
-	if (ls->tree
+	if (ls->tree == LSNS_TREE_PROCESS
 	    && proc->parent
 	    && !proc->parent->outline
 	    && proc->parent->ns_ids[ns->type] == proc->ns_ids[ns->type])
@@ -912,6 +1223,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -u, --notruncate       don't truncate text in columns\n"), out);
 	fputs(_(" -W, --nowrap           don't use multi-line representation\n"), out);
 	fputs(_(" -t, --type <name>      namespace type (mnt, net, ipc, user, pid, uts, cgroup, time)\n"), out);
+	fputs(_(" -T, --tree <rel>       use tree format (parent, owner, or process)\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
 	printf(USAGE_HELP_OPTIONS(24));
@@ -929,7 +1241,7 @@ static void __attribute__((__noreturn__)) usage(void)
 int main(int argc, char *argv[])
 {
 	struct lsns ls;
-	int c;
+	int c, force_list = 0;
 	int r = 0;
 	char *outarg = NULL;
 	enum {
@@ -948,11 +1260,13 @@ int main(int argc, char *argv[])
 		{ "list",       no_argument,       NULL, 'l' },
 		{ "raw",        no_argument,       NULL, 'r' },
 		{ "type",       required_argument, NULL, 't' },
+		{ "tree",       optional_argument, NULL, 'T' },
 		{ NULL, 0, NULL, 0 }
 	};
 
 	static const ul_excl_t excl[] = {	/* rows and cols in ASCII order */
 		{ 'J','r' },
+		{ 'l','T' },
 		{ 0 }
 	};
 	int excl_st[ARRAY_SIZE(excl)] = UL_EXCL_STATUS_INIT;
@@ -971,7 +1285,7 @@ int main(int argc, char *argv[])
 	INIT_LIST_HEAD(&netnsids_cache);
 
 	while ((c = getopt_long(argc, argv,
-				"Jlp:o:nruhVt:W", long_opts, NULL)) != -1) {
+				"Jlp:o:nruhVt:T::W", long_opts, NULL)) != -1) {
 
 		err_exclusive_options(c, long_opts, excl, excl_st);
 
@@ -980,7 +1294,7 @@ int main(int argc, char *argv[])
 			ls.json = 1;
 			break;
 		case 'l':
-			ls.list = 1;
+			force_list = 1;
 			break;
 		case 'o':
 			outarg = optarg;
@@ -1015,6 +1329,19 @@ int main(int argc, char *argv[])
 		case 'W':
 			ls.no_wrap = 1;
 			break;
+		case 'T':
+			ls.tree = LSNS_TREE_OWNER;
+			if (optarg) {
+				if (*optarg == '=')
+					optarg++;
+				if (strcmp (optarg, "parent") == 0)
+					ls.tree = LSNS_TREE_PARENT;
+				else if (strcmp (optarg, "process") == 0)
+					ls.tree = LSNS_TREE_PROCESS;
+				else if (strcmp (optarg, "owner") != 0)
+					errx(EXIT_FAILURE, _("unknown tree type: %s"), optarg);
+			}
+			break;
 
 		case 'h':
 			usage();
@@ -1036,7 +1363,8 @@ int main(int argc, char *argv[])
 		if (ls.fltr_pid)
 			errx(EXIT_FAILURE, _("--task is mutually exclusive with <namespace>"));
 		ls.fltr_ns = strtou64_or_err(argv[optind], _("invalid namespace argument"));
-		ls.tree = ls.list ? 0 : 1;
+		if (!ls.tree && !force_list)
+			ls.tree = LSNS_TREE_PROCESS;
 
 		if (!ncolumns) {
 			columns[ncolumns++] = COL_PID;
@@ -1057,8 +1385,15 @@ int main(int argc, char *argv[])
 			columns[ncolumns++] = COL_NSFS;
 		}
 		columns[ncolumns++] = COL_COMMAND;
+
+		if (!ls.tree && !force_list)
+			ls.tree = LSNS_TREE_PROCESS;
 	}
 
+#ifndef USE_NS_GET_API
+	if (ls.tree && ls.tree != LSNS_TREE_PROCESS)
+		errx(EXIT_FAILURE, _("--tree={parent|owner} is unsupported for your system"));
+#endif
 	if (outarg && string_add_to_idarray(outarg, columns, ARRAY_SIZE(columns),
 				  &ncolumns, column_name_to_id) < 0)
 		return EXIT_FAILURE;

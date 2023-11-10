@@ -74,8 +74,16 @@ static time_t strtotime(const char *s_time)
 static suseconds_t strtousec(const char *s_time)
 {
 	const char *s = strchr(s_time, ',');
-	if (s)
-		return (suseconds_t) atoi(s + 1);
+
+	if (s && *++s) {
+		suseconds_t us;
+		char *end = NULL;
+
+		errno = 0;
+		us = strtol(s, &end, 10);
+		if (errno == 0 && end && end > s)
+			return us;
+	}
 	return 0;
 }
 
@@ -266,7 +274,7 @@ static int gettok(char *line, char *dest, int size, int eatspace)
 static void undump(FILE *in, FILE *out)
 {
 	struct utmpx ut;
-	char s_addr[INET6_ADDRSTRLEN + 1], s_time[29], *linestart, *line;
+	char s_addr[INET6_ADDRSTRLEN + 1], s_time[29] = {}, *linestart, *line;
 
 	linestart = xmalloc(1024 * sizeof(*linestart));
 	s_time[28] = 0;
@@ -274,7 +282,12 @@ static void undump(FILE *in, FILE *out)
 	while (fgets(linestart, 1023, in)) {
 		line = linestart;
 		memset(&ut, '\0', sizeof(ut));
-		sscanf(line, "[%hd] [%d] [%4c] ", &ut.ut_type, &ut.ut_pid, ut.ut_id);
+
+		if (sscanf(line, "[%hd] [%d] [%4c] ",
+				&ut.ut_type, &ut.ut_pid, ut.ut_id) != 3) {
+			warnx(_("parse error: %s"), line);
+			continue;
+		}
 
 		line += 19;
 		line += gettok(line, ut.ut_user, sizeof(ut.ut_user), 1);
@@ -366,6 +379,10 @@ int main(int argc, char **argv)
 
 	if (!out)
 		out = stdout;
+
+	if (follow && (out != stdout || !isatty(STDOUT_FILENO))) {
+		setvbuf(out, NULL, _IOLBF, 0);
+	}
 
 	if (optind < argc) {
 		filename = argv[optind];

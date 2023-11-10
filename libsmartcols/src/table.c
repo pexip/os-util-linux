@@ -50,7 +50,7 @@ static void check_padding_debug(struct libscols_table *tb)
 {
 	const char *str;
 
-	assert(libsmartcols_debug_mask);	/* debug has to be enabled! */
+	assert(libsmartcols_debug_mask);	/* debug has to be already initialized! */
 
 	str = getenv("LIBSMARTCOLS_DEBUG_PADDING");
 	if (!str || (strcmp(str, "on") != 0 && strcmp(str, "1") != 0))
@@ -270,6 +270,8 @@ int scols_table_remove_column(struct libscols_table *tb,
 
 	if (cl->flags & SCOLS_FL_TREE)
 		tb->ntreecols--;
+	if (tb->dflt_sort_column == cl)
+		tb->dflt_sort_column = NULL;
 
 	DBG(TAB, ul_debugobj(tb, "remove column"));
 	list_del_init(&cl->cl_columns);
@@ -413,7 +415,6 @@ struct libscols_column *scols_table_new_column(struct libscols_table *tb,
 					       int flags)
 {
 	struct libscols_column *cl;
-	struct libscols_cell *hr;
 
 	if (!tb)
 		return NULL;
@@ -424,13 +425,8 @@ struct libscols_column *scols_table_new_column(struct libscols_table *tb,
 	if (!cl)
 		return NULL;
 
-	/* set column name */
-	hr = scols_column_get_header(cl);
-	if (!hr)
+	if (scols_column_set_name(cl, name))
 		goto err;
-	if (scols_cell_set_data(hr, name))
-		goto err;
-
 	scols_column_set_whint(cl, whint);
 	scols_column_set_flags(cl, flags);
 
@@ -1076,6 +1072,12 @@ int scols_table_enable_json(struct libscols_table *tb, int enable)
  * Enable/disable export output format (COLUMNAME="value" ...).
  * The parsable output formats (export and raw) are mutually exclusive.
  *
+ * See also scols_table_enable_shellvar(). Note that in version 2.37 (and only
+ * in this version) scols_table_enable_shellvar() functionality has been
+ * automatically enabled  for "export" format. This behavior has been reverted
+ * in version 2.38 due to backward compatibility issues. Now it's necessary to
+ * explicitly call scols_table_enable_shellvar().
+ *
  * Returns: 0 on success, negative number in case of an error.
  */
 int scols_table_enable_export(struct libscols_table *tb, int enable)
@@ -1090,6 +1092,29 @@ int scols_table_enable_export(struct libscols_table *tb, int enable)
 		tb->format = 0;
 	return 0;
 }
+
+/**
+ * scols_table_enable_shellvar:
+ * @tb: table
+ * @enable: 1 or 0
+ *
+ * Force library to print column names to be compatible with shell requirements
+ * to variable names.  For example "1FOO%" will be printed as "_1FOO_PCT".
+ *
+ * Returns: 0 on success, negative number in case of an error.
+ *
+ * Since: 2.38
+ */
+int scols_table_enable_shellvar(struct libscols_table *tb, int enable)
+{
+	if (!tb)
+		return -EINVAL;
+
+	DBG(TAB, ul_debugobj(tb, "shellvar: %s", enable ? "ENABLE" : "DISABLE"));
+	tb->is_shellvar = enable ? 1 : 0;
+	return 0;
+}
+
 
 /**
  * scols_table_enable_ascii:
@@ -1338,6 +1363,20 @@ int scols_table_is_export(const struct libscols_table *tb)
 }
 
 /**
+ * scols_table_is_shellvar:
+ * @tb: table
+ *
+ * Returns: 1 if column names has to be compatible with shell requirements
+ *          to variable names
+ *
+ * Since: 2.38
+ */
+int scols_table_is_shellvar(const struct libscols_table *tb)
+{
+	return tb->is_shellvar;
+}
+
+/**
  * scols_table_is_raw:
  * @tb: table
  *
@@ -1511,41 +1550,63 @@ static int sort_line_children(struct libscols_line *ln, struct libscols_column *
 	return 0;
 }
 
+static int  __scols_sort_tree(struct libscols_table *tb, struct libscols_column *cl)
+{
+	struct libscols_line *ln;
+	struct libscols_iter itr;
+
+	if (!tb || !cl || !cl->cmpfunc)
+		return -EINVAL;
+
+	scols_reset_iter(&itr, SCOLS_ITER_FORWARD);
+	while (scols_table_next_line(tb, &itr, &ln) == 0)
+		sort_line_children(ln, cl);
+	return 0;
+}
+
 /**
  * scols_sort_table:
  * @tb: table
- * @cl: order by this column
+ * @cl: order by this column or NULL
  *
  * Orders the table by the column. See also scols_column_set_cmpfunc(). If the
  * tree output is enabled then children in the tree are recursively sorted too.
+ *
+ * The column @cl is saved as the default sort column to the @tb and the next time
+ * is possible to call scols_sort_table(tb, NULL). The saved column is also used by
+ * scols_sort_table_by_tree().
  *
  * Returns: 0, a negative value in case of an error.
  */
 int scols_sort_table(struct libscols_table *tb, struct libscols_column *cl)
 {
-	if (!tb || !cl || !cl->cmpfunc)
+	if (!tb)
+		return -EINVAL;
+	if (!cl)
+		cl = tb->dflt_sort_column;
+	if (!cl || !cl->cmpfunc)
 		return -EINVAL;
 
-	DBG(TAB, ul_debugobj(tb, "sorting table"));
+	DBG(TAB, ul_debugobj(tb, "sorting table by %zu column", cl->seqnum));
 	list_sort(&tb->tb_lines, cells_cmp_wrapper_lines, cl);
 
-	if (scols_table_is_tree(tb)) {
-		struct libscols_line *ln;
-		struct libscols_iter itr;
+	if (scols_table_is_tree(tb))
+		__scols_sort_tree(tb, cl);
 
-		scols_reset_iter(&itr, SCOLS_ITER_FORWARD);
-		while (scols_table_next_line(tb, &itr, &ln) == 0)
-			sort_line_children(ln, cl);
-	}
+	if (cl && cl != tb->dflt_sort_column)
+		tb->dflt_sort_column = cl;
 
 	return 0;
 }
 
+/*
+ * Move all @ln's children after @ln in the table.
+ */
 static struct libscols_line *move_line_and_children(struct libscols_line *ln, struct libscols_line *pre)
 {
 	if (pre) {
 		list_del_init(&ln->ln_lines);			/* remove from old position */
-	        list_add(&ln->ln_lines, &pre->ln_lines);        /* add to the new place (behind @pre) */
+	        list_add(&ln->ln_lines, &pre->ln_lines);        /* add to the new place (after @pre) */
 	}
 	pre = ln;
 
@@ -1567,7 +1628,10 @@ static struct libscols_line *move_line_and_children(struct libscols_line *ln, st
  * @tb: table
  *
  * Reorders lines in the table by parent->child relation. Note that order of
- * the lines in the table is independent on the tree hierarchy.
+ * the lines in the table is independent on the tree hierarchy by default.
+ *
+ * The children of the lines are sorted according to the default sort column
+ * if scols_sort_table() has been previously called.
  *
  * Since: 2.30
  *
@@ -1583,13 +1647,12 @@ int scols_sort_table_by_tree(struct libscols_table *tb)
 
 	DBG(TAB, ul_debugobj(tb, "sorting table by tree"));
 
-	scols_reset_iter(&itr, SCOLS_ITER_FORWARD);
-	while (scols_table_next_line(tb, &itr, &ln) == 0) {
-		if (ln->parent)
-			continue;
+	if (tb->dflt_sort_column)
+		__scols_sort_tree(tb, tb->dflt_sort_column);
 
+	scols_reset_iter(&itr, SCOLS_ITER_FORWARD);
+	while (scols_table_next_line(tb, &itr, &ln) == 0)
 		move_line_and_children(ln, NULL);
-	}
 
 	return 0;
 }

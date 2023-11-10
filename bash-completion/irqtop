@@ -5,6 +5,10 @@ _irqtop_module()
 	cur="${COMP_WORDS[COMP_CWORD]}"
 	prev="${COMP_WORDS[COMP_CWORD-1]}"
 	case $prev in
+		'-c'|'--cpu-stat')
+			COMPREPLY=( $(compgen -W "auto enable disable" -- $cur) )
+			return 0
+			;;
 		'-d'|'--delay')
 			COMPREPLY=( $(compgen -W "secs" -- $cur) )
 			return 0
@@ -30,9 +34,11 @@ _irqtop_module()
 			return 0
 			;;
 	esac
-	OPTS="	--delay
+	OPTS="	--cpu-stat
+		--delay
 		--sort
 		--output
+		--softirq
 		--help
 		--version"
 	COMPREPLY=( $(compgen -W "${OPTS[*]}" -- $cur) )

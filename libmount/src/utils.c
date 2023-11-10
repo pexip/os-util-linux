@@ -19,7 +19,6 @@
 #include <fcntl.h>
 #include <pwd.h>
 #include <grp.h>
-#include <poll.h>
 #include <blkid.h>
 
 #include "strutils.h"
@@ -32,31 +31,6 @@
 #include "fileutils.h"
 #include "statfs_magic.h"
 #include "sysfs.h"
-
-int append_string(char **a, const char *b)
-{
-	size_t al, bl;
-	char *tmp;
-
-	assert(a);
-
-	if (!b || !*b)
-		return 0;
-	if (!*a) {
-		*a = strdup(b);
-		return !*a ? -ENOMEM : 0;
-	}
-
-	al = strlen(*a);
-	bl = strlen(b);
-
-	tmp = realloc(*a, al + bl + 1);
-	if (!tmp)
-		return -ENOMEM;
-	*a = tmp;
-	memcpy((*a) + al, b, bl + 1);
-	return 0;
-}
 
 /*
  * Return 1 if the file is not accessible or empty
@@ -333,7 +307,9 @@ int mnt_fstype_is_pseudofs(const char *type)
 		"spufs",
 		"sysfs",
 		"tmpfs",
-		"tracefs"
+		"tracefs",
+		"vboxsf",
+		"virtiofs"
 	};
 
 	assert(type);
@@ -356,6 +332,7 @@ int mnt_fstype_is_netfs(const char *type)
 	    strncmp(type,"nfs", 3) == 0 ||
 	    strcmp(type, "afs")    == 0 ||
 	    strcmp(type, "ncpfs")  == 0 ||
+	    strcmp(type, "glusterfs")  == 0 ||
 	    strcmp(type, "fuse.curlftpfs") == 0 ||
 	    strcmp(type, "fuse.sshfs") == 0 ||
 	    strncmp(type,"9p", 2)  == 0)
@@ -446,13 +423,6 @@ const char *mnt_statfs_get_fstype(struct statfs *vfs)
 	}
 
 	return NULL;
-}
-
-int is_procfs_fd(int fd)
-{
-	struct statfs sfs;
-
-	return fstatfs(fd, &sfs) == 0 && sfs.f_type == STATFS_PROC_MAGIC;
 }
 
 /**
@@ -889,20 +859,12 @@ const char *mnt_get_mtab_path(void)
 /*
  * Don't export this to libmount API -- utab is private library stuff.
  *
- * Returns: path to /run/mount/utab (or /dev/.mount/utab) or $LIBMOUNT_UTAB.
+ * Returns: path to /run/mount/utab or $LIBMOUNT_UTAB.
  */
 const char *mnt_get_utab_path(void)
 {
-	struct stat st;
 	const char *p = safe_getenv("LIBMOUNT_UTAB");
-
-	if (p)
-		return p;
-
-	if (stat(MNT_RUNTIME_TOPDIR, &st) == 0)
-		return MNT_PATH_UTAB;
-
-	return MNT_PATH_UTAB_OLD;
+	return p ? : MNT_PATH_UTAB;
 }
 
 
@@ -928,7 +890,8 @@ int mnt_open_uniq_filename(const char *filename, char **name)
 	 */
 	oldmode = umask(S_IRGRP|S_IWGRP|S_IXGRP|
 			S_IROTH|S_IWOTH|S_IXOTH);
-	fd = mkostemp(n, O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC);
+
+	fd = mkstemp_cloexec(n);
 	if (fd < 0)
 		fd = -errno;
 	umask(oldmode);
@@ -1174,164 +1137,80 @@ done:
 	return 1;
 }
 
-#if defined(HAVE_FMEMOPEN) || defined(TEST_PROGRAM)
-
 /*
- * This function tries to minimize possible races when we read
- * /proc/#/{mountinfo,mount} files.
- *
- * The idea is to minimize number of read()s and check by poll() that during
- * the read the mount table has not been modified. If yes, than re-read it
- * (with some limitations to avoid never ending loop).
- *
- * Returns: <0 error, 0 success, 1 too many attempts
+ * Initialize MNT_PATH_TMPTGT; mkdir, create a new namespace and
+ * mark (bind mount) the directory as private.
  */
-static int read_procfs_file(int fd, char **buf, size_t *bufsiz)
+int mnt_tmptgt_unshare(int *old_ns_fd)
 {
-	size_t bufmax = 0;
-	int rc = 0, tries = 0, ninters = 0;
-	char *bufptr = NULL;
+#ifdef USE_LIBMOUNT_SUPPORT_NAMESPACES
+	int rc = 0, fd = -1;
 
-	assert(buf);
-	assert(bufsiz);
+	assert(old_ns_fd);
 
-	*bufsiz = 0;
-	*buf = NULL;
+	*old_ns_fd = -1;
 
-	do {
-		ssize_t ret;
+	/* remember the current namespace */
+	fd = open("/proc/self/ns/mnt", O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		goto fail;
 
-		if (!bufptr || bufmax == *bufsiz) {
-			char *tmp;
+	/* create new namespace */
+	if (unshare(CLONE_NEWNS) != 0)
+		goto fail;
 
-			bufmax = bufmax ? bufmax * 2 : (16 * 1024);
-			tmp = realloc(*buf, bufmax);
-			if (!tmp)
-				break;
-			*buf = tmp;
-			bufptr = tmp + *bufsiz;
-		}
+	/* create directory */
+	rc = ul_mkdir_p(MNT_PATH_TMPTGT, S_IRWXU);
+	if (rc)
+		goto fail;
 
-		errno = 0;
-		ret = read(fd, bufptr, bufmax - *bufsiz);
+	/* try to set top-level directory as private, this is possible if
+	 * MNT_RUNTIME_TOPDIR (/run) is a separated filesystem. */
+	if (mount("none", MNT_RUNTIME_TOPDIR, NULL, MS_PRIVATE, NULL) != 0) {
 
-		if (ret < 0) {
-			/* error */
-			if ((errno == EAGAIN || errno == EINTR) && (ninters++ < 5)) {
-				xusleep(200000);
-				continue;
-			}
-			break;
-
-		} if (ret > 0) {
-			/* success -- verify no event during read */
-			struct pollfd fds[] = {
-				{ .fd = fd, .events = POLLPRI }
-			};
-
-			rc = poll(fds, 1, 0);
-			if (rc < 0)
-				break;		/* poll() error */
-			if (rc > 0) {
-				/* event -- read all again */
-				if (lseek(fd, 0, SEEK_SET) != 0)
-					break;
-				*bufsiz = 0;
-				bufptr = *buf;
-				tries++;
-
-				if (tries > 10)
-					/* busy system? -- wait */
-					xusleep(10000);
-				continue;
-			}
-
-			/* successful read() without active poll() */
-			(*bufsiz) += (size_t) ret;
-			bufptr += ret;
-			tries = ninters = 0;
-		} else {
-			/* end-of-file */
-			goto success;
-		}
-	} while (tries <= 100);
-
-	rc = errno ? -errno : 1;
-	free(*buf);
-	return rc;
-
-success:
-	return 0;
-}
-
-/*
- * Create FILE stream for data from read_procfs_file()
- */
-FILE *mnt_get_procfs_memstream(int fd, char **membuf)
-{
-	size_t sz = 0;
-	off_t cur;
-
-	*membuf = NULL;
-
-	/* in case of error, rewind to the original position */
-	cur = lseek(fd, 0, SEEK_CUR);
-
-	if (read_procfs_file(fd, membuf, &sz) == 0 && sz > 0) {
-		FILE *memf = fmemopen(*membuf, sz, "r");
-		if (memf)
-			return memf;	/* success */
-
-		free(*membuf);
-		*membuf = NULL;
+		/* failed; create a mountpoint from MNT_PATH_TMPTGT */
+		if (mount(MNT_PATH_TMPTGT, MNT_PATH_TMPTGT, "none", MS_BIND, NULL) != 0)
+			goto fail;
+		if (mount("none", MNT_PATH_TMPTGT, NULL, MS_PRIVATE, NULL) != 0)
+			goto fail;
 	}
 
-	/* error */
-	if (cur != (off_t) -1)
-		lseek(fd, cur, SEEK_SET);
-	return NULL;
-}
-#else
-FILE *mnt_get_procfs_memstream(int fd __attribute((__unused__)),
-		               char **membuf __attribute((__unused__)))
-{
-	return NULL;
-}
-#endif /* HAVE_FMEMOPEN */
+	DBG(UTILS, ul_debug(MNT_PATH_TMPTGT " unshared"));
+	*old_ns_fd = fd;
+	return 0;
+fail:
+	if (rc == 0)
+		rc = errno ? -errno : -EINVAL;
 
+	mnt_tmptgt_cleanup(fd);
+	DBG(UTILS, ul_debug(MNT_PATH_TMPTGT " unshare failed"));
+	return rc;
+#else
+	return -ENOSYS;
+#endif
+}
+
+/*
+ * Clean up MNT_PATH_TMPTGT; umount and switch back to old namespace
+ */
+int mnt_tmptgt_cleanup(int old_ns_fd)
+{
+#ifdef USE_LIBMOUNT_SUPPORT_NAMESPACES
+	umount(MNT_PATH_TMPTGT);
+
+	if (old_ns_fd >= 0) {
+		setns(old_ns_fd, CLONE_NEWNS);
+		close(old_ns_fd);
+	}
+
+	DBG(UTILS, ul_debug(MNT_PATH_TMPTGT " cleanup done"));
+	return 0;
+#else
+	return -ENOSYS;
+#endif
+}
 
 #ifdef TEST_PROGRAM
-static int test_proc_read(struct libmnt_test *ts, int argc, char *argv[])
-{
-	char *buf = NULL;
-	char *filename = argv[1];
-	size_t bufsiz = 0;
-	int rc = 0, fd = open(filename, O_RDONLY);
-
-	if (fd <= 0) {
-		warn("%s: cannot open", filename);
-		return -errno;
-	}
-
-	rc = read_procfs_file(fd, &buf, &bufsiz);
-	close(fd);
-
-	switch (rc) {
-	case 0:
-		fwrite(buf, 1, bufsiz, stdout);
-		free(buf);
-		break;
-	case 1:
-		warnx("too many attempts");
-		break;
-	default:
-		warn("%s: cannot read", filename);
-		break;
-	}
-
-	return rc;
-}
-
 static int test_match_fstype(struct libmnt_test *ts, int argc, char *argv[])
 {
 	char *type = argv[1];
@@ -1365,18 +1244,6 @@ static int test_endswith(struct libmnt_test *ts, int argc, char *argv[])
 	char *pattern = argv[2];
 
 	printf("%s\n", endswith(optstr, pattern) ? "YES" : "NOT");
-	return 0;
-}
-
-static int test_appendstr(struct libmnt_test *ts, int argc, char *argv[])
-{
-	char *str = strdup(argv[1]);
-	const char *ap = argv[2];
-
-	append_string(&str, ap);
-	printf("new string: '%s'\n", str);
-
-	free(str);
 	return 0;
 }
 
@@ -1474,7 +1341,7 @@ static int test_mkdir(struct libmnt_test *ts, int argc, char *argv[])
 {
 	int rc;
 
-	rc = mkdir_p(argv[1], S_IRWXU |
+	rc = ul_mkdir_p(argv[1], S_IRWXU |
 			 S_IRGRP | S_IXGRP |
 			 S_IROTH | S_IXOTH);
 	if (rc)
@@ -1506,14 +1373,12 @@ int main(int argc, char *argv[])
 	{ "--filesystems",   test_filesystems,	   "[<pattern>] list /{etc,proc}/filesystems" },
 	{ "--starts-with",   test_startswith,      "<string> <prefix>" },
 	{ "--ends-with",     test_endswith,        "<string> <prefix>" },
-	{ "--append-string", test_appendstr,       "<string> <appendix>" },
 	{ "--mountpoint",    test_mountpoint,      "<path>" },
 	{ "--cd-parent",     test_chdir,           "<path>" },
 	{ "--kernel-cmdline",test_kernel_cmdline,  "<option> | <option>=" },
 	{ "--guess-root",    test_guess_root,      "[<maj:min>]" },
 	{ "--mkdir",         test_mkdir,           "<path>" },
 	{ "--statfs-type",   test_statfs_type,     "<path>" },
-	{ "--read-procfs",   test_proc_read,       "<path>" },
 
 	{ NULL }
 	};
