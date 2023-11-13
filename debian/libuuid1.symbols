@@ -7,6 +7,7 @@ libuuid.so.1 libuuid1 #MINVER#
  UUID_2.36@UUID_2.36 2.36
  __uuid_generate_random@UUIDD_PRIVATE 2.20.1
  __uuid_generate_time@UUIDD_PRIVATE 2.20.1
+ __uuid_generate_time_cont@UUIDD_PRIVATE 2.38.1-2~
  uuid_clear@UUID_1.0 2.16
  uuid_compare@UUID_1.0 2.16
  uuid_copy@UUID_1.0 2.16

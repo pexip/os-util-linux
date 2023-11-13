@@ -15,7 +15,9 @@
 #include "list.h"
 #include "strutils.h"
 #include "color-names.h"
+#include "jsonwrt.h"
 #include "debug.h"
+#include "buffer.h"
 
 #include "libsmartcols.h"
 
@@ -39,6 +41,8 @@ UL_DEBUG_DECLARE_MASK(libsmartcols);
 
 #define UL_DEBUG_CURRENT_MASK	UL_DEBUG_MASK(libsmartcols)
 #include "debugobj.h"
+
+#define SCOLS_BUFPTR_TREEEND	0
 
 /*
  * Generic iterator
@@ -122,8 +126,10 @@ struct libscols_column {
 	void *wrapfunc_data;
 
 
-	struct libscols_cell	header;
-	struct list_head	cl_columns;
+	struct libscols_cell	header;		/* column name with color etc. */
+	char	*shellvar;			/* raw colum name in shell compatible format */
+
+	struct list_head	cl_columns;	/* member of table->tb_columns */
 
 	struct libscols_table	*table;
 
@@ -211,8 +217,8 @@ struct libscols_table {
 	char	*colsep;	/* column separator */
 	char	*linesep;	/* line separator */
 
-	struct list_head	tb_columns;
-	struct list_head	tb_lines;
+	struct list_head	tb_columns;	/* list of columns, items: column->cl_columns */
+	struct list_head	tb_lines;	/* list of lines; items: line->ln_lines  */
 
 	struct list_head	tb_groups;	/* all defined groups */
 	struct libscols_group	**grpset;
@@ -221,15 +227,19 @@ struct libscols_table {
 	size_t			ngrpchlds_pending;	/* groups with not yet printed children */
 	struct libscols_line	*walk_last_tree_root;	/* last root, used by scols_walk_() */
 
+	struct libscols_column	*dflt_sort_column;	/* default sort column, set by scols_sort_table() */
+
 	struct libscols_symbols	*symbols;
 	struct libscols_cell	title;		/* optional table title (for humans) */
 
-	int	indent;		/* indentation counter */
-	int	indent_last_sep;/* last printed has been line separator */
+	struct ul_jsonwrt	json;		/* JSON formatting */
+
 	int	format;		/* SCOLS_FMT_* */
 
 	size_t	termlines_used;	/* printed line counter */
 	size_t	header_next;	/* where repeat header */
+
+	const char *cur_color;	/* current active color when printing */
 
 	/* flags */
 	unsigned int	ascii		:1,	/* don't use unicode */
@@ -237,6 +247,7 @@ struct libscols_table {
 			is_term		:1,	/* isatty() */
 			padding_debug	:1,	/* output visible padding chars */
 			is_dummy_print	:1,	/* printing used for width calculation only */
+			is_shellvar	:1,	/* shell compatible column names */
 			maxout		:1,	/* maximize output */
 			minout		:1,	/* minimize output (mutually exclusive to maxout) */
 			header_repeat   :1,     /* print header after libscols_table->termheight */
@@ -291,25 +302,6 @@ int scols_table_next_group(struct libscols_table *tb,
                           struct libscols_group **gr);
 
 /*
- * buffer.c
- */
-struct libscols_buffer;
-extern struct libscols_buffer *new_buffer(size_t sz);
-extern void free_buffer(struct libscols_buffer *buf);
-extern int buffer_reset_data(struct libscols_buffer *buf);
-extern int buffer_append_data(struct libscols_buffer *buf, const char *str);
-extern int buffer_append_ntimes(struct libscols_buffer *buf, size_t n, const char *str);
-extern int buffer_set_data(struct libscols_buffer *buf, const char *str);
-extern void buffer_set_art_index(struct libscols_buffer *buf);
-extern char *buffer_get_data(struct libscols_buffer *buf);
-extern size_t buffer_get_size(struct libscols_buffer *buf);
-extern char *buffer_get_safe_data(struct libscols_table *tb,
-				  struct libscols_buffer *buf,
-				  size_t *cells,
-				  const char *safechars);
-extern size_t buffer_get_safe_art_size(struct libscols_buffer *buf);
-
-/*
  * grouping.c
  */
 void scols_ref_group(struct libscols_group *gr);
@@ -336,7 +328,7 @@ extern int scols_walk_is_last(struct libscols_table *tb, struct libscols_line *l
 /*
  * calculate.c
  */
-extern int __scols_calculate(struct libscols_table *tb, struct libscols_buffer *buf);
+extern int __scols_calculate(struct libscols_table *tb, struct ul_buffer *buf);
 
 /*
  * print.c
@@ -344,29 +336,18 @@ extern int __scols_calculate(struct libscols_table *tb, struct libscols_buffer *
 extern int __cell_to_buffer(struct libscols_table *tb,
                           struct libscols_line *ln,
                           struct libscols_column *cl,
-                          struct libscols_buffer *buf);
+                          struct ul_buffer *buf);
 
-void __scols_cleanup_printing(struct libscols_table *tb, struct libscols_buffer *buf);
-int __scols_initialize_printing(struct libscols_table *tb, struct libscols_buffer **buf);
-int __scols_print_tree(struct libscols_table *tb, struct libscols_buffer *buf);
-int __scols_print_table(struct libscols_table *tb, struct libscols_buffer *buf);
-int __scols_print_header(struct libscols_table *tb, struct libscols_buffer *buf);
+void __scols_cleanup_printing(struct libscols_table *tb, struct ul_buffer *buf);
+int __scols_initialize_printing(struct libscols_table *tb, struct ul_buffer *buf);
+int __scols_print_tree(struct libscols_table *tb, struct ul_buffer *buf);
+int __scols_print_table(struct libscols_table *tb, struct ul_buffer *buf);
+int __scols_print_header(struct libscols_table *tb, struct ul_buffer *buf);
 int __scols_print_title(struct libscols_table *tb);
 int __scols_print_range(struct libscols_table *tb,
-                        struct libscols_buffer *buf,
+                        struct ul_buffer *buf,
                         struct libscols_iter *itr,
                         struct libscols_line *end);
-
-/*
- * fput.c
- */
-extern void fput_indent(struct libscols_table *tb);
-extern void fput_table_open(struct libscols_table *tb);
-extern void fput_table_close(struct libscols_table *tb);
-extern void fput_children_open(struct libscols_table *tb);
-extern void fput_children_close(struct libscols_table *tb);
-extern void fput_line_open(struct libscols_table *tb);
-extern void fput_line_close(struct libscols_table *tb, int last, int last_in_table);
 
 static inline int is_tree_root(struct libscols_line *ln)
 {

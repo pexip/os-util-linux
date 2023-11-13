@@ -131,6 +131,8 @@ struct script_control {
 
 	const char *ttyname;
 	const char *ttytype;
+	const char *command;
+	char *command_norm;	/* normalized (without \n) */
 	int ttycols;
 	int ttylines;
 
@@ -147,7 +149,8 @@ struct script_control {
 	 isterm:1;		/* is child process running as terminal */
 };
 
-static ssize_t log_info(struct script_control *ctl, const char *name, const char *msgfmt, ...);
+static ssize_t log_info(struct script_control *ctl, const char *name, const char *msgfmt, ...)
+			__attribute__((__format__ (__printf__, 3, 4)));
 
 static void script_init_debug(void)
 {
@@ -208,7 +211,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -e, --return                  return exit code of the child process\n"), out);
 	fputs(_(" -f, --flush                   run flush after each write\n"), out);
 	fputs(_("     --force                   use output file even when it is a link\n"), out);
-	fputs(_(" -E, --echo <when>             echo input (auto, always or never)\n"), out);
+	fputs(_(" -E, --echo <when>             echo input in session (auto, always or never)\n"), out);
 	fputs(_(" -o, --output-limit <size>     terminate if output files exceed size\n"), out);
 	fputs(_(" -q, --quiet                   be quiet\n"), out);
 
@@ -300,13 +303,14 @@ static int log_close(struct script_control *ctl,
 	}
 	case SCRIPT_FMT_TIMING_MULTI:
 	{
-		struct timeval now, delta;
+		struct timeval now = { 0 }, delta = { 0 };
 
 		gettime_monotonic(&now);
 		timersub(&now, &log->starttime, &delta);
 
-		log_info(ctl, "DURATION", "%ld.%06ld",
-			(long)delta.tv_sec, (long)delta.tv_usec);
+		log_info(ctl, "DURATION", "%"PRId64".%06"PRId64,
+			(int64_t)delta.tv_sec,
+			(int64_t)delta.tv_usec);
 		log_info(ctl, "EXIT_CODE", "%d", status);
 		break;
 	}
@@ -387,23 +391,28 @@ static int log_start(struct script_control *ctl,
 	switch (log->format) {
 	case SCRIPT_FMT_RAW:
 	{
+		int x = 0;
 		char buf[FORMAT_TIMESTAMP_MAX];
 		time_t tvec = script_time((time_t *)NULL);
 
 		strtime_iso(&tvec, ISO_TIMESTAMP, buf, sizeof(buf));
 		fprintf(log->fp, _("Script started on %s ["), buf);
 
+		if (ctl->command)
+			x += fprintf(log->fp, "COMMAND=\"%s\"", ctl->command_norm);
+
 		if (ctl->isterm) {
 			init_terminal_info(ctl);
 
 			if (ctl->ttytype)
-				fprintf(log->fp, "TERM=\"%s\" ", ctl->ttytype);
+				x += fprintf(log->fp, "%*sTERM=\"%s\"", !!x, "", ctl->ttytype);
 			if (ctl->ttyname)
-				fprintf(log->fp, "TTY=\"%s\" ", ctl->ttyname);
+				x += fprintf(log->fp, "%*sTTY=\"%s\"", !!x, "", ctl->ttyname);
 
-			fprintf(log->fp, "COLUMNS=\"%d\" LINES=\"%d\"", ctl->ttycols, ctl->ttylines);
+			x += fprintf(log->fp, "%*sCOLUMNS=\"%d\" LINES=\"%d\"", !!x, "",
+					ctl->ttycols, ctl->ttylines);
 		} else
-			fprintf(log->fp, _("<not executed on terminal>"));
+			fprintf(log->fp, _("%*s<not executed on terminal>"), !!x, "");
 
 		fputs("]\n", log->fp);
 		break;
@@ -469,8 +478,8 @@ static ssize_t log_write(struct script_control *ctl,
 
 		gettime_monotonic(&now);
 		timersub(&now, &log->oldtime, &delta);
-		ssz = fprintf(log->fp, "%ld.%06ld %zd\n",
-			(long)delta.tv_sec, (long)delta.tv_usec, bytes);
+		ssz = fprintf(log->fp, "%"PRId64".%06"PRId64" %zd\n",
+			(int64_t)delta.tv_sec, (int64_t)delta.tv_usec, bytes);
 		if (ssz < 0)
 			return -errno;
 
@@ -482,9 +491,9 @@ static ssize_t log_write(struct script_control *ctl,
 
 		gettime_monotonic(&now);
 		timersub(&now, &log->oldtime, &delta);
-		ssz = fprintf(log->fp, "%c %ld.%06ld %zd\n",
+		ssz = fprintf(log->fp, "%c %"PRId64".%06"PRId64" %zd\n",
 			stream->ident,
-			(long)delta.tv_sec, (long)delta.tv_usec, bytes);
+			(int64_t)delta.tv_sec, (int64_t)delta.tv_usec, bytes);
 		if (ssz < 0)
 			return -errno;
 
@@ -518,7 +527,8 @@ static ssize_t log_stream_activity(
 	return outsz;
 }
 
-static ssize_t log_signal(struct script_control *ctl, int signum, char *msgfmt, ...)
+static ssize_t __attribute__ ((__format__ (__printf__, 3, 4)))
+	log_signal(struct script_control *ctl, int signum, const char *msgfmt, ...)
 {
 	struct script_log *log;
 	struct timeval now, delta;
@@ -548,12 +558,12 @@ static ssize_t log_signal(struct script_control *ctl, int signum, char *msgfmt, 
 	}
 
 	if (*msg)
-		sz = fprintf(log->fp, "S %ld.%06ld SIG%s %s\n",
-			(long)delta.tv_sec, (long)delta.tv_usec,
+		sz = fprintf(log->fp, "S %"PRId64".%06"PRId64" SIG%s %s\n",
+			(int64_t)delta.tv_sec, (int64_t)delta.tv_usec,
 			signum_to_signame(signum), msg);
 	else
-		sz = fprintf(log->fp, "S %ld.%06ld SIG%s\n",
-			(long)delta.tv_sec, (long)delta.tv_usec,
+		sz = fprintf(log->fp, "S %"PRId64".%06"PRId64" SIG%s\n",
+			(int64_t)delta.tv_sec, (int64_t)delta.tv_usec,
 			signum_to_signame(signum));
 
 	log->oldtime = now;
@@ -668,11 +678,10 @@ static int callback_log_stream_activity(void *data, int fd, char *buf, size_t bu
 	if (ssz < 0)
 		return (int) ssz;
 
-	DBG(IO, ul_debug(" append %ld bytes [summary=%zu, max=%zu]", ssz,
+	DBG(IO, ul_debug(" append %zd bytes [summary=%" PRIu64 ", max=%" PRIu64 "]", ssz,
 				ctl->outsz, ctl->maxsz));
 
 	ctl->outsz += ssz;
-
 
 	/* check output limit */
 	if (ctl->maxsz != 0 && ctl->outsz >= ctl->maxsz) {
@@ -752,9 +761,9 @@ int main(int argc, char **argv)
 		.in  = { .ident = 'I' },
 	};
 	struct ul_pty_callbacks *cb;
-	int ch, format = 0, caught_signal = 0, rc = 0, echo = 0;
+	int ch, format = 0, caught_signal = 0, rc = 0, echo = 1;
 	const char *outfile = NULL, *infile = NULL;
-	const char *timingfile = NULL, *shell = NULL, *command = NULL;
+	const char *timingfile = NULL, *shell = NULL;
 
 	enum { FORCE_OPTION = CHAR_MAX + 1 };
 
@@ -798,12 +807,7 @@ int main(int argc, char **argv)
 	script_init_debug();
 	ON_DBG(PTY, ul_pty_init_debug(0xFFFF));
 
-	/* The default is to keep ECHO flag when stdin is not terminal. We need
-	 * it to make stdin (in case of "echo foo | script") log-able and
-	 * visible on terminal, and for backward compatibility.
-	 */
 	ctl.isterm = isatty(STDIN_FILENO);
-	echo = ctl.isterm ? 0 : 1;
 
 	while ((ch = getopt_long(argc, argv, "aB:c:eE:fI:O:o:qm:T:t::Vh", longopts, NULL)) != -1) {
 
@@ -814,7 +818,9 @@ int main(int argc, char **argv)
 			ctl.append = 1;
 			break;
 		case 'c':
-			command = optarg;
+			ctl.command = optarg;
+			ctl.command_norm = xstrdup(ctl.command);
+			strrep(ctl.command_norm, '\n', ' ');
 			break;
 		case 'E':
 			if (strcmp(optarg, "auto") == 0)
@@ -972,15 +978,15 @@ int main(int argc, char **argv)
 		shname = shname ? shname + 1 : shell;
 
 		if (access(shell, X_OK) == 0) {
-			if (command)
-				execl(shell, shname, "-c", command, (char *)NULL);
+			if (ctl.command)
+				execl(shell, shname, "-c", ctl.command, (char *)NULL);
 			else
 				execl(shell, shname, "-i", (char *)NULL);
 		} else {
-			if (command)
-				execlp(shname, "-c", command, (char *)NULL);
+			if (ctl.command)
+				execlp(shname, shname, "-c", ctl.command, (char *)NULL);
 			else
-				execlp(shname, "-i", (char *)NULL);
+				execlp(shname, shname, "-i", (char *)NULL);
 		}
 
 		err(EXIT_FAILURE, "failed to execute %s", shell);
@@ -1003,23 +1009,23 @@ int main(int argc, char **argv)
 		time_t tvec = script_time((time_t *)NULL);
 
 		strtime_iso(&tvec, ISO_TIMESTAMP, buf, sizeof(buf));
-		log_info(&ctl, "START_TIME", buf);
+		log_info(&ctl, "START_TIME", "%s", buf);
 
 		if (ctl.isterm) {
 			init_terminal_info(&ctl);
-			log_info(&ctl, "TERM", ctl.ttytype);
-			log_info(&ctl, "TTY", ctl.ttyname);
+			log_info(&ctl, "TERM", "%s", ctl.ttytype);
+			log_info(&ctl, "TTY", "%s", ctl.ttyname);
 			log_info(&ctl, "COLUMNS", "%d", ctl.ttycols);
 			log_info(&ctl, "LINES", "%d", ctl.ttylines);
 		}
-		log_info(&ctl, "SHELL", shell);
-		if (command)
-			log_info(&ctl, "COMMAND", command);
-		log_info(&ctl, "TIMING_LOG", timingfile);
+		log_info(&ctl, "SHELL", "%s", shell);
+		if (ctl.command)
+			log_info(&ctl, "COMMAND", "%s", ctl.command_norm);
+		log_info(&ctl, "TIMING_LOG", "%s", timingfile);
 		if (outfile)
-			log_info(&ctl, "OUTPUT_LOG", outfile);
+			log_info(&ctl, "OUTPUT_LOG", "%s", outfile);
 		if (infile)
-			log_info(&ctl, "INPUT_LOG", infile);
+			log_info(&ctl, "INPUT_LOG", "%s", infile);
 	}
 
         /* this is the main loop */

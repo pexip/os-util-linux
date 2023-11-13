@@ -49,7 +49,7 @@ do:
 
   gbp pq import --force
   gbp pq switch   # switch back to debian branch from patch-queue branch
-  gbp import-orig --upstream-vcs-tag=v2.24.2 ../tarballs/util-linux-v2.24.2.tar.xz
+  gbp import-orig --upstream-vcs-tag=v2.24.2 ../tarballs/util-linux-2.24.2.tar.xz
   gbp pq switch   # switch to patch-queue branch
   git rebase master
 

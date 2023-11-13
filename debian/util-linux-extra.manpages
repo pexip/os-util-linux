@@ -1,0 +1,6 @@
+#!/usr/bin/dh-exec --with=install
+debian/hwclock.5
+debian/tmp/usr/share/man/man8/hwclock.8
+debian/tmp/usr/share/man/man1/fincore.1                         [linux-any]
+debian/tmp/usr/share/man/man1/lsfd.1                            [linux-any]
+debian/tmp/usr/share/man/man1/lsirq.1                           [linux-any]

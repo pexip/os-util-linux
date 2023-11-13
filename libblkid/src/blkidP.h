@@ -147,8 +147,13 @@ struct blkid_idmag
 	const char	*magic;		/* magic string */
 	unsigned int	len;		/* length of magic */
 
+	const char	*hoff;		/* hint which contains byte offset to kboff */
 	long		kboff;		/* kilobyte offset of superblock */
 	unsigned int	sboff;		/* byte offset within superblock */
+
+	int		is_zoned;	/* indicate magic location is calculated based on zone position  */
+	long		zonenum;	/* zone number which has superblock */
+	long		kboff_inzone;	/* kilobyte offset of superblock in a zone */
 };
 
 /*
@@ -184,6 +189,15 @@ struct blkid_bufinfo {
 };
 
 /*
+ * Probing hint
+ */
+struct blkid_hint {
+	char			*name;
+	uint64_t		value;
+	struct list_head	hints;
+};
+
+/*
  * Low-level probing control struct
  */
 struct blkid_struct_probe
@@ -196,6 +210,7 @@ struct blkid_struct_probe
 	dev_t			disk_devno;	/* devno of the whole-disk or 0 */
 	unsigned int		blkssz;		/* sector size (BLKSSZGET ioctl) */
 	mode_t			mode;		/* struct stat.sb_mode */
+	uint64_t		zone_size;	/* zone size (BLKGETZONESZ ioctl) */
 
 	int			flags;		/* private library flags */
 	int			prob_flags;	/* always zeroized by blkid_do_*() */
@@ -205,6 +220,7 @@ struct blkid_struct_probe
 	struct blkid_chain	*wipe_chain;	/* superblock, partition, ... */
 
 	struct list_head	buffers;	/* list of buffers */
+	struct list_head	hints;
 
 	struct blkid_chain	chains[BLKID_NCHAINS];	/* array of chains */
 	struct blkid_chain	*cur_chain;		/* current chain */
@@ -301,7 +317,7 @@ struct blkid_struct_cache
 #define BLKID_PROBE_NONE 1
 
 #define BLKID_ERR_IO	 5
-#define BLKID_ERR_PROC	 9
+#define BLKID_ERR_SYSFS	 9
 #define BLKID_ERR_MEM	12
 #define BLKID_ERR_CACHE	14
 #define BLKID_ERR_DEV	19
@@ -417,9 +433,9 @@ extern int blkid_probe_get_idmag(blkid_probe pr, const struct blkid_idinfo *id,
 			__attribute__((nonnull(1)));
 
 /* returns superblock according to 'struct blkid_idmag' */
+extern unsigned char *_blkid_probe_get_sb(blkid_probe pr, const struct blkid_idmag *mag, size_t size);
 #define blkid_probe_get_sb(_pr, _mag, type) \
-			((type *) blkid_probe_get_buffer((_pr),\
-					(_mag)->kboff << 10, sizeof(type)))
+			((type *) _blkid_probe_get_sb((_pr), _mag, sizeof(type)))
 
 extern blkid_partlist blkid_probe_get_partlist(blkid_probe pr)
 			__attribute__((nonnull))
@@ -520,6 +536,10 @@ extern int blkid_probe_is_wiped(blkid_probe pr, struct blkid_chain **chn,
 			__attribute__((warn_unused_result));
 extern void blkid_probe_use_wiper(blkid_probe pr, uint64_t off, uint64_t size)
 			__attribute__((nonnull));
+
+extern int blkid_probe_get_hint(blkid_probe pr, const char *name, uint64_t *value)
+			__attribute__((nonnull(1,2)))
+			__attribute__((warn_unused_result));
 
 /* filter bitmap macros */
 #define blkid_bmp_wordsize		(8 * sizeof(unsigned long))

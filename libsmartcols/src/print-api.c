@@ -15,7 +15,7 @@ int scols_table_print_range(	struct libscols_table *tb,
 				struct libscols_line *start,
 				struct libscols_line *end)
 {
-	struct libscols_buffer *buf = NULL;
+	struct ul_buffer buf = UL_INIT_BUFFER;
 	struct libscols_iter itr;
 	int rc;
 
@@ -36,14 +36,14 @@ int scols_table_print_range(	struct libscols_table *tb,
 		scols_reset_iter(&itr, SCOLS_ITER_FORWARD);
 
 	if (!start || itr.p == tb->tb_lines.next) {
-		rc = __scols_print_header(tb, buf);
+		rc = __scols_print_header(tb, &buf);
 		if (rc)
 			goto done;
 	}
 
-	rc = __scols_print_range(tb, buf, &itr, end);
+	rc = __scols_print_range(tb, &buf, &itr, end);
 done:
-	__scols_cleanup_printing(tb, buf);
+	__scols_cleanup_printing(tb, &buf);
 	return rc;
 }
 
@@ -101,7 +101,7 @@ int scols_table_print_range_to_string(
 static int do_print_table(struct libscols_table *tb, int *is_empty)
 {
 	int rc = 0;
-	struct libscols_buffer *buf = NULL;
+	struct ul_buffer buf = UL_INIT_BUFFER;
 
 	if (!tb)
 		return -EINVAL;
@@ -117,8 +117,11 @@ static int do_print_table(struct libscols_table *tb, int *is_empty)
 	if (list_empty(&tb->tb_lines)) {
 		DBG(TAB, ul_debugobj(tb, "ignore -- no lines"));
 		if (scols_table_is_json(tb)) {
-			fput_table_open(tb);
-			fput_table_close(tb);
+			ul_jsonwrt_init(&tb->json, tb->out, 0);
+			ul_jsonwrt_root_open(&tb->json);
+			ul_jsonwrt_array_open(&tb->json, tb->name ? tb->name : "");
+			ul_jsonwrt_array_close(&tb->json);
+			ul_jsonwrt_root_close(&tb->json);
 		} else if (is_empty)
 			*is_empty = 1;
 		return 0;
@@ -129,23 +132,29 @@ static int do_print_table(struct libscols_table *tb, int *is_empty)
 	if (rc)
 		return rc;
 
-	fput_table_open(tb);
+	if (scols_table_is_json(tb)) {
+		ul_jsonwrt_root_open(&tb->json);
+		ul_jsonwrt_array_open(&tb->json, tb->name ? tb->name : "");
+	}
 
 	if (tb->format == SCOLS_FMT_HUMAN)
 		__scols_print_title(tb);
 
-	rc = __scols_print_header(tb, buf);
+	rc = __scols_print_header(tb, &buf);
 	if (rc)
 		goto done;
 
 	if (scols_table_is_tree(tb))
-		rc = __scols_print_tree(tb, buf);
+		rc = __scols_print_tree(tb, &buf);
 	else
-		rc = __scols_print_table(tb, buf);
+		rc = __scols_print_table(tb, &buf);
 
-	fput_table_close(tb);
+	if (scols_table_is_json(tb)) {
+		ul_jsonwrt_array_close(&tb->json);
+		ul_jsonwrt_root_close(&tb->json);
+	}
 done:
-	__scols_cleanup_printing(tb, buf);
+	__scols_cleanup_printing(tb, &buf);
 	return rc;
 }
 
@@ -162,7 +171,7 @@ int scols_print_table(struct libscols_table *tb)
 	int empty = 0;
 	int rc = do_print_table(tb, &empty);
 
-	if (rc == 0 && !empty)
+	if (rc == 0 && !empty && !scols_table_is_json(tb))
 		fputc('\n', tb->out);
 	return rc;
 }

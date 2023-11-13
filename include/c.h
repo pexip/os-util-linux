@@ -16,6 +16,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <sys/types.h>
+#include <grp.h>
 
 #include <assert.h>
 
@@ -63,6 +65,21 @@
 # define __attribute__(_arg_)
 # define ignore_result(x) ((void) (x))
 #endif /* !__GNUC__ */
+
+
+/* "restrict" keyword fallback */
+#if __STDC__ != 1
+# define restrict __restrict /* use implementation __ format */
+#else
+# ifndef __STDC_VERSION__
+#  define restrict __restrict /* use implementation __ format */
+# else
+#  if __STDC_VERSION__ < 199901L
+#   define restrict __restrict /* use implementation __ format */
+#  endif
+# endif
+#endif
+
 
 /*
  * It evaluates to 1 if the attribute/feature is supported by the current
@@ -142,6 +159,14 @@
 	_max1 > _max2 ? _max1 : _max2; })
 #endif
 
+#ifndef abs_diff
+# define abs_diff(x, y) __extension__ ({        \
+	__typeof__(x) _a = (x);			\
+	__typeof__(y) _b = (y);			\
+	(void) (&_a == &_b);			\
+	_a > _b ? _a - _b : _b - _a; })
+#endif
+
 #ifndef cmp_numbers
 # define cmp_numbers(x, y) __extension__ ({	\
 	__typeof__(x) _a = (x);			\
@@ -149,6 +174,24 @@
 	(void) (&_a == &_b);			\
 	_a == _b ? 0 : _a > _b ? 1 : -1; })
 #endif
+
+
+#ifndef cmp_timespec
+# define cmp_timespec(a, b, CMP)		\
+	(((a)->tv_sec == (b)->tv_sec)		\
+	? ((a)->tv_nsec CMP (b)->tv_nsec)	\
+	: ((a)->tv_sec CMP (b)->tv_sec))
+#endif
+
+
+#ifndef cmp_stat_mtime
+# ifdef HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
+#  define cmp_stat_mtime(_a, _b, CMP)	cmp_timespec(&(_a)->st_mtim, &(_b)->st_mtim, CMP)
+# else
+#  define cmp_stat_mtime(_a, _b, CMP)	((_a)->st_mtime CMP (_b)->st_mtime)
+# endif
+#endif
+
 
 #ifndef offsetof
 #define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
@@ -202,7 +245,7 @@ prog_inv_sh_nm_from_file(char *f, char stripext)
 
 
 #ifndef HAVE_ERR_H
-static inline void
+static inline void __attribute__ ((__format__ (__printf__, 4, 5)))
 errmsg(char doexit, int excode, char adderr, const char *fmt, ...)
 {
 	fprintf(stderr, "%s: ", program_invocation_short_name);
@@ -320,6 +363,24 @@ static inline size_t get_hostname_max(void)
 	return 64;
 }
 
+
+static inline int drop_permissions(void)
+{
+	errno = 0;
+
+	/* drop GID */
+	if (setgid(getgid()) < 0)
+		goto fail;
+
+	/* drop UID */
+	if (setuid(getuid()) < 0)
+		goto fail;
+
+	return 0;
+fail:
+	return errno ? -errno : -1;
+}
+
 /*
  * The usleep function was marked obsolete in POSIX.1-2001 and was removed
  * in POSIX.1-2008.  It was replaced with nanosleep() that provides more
@@ -395,6 +456,23 @@ static inline int xusleep(useconds_t usec)
  */
 #define stringify_value(s) stringify(s)
 #define stringify(s) #s
+
+/* Detect if we're compiled with Address Sanitizer
+ *  - gcc (__SANITIZE_ADDRESS__)
+ *  - clang (__has_feature(address_sanitizer))
+ */
+#if !defined(HAS_FEATURE_ADDRESS_SANITIZER)
+#  ifdef __SANITIZE_ADDRESS__
+#      define HAS_FEATURE_ADDRESS_SANITIZER 1
+#  elif defined(__has_feature)
+#    if __has_feature(address_sanitizer)
+#      define HAS_FEATURE_ADDRESS_SANITIZER 1
+#    endif
+#  endif
+#  if !defined(HAS_FEATURE_ADDRESS_SANITIZER)
+#    define HAS_FEATURE_ADDRESS_SANITIZER 0
+#  endif
+#endif
 
 /*
  * UL_ASAN_BLACKLIST is a macro to tell AddressSanitizer (a compile-time

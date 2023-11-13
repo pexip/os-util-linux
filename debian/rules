@@ -4,16 +4,23 @@ include /usr/share/dpkg/architecture.mk
 include /usr/share/dpkg/pkg-info.mk
 
 ifeq ($(DEB_HOST_ARCH_OS),linux)
-CONFOPTS += --disable-raw
 CONFOPTS += --with-selinux
 CONFOPTS += --with-smack
 CONFOPTS += --enable-partx
+
 ifneq ($(filter stage1,$(DEB_BUILD_PROFILES)),)
 	CONFOPTS += --without-systemd --without-udev --without-audit
 else
 	CONFOPTS += --with-systemd --with-udev --with-audit
 endif
+
+ifneq ($(filter pkg.util-linux.noverity,$(DEB_BUILD_PROFILES)),)
+	CONFOPTS += --without-cryptsetup
+else
+	CONFOPTS += --with-cryptsetup=dlopen
 endif
+endif
+
 
 CONFOPTS += --enable-write
 
@@ -25,8 +32,6 @@ CONFOPTS += --enable-static-programs=fdisk,sfdisk,blkid
 CONFOPTS += --without-python
 
 # disable utilities shipped by other packages
-# => hardlink
-CONFOPTS += --disable-hardlink
 # => login
 CONFOPTS += --disable-login
 CONFOPTS += --disable-nologin
@@ -36,6 +41,9 @@ CONFOPTS += --disable-kill
 CONFOPTS += --disable-chfn-chsh
 # => bsdmainutils
 CONFOPTS += --disable-cal
+
+# Keep hwclock as GPLv2 (and others)
+CONFOPTS += --disable-hwclock-gplv3
 
 # Get the list of binary package, except lib* and *-udeb, from
 # debian/control instead of hardcoding the list when installing
@@ -58,7 +66,7 @@ override_dh_auto_install:
 	dh_auto_install
 ifneq ($(filter stage1,$(DEB_BUILD_PROFILES)),)
 	# Manually generate and install units to avoid missing files when
-        # util-linux.install gets executed in stage1 builds.
+	# util-linux.install gets executed in stage1 builds.
 	install -d debian/tmp/lib/systemd/system
 	make PATHFILES=sys-utils/fstrim.service sys-utils/fstrim.service
 	install -m644 sys-utils/fstrim.service debian/tmp/lib/systemd/system/fstrim.service
@@ -134,9 +142,9 @@ override_dh_installinit:
 ifeq (linux,$(DEB_HOST_ARCH_OS))
 ifeq (,$(findstring s390,$(DEB_HOST_ARCH)))
 	# install /etc/init.d/hwclock.sh
-	dh_installinit --name=hwclock.sh --no-start
+	dh_installinit --package=util-linux-extra --name=hwclock.sh --no-start
 	# install /etc/default/hwclock
-	dh_installinit --name=hwclock
+	dh_installinit --package=util-linux-extra --name=hwclock
 endif
 endif
 	# install uuidd sysvinit script
@@ -152,7 +160,7 @@ override_dh_installpam:
 	dh_installpam --package=util-linux --name=su-l
 
 override_dh_fixperms:
-	dh_fixperms -i -a -Xusr/bin/wall -Xusr/bin/write.ul -Xbin/mount -Xbin/umount -Xbin/su
+	dh_fixperms -i -a -Xusr/bin/wall -Xusr/bin/write -Xbin/mount -Xbin/umount -Xbin/su
 
 ifeq (linux,$(DEB_HOST_ARCH_OS))
 override_dh_installsystemd:

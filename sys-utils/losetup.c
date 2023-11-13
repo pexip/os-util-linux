@@ -144,8 +144,8 @@ static int printf_loopdev(struct loopdev_cxt *lc)
 		goto done;
 	}
 
-	printf("%s: [%04d]:%" PRIu64 " (%s)",
-		loopcxt_get_device(lc), (int) dev, ino, fname);
+	printf("%s: [%04jd]:%ju (%s)",
+		loopcxt_get_device(lc), (intmax_t) dev, (uintmax_t) ino, fname);
 
 	if (loopcxt_get_offset(lc, &x) == 0 && x)
 			printf(_(", offset %ju"), x);
@@ -239,7 +239,7 @@ static int set_scols_data(struct loopdev_cxt *lc, struct libscols_line *ln)
 			p = loopcxt_get_device(lc);
 			break;
 		case COL_BACK_FILE:
-			p = loopcxt_get_backing_file(lc);
+			np = loopcxt_get_backing_file(lc);
 			break;
 		case COL_OFFSET:
 			if (loopcxt_get_offset(lc, &x) == 0)
@@ -508,7 +508,7 @@ static int create_loop(struct loopdev_cxt *lc,
 				errx(EXIT_FAILURE, _("%s: overlapping encrypted loop device exists"), file);
 			}
 
-			lc->info.lo_flags &= ~LO_FLAGS_AUTOCLEAR;
+			lc->config.info.lo_flags &= ~LO_FLAGS_AUTOCLEAR;
 			if (loopcxt_ioctl_status(lc)) {
 				loopcxt_deinit(lc);
 				errx(EXIT_FAILURE, _("%s: failed to re-use loop device"), file);
@@ -522,7 +522,7 @@ static int create_loop(struct loopdev_cxt *lc,
 		}
 	}
 
-	if (hasdev && !is_loopdev(loopcxt_get_device(lc)))
+	if (hasdev)
 		loopcxt_add_device(lc);
 
 	/* losetup --noverlap /dev/loopN file.img */
@@ -573,7 +573,7 @@ static int create_loop(struct loopdev_cxt *lc,
 		if (rc == 0)
 			break;			/* success */
 
-		if (errno == EBUSY && !hasdev && ntries < 64) {
+		if ((errno == EBUSY || errno == EAGAIN) && !hasdev && ntries < 64) {
 			xusleep(200000);
 			ntries++;
 			continue;
@@ -728,6 +728,8 @@ int main(int argc, char **argv)
 			use_dio = set_dio = 1;
 			if (optarg)
 				use_dio = parse_switch(optarg, _("argument error"), "on", "off", NULL);
+			if (use_dio)
+				lo_flags |= LO_FLAGS_DIRECT_IO;
 			break;
 		case 'v':
 			break;
@@ -794,12 +796,14 @@ int main(int argc, char **argv)
 		 * OR
 		 * losetup {--direct-io[=off]|--logical-blocksize=size}... <device>
 		 */
-		if (!(set_dio || set_blocksize))
-			act = A_SHOW_ONE;
-		if (set_dio)
+		if (set_dio) {
 			act = A_SET_DIRECT_IO;
-		if (set_blocksize)
+			lo_flags &= ~LO_FLAGS_DIRECT_IO;
+		} else if (set_blocksize)
 			act = A_SET_BLOCKSIZE;
+		else
+			act = A_SHOW_ONE;
+
 		if (!is_loopdev(argv[optind]) ||
 		    loopcxt_set_device(&lc, argv[optind]))
 			err(EXIT_FAILURE, _("%s: failed to use device"),
@@ -847,8 +851,6 @@ int main(int argc, char **argv)
 			if (showdev)
 				printf("%s\n", loopcxt_get_device(&lc));
 			warn_size(file, sizelimit, offset, flags);
-			if (set_dio)
-				goto lo_set_dio;
 		}
 		break;
 	case A_DELETE:
@@ -901,7 +903,6 @@ int main(int argc, char **argv)
 			        loopcxt_get_device(&lc));
 		break;
 	case A_SET_DIRECT_IO:
-lo_set_dio:
 		res = loopcxt_ioctl_dio(&lc, use_dio);
 		if (res)
 			warn(_("%s: set direct io failed"),

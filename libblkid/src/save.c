@@ -52,10 +52,10 @@ static int save_dev(blkid_dev dev, FILE *file)
 	DBG(SAVE, ul_debug("device %s, type %s", dev->bid_name, dev->bid_type ?
 		   dev->bid_type : "(null)"));
 
-	fprintf(file, "<device DEVNO=\"0x%04lx\" TIME=\"%ld.%ld\"",
+	fprintf(file, "<device DEVNO=\"0x%04lx\" TIME=\"%lld.%lld\"",
 			(unsigned long) dev->bid_devno,
-			(long) dev->bid_time,
-			(long) dev->bid_utime);
+			(long long) dev->bid_time,
+			(long long) dev->bid_utime);
 
 	if (dev->bid_pri)
 		fprintf(file, " PRI=\"%d\"", dev->bid_pri);
@@ -128,9 +128,10 @@ int blkid_flush_cache(blkid_cache cache)
 	 * a temporary file then we open it directly.
 	 */
 	if (ret == 0 && S_ISREG(st.st_mode)) {
-		tmp = malloc(strlen(filename) + 8);
+		size_t len = strlen(filename) + 8;
+		tmp = malloc(len);
 		if (tmp) {
-			sprintf(tmp, "%s-XXXXXX", filename);
+			snprintf(tmp, len, "%s-XXXXXX", filename);
 			fd = mkstemp_cloexec(tmp);
 			if (fd >= 0) {
 				if (fchmod(fd, 0644) != 0)
@@ -178,10 +179,11 @@ int blkid_flush_cache(blkid_cache cache)
 			DBG(SAVE, ul_debug("unlinked temp cache %s", opened));
 		} else {
 			char *backup;
+			size_t len = strlen(filename) + 5;
 
-			backup = malloc(strlen(filename) + 5);
+			backup = malloc(len);
 			if (backup) {
-				sprintf(backup, "%s.old", filename);
+				snprintf(backup, len, "%s.old", filename);
 				unlink(backup);
 				if (link(filename, backup)) {
 					DBG(SAVE, ul_debug("can't link %s to %s",

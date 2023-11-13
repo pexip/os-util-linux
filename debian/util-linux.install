@@ -1,6 +1,7 @@
 #!/usr/bin/dh-exec --with=install
-debian/hwclock.rules => /usr/lib/udev/rules.d/85-hwclock.rules
-debian/hwclock-set => /usr/lib/udev/hwclock-set
+debian/logcheck/ignore.d.server/util-linux => /usr/share/util-linux/logcheck/ignore.d.server/util-linux
+# perl gets to do rename, not us.
+debian/tmp/usr/bin/rename => /usr/bin/rename.ul
 # Rename mkswap to mkswap.linux on non-linux.
 [linux-any] sbin/mkswap
 [!linux-any] debian/tmp/sbin/mkswap => /sbin/mkswap.linux
@@ -17,7 +18,6 @@ sbin/findfs
 sbin/fsck
 sbin/fsck.cramfs
 sbin/fsck.minix
-sbin/hwclock
 sbin/mkfs
 sbin/mkfs.bfs
 sbin/mkfs.cramfs
@@ -31,6 +31,7 @@ usr/bin/choom                                                   [linux-any]
 usr/bin/chrt                                                    [!hurd-any]
 usr/bin/flock
 usr/bin/getopt
+usr/bin/hardlink
 usr/bin/i386                                                    [amd64 i386]
 usr/bin/ipcmk
 usr/bin/ipcrm
@@ -84,12 +85,11 @@ usr/sbin/resizepart usr/bin/                                    [linux-any]
 usr/bin/setarch                                                 [linux-any]
 usr/bin/setterm                                                 [linux-any]
 usr/bin/taskset                                                 [linux-any]
+usr/bin/uclampset                                               [linux-any]
 usr/bin/unshare                                                 [linux-any]
-usr/sbin/fdformat                                               [linux-any]
 usr/sbin/ldattach                                               [linux-any]
 usr/sbin/readprofile                                            [linux-any]
 usr/sbin/rtcwake                                                [linux-any]
 usr/bin/lsmem                                                   [linux-any]
 usr/bin/chmem usr/sbin/                                         [linux-any]
-usr/bin/fincore                                                 [linux-any]
 sbin/blkzone                                                    [linux-any]

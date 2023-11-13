@@ -14,16 +14,15 @@
 #
 # The `sw' option indicates that the swap partition is to be activated
 # with `swapon -a'.
-/dev/hda2	none		swap	sw				0 0
+UUID=dcdeb525-ea16-4b14-96bc-52669f8b28f6	none		swap	sw				0 0
 
 # The `bsdgroups' option indicates that the file system is to be mounted
 # with BSD semantics (files inherit the group ownership of the directory
 # in which they live). `ro' can be used to mount a file system read-only.
-/dev/hda3	/		ext2	defaults			0 1
-/dev/hda5	/home		ext2	defaults			0 2
-/dev/hda6	/var		ext2	defaults			0 2
-/dev/hda7	/usr		ext2	defaults,ro			0 2
-/dev/hda8	/usr/local	ext2	defaults,bsdgroups		0 2
+UUID=b9ab10f7-0f4f-44f6-a35e-84a5ed7e2097	/		ext2	defaults			0 1
+UUID=ca647f3e-356f-4550-b714-7cd1d46f1628	/home		ext2	defaults			0 2
+UUID=c07a265e-014c-46e1-8f8a-5b65ba84eeb9	/var		ext2	defaults			0 2
+UUID=0da3d82a-00c6-44fe-8cba-cdd65cfeab19	/usr/local	ext2	defaults,bsdgroups		0 2
 
 # The `noauto' option indicates that the file system should not be mounted
 # with `mount -a'. `user' indicates that normal users are allowed to mount
@@ -34,6 +33,3 @@
 
 # NFS file systems:
 server:/export/usr	/usr	nfs	defaults			0 0
-
-# proc file system:
-proc		/proc		proc	defaults			0 0

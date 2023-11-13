@@ -1,12 +1,13 @@
 Tests: oversized-chunks
 Depends: bash,
          bc,
-         bsdmainutils,
+         bsdextrautils,
          bsdutils,
          dpkg,
          grep,
          mount,
          util-linux
+Restrictions: allow-stderr
 
 Tests: libblkid-dev
 Depends: build-essential,

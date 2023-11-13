@@ -1,14 +1,13 @@
 #!/usr/bin/dh-exec --with=install
-[linux-any] debian/tmp/usr/share/man/man8/linux32.8 => /usr/share/man/man1/linux32.1
-[linux-any] debian/tmp/usr/share/man/man8/linux64.8 => /usr/share/man/man1/linux64.1
+debian/tmp/usr/share/man/man1/rename.1 => /usr/share/man/man1/rename.ul.1
 # Rename mkswap to mkswap.linux on non-linux.
 [linux-any] debian/tmp/usr/share/man/man8/mkswap.8
 [!linux-any] debian/tmp/usr/share/man/man8/mkswap.8 => /usr/share/man/man8/mkswap.linux.8
-debian/hwclock.5
 debian/tmp/usr/share/man/man1/choom.1                           [linux-any]
 debian/tmp/usr/share/man/man1/chrt.1                            [!hurd-i386]
 debian/tmp/usr/share/man/man1/flock.1
 debian/tmp/usr/share/man/man1/getopt.1
+debian/tmp/usr/share/man/man1/hardlink.1
 debian/tmp/usr/share/man/man1/ipcmk.1
 debian/tmp/usr/share/man/man1/ipcrm.1
 debian/tmp/usr/share/man/man1/ipcs.1
@@ -37,7 +36,6 @@ debian/tmp/usr/share/man/man8/findmnt.8
 debian/tmp/usr/share/man/man8/fsck.8
 debian/tmp/usr/share/man/man8/fsck.cramfs.8
 debian/tmp/usr/share/man/man8/fsck.minix.8
-debian/tmp/usr/share/man/man8/hwclock.8
 debian/tmp/usr/share/man/man8/i386.8                            [amd64 i386]
 debian/tmp/usr/share/man/man8/isosize.8
 debian/tmp/usr/share/man/man8/lsns.8                            [linux-any]
@@ -66,6 +64,7 @@ debian/tmp/usr/share/man/man1/nsenter.1                         [linux-any]
 debian/tmp/usr/share/man/man1/prlimit.1                         [linux-any]
 debian/tmp/usr/share/man/man1/setterm.1                         [linux-any]
 debian/tmp/usr/share/man/man1/taskset.1                         [linux-any]
+debian/tmp/usr/share/man/man1/uclampset.1                       [linux-any]
 debian/tmp/usr/share/man/man1/unshare.1                         [linux-any]
 debian/tmp/usr/share/man/man8/addpart.8                         [linux-any]
 debian/tmp/usr/share/man/man8/blkdiscard.8                      [linux-any]
@@ -73,10 +72,11 @@ debian/tmp/usr/share/man/man8/blockdev.8                        [linux-any]
 debian/tmp/usr/share/man/man8/chcpu.8                           [linux-any]
 debian/tmp/usr/share/man/man8/ctrlaltdel.8                      [linux-any]
 debian/tmp/usr/share/man/man8/delpart.8                         [linux-any]
-debian/tmp/usr/share/man/man8/fdformat.8                        [linux-any]
 debian/tmp/usr/share/man/man8/fsfreeze.8                        [linux-any]
 debian/tmp/usr/share/man/man8/fstrim.8                          [linux-any]
 debian/tmp/usr/share/man/man8/ldattach.8                        [linux-any]
+debian/tmp/usr/share/man/man8/linux32.8                         [linux-any]
+debian/tmp/usr/share/man/man8/linux64.8                         [linux-any]
 debian/tmp/usr/share/man/man8/lsblk.8                           [linux-any]
 debian/tmp/usr/share/man/man8/lslocks.8                         [linux-any]
 debian/tmp/usr/share/man/man8/partx.8                           [linux-any]
@@ -89,5 +89,4 @@ debian/tmp/usr/share/man/man8/switch_root.8                     [linux-any]
 debian/tmp/usr/share/man/man8/wdctl.8                           [linux-any]
 debian/tmp/usr/share/man/man1/lsmem.1                           [linux-any]
 debian/tmp/usr/share/man/man8/chmem.8                           [linux-any]
-debian/tmp/usr/share/man/man1/fincore.1                         [linux-any]
 debian/tmp/usr/share/man/man8/blkzone.8                         [linux-any]

@@ -38,12 +38,15 @@
 #include "strutils.h"
 #include "closestream.h"
 #include "canonicalize.h"
+#include "pathnames.h"
 
 #define XALLOC_EXIT_CODE MNT_EX_SYSERR
 #include "xalloc.h"
 
 #define OPTUTILS_EXIT_CODE MNT_EX_USAGE
 #include "optutils.h"
+
+static struct ul_env_list *envs_removed;
 
 static int mk_exit_code(struct libmnt_context *cxt, int rc);
 
@@ -52,19 +55,21 @@ static void suid_drop(struct libmnt_context *cxt)
 	const uid_t ruid = getuid();
 	const uid_t euid = geteuid();
 
-	if (ruid != 0 && euid == 0) {
-		if (setgid(getgid()) < 0)
-			err(MNT_EX_FAIL, _("setgid() failed"));
-
-		if (setuid(getuid()) < 0)
-			err(MNT_EX_FAIL, _("setuid() failed"));
-	}
+	if (ruid != 0 && euid == 0 && drop_permissions() != 0)
+		err(MNT_EX_FAIL, _("drop permissions failed"));
 
 	/* be paranoid and check it, setuid(0) has to fail */
 	if (ruid != 0 && setuid(0) == 0)
 		errx(MNT_EX_FAIL, _("drop permissions failed."));
 
 	mnt_context_force_unrestricted(cxt);
+
+	/* restore "bad" environment variables */
+	if (envs_removed) {
+		env_list_setenv(envs_removed);
+		env_list_free(envs_removed);
+		envs_removed = NULL;
+	}
 }
 
 static void __attribute__((__noreturn__)) mount_print_version(void)
@@ -137,7 +142,7 @@ static void print_all(struct libmnt_context *cxt, char *pattern, int show_label)
 		if (type && pattern && !mnt_match_fstype(type, pattern))
 			continue;
 
-		if (!mnt_fs_is_pseudofs(fs) && !mnt_fs_is_netfs(fs))
+		if (mnt_fs_is_regularfs(fs))
 			xsrc = mnt_pretty_path(src, cache);
 		printf ("%s on ", xsrc ? xsrc : src);
 		safe_fputs(mnt_fs_get_target(fs));
@@ -303,14 +308,14 @@ static void success_message(struct libmnt_context *cxt)
 }
 
 #if defined(HAVE_LIBSELINUX) && defined(HAVE_SECURITY_GET_INITIAL_CONTEXT)
-#include <selinux/selinux.h>
-#include <selinux/context.h>
+# include <selinux/selinux.h>
+# include <selinux/context.h>
 
 static void selinux_warning(struct libmnt_context *cxt, const char *tgt)
 {
 
 	if (tgt && mnt_context_is_verbose(cxt) && is_selinux_enabled() > 0) {
-		security_context_t raw = NULL, def = NULL;
+		char *raw = NULL, *def = NULL;
 
 		if (getfilecon(tgt, &raw) > 0
 		    && security_get_initial_context("file", &def) == 0) {
@@ -318,7 +323,7 @@ static void selinux_warning(struct libmnt_context *cxt, const char *tgt)
 		if (!selinux_file_context_cmp(raw, def))
 			printf(_(
 	"mount: %s does not contain SELinux labels.\n"
-	"       You just mounted an file system that supports labels which does not\n"
+	"       You just mounted a file system that supports labels which does not\n"
 	"       contain labels, onto an SELinux box. It is likely that confined\n"
 	"       applications will generate AVC messages and not be allowed access to\n"
 	"       this file system.  For more details see restorecon(8) and mount(8).\n"),
@@ -331,6 +336,31 @@ static void selinux_warning(struct libmnt_context *cxt, const char *tgt)
 #else
 # define selinux_warning(_x, _y)
 #endif
+
+
+#ifdef USE_SYSTEMD
+static void systemd_hint(void)
+{
+	static int fstab_check_done = 0;
+
+	if (fstab_check_done == 0) {
+		struct stat a, b;
+
+		if (isatty(STDERR_FILENO) &&
+		    stat(_PATH_SD_UNITSLOAD, &a) == 0 &&
+		    stat(_PATH_MNTTAB, &b) == 0 &&
+		    cmp_stat_mtime(&a, &b, <))
+			printf(_(
+	"mount: (hint) your fstab has been modified, but systemd still uses\n"
+	"       the old version; use 'systemctl daemon-reload' to reload.\n"));
+
+		fstab_check_done = 1;
+	}
+}
+#else
+# define systemd_hint()
+#endif
+
 
 /*
  * Returns exit status (MNT_EX_*) and/or prints error message.
@@ -350,11 +380,18 @@ static int mk_exit_code(struct libmnt_context *cxt, int rc)
 		if (!spec)
 			spec = "???";
 		warnx("%s: %s.", spec, buf);
+
+		if (mnt_context_syscall_called(cxt) &&
+		    mnt_context_get_syscall_errno(cxt) != 0)
+			fprintf(stderr, _("       dmesg(1) may have more information after failed mount system call.\n"));
 	}
 
 	if (rc == MNT_EX_SUCCESS && mnt_context_get_status(cxt) == 1) {
 		selinux_warning(cxt, tgt);
 	}
+
+	systemd_hint();
+
 	return rc;
 }
 
@@ -382,7 +419,7 @@ static struct libmnt_table *append_fstab(struct libmnt_context *cxt,
 
 /*
  * Check source and target paths -- non-root user should not be able to
- * resolve paths which are unreadable for him.
+ * resolve paths which are unreadable for them.
  */
 static int sanitize_paths(struct libmnt_context *cxt)
 {
@@ -412,12 +449,20 @@ static int sanitize_paths(struct libmnt_context *cxt)
 	return 0;
 }
 
-static void append_option(struct libmnt_context *cxt, const char *opt)
+static void append_option(struct libmnt_context *cxt, const char *opt, const char *arg)
 {
+	char *o = NULL;
+
 	if (opt && (*opt == '=' || *opt == '\'' || *opt == '\"' || isblank(*opt)))
 		errx(MNT_EX_USAGE, _("unsupported option format: %s"), opt);
-	if (mnt_context_append_options(cxt, opt))
-		err(MNT_EX_SYSERR, _("failed to append option '%s'"), opt);
+
+	if (arg && *arg)
+		xasprintf(&o, "%s=\"%s\"", opt, arg);
+
+	if (mnt_context_append_options(cxt, o ? : opt))
+		err(MNT_EX_SYSERR, _("failed to append option '%s'"), o ? : opt);
+
+	free(o);
 }
 
 static int has_remount_flag(struct libmnt_context *cxt)
@@ -457,6 +502,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fprintf(out, _(
 	" -l, --show-labels       show also filesystem labels\n"));
 	fprintf(out, _(
+	" -m, --mkdir[=<mode>]    alias to '-o X-mount.mkdir[=<mode>]'\n"));
+	fprintf(out, _(
 	" -n, --no-mtab           don't write to /etc/mtab\n"));
 	fprintf(out, _(
 	"     --options-mode <mode>\n"
@@ -475,7 +522,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	"     --target <target>   explicitly specifies mountpoint\n"));
 	fprintf(out, _(
 	"     --target-prefix <path>\n"
-	"                         specifies path use for all mountpoints\n"));
+	"                         specifies path used for all mountpoints\n"));
 	fprintf(out, _(
 	" -v, --verbose           say what is being done\n"));
 	fprintf(out, _(
@@ -632,6 +679,7 @@ int main(int argc, char **argv)
 		{ "make-rslave",      no_argument,       NULL, MOUNT_OPT_RSLAVE      },
 		{ "make-rprivate",    no_argument,       NULL, MOUNT_OPT_RPRIVATE    },
 		{ "make-runbindable", no_argument,       NULL, MOUNT_OPT_RUNBINDABLE },
+		{ "mkdir",            optional_argument, NULL, 'm'                   },
 		{ "no-canonicalize",  no_argument,       NULL, 'c'                   },
 		{ "internal-only",    no_argument,       NULL, 'i'                   },
 		{ "show-labels",      no_argument,       NULL, 'l'                   },
@@ -652,7 +700,7 @@ int main(int argc, char **argv)
 	};
 	int excl_st[ARRAY_SIZE(excl)] = UL_EXCL_STATUS_INIT;
 
-	sanitize_env();
+	__sanitize_env(&envs_removed);
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
@@ -667,7 +715,7 @@ int main(int argc, char **argv)
 
 	mnt_context_set_tables_errcb(cxt, table_parser_errcb);
 
-	while ((c = getopt_long(argc, argv, "aBcfFhilL:Mno:O:rRsU:vVwt:T:N:",
+	while ((c = getopt_long(argc, argv, "aBcfFhilL:m::Mno:O:rRsU:vVwt:T:N:",
 					longopts, NULL)) != -1) {
 
 		/* only few options are allowed for non-root users */
@@ -699,14 +747,14 @@ int main(int argc, char **argv)
 			mnt_context_disable_mtab(cxt, TRUE);
 			break;
 		case 'r':
-			append_option(cxt, "ro");
+			append_option(cxt, "ro", NULL);
 			mnt_context_enable_rwonly_mount(cxt, FALSE);
 			break;
 		case 'v':
 			mnt_context_enable_verbose(cxt, TRUE);
 			break;
 		case 'w':
-			append_option(cxt, "rw");
+			append_option(cxt, "rw", NULL);
 			mnt_context_enable_rwonly_mount(cxt, TRUE);
 			break;
 		case 'o':
@@ -717,11 +765,11 @@ int main(int argc, char **argv)
 
 				mnt_optstr_remove_option(&o, "move");
 				if (o && *o)
-					append_option(cxt, o);
+					append_option(cxt, o, NULL);
 				oper = is_move = 1;
 				free(o);
 			} else
-				append_option(cxt, optarg);
+				append_option(cxt, optarg, NULL);
 			break;
 		case 'O':
 			if (mnt_context_set_options_pattern(cxt, optarg))
@@ -753,15 +801,20 @@ int main(int argc, char **argv)
 			break;
 		case 'B':
 			oper = 1;
-			append_option(cxt, "bind");
+			append_option(cxt, "bind", NULL);
 			break;
 		case 'M':
 			oper = 1;
 			is_move = 1;
 			break;
+		case 'm':
+			if (optarg && *optarg == '=')
+				optarg++;
+			append_option(cxt, "X-mount.mkdir", optarg);
+			break;
 		case 'R':
 			oper = 1;
-			append_option(cxt, "rbind");
+			append_option(cxt, "rbind", NULL);
 			break;
 		case 'N':
 		{
@@ -776,35 +829,35 @@ int main(int argc, char **argv)
 			break;
 		}
 		case MOUNT_OPT_SHARED:
-			append_option(cxt, "shared");
+			append_option(cxt, "shared", NULL);
 			propa = 1;
 			break;
 		case MOUNT_OPT_SLAVE:
-			append_option(cxt, "slave");
+			append_option(cxt, "slave", NULL);
 			propa = 1;
 			break;
 		case MOUNT_OPT_PRIVATE:
-			append_option(cxt, "private");
+			append_option(cxt, "private", NULL);
 			propa = 1;
 			break;
 		case MOUNT_OPT_UNBINDABLE:
-			append_option(cxt, "unbindable");
+			append_option(cxt, "unbindable", NULL);
 			propa = 1;
 			break;
 		case MOUNT_OPT_RSHARED:
-			append_option(cxt, "rshared");
+			append_option(cxt, "rshared", NULL);
 			propa = 1;
 			break;
 		case MOUNT_OPT_RSLAVE:
-			append_option(cxt, "rslave");
+			append_option(cxt, "rslave", NULL);
 			propa = 1;
 			break;
 		case MOUNT_OPT_RPRIVATE:
-			append_option(cxt, "rprivate");
+			append_option(cxt, "rprivate", NULL);
 			propa = 1;
 			break;
 		case MOUNT_OPT_RUNBINDABLE:
-			append_option(cxt, "runbindable");
+			append_option(cxt, "runbindable", NULL);
 			propa = 1;
 			break;
 		case MOUNT_OPT_TARGET:
@@ -991,6 +1044,6 @@ int main(int argc, char **argv)
 		success_message(cxt);
 done:
 	mnt_free_context(cxt);
+	env_list_free(envs_removed);
 	return rc;
 }
-

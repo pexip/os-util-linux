@@ -13,6 +13,8 @@ libmount.so.1 libmount1 #MINVER#
  MOUNT_2.33@MOUNT_2.33 2.33
  MOUNT_2.34@MOUNT_2.34 2.34
  MOUNT_2_35@MOUNT_2_35 2.35.1
+ MOUNT_2_37@MOUNT_2_37 2.37.2
+ MOUNT_2_38@MOUNT_2_38 2.38
  mnt_cache_device_has_tag@MOUNT_2.19 2.19.1
  mnt_cache_find_tag_value@MOUNT_2.19 2.19.1
  mnt_cache_read_tags@MOUNT_2.19 2.19.1
@@ -158,9 +160,11 @@ libmount.so.1 libmount1 #MINVER#
  mnt_fs_get_user_options@MOUNT_2.19 2.19.1
  mnt_fs_get_userdata@MOUNT_2.19 2.19.1
  mnt_fs_get_vfs_options@MOUNT_2.19 2.19.1
+ mnt_fs_get_vfs_options_all@MOUNT_2_37 2.37.2
  mnt_fs_is_kernel@MOUNT_2.19 2.19.1
  mnt_fs_is_netfs@MOUNT_2.21 2.24.2
  mnt_fs_is_pseudofs@MOUNT_2.21 2.24.2
+ mnt_fs_is_regularfs@MOUNT_2_38 2.38
  mnt_fs_is_swaparea@MOUNT_2.21 2.24.2
  mnt_fs_match_fstype@MOUNT_2.19 2.19.1
  mnt_fs_match_options@MOUNT_2.19 2.19.1
@@ -276,6 +280,7 @@ libmount.so.1 libmount1 #MINVER#
  mnt_table_move_fs@MOUNT_2.34 2.34
  mnt_table_next_child_fs@MOUNT_2.19 2.19.1
  mnt_table_next_fs@MOUNT_2.19 2.19.1
+ mnt_table_over_fs@MOUNT_2_37 2.37.2
  mnt_table_parse_dir@MOUNT_2.21 2.24.2
  mnt_table_parse_file@MOUNT_2.19 2.19.1
  mnt_table_parse_fstab@MOUNT_2.19 2.19.1

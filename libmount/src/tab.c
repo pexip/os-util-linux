@@ -309,7 +309,7 @@ int mnt_table_append_intro_comment(struct libmnt_table *tb, const char *comm)
 {
 	if (!tb)
 		return -EINVAL;
-	return append_string(&tb->comm_intro, comm);
+	return strappend(&tb->comm_intro, comm);
 }
 
 /**
@@ -350,7 +350,7 @@ int mnt_table_append_trailing_comment(struct libmnt_table *tb, const char *comm)
 {
 	if (!tb)
 		return -EINVAL;
-	return append_string(&tb->comm_tail, comm);
+	return strappend(&tb->comm_tail, comm);
 }
 
 /**
@@ -704,6 +704,61 @@ int mnt_table_next_child_fs(struct libmnt_table *tb, struct libmnt_iter *itr,
 	mnt_table_set_iter(tb, itr, *chld);
 
 	return 0;
+}
+
+/**
+ * mnt_table_over_fs:
+ * @tb: tab pointer
+ * @parent: pointer to parental FS
+ * @child: returns pointer to FS which over-mounting parent (optional)
+ *
+ * This function returns by @child the first filesystenm which is over-mounted
+ * on @parent. It means the mountpoint of @child is the same as for @parent and
+ * parent->id is the same as child->parent_id.
+ *
+ * Note that you need to call this function in loop until it returns 1 to get
+ * the highest filesystem.
+ *
+ * Example:
+ * <informalexample>
+ *   <programlisting>
+ *	while (mnt_table_over_fs(tb, cur, &over) == 0) {
+ *		printf("%s overmounted by %d\n", mnt_fs_get_target(cur), mnt_fs_get_id(over));
+ *		cur = over;
+ *	}
+ *   </programlisting>
+ * </informalexample>
+ *
+ * Returns: 0 on success, negative number in case of error or 1 at the end of list.
+ */
+int mnt_table_over_fs(struct libmnt_table *tb, struct libmnt_fs *parent,
+		      struct libmnt_fs **child)
+{
+	struct libmnt_iter itr;
+	struct libmnt_fs *fs = NULL;
+	int id;
+	const char *tgt;
+
+	if (!tb || !parent || !is_mountinfo(tb))
+		return -EINVAL;
+
+	if (child)
+		*child = NULL;
+
+	mnt_reset_iter(&itr, MNT_ITER_FORWARD);
+	id = mnt_fs_get_id(parent);
+	tgt = mnt_fs_get_target(parent);
+
+	while (mnt_table_next_fs(tb, &itr, &fs) == 0) {
+		if (mnt_fs_get_parent_id(fs) == id &&
+		    mnt_fs_streq_target(fs, tgt) == 1) {
+			if (child)
+				*child = fs;
+			return 0;
+		}
+	}
+
+	return 1;	/* nothing */
 }
 
 /**
@@ -1610,7 +1665,7 @@ struct libmnt_fs *mnt_table_get_fs_root(struct libmnt_table *tb,
 
 		DBG(FS, ul_debugobj(fs, "source root: %s, source FS root: %s", root, src_root));
 
-		if (src_root && !startswith(root, src_root)) {
+		if (src_root && root && !startswith(root, src_root)) {
 			if (strcmp(root, "/") == 0) {
 				free(root);
 				root = strdup(src_root);
@@ -1692,7 +1747,7 @@ int __mnt_table_is_fs_mounted(struct libmnt_table *tb, struct libmnt_fs *fstab_f
 			src = mnt_fs_get_srcpath(rootfs);
 			if (fstype && strncmp(fstype, "nfs", 3) == 0 && root) {
 				/* NFS stores the root at the end of the source */
-				src = src2 = strappend(src, root);
+				src = src2 = strconcat(src, root);
 				free(root);
 				root = NULL;
 			}
