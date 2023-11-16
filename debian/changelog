@@ -1,3 +1,9 @@
+util-linux (2.38.1-5pexip1) pexip-bookworm; urgency=medium
+
+  * Initial bookworm build
+
+ -- Mark Hymers <mark.hymers@pexip.com>  Thu, 16 Nov 2023 10:35:06 +0000
+
 util-linux (2.38.1-5) unstable; urgency=medium
 
   * Apply upstream patch to fix logger timestamp for stdin (Closes: #1030285)
