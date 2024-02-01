@@ -1,3 +1,9 @@
+util-linux (2.38.1-5+b1+pexip24u2) pexip-bookworm; urgency=medium
+
+  * New versioning scheme
+
+ -- Mark Hymers <mark.hymers@pexip.com>  Thu, 01 Feb 2024 16:37:56 +0000
+
 util-linux (2.38.1-5+b1pexip1) pexip-bookworm; urgency=medium
 
   * Bump version to supercede Debian point release binNMU.
