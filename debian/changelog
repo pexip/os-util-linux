@@ -1,3 +1,11 @@
+util-linux (2.38.1-5+deb12u1) bookworm-security; urgency=medium
+
+  * Add upstream patches to fix CVE-2024-28085 (Closes: #1067849)
+  * No longer install wall, write setgid tty to address CVE-2024-28085
+  * d/gbp.conf: update for stable release
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Thu, 28 Mar 2024 10:52:12 +0100
+
 util-linux (2.38.1-5) unstable; urgency=medium
 
   * Apply upstream patch to fix logger timestamp for stdin (Closes: #1030285)

@@ -35,3 +35,8 @@ upstream/PATCH-1-2-lib-pty-Put-master-PTY-into-non-blocking-mode-a.patch
 upstream/PATCH-2-2-lib-pty-minor-cleanups.patch
 upstream/PATCH-script-abort-if-unused-arguments-are-given.patch
 upstream/logger-always-update-header-when-read-from-stdin.patch
+upstream/write-correctly-handle-wide-characters.patch
+upstream/wall-convert-homebrew-buffering-to-open_memstream.patch
+upstream/wall-use-fputs_careful.patch
+upstream/wall-fix-calloc-cal-Werror-calloc-transposed-args.patch
+upstream/wall-fix-escape-sequence-Injection-CVE-2024-28085.patch
