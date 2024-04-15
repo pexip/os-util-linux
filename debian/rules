@@ -45,6 +45,9 @@ CONFOPTS += --disable-cal
 # Keep hwclock as GPLv2 (and others)
 CONFOPTS += --disable-hwclock-gplv3
 
+# Reduce setgid programs (cf. CVE-2024-28085)
+CONFOPTS += --disable-use-tty-group
+
 # Get the list of binary package, except lib* and *-udeb, from
 # debian/control instead of hardcoding the list when installing
 # bash-completions below.
