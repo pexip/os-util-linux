@@ -1,3 +1,12 @@
+util-linux (2.38.1-5+deb12u2) bookworm; urgency=medium
+
+  * Add the following upstream patches to identify new Arm cores:
+    - 0027-lscpu-Add-Neoverse-V2-Cortex-R82.patch
+    - 0028-lscpu-Add-2023-Cortex.patch
+    - 0029-lscpu-Add-Neoverse-V3-N3.patch
+
+ -- Emanuele Rocca <ema@debian.org>  Fri, 18 Oct 2024 12:56:02 +0000
+
 util-linux (2.38.1-5+deb12u1) bookworm-security; urgency=medium
 
   * Add upstream patches to fix CVE-2024-28085 (Closes: #1067849)

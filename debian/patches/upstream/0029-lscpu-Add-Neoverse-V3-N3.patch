@@ -1,0 +1,22 @@
+From 7be163aa1657c4bd854bde84a83a8c5fcffd25dd Mon Sep 17 00:00:00 2001
+From: Thomas Kaiser <ThomasKaiser@users.noreply.github.com>
+Date: Mon, 26 Feb 2024 12:20:11 +0100
+Subject: [PATCH] Adding Neoverse-V3/-N3 ARM cores
+
+(cherry picked from commit c91694dd066d07c2ca7d68cbe212b2e1f893e942)
+---
+ sys-utils/lscpu-arm.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/sys-utils/lscpu-arm.c b/sys-utils/lscpu-arm.c
+index 511ab281cd8..b9e8060a92f 100644
+--- a/sys-utils/lscpu-arm.c
++++ b/sys-utils/lscpu-arm.c
+@@ -93,6 +93,8 @@ static const struct id_part arm_part[] = {
+     { 0xd80, "Cortex-A520" },
+     { 0xd81, "Cortex-A720" },
+     { 0xd82, "Cortex-X4" },
++    { 0xd84, "Neoverse-V3" },
++    { 0xd8e, "Neoverse-N3" },
+     { -1, "unknown" },
+ };
