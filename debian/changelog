@@ -1,3 +1,18 @@
+util-linux (2.38.1-5+pexip24u4+deb12u2) pexip; urgency=medium
+
+  * New pustream release
+
+ -- Steve McIntyre <steve.mcintyre@pexip.com>  Fri, 15 Nov 2024 11:54:16 +0000
+
+util-linux (2.38.1-5+deb12u2) bookworm; urgency=medium
+
+  * Add the following upstream patches to identify new Arm cores:
+    - 0027-lscpu-Add-Neoverse-V2-Cortex-R82.patch
+    - 0028-lscpu-Add-2023-Cortex.patch
+    - 0029-lscpu-Add-Neoverse-V3-N3.patch
+
+ -- Emanuele Rocca <ema@debian.org>  Fri, 18 Oct 2024 12:56:02 +0000
+
 util-linux (2.38.1-5+pexip24u3+deb12u1) pexip; urgency=medium
 
   * New pustream release with security fix

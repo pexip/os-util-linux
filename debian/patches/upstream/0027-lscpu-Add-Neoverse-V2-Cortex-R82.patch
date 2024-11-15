@@ -1,0 +1,29 @@
+From 6857cccbb4157d5da34ca98f77a0ac9d68e1e740 Mon Sep 17 00:00:00 2001
+From: ThomasKaiser <ThomasKaiser@users.noreply.github.com>
+Date: Sun, 22 Jan 2023 12:37:33 +0100
+Subject: [PATCH] Add missing ARM-cores
+
+https://github.com/ThomasKaiser/sbc-bench/commit/37332238c0a8b7c1555dca9d18a7c98362564416#diff-fdfd2a032c64d6e9ba92a3197cad6b26573c7094433d74efa4ae80f44f65aa99
+---
+ sys-utils/lscpu-arm.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/sys-utils/lscpu-arm.c b/sys-utils/lscpu-arm.c
+index 8357253c66c..f65b25ed66d 100644
+--- a/sys-utils/lscpu-arm.c
++++ b/sys-utils/lscpu-arm.c
+@@ -78,6 +78,7 @@ static const struct id_part arm_part[] = {
+     { 0xd0d, "Cortex-A77" },
+     { 0xd0e, "Cortex-A76AE" },
+     { 0xd13, "Cortex-R52" },
++    { 0xd15, "Cortex-R82" },
+     { 0xd20, "Cortex-M23" },
+     { 0xd21, "Cortex-M33" },
+     { 0xd40, "Neoverse-V1" },
+@@ -94,6 +95,7 @@ static const struct id_part arm_part[] = {
+     { 0xd4c, "Cortex-X1C" },
+     { 0xd4d, "Cortex-A715" },
+     { 0xd4e, "Cortex-X3" },
++    { 0xd4f, "Neoverse-V2" },
+     { -1, "unknown" },
+ };

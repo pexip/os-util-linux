@@ -30,6 +30,9 @@ upstream/0023-lscpu-Add-Kryo-3XX-Gold-core.patch
 upstream/0024-fsck-Processes-may-kill-other-processes.patch
 upstream/0025-libblkid-ntfs-avoid-UB-in-signed-shift.patch
 upstream/0026-libblkid-iso9660-allocate-enough-space-for-UTF16-dec.patch
+upstream/0027-lscpu-Add-Neoverse-V2-Cortex-R82.patch
+upstream/0028-lscpu-Add-2023-Cortex.patch
+upstream/0029-lscpu-Add-Neoverse-V3-N3.patch
 upstream/PATCH-rfkill-man-List-options-for-supported-device-types.patch
 upstream/PATCH-1-2-lib-pty-Put-master-PTY-into-non-blocking-mode-a.patch
 upstream/PATCH-2-2-lib-pty-minor-cleanups.patch
