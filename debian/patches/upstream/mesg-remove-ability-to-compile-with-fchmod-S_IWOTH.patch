@@ -1,0 +1,91 @@
+From: Karel Zak <kzak@redhat.com>
+Date: Fri, 15 Nov 2024 11:53:37 +0100
+Subject: mesg: remove ability to compile with fchmod(S_IWOTH)
+
+The default is to use mesg(1) to modify write access for the "tty"
+group, but there is an obscure legacy. If mesg(1) is compiled with the
+option "--disable-use-tty-group", then it defaults to using
+fchmod(S_IWGRP | S_IWOTH). This means that your tty is then writable
+for everyone. Let's get rid of this ugly feature.
+
+Reported-by: Chris Hofstaedtler <zeha@debian.org>
+Signed-off-by: Karel Zak <kzak@redhat.com>
+---
+ login-utils/login.1.adoc |  4 ++--
+ term-utils/mesg.1.adoc   | 19 ++++++++++++++++++-
+ term-utils/mesg.c        |  4 ----
+ 3 files changed, 20 insertions(+), 7 deletions(-)
+
+diff --git a/login-utils/login.1.adoc b/login-utils/login.1.adoc
+index a3404f3..376dca4 100644
+--- a/login-utils/login.1.adoc
++++ b/login-utils/login.1.adoc
+@@ -93,13 +93,13 @@ Delay in seconds before being allowed another three tries after a login failure.
+ 
+ *TTYPERM* (string)::
+ 
+-The terminal permissions. The default value is _0600_ or _0620_ if tty group is used.
++The terminal permissions. The default value is _0600_ or _0620_ if tty group is used. See also *mesg*(1).
+ 
+ *TTYGROUP* (string)::
+ 
+ The login tty will be owned by the *TTYGROUP*. The default value is _tty_. If the *TTYGROUP* does not exist, then the ownership of the terminal is set to the user's primary group.
+ +
+-The *TTYGROUP* can be either the name of a group or a numeric group identifier.
++The *TTYGROUP* can be either the name of a group or a numeric group identifier. See also *mesg*(1).
+ 
+ *HUSHLOGIN_FILE* (string)::
+ 
+diff --git a/term-utils/mesg.1.adoc b/term-utils/mesg.1.adoc
+index 5ccef72..d4704e7 100644
+--- a/term-utils/mesg.1.adoc
++++ b/term-utils/mesg.1.adoc
+@@ -52,7 +52,23 @@ mesg - display (or do not display) messages from other users
+ 
+ The *mesg* utility is invoked by a user to control write access others have to the terminal device associated with standard error output. If write access is allowed, then programs such as *talk*(1) and *write*(1) may display messages on the terminal.
+ 
+-Traditionally, write access is allowed by default. However, as users become more conscious of various security risks, there is a trend to remove write access by default, at least for the primary login shell. To make sure your ttys are set the way you want them to be set, *mesg* should be executed in your login scripts.
++Traditionally, write access is allowed by default. However, as users become
++more conscious of various security risks, there is a trend to remove write
++access by default, at least for the primary login shell.
++
++The initial permissions for the terminal are set by *login*(1) according to TTYPERM
++and TTYGROUP from /etc/login.defs. The default is mode _0620_ if a tty group is used,
++and _0600_ without the group. The default tty group name is "tty".
++
++To ensure that your ttys are set in a portable and independent manner from system
++settings, *mesg* should be executed in your login scripts.
++
++*mesg* modifies the write permissions for a group on the current terminal
++device. Since version 2.41, *mesg* can no longer be compiled to make the
++terminal writable for _others_ and strictly modifies only _group_ permissions.
++The usual setup is to use a "tty" group and add relevant users to this group.
++Alternatively, a less secure solution is to set utilities like *write*(1) or
++*wall*(1) to setgid for the "tty" group.
+ 
+ The *mesg* utility silently exits with error status 2 if not executed on terminal. In this case execute *mesg* is pointless. The command line option *--verbose* forces mesg to print a warning in this situation. This behaviour has been introduced in version 2.33.
+ 
+@@ -66,6 +82,7 @@ Allow messages to be displayed.
+ 
+ If no arguments are given, *mesg* shows the current message status on standard error output.
+ 
++
+ == OPTIONS
+ 
+ *-v*, *--verbose*::
+diff --git a/term-utils/mesg.c b/term-utils/mesg.c
+index cb0b493..9e0b01e 100644
+--- a/term-utils/mesg.c
++++ b/term-utils/mesg.c
+@@ -157,11 +157,7 @@ int main(int argc, char *argv[])
+ 
+ 	switch (rpmatch(argv[0])) {
+ 	case RPMATCH_YES:
+-#ifdef USE_TTY_GROUP
+ 		if (fchmod(fd, sb.st_mode | S_IWGRP) < 0)
+-#else
+-		if (fchmod(fd, sb.st_mode | S_IWGRP | S_IWOTH) < 0)
+-#endif
+ 			err(MESG_EXIT_FAILURE, _("change %s mode failed"), tty);
+ 		if (verbose)
+ 			puts(_("write access to your terminal is allowed"));

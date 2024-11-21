@@ -1,3 +1,11 @@
+util-linux (2.38.1-5+deb12u3) bookworm; urgency=medium
+
+  * Fixup upstream patches from 2.38.1-5+deb12u2 so gbp-pq can apply them
+  * Use upstream's new --disable-makeinstall-tty-setgid.
+    This fixes our wider mitigation for CVE-2024-28085.
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Thu, 21 Nov 2024 21:01:54 +0100
+
 util-linux (2.38.1-5+deb12u2) bookworm; urgency=medium
 
   * Add the following upstream patches to identify new Arm cores:
