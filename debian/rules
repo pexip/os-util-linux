@@ -46,7 +46,7 @@ CONFOPTS += --disable-cal
 CONFOPTS += --disable-hwclock-gplv3
 
 # Reduce setgid programs (cf. CVE-2024-28085)
-CONFOPTS += --disable-use-tty-group
+CONFOPTS += --disable-makeinstall-tty-setgid
 
 # Get the list of binary package, except lib* and *-udeb, from
 # debian/control instead of hardcoding the list when installing

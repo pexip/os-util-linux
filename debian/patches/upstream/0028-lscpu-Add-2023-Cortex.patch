@@ -1,4 +1,3 @@
-From 6112ade968cbe8728ca25fccdafdb1f9599424db Mon Sep 17 00:00:00 2001
 From: Jeremy Linton <jeremy.linton@arm.com>
 Date: Wed, 26 Jul 2023 15:54:20 -0500
 Subject: [PATCH] lscpu: Even more Arm part numbers (early 2023)
@@ -10,12 +9,14 @@ Cortex-X4, Cortex-A520, Cortex-A720, Cortex-M85,
 Cortex-M55 and Cortex-R52+.
 
 Signed-off-by: Jeremy Linton <jeremy.linton@arm.com>
+
+Upstream commit 6112ade968cbe8728ca25fccdafdb1f9599424db
 ---
  sys-utils/lscpu-arm.c | 6 ++++++
  1 file changed, 6 insertions(+)
 
 diff --git a/sys-utils/lscpu-arm.c b/sys-utils/lscpu-arm.c
-index d83e948b0d8..77959836873 100644
+index 0ee10d2..41cf540 100644
 --- a/sys-utils/lscpu-arm.c
 +++ b/sys-utils/lscpu-arm.c
 @@ -79,8 +79,11 @@ static const struct id_part arm_part[] = {
@@ -39,3 +40,4 @@ index d83e948b0d8..77959836873 100644
 +    { 0xd82, "Cortex-X4" },
      { -1, "unknown" },
  };
+ 

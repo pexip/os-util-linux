@@ -43,3 +43,6 @@ upstream/wall-convert-homebrew-buffering-to-open_memstream.patch
 upstream/wall-use-fputs_careful.patch
 upstream/wall-fix-calloc-cal-Werror-calloc-transposed-args.patch
 upstream/wall-fix-escape-sequence-Injection-CVE-2024-28085.patch
+upstream/autotools-add-disable-makeinstall-tty-setgid.patch
+upstream/meson-add-D-tty-setgid-false-true.patch
+upstream/mesg-remove-ability-to-compile-with-fchmod-S_IWOTH.patch
