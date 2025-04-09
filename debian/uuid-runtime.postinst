@@ -11,7 +11,4 @@ if ! getent passwd uuidd >/dev/null; then
 		uuidd
 fi
 
-chown uuidd:uuidd /var/lib/libuuid
-chmod 2775 /var/lib/libuuid
-
 #DEBHELPER#

@@ -1,3 +1,7 @@
+/*
+ * No copyright is claimed.  This code is in the public domain; do with
+ * it what you wish.
+ */
 #ifndef UTIL_LINUX_PT_MBR_H
 #define UTIL_LINUX_PT_MBR_H
 
@@ -15,7 +19,7 @@ struct dos_partition {
 #define MBR_PT_OFFSET		0x1be
 #define MBR_PT_BOOTBITS_SIZE	440
 
-static inline struct dos_partition *mbr_get_partition(unsigned char *mbr, int i)
+static inline struct dos_partition *mbr_get_partition(const unsigned char *mbr, int i)
 {
 	return (struct dos_partition *)
 		(mbr + MBR_PT_OFFSET + (i * sizeof(struct dos_partition)));
@@ -38,7 +42,7 @@ static inline void __dos_store_4le(unsigned char *p, unsigned int val)
 	p[3] = ((val >> 24) & 0xff);
 }
 
-static inline unsigned int dos_partition_get_start(struct dos_partition *p)
+static inline unsigned int dos_partition_get_start(const struct dos_partition *p)
 {
 	return __dos_assemble_4le(&(p->start_sect[0]));
 }
@@ -48,7 +52,7 @@ static inline void dos_partition_set_start(struct dos_partition *p, unsigned int
 	__dos_store_4le(p->start_sect, n);
 }
 
-static inline unsigned int dos_partition_get_size(struct dos_partition *p)
+static inline unsigned int dos_partition_get_size(const struct dos_partition *p)
 {
 	return __dos_assemble_4le(&(p->nr_sects[0]));
 }
@@ -109,7 +113,7 @@ enum {
 	MBR_FAT16_LESS32M_PARTITION	= 0x04,
 	MBR_DOS_EXTENDED_PARTITION	= 0x05,
 	MBR_FAT16_PARTITION		= 0x06, /* DOS 16-bit >=32M */
-	MBR_HPFS_NTFS_PARTITION		= 0x07, /* OS/2 IFS, eg, HPFS or NTFS or QNX */
+	MBR_HPFS_NTFS_PARTITION		= 0x07, /* OS/2 IFS, e.g., HPFS or NTFS or QNX or exFAT */
 	MBR_AIX_PARTITION		= 0x08, /* AIX boot (AIX -- PS/2 port) or SplitDrive */
 	MBR_AIX_BOOTABLE_PARTITION	= 0x09, /* AIX data or Coherent */
 	MBR_OS2_BOOTMNGR_PARTITION	= 0x0a, /* OS/2 Boot Manager */

@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: lsmem
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-03-17
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "LSMEM" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "LSMEM" "1" "2025-03-17" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -103,6 +103,11 @@ Specify which columns (attributes) use to split memory blocks to ranges. The sup
 Gather memory data for a Linux instance other than the instance from which the \fBlsmem\fP command is issued. The specified \fIdirectory\fP is the system root of the Linux instance to be inspected.
 .RE
 .sp
+\fB\-\-summary\fP[\fB=\fP\fIwhen\fP]
+.RS 4
+This option controls summary lines output. The optional argument \fIwhen\fP can be \fBnever\fP, \fBalways\fP or \fBonly\fP. If the \fIwhen\fP argument is omitted, it defaults to \fB"only"\fP. The summary output is suppressed for \fB\-\-raw\fP, \fB\-\-pairs\fP and \fB\-\-json\fP.
+.RE
+.sp
 \fB\-h\fP, \fB\-\-help\fP
 .RS 4
 Display help text and exit.
@@ -110,12 +115,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
-.RE
-.sp
-\fB\-\-summary\fP[=\fIwhen\fP]
-.RS 4
-This option controls summary lines output. The optional argument \fIwhen\fP can be \fBnever\fP, \fBalways\fP or \fBonly\fP. If the \fIwhen\fP argument is omitted, it defaults to \fB"only"\fP. The summary output is suppressed for \fB\-\-raw\fP, \fB\-\-pairs\fP and \fB\-\-json\fP.
+Display version and exit.
 .RE
 .SH "AUTHORS"
 .sp
@@ -125,8 +125,8 @@ This option controls summary lines output. The optional argument \fIwhen\fP can 
 \fBchmem\fP(8)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBlsmem\fP command is part of the util\-linux package which can be downloaded from \c

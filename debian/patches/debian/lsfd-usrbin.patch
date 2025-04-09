@@ -3,19 +3,19 @@ Date: Thu, 14 Apr 2022 11:47:20 +0000
 Subject: Install lsfd into /usr/bin
 
 ---
- misc-utils/Makemodule.am | 2 +-
+ lsfd-cmd/Makemodule.am | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/misc-utils/Makemodule.am b/misc-utils/Makemodule.am
-index cc18acb..9a91c88 100644
---- a/misc-utils/Makemodule.am
-+++ b/misc-utils/Makemodule.am
-@@ -247,7 +247,7 @@ hardlink_CFLAGS = $(AM_CFLAGS)
- endif
+diff --git a/lsfd-cmd/Makemodule.am b/lsfd-cmd/Makemodule.am
+index d28f869..a64a9db 100644
+--- a/lsfd-cmd/Makemodule.am
++++ b/lsfd-cmd/Makemodule.am
+@@ -2,7 +2,7 @@ if BUILD_LSFD
  
- if BUILD_LSFD
+ lsfd-cmd/file.c: errnos.h
+ 
 -bin_PROGRAMS += lsfd
 +usrbin_exec_PROGRAMS += lsfd
- MANPAGES += misc-utils/lsfd.1
- dist_noinst_DATA += misc-utils/lsfd.1.adoc
+ MANPAGES += lsfd-cmd/lsfd.1
+ dist_noinst_DATA += lsfd-cmd/lsfd.1.adoc
  lsfd_SOURCES = \

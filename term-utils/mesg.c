@@ -82,8 +82,8 @@ static void __attribute__((__noreturn__)) usage(void)
 
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -v, --verbose  explain what is being done\n"), out);
-	printf(USAGE_HELP_OPTIONS(16));
-	printf(USAGE_MAN_TAIL("mesg(1)"));
+	fprintf(out, USAGE_HELP_OPTIONS(16));
+	fprintf(out, USAGE_MAN_TAIL("mesg(1)"));
 
 	exit(EXIT_SUCCESS);
 }
@@ -157,11 +157,7 @@ int main(int argc, char *argv[])
 
 	switch (rpmatch(argv[0])) {
 	case RPMATCH_YES:
-#ifdef USE_TTY_GROUP
 		if (fchmod(fd, sb.st_mode | S_IWGRP) < 0)
-#else
-		if (fchmod(fd, sb.st_mode | S_IWGRP | S_IWOTH) < 0)
-#endif
 			err(MESG_EXIT_FAILURE, _("change %s mode failed"), tty);
 		if (verbose)
 			puts(_("write access to your terminal is allowed"));

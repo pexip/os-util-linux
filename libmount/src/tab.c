@@ -116,6 +116,8 @@ int mnt_reset_table(struct libmnt_table *tb)
 	}
 
 	tb->nents = 0;
+	mnt_table_reset_listmount(tb);
+
 	return 0;
 }
 
@@ -172,6 +174,13 @@ void mnt_free_table(struct libmnt_table *tb)
 	mnt_unref_cache(tb->cache);
 	free(tb->comm_intro);
 	free(tb->comm_tail);
+
+	free(tb->lsmnt);
+	tb->lsmnt = NULL;
+
+	mnt_unref_statmnt(tb->stmnt);
+	tb->stmnt = NULL;
+
 	free(tb);
 }
 
@@ -249,7 +258,7 @@ void *mnt_table_get_userdata(struct libmnt_table *tb)
  *	LABEL=foo /mnt/foo auto defaults 1 2
  *	# this comments belongs to the second fs
  *	LABEL=bar /mnt/bar auto defaults 1 2
- *	# tailing comment
+ *	# trailing comment
  *  </programlisting>
  * </informalexample>
  */
@@ -396,6 +405,39 @@ struct libmnt_cache *mnt_table_get_cache(struct libmnt_table *tb)
 }
 
 /**
+ * mnt_table_refer_statmnt:
+ * @tb: pointer to tab
+ * @sm: statmount setting or NULL
+ *
+ * Add a reference to the statmount() setting in the table (see
+ * mnt_new_statmnt() function, etc.).  This reference will automatically be
+ * used for any newly added filesystems in the @tb, eliminating the need for
+ * extra mnt_fs_refer_statmnt() calls for each filesystem.
+ *
+ * The reference is not removed by mnt_reset_table(), use NULL as @sm to
+ * remove the reference.
+ *
+ * Returns: 0 on success or negative number in case of error.
+ *
+ * Since: 2.41
+ */
+int mnt_table_refer_statmnt(struct libmnt_table *tb, struct libmnt_statmnt *sm)
+{
+	if (!tb)
+		return -EINVAL;
+	if (tb->stmnt == sm)
+		return 0;
+
+	mnt_unref_statmnt(tb->stmnt);
+	mnt_ref_statmnt(sm);
+
+	DBG(TAB, ul_debugobj(tb, "refer statmnt"));
+
+	tb->stmnt = sm;
+	return 0;
+}
+
+/**
  * mnt_table_find_fs:
  * @tb: tab pointer
  * @fs: entry to look for
@@ -455,6 +497,9 @@ int mnt_table_add_fs(struct libmnt_table *tb, struct libmnt_fs *fs)
 
 	DBG(TAB, ul_debugobj(tb, "add entry: %s %s",
 			mnt_fs_get_source(fs), mnt_fs_get_target(fs)));
+	if (tb->stmnt)
+		mnt_fs_refer_statmnt(fs, tb->stmnt);
+
 	return 0;
 }
 
@@ -462,18 +507,26 @@ static int __table_insert_fs(
 			struct libmnt_table *tb, int before,
 			struct libmnt_fs *pos, struct libmnt_fs *fs)
 {
-	struct list_head *head = pos ? &pos->ents : &tb->ents;
-
-	if (before)
-		list_add(&fs->ents, head);
+	if (!pos)
+		list_add_tail(&fs->ents, &tb->ents);
+	else if (before)
+		list_add_tail(&fs->ents, &pos->ents);
 	else
-		list_add_tail(&fs->ents, head);
+		list_add(&fs->ents, &pos->ents);
 
 	fs->tab = tb;
 	tb->nents++;
 
-	DBG(TAB, ul_debugobj(tb, "insert entry: %s %s",
+	if (mnt_fs_get_uniq_id(fs)) {
+		DBG(TAB, ul_debugobj(tb, "insert entry: %" PRIu64, mnt_fs_get_uniq_id(fs)));
+	} else {
+		DBG(TAB, ul_debugobj(tb, "insert entry: %s %s",
 			mnt_fs_get_source(fs), mnt_fs_get_target(fs)));
+	}
+
+	if (tb->stmnt)
+		mnt_fs_refer_statmnt(fs, tb->stmnt);
+
 	return 0;
 }
 
@@ -590,7 +643,7 @@ static inline struct libmnt_fs *get_parent_fs(struct libmnt_table *tb, struct li
 /**
  * mnt_table_get_root_fs:
  * @tb: mountinfo file (/proc/self/mountinfo)
- * @root: returns pointer to the root filesystem (/)
+ * @root: NULL or returns pointer to the root filesystem (/)
  *
  * The function uses the parent ID from the mountinfo file to determine the
  * root filesystem (the filesystem with the smallest ID with parent ID missing
@@ -609,37 +662,38 @@ static inline struct libmnt_fs *get_parent_fs(struct libmnt_table *tb, struct li
 int mnt_table_get_root_fs(struct libmnt_table *tb, struct libmnt_fs **root)
 {
 	struct libmnt_iter itr;
-	struct libmnt_fs *fs;
+	struct libmnt_fs *fs, *root_fs = NULL;
 	int root_id = 0;
 
-	if (!tb || !root || !is_mountinfo(tb))
+	if (!tb || !is_mountinfo(tb))
 		return -EINVAL;
 
 	DBG(TAB, ul_debugobj(tb, "lookup root fs"));
 
-	*root = NULL;
-
 	/* get smallest possible ID from the table */
 	mnt_reset_iter(&itr, MNT_ITER_FORWARD);
-	while(mnt_table_next_fs(tb, &itr, &fs) == 0) {
+	while (mnt_table_next_fs(tb, &itr, &fs) == 0) {
 		int id = mnt_fs_get_parent_id(fs);
 
-		if (!*root || id < root_id) {
-			*root = fs;
+		if (!root_fs || id < root_id) {
+			root_fs = fs;
 			root_id = id;
 		}
 	}
 
 	/* go to the root node by "parent_id -> id" relation */
-	while (*root) {
-		struct libmnt_fs *x = get_parent_fs(tb, *root);
-		if (!x || x == *root)
+	while (root_fs) {
+		struct libmnt_fs *x = get_parent_fs(tb, root_fs);
+		if (!x || x == root_fs)
 			break;
 		DBG(TAB, ul_debugobj(tb, " messy mountinfo, walk to %s", mnt_fs_get_target(x)));
-		*root = x;
+		root_fs = x;
 	}
 
-	return *root ? 0 : -EINVAL;
+	if (root)
+		*root = root_fs;
+
+	return root_fs ? 0 : -EINVAL;
 }
 
 /**
@@ -647,37 +701,37 @@ int mnt_table_get_root_fs(struct libmnt_table *tb, struct libmnt_fs **root)
  * @tb: mountinfo file (/proc/self/mountinfo)
  * @itr: iterator
  * @parent: parental FS
- * @chld: returns the next child filesystem
+ * @chld: NULL or returns the next child filesystem
  *
- * Note that filesystems are returned in the order of mounting (according to
- * IDs in /proc/self/mountinfo).
+ * Since version 2.40, the filesystems are returned in the order specified by
+ * @itr. In the old versions the derection is always MNT_ITER_FORWARD.
  *
  * Returns: 0 on success, negative number in case of error or 1 at the end of list.
  */
 int mnt_table_next_child_fs(struct libmnt_table *tb, struct libmnt_iter *itr,
 			struct libmnt_fs *parent, struct libmnt_fs **chld)
 {
-	struct libmnt_fs *fs;
+	struct libmnt_fs *fs, *chfs = NULL;
 	int parent_id, lastchld_id = 0, chld_id = 0;
+	int direction;
 
 	if (!tb || !itr || !parent || !is_mountinfo(tb))
 		return -EINVAL;
 
 	DBG(TAB, ul_debugobj(tb, "lookup next child of '%s'",
 				mnt_fs_get_target(parent)));
-
 	parent_id = mnt_fs_get_id(parent);
+	direction = mnt_iter_get_direction(itr);
 
 	/* get ID of the previously returned child */
 	if (itr->head && itr->p != itr->head) {
-		MNT_ITER_ITERATE(itr, fs, struct libmnt_fs, ents);
+		fs = MNT_ITER_GET_ENTRY(itr, struct libmnt_fs, ents);
+		MNT_ITER_ITERATE(itr);
 		lastchld_id = mnt_fs_get_id(fs);
 	}
 
-	*chld = NULL;
-
-	mnt_reset_iter(itr, MNT_ITER_FORWARD);
-	while(mnt_table_next_fs(tb, itr, &fs) == 0) {
+	mnt_reset_iter(itr, direction);
+	while (mnt_table_next_fs(tb, itr, &fs) == 0) {
 		int id;
 
 		if (mnt_fs_get_parent_id(fs) != parent_id)
@@ -690,18 +744,30 @@ int mnt_table_next_child_fs(struct libmnt_table *tb, struct libmnt_iter *itr,
 		if (id == parent_id)
 			continue;
 
-		if ((!lastchld_id || id > lastchld_id) &&
-		    (!*chld || id < chld_id)) {
-			*chld = fs;
-			chld_id = id;
+		if (direction == MNT_ITER_FORWARD) {
+			/* return in the order of mounting */
+			if ((!lastchld_id || id > lastchld_id) &&
+			    (!chfs || id < chld_id)) {
+				chfs = fs;
+				chld_id = id;
+			}
+		} else {
+			/* return last child first */
+			if ((!lastchld_id || id < lastchld_id) &&
+			    (!chfs || id > chld_id)) {
+				chfs = fs;
+				chld_id = id;
+			}
 		}
 	}
 
-	if (!*chld)
+	if (chld)
+		*chld = chfs;
+	if (!chfs)
 		return 1;	/* end of iterator */
 
-	/* set the iterator to the @chld for the next call */
-	mnt_table_set_iter(tb, itr, *chld);
+	/* set the iterator to the @chfs for the next call */
+	mnt_table_set_iter(tb, itr, chfs);
 
 	return 0;
 }
@@ -765,7 +831,7 @@ int mnt_table_over_fs(struct libmnt_table *tb, struct libmnt_fs *parent,
  * mnt_table_next_fs:
  * @tb: tab pointer
  * @itr: iterator
- * @fs: returns the next tab entry
+ * @fs: NULL or returns the next tab entry
  *
  * Returns: 0 on success, negative number in case of error or 1 at the end of list.
  *
@@ -785,14 +851,33 @@ int mnt_table_next_fs(struct libmnt_table *tb, struct libmnt_iter *itr, struct l
 {
 	int rc = 1;
 
-	if (!tb || !itr || !fs)
+	if (!tb || !itr)
 		return -EINVAL;
-	*fs = NULL;
+	if (fs)
+		*fs = NULL;
+#ifdef HAVE_STATMOUNT_API
+	if (mnt_table_want_listmount(tb) &&
+	    (list_empty(&tb->ents) || itr->p == itr->head)) {
+		struct list_head *prev = NULL;
 
+		if (itr->p)
+			prev = IS_ITER_FORWARD(itr) ? itr->p->prev : itr->p->next;
+		rc =  mnt_table_next_lsmnt(tb, itr->direction);
+		if (rc)
+			return rc;
+		MNT_ITER_INIT(itr, &tb->ents);
+		if (prev) {
+		        itr->p = prev;
+			MNT_ITER_ITERATE(itr);
+		}
+	}
+#endif
 	if (!itr->head)
 		MNT_ITER_INIT(itr, &tb->ents);
 	if (itr->p != itr->head) {
-		MNT_ITER_ITERATE(itr, *fs, struct libmnt_fs, ents);
+		if (fs)
+			*fs = MNT_ITER_GET_ENTRY(itr, struct libmnt_fs, ents);
+		MNT_ITER_ITERATE(itr);
 		rc = 0;
 	}
 
@@ -802,34 +887,36 @@ int mnt_table_next_fs(struct libmnt_table *tb, struct libmnt_iter *itr, struct l
 /**
  * mnt_table_first_fs:
  * @tb: tab pointer
- * @fs: returns the first tab entry
+ * @fs: NULL or returns the first tab entry
  *
  * Returns: 0 on success, negative number in case of error or 1 at the end of list.
  */
 int mnt_table_first_fs(struct libmnt_table *tb, struct libmnt_fs **fs)
 {
-	if (!tb || !fs)
+	if (!tb)
 		return -EINVAL;
 	if (list_empty(&tb->ents))
 		return 1;
-	*fs = list_first_entry(&tb->ents, struct libmnt_fs, ents);
+	if (fs)
+		*fs = list_first_entry(&tb->ents, struct libmnt_fs, ents);
 	return 0;
 }
 
 /**
  * mnt_table_last_fs:
  * @tb: tab pointer
- * @fs: returns the last tab entry
+ * @fs: NULL or returns the last tab entry
  *
  * Returns: 0 on success, negative number in case of error or 1 at the end of list.
  */
 int mnt_table_last_fs(struct libmnt_table *tb, struct libmnt_fs **fs)
 {
-	if (!tb || !fs)
+	if (!tb)
 		return -EINVAL;
 	if (list_empty(&tb->ents))
 		return 1;
-	*fs = list_last_entry(&tb->ents, struct libmnt_fs, ents);
+	if (fs)
+		*fs = list_last_entry(&tb->ents, struct libmnt_fs, ents);
 	return 0;
 }
 
@@ -839,7 +926,7 @@ int mnt_table_last_fs(struct libmnt_table *tb, struct libmnt_fs **fs)
  * @itr: iterator
  * @match_func: function returning 1 or 0
  * @userdata: extra data for match_func
- * @fs: returns pointer to the next matching table entry
+ * @fs: NULL or returns pointer to the next matching table entry
  *
  * This function allows searching in @tb.
  *
@@ -849,26 +936,32 @@ int mnt_table_find_next_fs(struct libmnt_table *tb, struct libmnt_iter *itr,
 		int (*match_func)(struct libmnt_fs *, void *), void *userdata,
 		struct libmnt_fs **fs)
 {
-	if (!tb || !itr || !fs || !match_func)
+	struct libmnt_fs *re = NULL;
+	int match = 0;
+
+	if (!tb || !itr || !match_func)
 		return -EINVAL;
 
 	DBG(TAB, ul_debugobj(tb, "lookup next fs"));
 
+	if (fs)
+		*fs = NULL;
 	if (!itr->head)
 		MNT_ITER_INIT(itr, &tb->ents);
 
-	do {
-		if (itr->p != itr->head)
-			MNT_ITER_ITERATE(itr, *fs, struct libmnt_fs, ents);
-		else
-			break;			/* end */
+	while (!match) {
+		if (itr->p != itr->head) {
+			re = MNT_ITER_GET_ENTRY(itr, struct libmnt_fs, ents);
+			MNT_ITER_ITERATE(itr);
+		} else
+			return 1;	/*end */
 
-		if (match_func(*fs, userdata))
-			return 0;
-	} while(1);
+		match = match_func(re, userdata);
+	}
 
-	*fs = NULL;
-	return 1;
+	if (fs)
+		*fs = re;
+	return 0;
 }
 
 static int mnt_table_move_parent(struct libmnt_table *tb, int oldid, int newid)
@@ -998,7 +1091,6 @@ struct libmnt_fs *mnt_table_find_mountpoint(struct libmnt_table *tb,
 					    int direction)
 {
 	char *mnt;
-	struct stat st;
 
 	if (!tb || !path || !*path)
 		return NULL;
@@ -1007,7 +1099,7 @@ struct libmnt_fs *mnt_table_find_mountpoint(struct libmnt_table *tb,
 
 	DBG(TAB, ul_debugobj(tb, "lookup MOUNTPOINT: '%s'", path));
 
-	if (mnt_stat_mountpoint(path, &st))
+	if (!mnt_is_path(path))
 		return NULL;
 
 	mnt = strdup(path);
@@ -1449,6 +1541,67 @@ struct libmnt_fs *mnt_table_find_devno(struct libmnt_table *tb,
 	return NULL;
 }
 
+/**
+ * mnt_table_find_id:
+ * @tb: mount table
+ * @id: classic mount ID
+ *
+ * See also mnt_id_from_path().
+ *
+ * Returns: a tab entry or NULL.
+ *
+ * Since: 2.41
+ */
+struct libmnt_fs *mnt_table_find_id(struct libmnt_table *tb, int id)
+{
+	struct libmnt_fs *fs = NULL;
+	struct libmnt_iter itr;
+
+	if (!tb)
+		return NULL;
+
+	DBG(TAB, ul_debugobj(tb, "lookup ID: %d", id));
+	mnt_reset_iter(&itr, MNT_ITER_BACKWARD);
+
+	while (mnt_table_next_fs(tb, &itr, &fs) == 0) {
+		if (mnt_fs_get_id(fs) == id)
+			return fs;
+	}
+
+	return NULL;
+}
+
+/**
+ * mnt_table_find_uniq_id:
+ * @tb: mount table
+ * @id: uniqie 64-bit mount ID
+ *
+ * See also mnt_id_from_path().
+ *
+ * Returns: a tab entry or NULL.
+ *
+ * Since: 2.41
+ */
+struct libmnt_fs *mnt_table_find_uniq_id(struct libmnt_table *tb, uint64_t id)
+{
+	struct libmnt_fs *fs = NULL;
+	struct libmnt_iter itr;
+
+	if (!tb)
+		return NULL;
+
+	DBG(TAB, ul_debugobj(tb, "lookup uniq-ID: %" PRIu64, id));
+	mnt_reset_iter(&itr, MNT_ITER_BACKWARD);
+
+	while (mnt_table_next_fs(tb, &itr, &fs) == 0) {
+		if (mnt_fs_get_uniq_id(fs) == id)
+			return fs;
+	}
+
+	return NULL;
+}
+
+
 static char *remove_mountpoint_from_path(const char *path, const char *mnt)
 {
         char *res;
@@ -1764,7 +1917,7 @@ int __mnt_table_is_fs_mounted(struct libmnt_table *tb, struct libmnt_fs *fstab_f
 		struct stat st;
 
 		devno = mnt_fs_get_devno(fstab_fs);
-		if (!devno && stat(src, &st) == 0 && S_ISBLK(st.st_mode))
+		if (!devno && mnt_safe_stat(src, &st) == 0 && S_ISBLK(st.st_mode))
 			devno = st.st_rdev;
 	}
 
@@ -1902,7 +2055,8 @@ int mnt_table_is_fs_mounted(struct libmnt_table *tb, struct libmnt_fs *fstab_fs)
 #ifdef TEST_PROGRAM
 #include "pathnames.h"
 
-static int parser_errcb(struct libmnt_table *tb, const char *filename, int line)
+static int parser_errcb(struct libmnt_table *tb __attribute__((unused)),
+			const char *filename, int line)
 {
 	fprintf(stderr, "%s:%d: parse error\n", filename, line);
 
@@ -1931,11 +2085,15 @@ err:
 	return NULL;
 }
 
-static int test_copy_fs(struct libmnt_test *ts, int argc, char *argv[])
+static int test_copy_fs(struct libmnt_test *ts __attribute__((unused)),
+			int argc, char *argv[])
 {
 	struct libmnt_table *tb;
 	struct libmnt_fs *fs;
 	int rc = -1;
+
+	if (argc != 2)
+		return -1;
 
 	tb = create_table(argv[1], FALSE);
 	if (!tb)
@@ -1961,7 +2119,8 @@ done:
 	return rc;
 }
 
-static int test_parse(struct libmnt_test *ts, int argc, char *argv[])
+static int test_parse(struct libmnt_test *ts __attribute__((unused)),
+		      int argc, char *argv[])
 {
 	struct libmnt_table *tb = NULL;
 	struct libmnt_iter *itr = NULL;
@@ -1997,7 +2156,8 @@ done:
 	return rc;
 }
 
-static int test_find_idx(struct libmnt_test *ts, int argc, char *argv[])
+static int test_find_idx(struct libmnt_test *ts __attribute__((unused)),
+			 int argc, char *argv[])
 {
 	struct libmnt_table *tb;
 	struct libmnt_fs *fs = NULL;
@@ -2042,7 +2202,8 @@ done:
 	return rc;
 }
 
-static int test_find(struct libmnt_test *ts, int argc, char *argv[], int dr)
+static int test_find(struct libmnt_test *ts __attribute__((unused)),
+		     int argc, char *argv[], int dr)
 {
 	struct libmnt_table *tb;
 	struct libmnt_fs *fs = NULL;
@@ -2084,22 +2245,28 @@ done:
 	return rc;
 }
 
-static int test_find_bw(struct libmnt_test *ts, int argc, char *argv[])
+static int test_find_bw(struct libmnt_test *ts __attribute__((unused)),
+			int argc, char *argv[])
 {
 	return test_find(ts, argc, argv, MNT_ITER_BACKWARD);
 }
 
-static int test_find_fw(struct libmnt_test *ts, int argc, char *argv[])
+static int test_find_fw(struct libmnt_test *ts __attribute__((unused)),
+			int argc, char *argv[])
 {
 	return test_find(ts, argc, argv, MNT_ITER_FORWARD);
 }
 
-static int test_find_pair(struct libmnt_test *ts, int argc, char *argv[])
+static int test_find_pair(struct libmnt_test *ts __attribute__((unused)),
+			  int argc, char *argv[])
 {
 	struct libmnt_table *tb;
 	struct libmnt_fs *fs;
 	struct libmnt_cache *mpc = NULL;
 	int rc = -1;
+
+	if (argc != 4)
+		return -1;
 
 	tb = create_table(argv[1], FALSE);
 	if (!tb)
@@ -2121,12 +2288,16 @@ done:
 	return rc;
 }
 
-static int test_find_mountpoint(struct libmnt_test *ts, int argc, char *argv[])
+static int test_find_mountpoint(struct libmnt_test *ts __attribute__((unused)),
+				int argc, char *argv[])
 {
 	struct libmnt_table *tb;
 	struct libmnt_fs *fs;
 	struct libmnt_cache *mpc = NULL;
 	int rc = -1;
+
+	if (argc != 2)
+		return -1;
 
 	tb = mnt_new_table_from_file(_PATH_PROC_MOUNTINFO);
 	if (!tb)
@@ -2148,20 +2319,18 @@ done:
 	return rc;
 }
 
-static int test_is_mounted(struct libmnt_test *ts, int argc, char *argv[])
+static int test_is_mounted(struct libmnt_test *ts __attribute__((unused)),
+			   int argc, char *argv[])
 {
 	struct libmnt_table *tb = NULL, *fstab = NULL;
 	struct libmnt_fs *fs;
 	struct libmnt_iter *itr = NULL;
 	struct libmnt_cache *mpc = NULL;
-	int writable = 0;
-	const char *path = NULL;
 
-	if (mnt_has_regular_mtab(&path, &writable) == 1 && writable == 0)
-		tb = mnt_new_table_from_file(path);
-	else
-		tb = mnt_new_table_from_file("/proc/self/mountinfo");
+	if (argc != 2)
+		return -1;
 
+	tb = mnt_new_table_from_file("/proc/self/mountinfo");
 	if (!tb) {
 		fprintf(stderr, "failed to parse mountinfo\n");
 		return -1;
@@ -2210,7 +2379,8 @@ static int test_uniq_cmp(struct libmnt_table *tb __attribute__((__unused__)),
 	return mnt_fs_streq_target(a, mnt_fs_get_target(b)) ? 0 : 1;
 }
 
-static int test_uniq(struct libmnt_test *ts, int argc, char *argv[])
+static int test_uniq(struct libmnt_test *ts __attribute__((unused)),
+		     int argc, char *argv[])
 {
 	struct libmnt_table *tb;
 	int rc = -1;

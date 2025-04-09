@@ -1,17 +1,14 @@
-/* line discipline loading daemon
- * open a serial device and attach a line discipline on it
+/*
+ * SPDX-License-Identifier: GPL-2.0-or-later
  *
- * Usage:
- *	ldattach GIGASET_M101 /dev/ttyS0
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
- * =====================================================================
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation; either version 2 of
- * the License, or (at your option) any later version.
- * =====================================================================
+ * Line discipline loading daemon open a serial device and attach a line
+ * discipline on it.
  */
-
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
@@ -217,7 +214,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -i, --iflag [-]<iflag>  set input mode flag\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(25));
+	fprintf(out, USAGE_HELP_OPTIONS(25));
 
 	fputs(_("\nKnown <ldisc> names:\n"), out);
 	print_table(out, ld_discs);
@@ -226,7 +223,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("\nKnown <iflag> names:\n"), out);
 	print_table(out, ld_iflags);
 
-	printf(USAGE_MAN_TAIL("ldattach(8)"));
+	fprintf(out, USAGE_MAN_TAIL("ldattach(8)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -257,7 +254,7 @@ static int my_cfsetspeed(struct termios *ts, int speed)
 static void handler(int s)
 {
 	dbg("got SIG %i -> exiting", s);
-	exit(EXIT_SUCCESS);
+	_exit(EXIT_SUCCESS);
 }
 
 static void gsm0710_set_conf(int tty_fd)
@@ -303,8 +300,8 @@ int main(int argc, char **argv)
 		{"help", no_argument, NULL, 'h'},
 		{"version", no_argument, NULL, 'V'},
 		{"debug", no_argument, NULL, 'd'},
-	        {"intro-command", no_argument, NULL, 'c'},
-	        {"pause", no_argument, NULL, 'p'},
+	        {"intro-command", required_argument, NULL, 'c'},
+	        {"pause", required_argument, NULL, 'p'},
 		{NULL, 0, NULL, 0}
 	};
 

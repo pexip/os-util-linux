@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2008 Karel Zak <kzak@redhat.com>
- * Copyright (C) 2018 Milan Broz <gmazyland@gmail.com>
+ * Copyright (C) 2018-2024 Milan Broz <gmazyland@gmail.com>
  *
  * Inspired by libvolume_id by
  *     Kay Sievers <kay.sievers@vrfy.org>
@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "superblocks.h"
 
@@ -32,6 +33,8 @@
 
 #define LUKS_MAGIC	"LUKS\xba\xbe"
 #define LUKS_MAGIC_2	"SKUL\xba\xbe"
+
+#define LUKS2_HW_OPAL_SUBSYSTEM	"HW-OPAL"
 
 /* Offsets for secondary header (for scan if primary header is corrupted). */
 #define LUKS2_HDR2_OFFSETS { 0x04000, 0x008000, 0x010000, 0x020000, \
@@ -96,6 +99,19 @@ static int luks_attributes(blkid_probe pr, struct luks2_phdr *header, uint64_t o
 	return BLKID_PROBE_OK;
 }
 
+static bool luks_valid(struct luks2_phdr *header, const char *magic, uint64_t offset)
+{
+	if (memcmp(header->magic, magic, LUKS_MAGIC_L))
+		return false;
+
+	/* LUKS2 header is not at expected offset */
+	if (be16_to_cpu(header->version) == 2 &&
+	    be64_to_cpu(header->hdr_offset) != offset)
+		return false;
+
+	return true;
+}
+
 static int probe_luks(blkid_probe pr, const struct blkid_idmag *mag __attribute__((__unused__)))
 {
 	struct luks2_phdr *header;
@@ -105,7 +121,7 @@ static int probe_luks(blkid_probe pr, const struct blkid_idmag *mag __attribute_
 	if (!header)
 		return errno ? -errno : BLKID_PROBE_NONE;
 
-	if (!memcmp(header->magic, LUKS_MAGIC, LUKS_MAGIC_L)) {
+	if (luks_valid(header, LUKS_MAGIC, 0)) {
 		/* LUKS primary header was found. */
 		return luks_attributes(pr, header, 0);
 	}
@@ -118,11 +134,38 @@ static int probe_luks(blkid_probe pr, const struct blkid_idmag *mag __attribute_
 		if (!header)
 			return errno ? -errno : BLKID_PROBE_NONE;
 
-		if (!memcmp(header->magic, LUKS_MAGIC_2, LUKS_MAGIC_L))
+		if (luks_valid(header, LUKS_MAGIC_2, secondary_offsets[i]))
 			return luks_attributes(pr, header, secondary_offsets[i]);
 	}
 
 	return BLKID_PROBE_NONE;
+}
+
+static int probe_luks_opal(blkid_probe pr, const struct blkid_idmag *mag __attribute__((__unused__)))
+{
+	struct luks2_phdr *header;
+	int version;
+
+	header = (struct luks2_phdr *) blkid_probe_get_buffer(pr, 0, sizeof(struct luks2_phdr));
+	if (!header)
+		return errno ? -errno : BLKID_PROBE_NONE;
+
+	if (!luks_valid(header, LUKS_MAGIC, 0))
+		return BLKID_PROBE_NONE;
+
+	version = be16_to_cpu(header->version);
+
+	if (version != 2)
+		return BLKID_PROBE_NONE;
+
+	if (memcmp(header->subsystem, LUKS2_HW_OPAL_SUBSYSTEM, sizeof(LUKS2_HW_OPAL_SUBSYSTEM)) != 0)
+		return BLKID_PROBE_NONE;
+
+	if (!blkdid_probe_is_opal_locked(pr))
+		return BLKID_PROBE_NONE;
+
+	/* Locked drive with LUKS2 HW OPAL encryption, finish probe now */
+	return luks_attributes(pr, header, 0);
 }
 
 const struct blkid_idinfo luks_idinfo =
@@ -131,4 +174,12 @@ const struct blkid_idinfo luks_idinfo =
 	.usage		= BLKID_USAGE_CRYPTO,
 	.probefunc	= probe_luks,
 	.magics		= BLKID_NONE_MAGIC
+};
+
+const struct blkid_idinfo luks_opal_idinfo =
+{
+	.name		= "crypto_LUKS",
+	.usage		= BLKID_USAGE_CRYPTO,
+	.probefunc	= probe_luks_opal,
+	.magics		= BLKID_NONE_MAGIC,
 };

@@ -1,4 +1,7 @@
 # ncurses/libtinfo doesn't provide an udeb
+fdisk-udeb udeb: embedded-library ncurses [usr/sbin/fdisk]
+fdisk-udeb udeb: embedded-library ncurses [usr/sbin/sfdisk]
+# for ftp-master old lintian
 fdisk-udeb udeb: embedded-library usr/sbin/fdisk: ncurses
 fdisk-udeb udeb: embedded-library usr/sbin/sfdisk: ncurses
 fdisk-udeb udeb: missing-depends-on-sensible-utils sensible-pager [usr/sbin/fdisk]

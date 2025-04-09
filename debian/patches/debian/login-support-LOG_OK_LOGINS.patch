@@ -1,0 +1,21 @@
+From: Chris Hofstaedtler <zeha@debian.org>
+Date: Mon, 5 Aug 2024 15:53:44 +0200
+Subject: login: support LOG_OK_LOGINS
+
+---
+ login-utils/login.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/login-utils/login.c b/login-utils/login.c
+index 321f9d6..fa199a3 100644
+--- a/login-utils/login.c
++++ b/login-utils/login.c
+@@ -825,7 +825,7 @@ static void log_syslog(struct login_context *cxt)
+ 			       cxt->tty_name, cxt->hostname);
+ 		else
+ 			syslog(LOG_NOTICE, _("ROOT LOGIN ON %s"), cxt->tty_name);
+-	} else {
++	} else if (getlogindefs_bool("LOG_OK_LOGINS", 0) == 1) {
+ 		if (cxt->hostname)
+ 			syslog(LOG_INFO, _("LOGIN ON %s BY %s FROM %s"),
+ 			       cxt->tty_name, pwd->pw_name, cxt->hostname);

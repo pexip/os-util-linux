@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: uuid_compare
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: Programmer's Manual
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "UUID_COMPARE" "3" "2022-05-11" "util\-linux 2.38.1" "Programmer\(aqs Manual"
+.TH "UUID_COMPARE" "3" "2025-02-26" "util\-linux 2.41" "Programmer\*(Aqs Manual"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -33,7 +33,7 @@ uuid_compare \- compare whether two UUIDs are the same
 .sp
 \fB#include <uuid.h>\fP
 .sp
-\fBint uuid_compare(uuid_t \fIuu1\fP, uuid_t \fIuu2\fP)\fP
+\fBint uuid_compare(const uuid_t \fIuu1\fP, const uuid_t \fIuu2\fP)\fP
 .SH "DESCRIPTION"
 .sp
 The \fBuuid_compare\fP() function compares the two supplied uuid variables \fIuu1\fP and \fIuu2\fP to each other.

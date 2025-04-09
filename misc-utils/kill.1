@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: kill
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "KILL" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "KILL" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -33,7 +33,9 @@ kill \- terminate a process
 .sp
 \fBkill\fP  [\fB\-\fP\fIsignal\fP|\fB\-s\fP \fIsignal\fP|\fB\-p\fP]  [\fB\-q\fP \fIvalue\fP] [\fB\-a\fP] [\fB\-\-timeout\fP \fImilliseconds\fP \fIsignal\fP] [\fB\-\-\fP] \fIpid\fP|\fIname\fP...
 .sp
-\fBkill\fP \fB\-l\fP [\fInumber\fP] | \fB\-L\fP
+\fBkill\fP \fB\-l\fP [\fInumber\fP|\f(CR0x\fP\fIsigmask\fP] | \fB\-L\fP
+.sp
+\fBkill\fP \fB\-d\fP \fIpid\fP
 .SH "DESCRIPTION"
 .sp
 The command \fBkill\fP sends the specified \fIsignal\fP to the specified processes or process groups.
@@ -68,7 +70,7 @@ All processes with a PID larger than 1 are signaled.
 .sp
 \fB\-\fP\fIn\fP
 .RS 4
-where \fIn\fP is larger than 1. All processes in process group \fIn\fP are signaled. When an argument of the form \(aq\-n\(aq is given, and it is meant to denote a process group, either a signal must be specified first, or the argument must be preceded by a \(aq\-\-\(aq option, otherwise it will be taken as the signal to send.
+where \fIn\fP is larger than 1. All processes in process group \fIn\fP are signaled. When an argument of the form \*(Aq\-n\*(Aq is given, and it is meant to denote a process group, either a signal must be specified first, or the argument must be preceded by a \*(Aq\-\-\*(Aq option, otherwise it will be taken as the signal to send.
 .RE
 .RE
 .sp
@@ -83,9 +85,25 @@ All processes invoked using this \fIname\fP will be signaled.
 The signal to send. It may be given as a name or a number.
 .RE
 .sp
-\fB\-l\fP, \fB\-\-list\fP [\fInumber\fP]
+\fB\-l\fP, \fB\-\-list\fP [\fInumber\fP|\f(CR0x\fP\fIsigmask\fP]
 .RS 4
-Print a list of signal names, or convert the given signal number to a name. The signals can be found in \fI/usr/include/linux/signal.h\fP.
+Print a list of signal names, convert the given signal number to a name, or convert the given signal mask to names.
+The signals can be found in \fI/usr/include/linux/signal.h\fP.
+.sp
+.if n .RS 4
+.nf
+.fam C
+$ ps s $$
+  UID     PID          PENDING          BLOCKED          IGNORED           CAUGHT STAT TTY        TIME COMMAND
+ 1000 1608069 0000000000000000 0000000000000002 0000000000384000 0000000008013003 Ss   pts/44     0:02 zsh
+$ kill \-l 0x0000000000384000
+TERM
+TSTP
+TTIN
+TTOU
+.fam
+.fi
+.if n .RE
 .RE
 .sp
 \fB\-L\fP, \fB\-\-table\fP
@@ -101,6 +119,11 @@ Do not restrict the command\-name\-to\-PID conversion to processes with the same
 \fB\-p\fP, \fB\-\-pid\fP
 .RS 4
 Only print the process ID (PID) of the named processes, do not send any signals.
+.RE
+.sp
+\fB\-r\fP, \fB\-\-require\-handler\fP
+.RS 4
+Do not send the signal if it is not caught in userspace by the signalled process.
 .RE
 .sp
 \fB\-\-verbose\fP
@@ -128,6 +151,22 @@ As an example, the following command sends the signals \fBQUIT\fP, \fBTERM\fP an
 .fam C
 kill \-\-verbose \-\-timeout 1000 TERM \-\-timeout 1000 KILL \(rs
         \-\-signal QUIT 12345
+.fam
+.fi
+.if n .RE
+.RE
+.sp
+\fB\-d\fP, \fB\-\-show\-process\-state\fP \fIpid\fP
+.RS 4
+Decode signal related fields in /proc/\fIpid\fP/status.
+.sp
+.if n .RS 4
+.nf
+.fam C
+$ kill \-d $$
+Blocked: INT
+Ignored: TERM TSTP TTIN TTOU
+Caught: HUP INT PIPE ALRM CHLD WINCH
 .fam
 .fi
 .if n .RE
@@ -169,10 +208,12 @@ The original version was taken from BSD 4.4.
 \fBkill\fP(2),
 \fBsigqueue\fP(3),
 \fBsignal\fP(7)
+\fBproc(5)\fP
+\fBproc_pid_status(5)\fP
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBkill\fP command is part of the util\-linux package which can be downloaded from \c

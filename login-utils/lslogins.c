@@ -47,6 +47,10 @@
 # include <systemd/sd-journal.h>
 #endif
 
+#ifdef HAVE_LIBLASTLOG2
+# include "lastlog2.h"
+#endif
+
 #include "c.h"
 #include "nls.h"
 #include "closestream.h"
@@ -64,7 +68,7 @@
  * column description
  */
 struct lslogins_coldesc {
-	const char *name;
+	const char * const name;
 	const char *help;
 	const char *pretty_name;
 
@@ -261,6 +265,10 @@ struct lslogins_control {
 	size_t btmp_size;
 
 	int lastlogin_fd;
+
+#ifdef HAVE_LIBLASTLOG2
+	const char *lastlog2_path;
+#endif
 
 	void *usertree;
 
@@ -478,7 +486,7 @@ static struct utmpx *get_last_btmp(struct lslogins_control *ctl, const char *use
 
 static int parse_utmpx(const char *path, size_t *nrecords, struct utmpx **records)
 {
-	size_t i, imax = 0;
+	size_t i, imax = 1;
 	struct utmpx *ary = NULL;
 	struct stat st;
 
@@ -490,10 +498,14 @@ static int parse_utmpx(const char *path, size_t *nrecords, struct utmpx **record
 
 	/* optimize allocation according to file size, the realloc() below is
 	 * just fallback only */
-	if (stat(path, &st) == 0 && (size_t) st.st_size >= sizeof(struct utmpx)) {
-		imax = st.st_size / sizeof(struct utmpx);
-		ary = xmalloc(imax * sizeof(struct utmpx));
-	}
+	if (stat(path, &st) == 0) {
+		if ((size_t) st.st_size >= sizeof(struct utmpx)) {
+			imax = st.st_size / sizeof(struct utmpx);
+			ary = xreallocarray(NULL, imax, sizeof(struct utmpx));
+		} else
+			return -ENODATA;
+	} else
+		return -errno;
 
 	for (i = 0; ; i++) {
 		struct utmpx *u;
@@ -505,7 +517,7 @@ static int parse_utmpx(const char *path, size_t *nrecords, struct utmpx **record
 			break;
 		}
 		if (i == imax)
-			ary = xrealloc(ary, (imax *= 2) * sizeof(struct utmpx));
+			ary = xreallocarray(ary, imax *= 2, sizeof(struct utmpx));
 		ary[i] = *u;
 	}
 
@@ -524,10 +536,71 @@ fail:
 	return -EINVAL;
 }
 
-static void get_lastlog(struct lslogins_control *ctl, uid_t uid, void *dst, int what)
+#ifdef HAVE_LIBLASTLOG2
+static int get_lastlog2(struct lslogins_control *ctl, const char *user, void *dst, int what)
+{
+	struct ll2_context *context = ll2_new_context(ctl->lastlog2_path);
+
+	switch (what) {
+	case LASTLOG_TIME: {
+		time_t *t = dst;
+		int64_t res_time = 0;
+
+		if (ll2_read_entry(context, user, &res_time, NULL, NULL, NULL, NULL) != 0) {
+			ll2_unref_context(context);
+			return -1;
+		}
+		*t = res_time;
+		break;
+	}
+	case LASTLOG_LINE: {
+		char *res_tty = NULL;
+
+		if (ll2_read_entry(context, user, NULL, &res_tty, NULL, NULL, NULL) != 0) {
+			ll2_unref_context(context);
+			return -1;
+		}
+		if (res_tty) {
+			mem2strcpy(dst, res_tty, strlen(res_tty), strlen(res_tty) + 1);
+			free (res_tty);
+		}
+		break;
+	}
+	case LASTLOG_HOST: {
+		char *res_host = NULL;
+
+		if (ll2_read_entry(context, user, NULL, NULL, &res_host, NULL, NULL) != 0) {
+			ll2_unref_context(context);
+			return -1;
+		}
+		if (res_host) {
+			mem2strcpy(dst, res_host, strlen(res_host), strlen(res_host) + 1);
+			free(res_host);
+		}
+		break;
+	}
+	default:
+		abort();
+	}
+	ll2_unref_context(context);
+	return 0;
+}
+#endif
+
+static void get_lastlog(struct lslogins_control *ctl, uid_t uid,
+#ifdef HAVE_LIBLASTLOG2
+			const char *user,
+#else
+			const char *user __attribute__((__unused__)),
+#endif
+			void *dst, int what)
 {
 	struct lastlog ll;
 
+#ifdef HAVE_LIBLASTLOG2
+	if (get_lastlog2(ctl, user, dst, what) >= 0)
+		return;
+#endif
 	if (ctl->lastlogin_fd < 0 ||
 	    pread(ctl->lastlogin_fd, (void *)&ll, sizeof(ll), uid * sizeof(ll)) != sizeof(ll))
 		return;
@@ -604,7 +677,7 @@ static int get_nprocs(const uid_t uid)
 }
 #endif
 
-static const char *get_pwd_method(const char *str, const char **next, unsigned int *sz)
+static const char *get_pwd_method(const char *str, const char **next)
 {
 	const char *p = str;
 	const char *res = NULL;
@@ -612,32 +685,50 @@ static const char *get_pwd_method(const char *str, const char **next, unsigned i
 	if (!p || *p++ != '$')
 		return NULL;
 
-	if (sz)
-		*sz = 0;
-
 	switch (*p) {
 	case '1':
 		res = "MD5";
-		if (sz)
-			*sz = 22;
 		break;
 	case '2':
-		p++;
-		if (*p == 'a' || *p == 'y')
+		switch(*(p+1)) {
+		case 'a':
+		case 'y':
+			p++;
 			res = "Blowfish";
+			break;
+		case 'b':
+			p++;
+			res = "bcrypt";
+			break;
+		}
+		break;
+	case '3':
+		res = "NT";
 		break;
 	case '5':
 		res = "SHA-256";
-		if (sz)
-			*sz = 43;
 		break;
 	case '6':
 		res = "SHA-512";
-		if (sz)
-			*sz = 86;
+		break;
+	case '7':
+		res = "scrypt";
+		break;
+	case 'y':
+		res = "yescrypt";
+		break;
+	case 'g':
+		if (*(p + 1) == 'y') {
+			p++;
+			res = "gost-yescrypt";
+		}
+		break;
+	case '_':
+		res = "bsdicrypt";
 		break;
 	default:
-		return NULL;
+		res = "unknown";
+		break;
 	}
 	p++;
 
@@ -648,25 +739,27 @@ static const char *get_pwd_method(const char *str, const char **next, unsigned i
 	return res;
 }
 
-#define is_valid_pwd_char(x)	(isalnum((unsigned char) (x)) || (x) ==  '.' || (x) == '/')
+#define is_invalid_pwd_char(x)	(isspace((unsigned char) (x)) || \
+				 (x) == ':' || (x) == ';' || (x) == '*' || \
+				 (x) == '!' || (x) == '\\')
+#define is_valid_pwd_char(x)	(isascii((unsigned char) (x)) && !is_invalid_pwd_char(x))
 
 /*
- * This function do not accept empty passwords or locked accouns.
+ * This function does not accept empty passwords or locked accounts.
  */
 static int valid_pwd(const char *str)
 {
 	const char *p = str;
-	unsigned int sz = 0, n;
 
 	if (!str || !*str)
 		return 0;
 
 	/* $id$ */
-	if (get_pwd_method(str, &p, &sz) == NULL)
-		return 0;
-	if (!p || !*p)
+	if (get_pwd_method(str, &p) == NULL)
 		return 0;
 
+	if (!p || !*p)
+		return 0;
 	/* salt$ */
 	for (; *p; p++) {
 		if (*p == '$') {
@@ -676,17 +769,15 @@ static int valid_pwd(const char *str)
 		if (!is_valid_pwd_char(*p))
 			return 0;
 	}
+
 	if (!*p)
 		return 0;
-
 	/* encrypted */
-	for (n = 0; *p; p++, n++) {
-		if (!is_valid_pwd_char(*p))
+	for (; *p; p++) {
+		if (!is_valid_pwd_char(*p)) {
 			return 0;
+		}
 	}
-
-	if (sz && n != sz)
-		return 0;
 	return 1;
 }
 
@@ -747,13 +838,15 @@ static struct lslogins_user *get_user_info(struct lslogins_control *ctl, const c
 	while (n < ncolumns) {
 		switch (columns[n++]) {
 		case COL_USER:
-			user->login = xstrdup(pwd->pw_name);
+			if (!user->login)
+				user->login = xstrdup(pwd->pw_name);
 			break;
 		case COL_UID:
 			user->uid = pwd->pw_uid;
 			break;
 		case COL_GROUP:
-			user->group = xstrdup(grp->gr_name);
+			if (!grp->gr_name)
+				user->group = xstrdup(grp->gr_name);
 			break;
 		case COL_GID:
 			user->gid = pwd->pw_gid;
@@ -765,51 +858,60 @@ static struct lslogins_user *get_user_info(struct lslogins_control *ctl, const c
 				err(EXIT_FAILURE, _("failed to get supplementary groups"));
 			break;
 		case COL_HOME:
-			user->homedir = xstrdup(pwd->pw_dir);
+			if (!user->homedir)
+				user->homedir = xstrdup(pwd->pw_dir);
 			break;
 		case COL_SHELL:
-			user->shell = xstrdup(pwd->pw_shell);
+			if (!user->shell)
+				user->shell = xstrdup(pwd->pw_shell);
 			break;
 		case COL_GECOS:
-			user->gecos = xstrdup(pwd->pw_gecos);
+			if (!user->gecos)
+				user->gecos = xstrdup(pwd->pw_gecos);
 			break;
 		case COL_LAST_LOGIN:
+			if (user->last_login)
+				break;
 			if (user_wtmp) {
 				time = user_wtmp->ut_tv.tv_sec;
 				user->last_login = make_time(ctl->time_mode, time);
 			} else {
 				time = 0;
-				get_lastlog(ctl, pwd->pw_uid, &time, LASTLOG_TIME);
+				get_lastlog(ctl, pwd->pw_uid, pwd->pw_name, &time, LASTLOG_TIME);
 				if (time)
 					user->last_login = make_time(ctl->time_mode, time);
 			}
 			break;
 		case COL_LAST_TTY:
+			if (user->last_tty)
+				break;
 			user->last_tty = xcalloc(1, sizeof(user_wtmp->ut_line) + 1);
 			if (user_wtmp) {
 				mem2strcpy(user->last_tty, user_wtmp->ut_line,
 						sizeof(user_wtmp->ut_line),
 						sizeof(user_wtmp->ut_line) + 1);;
 			}  else
-				get_lastlog(ctl, user->uid, user->last_tty, LASTLOG_LINE);
+				get_lastlog(ctl, user->uid, user->login, user->last_tty, LASTLOG_LINE);
 			break;
 		case COL_LAST_HOSTNAME:
+			if (user->last_hostname)
+				break;
 			user->last_hostname = xcalloc(1, sizeof(user_wtmp->ut_host) + 1);
 			if (user_wtmp) {
 				mem2strcpy(user->last_hostname, user_wtmp->ut_host,
 						sizeof(user_wtmp->ut_host),
 						sizeof(user_wtmp->ut_host) + 1);;
 			}  else
-				get_lastlog(ctl, user->uid, user->last_hostname, LASTLOG_HOST);
+				get_lastlog(ctl, user->uid, user->login, user->last_hostname, LASTLOG_HOST);
 			break;
 		case COL_FAILED_LOGIN:
-			if (user_btmp) {
+			if (!user->failed_login && user_btmp) {
 				time = user_btmp->ut_tv.tv_sec;
 				user->failed_login = make_time(ctl->time_mode, time);
 			}
 			break;
 		case COL_FAILED_TTY:
-			if (user_btmp) {
+			if (!user->failed_tty && user_btmp) {
 				user->failed_tty = xmalloc(sizeof(user_btmp->ut_line) + 1);
 				mem2strcpy(user->failed_tty, user_btmp->ut_line,
 						sizeof(user_btmp->ut_line),
@@ -817,7 +919,7 @@ static struct lslogins_user *get_user_info(struct lslogins_control *ctl, const c
 			}
 			break;
 		case COL_HUSH_STATUS:
-			user->hushed = get_hushlogin_status(pwd, 0);
+			user->hushed = get_hushlogin_status(pwd, /* override_home= */ NULL, 0);
 			if (user->hushed == -1)
 				user->hushed = STATUS_UNKNOWN;
 			break;
@@ -869,7 +971,7 @@ static struct lslogins_user *get_user_info(struct lslogins_control *ctl, const c
 
 				while (p && (*p == '!' || *p == '*'))
 					p++;
-				user->pwd_method = get_pwd_method(p, NULL, NULL);
+				user->pwd_method = get_pwd_method(p, NULL);
 			} else
 				user->pwd_method = NULL;
 			break;
@@ -881,11 +983,11 @@ static struct lslogins_user *get_user_info(struct lslogins_control *ctl, const c
 						access(_PATH_VAR_NOLOGIN, F_OK) == 0;
 			break;
 		case COL_PWD_WARN:
-			if (shadow && shadow->sp_warn >= 0)
+			if (!user->pwd_warn && shadow && shadow->sp_warn >= 0)
 				xasprintf(&user->pwd_warn, "%ld", shadow->sp_warn);
 			break;
 		case COL_PWD_EXPIR:
-			if (shadow && shadow->sp_expire >= 0)
+			if (!user->pwd_expire && shadow && shadow->sp_expire >= 0)
 				user->pwd_expire = make_time(ctl->time_mode == TIME_ISO ?
 						TIME_ISO_SHORT : ctl->time_mode,
 						shadow->sp_expire * 86400);
@@ -894,17 +996,17 @@ static struct lslogins_user *get_user_info(struct lslogins_control *ctl, const c
 			/* sp_lstchg is specified in days, showing hours
 			 * (especially in non-GMT timezones) would only serve
 			 * to confuse */
-			if (shadow)
+			if (!user->pwd_ctime && shadow)
 				user->pwd_ctime = make_time(ctl->time_mode == TIME_ISO ?
 						TIME_ISO_SHORT : ctl->time_mode,
 						shadow->sp_lstchg * 86400);
 			break;
 		case COL_PWD_CTIME_MIN:
-			if (shadow && shadow->sp_min > 0)
+			if (!user->pwd_ctime_min && shadow && shadow->sp_min > 0)
 				xasprintf(&user->pwd_ctime_min, "%ld", shadow->sp_min);
 			break;
 		case COL_PWD_CTIME_MAX:
-			if (shadow && shadow->sp_max > 0)
+			if (!user->pwd_ctime_max && shadow && shadow->sp_max > 0)
 				xasprintf(&user->pwd_ctime_max, "%ld", shadow->sp_max);
 			break;
 		case COL_SELINUX:
@@ -915,8 +1017,8 @@ static struct lslogins_user *get_user_info(struct lslogins_control *ctl, const c
 			break;
 		case COL_NPROCS:
 #ifdef __linux__
-
-			xasprintf(&user->nprocs, "%d", get_nprocs(pwd->pw_uid));
+			if (!user->nprocs)
+				xasprintf(&user->nprocs, "%d", get_nprocs(pwd->pw_uid));
 #endif
 			break;
 		default:
@@ -975,7 +1077,7 @@ static int get_ulist(struct lslogins_control *ctl, char *logins, char *groups)
 			(*ar)[i++] = xstrdup(u);
 
 			if (i == *arsiz)
-				*ar = xrealloc(*ar, sizeof(char *) * (*arsiz += 32));
+				*ar = xreallocarray(*ar, *arsiz += 32, sizeof(char *));
 		}
 		ctl->ulist_on = 1;
 	}
@@ -1000,7 +1102,7 @@ static int get_ulist(struct lslogins_control *ctl, char *logins, char *groups)
 				(*ar)[i++] = xstrdup(u);
 
 				if (i == *arsiz)
-					*ar = xrealloc(*ar, sizeof(char *) * (*arsiz += 32));
+					*ar = xreallocarray(*ar, *arsiz += 32, sizeof(char *));
 			}
 		}
 		ctl->ulist_on = 1;
@@ -1440,7 +1542,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("     --notruncate         don't truncate output\n"), out);
 	fputs(_(" -o, --output[=<list>]    define the columns to output\n"), out);
 	fputs(_("     --output-all         output all columns\n"), out);
-	fputs(_(" -p, --pwd                display information related to login by password.\n"), out);
+	fputs(_(" -p, --pwd                display information related to login by password\n"), out);
 	fputs(_(" -r, --raw                display in raw mode\n"), out);
 	fputs(_(" -s, --system-accs        display system accounts\n"), out);
 	fputs(_("     --time-format=<type> display dates in short, full or iso format\n"), out);
@@ -1451,14 +1553,17 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("     --wtmp-file <path>   set an alternate path for wtmp\n"), out);
 	fputs(_("     --btmp-file <path>   set an alternate path for btmp\n"), out);
 	fputs(_("     --lastlog <path>     set an alternate path for lastlog\n"), out);
+#ifdef HAVE_LIBLASTLOG2
+	fputs(_("     --lastlog2 <path>    set an alternate path for lastlog2\n"), out);
+#endif
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(26));
+	fprintf(out, USAGE_HELP_OPTIONS(26));
 
 	fputs(USAGE_COLUMNS, out);
 	for (i = 0; i < ARRAY_SIZE(coldescs); i++)
 		fprintf(out, " %14s  %s\n", coldescs[i].name, _(coldescs[i].help));
 
-	printf(USAGE_MAN_TAIL("lslogins(1)"));
+	fprintf(out, USAGE_MAN_TAIL("lslogins(1)"));
 
 	exit(EXIT_SUCCESS);
 }
@@ -1476,6 +1581,9 @@ int main(int argc, char *argv[])
 		OPT_WTMP = CHAR_MAX + 1,
 		OPT_BTMP,
 		OPT_LASTLOG,
+#ifdef HAVE_LIBLASTLOG2
+		OPT_LASTLOG2,
+#endif
 		OPT_NOTRUNC,
 		OPT_NOHEAD,
 		OPT_TIME_FMT,
@@ -1508,6 +1616,9 @@ int main(int argc, char *argv[])
 		{ "wtmp-file",      required_argument,	0, OPT_WTMP },
 		{ "btmp-file",      required_argument,	0, OPT_BTMP },
 		{ "lastlog-file",   required_argument,	0, OPT_LASTLOG },
+#ifdef HAVE_LIBLASTLOG2
+		{ "lastlog2-file",  required_argument,	0, OPT_LASTLOG2 },
+#endif
 #ifdef HAVE_LIBSELINUX
 		{ "context",        no_argument,	0, 'Z' },
 #endif
@@ -1621,6 +1732,11 @@ int main(int argc, char *argv[])
 		case OPT_LASTLOG:
 			path_lastlog = optarg;
 			break;
+#ifdef HAVE_LIBLASTLOG2
+		case OPT_LASTLOG2:
+			ctl->lastlog2_path = optarg;
+			break;
+#endif
 		case OPT_WTMP:
 			path_wtmp = optarg;
 			break;
@@ -1637,7 +1753,15 @@ int main(int argc, char *argv[])
 			ctl->time_mode = parse_time_mode(optarg);
 			break;
 		case 'V':
-			print_version(EXIT_SUCCESS);
+		{
+			static const char *const features[] = {
+#ifdef HAVE_LIBLASTLOG2
+				"lastlog2",
+#endif
+				NULL
+			};
+			print_version_with_features(EXIT_SUCCESS, features);
+		}
 		case 'Z':
 		{
 #ifdef HAVE_LIBSELINUX

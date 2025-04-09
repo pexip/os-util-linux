@@ -75,11 +75,14 @@ Display the state of logins since the specified _time_. This is useful, e.g., to
 *-t*, *--until* _time_::
 Display the state of logins until the specified _time_.
 
+*-T*, *--tab-separated*::
+Use ASCII *tab* characters to separate the columns in the output instead of spaces.
+
 *--time-format* _format_::
 Define the output timestamp _format_ to be one of _notime_, _short_, _full_, or _iso_. The _notime_ variant will not print any timestamps at all, _short_ is the default, and _full_ is the same as the *--fulltimes* option. The _iso_ variant will display the timestamp in ISO-8601 format. The ISO format contains timezone information, making it preferable when printouts are investigated outside of the system.
 
 *-w*, *--fullnames*::
-Display full user names and domain names in the output.
+Display full user names and domain names / IP addresses in the output.  Domain names and IP addresses are truncated to 16 characters, and user names are truncated to 8 characters when this flag is not specified.  An asterisk is set as the last character of truncated fields.
 
 *-x*, *--system*::
 Display the system shutdown entries and run level changes.
@@ -116,6 +119,8 @@ _/var/log/btmp_
 The files _wtmp_ and _btmp_ might not be found. The system only logs information in these files if they are present. This is a local configuration issue. If you want the files to be used, they can be created with a simple *touch*(1) command (for example, *touch /var/log/wtmp*).
 
 An empty entry is a valid type of wtmp entry. It means that an empty file or file with zeros is not interpreted as an error.
+
+The utmp file format uses fixed sizes of strings, which means that very long strings are impossible to store in the file and impossible to display by *last*. The usual limits are 32 bytes for a user and line name and 256 bytes for a hostname.
 
 == AUTHORS
 

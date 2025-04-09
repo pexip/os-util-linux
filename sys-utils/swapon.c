@@ -1,4 +1,18 @@
+/*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Copyright (C) 2012-2023 Karel Zak <kzak@redhat.com>
+ *
+ * Original implementation from Linux 0.99, without License and copyright in
+ * the code. Karel Zak rewrote the code under GPL-2.0-or-later.
+ */
 #include <assert.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <getopt.h>
@@ -77,10 +91,10 @@ enum {
 
 /* column names */
 struct colinfo {
-        const char *name; /* header */
-        double     whint; /* width hint (N < 1 is in percent of termwidth) */
-	int        flags; /* SCOLS_FL_* */
-        const char *help;
+        const char * const	name; /* header */
+        double			whint; /* width hint (N < 1 is in percent of termwidth) */
+	int			flags; /* SCOLS_FL_* */
+        const char		*help;
 };
 
 enum {
@@ -92,7 +106,7 @@ enum {
 	COL_UUID,
 	COL_LABEL
 };
-static struct colinfo infos[] = {
+static const struct colinfo infos[] = {
 	[COL_PATH]     = { "NAME",	0.20, 0, N_("device file or partition path") },
 	[COL_TYPE]     = { "TYPE",	0.20, SCOLS_FL_TRUNC, N_("type of the device")},
 	[COL_SIZE]     = { "SIZE",	0.20, SCOLS_FL_RIGHT, N_("size of the swap area")},
@@ -125,14 +139,14 @@ struct swapon_ctl {
 
 	struct swap_prop props;		/* global settings for all devices */
 
-	unsigned int
-		all:1,			/* turn on all swap devices */
-		bytes:1,		/* display --show in bytes */
-		fix_page_size:1,	/* reinitialize page size */
-		no_heading:1,		/* toggle --show headers */
-		raw:1,			/* toggle --show alignment */
-		show:1,			/* display --show information */
-		verbose:1;		/* be chatty */
+	bool	all,			/* turn on all swap devices */
+		bytes,			/* display --show in bytes */
+		fix_page_size,		/* reinitialize page size */
+		no_heading,		/* toggle --show headers */
+		raw,			/* toggle --show alignment */
+		show,			/* display --show information */
+		summarize,		/* display summary of swap use */
+		verbose;		/* be chatty */
 };
 
 static int column_name_to_id(const char *name, size_t namesz)
@@ -159,7 +173,7 @@ static inline int get_column_id(const struct swapon_ctl *ctl, int num)
 	return ctl->columns[num];
 }
 
-static inline struct colinfo *get_column_info(const struct swapon_ctl *ctl, unsigned num)
+static inline const struct colinfo *get_column_info(const struct swapon_ctl *ctl, unsigned num)
 {
 	return &infos[get_column_id(ctl, num)];
 }
@@ -299,7 +313,7 @@ static int show_table(struct swapon_ctl *ctl)
 	scols_table_enable_noheadings(table, ctl->no_heading);
 
 	for (i = 0; i < ctl->ncolumns; i++) {
-		struct colinfo *col = get_column_info(ctl, i);
+		const struct colinfo *col = get_column_info(ctl, i);
 
 		if (!scols_table_new_column(table, col->name, col->whint, col->flags))
 			err(EXIT_FAILURE, _("failed to allocate output column"));
@@ -735,9 +749,9 @@ static int parse_options(struct swap_prop *props, const char *options)
 }
 
 
-static int swapon_all(struct swapon_ctl *ctl)
+static int swapon_all(struct swapon_ctl *ctl, const char *filename)
 {
-	struct libmnt_table *tb = get_fstab();
+	struct libmnt_table *tb = get_fstab(filename);
 	struct libmnt_iter *itr;
 	struct libmnt_fs *fs;
 	int status = 0;
@@ -817,6 +831,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -o, --options <list>     comma-separated list of swap options\n"), out);
 	fputs(_(" -p, --priority <prio>    specify the priority of the swap device\n"), out);
 	fputs(_(" -s, --summary            display summary about used swap devices (DEPRECATED)\n"), out);
+	fputs(_(" -T, --fstab <path>       alternative file to /etc/fstab\n"), out);
 	fputs(_("     --show[=<columns>]   display summary in definable table\n"), out);
 	fputs(_("     --noheadings         don't print table heading (with --show)\n"), out);
 	fputs(_("     --raw                use the raw output format (with --show)\n"), out);
@@ -824,7 +839,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -v, --verbose            verbose mode\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(26));
+	fprintf(out, USAGE_HELP_OPTIONS(26));
 
 	fputs(_("\nThe <spec> parameter:\n" \
 		" -L <label>             synonym for LABEL=<label>\n"
@@ -845,7 +860,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	for (i = 0; i < ARRAY_SIZE(infos); i++)
 		fprintf(out, " %-5s  %s\n", infos[i].name, _(infos[i].help));
 
-	printf(USAGE_MAN_TAIL("swapon(8)"));
+	fprintf(out, USAGE_MAN_TAIL("swapon(8)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -853,7 +868,7 @@ int main(int argc, char *argv[])
 {
 	int status = 0, c;
 	size_t i;
-	char *options = NULL;
+	char *options = NULL, *fstab_filename = NULL;
 
 	enum {
 		BYTES_OPTION = CHAR_MAX + 1,
@@ -879,6 +894,7 @@ int main(int argc, char *argv[])
 		{ "noheadings", no_argument,       NULL, NOHEADINGS_OPTION },
 		{ "raw",        no_argument,       NULL, RAW_OPTION        },
 		{ "bytes",      no_argument,       NULL, BYTES_OPTION      },
+		{ "fstab",      required_argument, NULL, 'T'               },
 		{ NULL, 0, NULL, 0 }
 	};
 
@@ -904,7 +920,7 @@ int main(int argc, char *argv[])
 	mnt_init_debug(0);
 	mntcache = mnt_new_cache();
 
-	while ((c = getopt_long(argc, argv, "ahd::efo:p:svVL:U:",
+	while ((c = getopt_long(argc, argv, "ahd::efo:p:svVL:U:T:",
 				long_opts, NULL)) != -1) {
 
 		err_exclusive_options(c, long_opts, excl, excl_st);
@@ -925,6 +941,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'U':
 			add_uuid(optarg);
+			break;
+		case 'T':
+			fstab_filename = optarg;
 			break;
 		case 'd':
 			ctl.props.discard |= SWAP_FLAG_DISCARD;
@@ -947,8 +966,8 @@ int main(int argc, char *argv[])
 			ctl.fix_page_size = 1;
 			break;
 		case 's':		/* status report */
-			status = display_summary();
-			return status;
+			ctl.summarize = 1;
+			break;
 		case 'v':		/* be chatty */
 			ctl.verbose = 1;
 			break;
@@ -989,6 +1008,9 @@ int main(int argc, char *argv[])
 	}
 	argv += optind;
 
+	if (ctl.summarize)
+		return display_summary();
+
 	if (ctl.show || (!ctl.all && !numof_labels() && !numof_uuids() && *argv == NULL)) {
 		if (!ctl.ncolumns) {
 			/* default columns */
@@ -998,8 +1020,7 @@ int main(int argc, char *argv[])
 			ctl.columns[ctl.ncolumns++] = COL_USED;
 			ctl.columns[ctl.ncolumns++] = COL_PRIO;
 		}
-		status = show_table(&ctl);
-		return status;
+		return show_table(&ctl);
 	}
 
 	if (ctl.props.no_fail && !ctl.all) {
@@ -1008,7 +1029,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (ctl.all)
-		status |= swapon_all(&ctl);
+		status |= swapon_all(&ctl, fstab_filename);
 
 	if (options)
 		parse_options(&ctl.props, options);

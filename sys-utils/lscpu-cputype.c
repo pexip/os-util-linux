@@ -1,4 +1,13 @@
-
+/*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Copyright (C) 2020 Karel Zak <kzak@redhat.com>
+ */
 #include <sys/utsname.h>
 #include <sys/personality.h>
 
@@ -64,7 +73,7 @@ void lscpu_ref_cputype(struct lscpu_cputype *ct)
 {
 	if (ct) {
 		ct->refcount++;
-		DBG(TYPE, ul_debugobj(ct, ">>> ref %d", ct->refcount));
+		/*DBG(TYPE, ul_debugobj(ct, ">>> ref %d", ct->refcount));*/
 	}
 }
 
@@ -109,8 +118,8 @@ struct lscpu_cputype *lscpu_cputype_get_default(struct lscpu_cxt *cxt)
 struct lscpu_cputype *lscpu_add_cputype(struct lscpu_cxt *cxt, struct lscpu_cputype *ct)
 {
 	DBG(TYPE, ul_debugobj(ct, "add new"));
-	cxt->cputypes = xrealloc(cxt->cputypes, (cxt->ncputypes + 1)
-				* sizeof(struct lscpu_cputype *));
+	cxt->cputypes = xreallocarray(cxt->cputypes, cxt->ncputypes + 1,
+				      sizeof(struct lscpu_cputype *));
 	cxt->cputypes[cxt->ncputypes] = ct;
 	cxt->ncputypes++;
 	lscpu_ref_cputype(ct);
@@ -124,15 +133,27 @@ static void fprintf_cputypes(FILE *f, struct lscpu_cxt *cxt)
 	for (i = 0; i <	cxt->ncputypes; i++) {
 		struct lscpu_cputype *ct = cxt->cputypes[i];
 
-		fprintf(f, "\n vendor: %s\n", ct->vendor);
-		fprintf(f, " machinetype: %s\n", ct->machinetype);
-		fprintf(f, " family: %s\n", ct->family);
-		fprintf(f, " model: %s\n", ct->model);
-		fprintf(f, " modelname: %s\n", ct->modelname);
-		fprintf(f, " revision: %s\n", ct->revision);
-		fprintf(f, " stepping: %s\n", ct->stepping);
-		fprintf(f, " mtid: %s\n", ct->mtid);
-		fprintf(f, " addrsz: %s\n", ct->addrsz);
+		fprintf(f, "\ncpu type: %p\n", ct);
+		if (ct->vendor)
+			fprintf(f, " vendor: %s\n", ct->vendor);
+		if (ct->machinetype)
+			fprintf(f, " machinetype: %s\n", ct->machinetype);
+		if (ct->family)
+			fprintf(f, " family: %s\n", ct->family);
+		if (ct->model)
+			fprintf(f, " model: %s\n", ct->model);
+		if (ct->modelname)
+			fprintf(f, " modelname: %s\n", ct->modelname);
+		if (ct->revision)
+			fprintf(f, " revision: %s\n", ct->revision);
+		if (ct->stepping)
+			fprintf(f, " stepping: %s\n", ct->stepping);
+		if (ct->mtid)
+			fprintf(f, " mtid: %s\n", ct->mtid);
+		if (ct->addrsz)
+			fprintf(f, " addrsz: %s\n", ct->addrsz);
+		if (ct->bogomips)
+			fprintf(f, " bogomips: %s\n", ct->bogomips);
 	}
 }
 
@@ -174,7 +195,8 @@ enum {
 	PAT_TYPE,
 	PAT_VARIANT,
 	PAT_VENDOR,
-	PAT_CACHE
+	PAT_CACHE,
+	PAT_ISA,
 };
 
 /*
@@ -192,12 +214,17 @@ static const struct cpuinfo_pattern type_patterns[] =
 {
 	/* Sort by fields name! */
 	DEF_PAT_CPUTYPE( "ASEs implemented",	PAT_FLAGS,	flags),		/* mips */
+	DEF_PAT_CPUTYPE( "Address Sizes",	PAT_ADDRESS_SIZES,	addrsz),/* loongarch */
 	DEF_PAT_CPUTYPE( "BogoMIPS",		PAT_BOGOMIPS,	bogomips),	/* aarch64 */
+	DEF_PAT_CPUTYPE( "CPU Family",		PAT_FAMILY,	family),	/* loongarch */
+	DEF_PAT_CPUTYPE( "CPU Revision",	PAT_REVISION,	revision),	/* loongarch */
 	DEF_PAT_CPUTYPE( "CPU implementer",	PAT_IMPLEMENTER,vendor),	/* ARM and aarch64 */
 	DEF_PAT_CPUTYPE( "CPU part",		PAT_PART,	model),		/* ARM and aarch64 */
 	DEF_PAT_CPUTYPE( "CPU revision",	PAT_REVISION,	revision),	/* aarch64 */
 	DEF_PAT_CPUTYPE( "CPU variant",		PAT_VARIANT,	stepping),	/* aarch64 */
 	DEF_PAT_CPUTYPE( "Features",		PAT_FEATURES,	flags),		/* aarch64 */
+	DEF_PAT_CPUTYPE( "ISA",			PAT_ISA,	isa),		/* loongarch */
+	DEF_PAT_CPUTYPE( "Model Name",		PAT_MODEL_NAME,	modelname),	/* loongarch */
 	DEF_PAT_CPUTYPE( "address sizes",	PAT_ADDRESS_SIZES,	addrsz),/* x86 */
 	DEF_PAT_CPUTYPE( "bogomips per cpu",	PAT_BOGOMIPS,	bogomips),	/* s390 */
 	DEF_PAT_CPUTYPE( "cpu",			PAT_CPU,	modelname),	/* ppc, sparc */
@@ -206,12 +233,16 @@ static const struct cpuinfo_pattern type_patterns[] =
 	DEF_PAT_CPUTYPE( "family",		PAT_FAMILY,	family),
 	DEF_PAT_CPUTYPE( "features",		PAT_FEATURES,	flags),		/* s390 */
 	DEF_PAT_CPUTYPE( "flags",		PAT_FLAGS,	flags),		/* x86 */
+	DEF_PAT_CPUTYPE( "marchid",		PAT_FAMILY,	family),	/* riscv */
 	DEF_PAT_CPUTYPE( "max thread id",	PAT_MAX_THREAD_ID, mtid),	/* s390 */
+	DEF_PAT_CPUTYPE( "mimpid",		PAT_MODEL,	model),		/* riscv */
 	DEF_PAT_CPUTYPE( "model",		PAT_MODEL,	model),
 	DEF_PAT_CPUTYPE( "model name",		PAT_MODEL_NAME,	modelname),
+	DEF_PAT_CPUTYPE( "mvendorid",		PAT_VENDOR,	vendor),	/* riscv */
 	DEF_PAT_CPUTYPE( "revision",		PAT_REVISION,	revision),
 	DEF_PAT_CPUTYPE( "stepping",		PAT_STEPPING,	stepping),
 	DEF_PAT_CPUTYPE( "type",		PAT_TYPE,	flags),		/* sparc64 */
+	DEF_PAT_CPUTYPE( "uarch",		PAT_MODEL_NAME,	modelname),	/* riscv */
 	DEF_PAT_CPUTYPE( "vendor",		PAT_VENDOR,	vendor),
 	DEF_PAT_CPUTYPE( "vendor_id",		PAT_VENDOR,	vendor),	/* s390 */
 };
@@ -230,6 +261,7 @@ static const struct cpuinfo_pattern type_patterns[] =
 static const struct cpuinfo_pattern cpu_patterns[] =
 {
 	/* Sort by fields name! */
+	DEF_PAT_CPU( "CPU MHz",		PAT_MHZ,          mhz),		/* loongarch */
 	DEF_PAT_CPU( "bogomips",	PAT_BOGOMIPS_CPU, bogomips),
 	DEF_PAT_CPU( "cpu MHz",		PAT_MHZ,          mhz),
 	DEF_PAT_CPU( "cpu MHz dynamic",	PAT_MHZ_DYNAMIC,  dynamic_mhz),	/* s390 */
@@ -272,20 +304,111 @@ struct cpuinfo_parser {
 	unsigned int		curr_type_added : 1;
 };
 
-static int is_different_cputype(struct lscpu_cputype *ct, size_t offset, const char *value)
+/* Be careful when defining which fields should be used to differentiate
+ * between CPU types. It is possible that CPUs differentiate in flags or
+ * BogoMIPS values, but it seems better to ignore it.
+ */
+static int cmp_cputype(const void *x, const void *y)
 {
-	switch (offset) {
-	case offsetof(struct lscpu_cputype, vendor):
-		return ct->vendor && value && strcmp(ct->vendor, value) != 0;
-	case offsetof(struct lscpu_cputype, model):
-		return ct->model && value && strcmp(ct->model, value) != 0;
-	case offsetof(struct lscpu_cputype, modelname):
-		return ct->modelname && value && strcmp(ct->modelname, value) != 0;
-	case offsetof(struct lscpu_cputype, stepping):
-		return ct->stepping && value && strcmp(ct->stepping, value) != 0;
-	}
+	const struct lscpu_cputype *a = *((const struct lscpu_cputype **) x),
+				   *b = *((const struct lscpu_cputype **) y);
+	int rc;
+
+	if ((rc = strcmp_members(a, b, vendor)))
+		return rc;
+	if ((rc = strcmp_members(a, b, model)))
+		return rc;
+	if ((rc = strcmp_members(a, b, modelname)))
+		return rc;
+	if ((rc = strcmp_members(a, b, stepping)))
+		return rc;
+
 	return 0;
 }
+
+static void replace_cpu_type(struct lscpu_cxt *cxt,
+			struct lscpu_cputype *old, struct lscpu_cputype *new)
+{
+	size_t i;
+
+	for (i = 0; i < cxt->npossibles; i++) {
+		struct lscpu_cpu *cpu = cxt->cpus[i];
+
+		if (cpu && cpu->type == old)
+			lscpu_cpu_set_type(cpu, new);
+	}
+}
+
+static void deduplicate_cputypes(struct lscpu_cxt *cxt)
+{
+	size_t i, u;
+
+	if (!cxt->ncputypes)
+		return;
+
+	/* sort */
+	DBG(GATHER, ul_debug("de-duplicate %zu CPU types", cxt->ncputypes));
+	qsort(cxt->cputypes, cxt->ncputypes,
+			sizeof(struct lscpu_cputype *), cmp_cputype);
+
+	/* remove the same entries */
+	for (u = 0, i = 1; i < cxt->ncputypes; i++) {
+		struct lscpu_cputype *ct = cxt->cputypes[i];
+
+		DBG(TYPE, ul_debugobj(ct, "compare with %p", cxt->cputypes[u]));
+
+		if (cmp_cputype(&cxt->cputypes[u], &ct) == 0) {
+			DBG(TYPE, ul_debugobj(ct, " duplicated"));
+			replace_cpu_type(cxt, ct, cxt->cputypes[u]);
+			lscpu_unref_cputype(ct);
+		} else {
+			DBG(TYPE, ul_debugobj(ct, " uniq"));
+			u++;
+			if (u != i)
+				cxt->cputypes[u] = ct;
+		}
+	}
+
+	cxt->ncputypes = u + 1;
+
+	/* In certain cases (e.g. ppc), the cpuinfo file may contain additional
+	 * information at the end. The parser reads this information up to the
+	 * last cputype, with previous cputypes being a subset. In such cases, the
+	 * last cputype should be used.
+	 *
+	 * Let's ignore cputypes[0] if it only contains data that is already covered
+	 * by cputypes[1].
+	 */
+	if (cxt->ncputypes == 2) {
+		static const size_t items[] = {
+			offsetof(struct lscpu_cputype, model),
+			offsetof(struct lscpu_cputype, modelname),
+			offsetof(struct lscpu_cputype, vendor),
+			offsetof(struct lscpu_cputype, bogomips),
+			offsetof(struct lscpu_cputype, revision),
+		};
+		struct lscpu_cputype *ct = cxt->cputypes[0],	/* subset ? */
+				     *mt = cxt->cputypes[1];	/* master ? */
+
+		DBG(TYPE, ul_debugobj(ct, "checking items in %p", mt));
+		for (i = 0; i < ARRAY_SIZE(items); i++) {
+			if (!is_nonnull_offset(ct, items[i]))
+				continue;
+			if (strcmp_offsets(mt, ct, items[i]) != 0)
+				break;
+		}
+
+		if (i == ARRAY_SIZE(items)) {
+			replace_cpu_type(cxt, ct, mt);
+			lscpu_unref_cputype(ct);
+			cxt->cputypes[0] = cxt->cputypes[1];
+			cxt->ncputypes = 1;
+		}
+	}
+
+	DBG(GATHER, ul_debug(" %zu uniq CPU types", cxt->ncputypes));
+}
+
 
 /* canonicalize @str -- remove number at the end return the
  * number by @keynum. This is usable for example for "processor 5" or "cache1"
@@ -427,8 +550,8 @@ static int cpuinfo_parse_cache(struct lscpu_cxt *cxt, int keynum, char *data)
 		return 0;
 
 	cxt->necaches++;
-	cxt->ecaches = xrealloc(cxt->ecaches,
-				cxt->necaches * sizeof(struct lscpu_cache));
+	cxt->ecaches = xreallocarray(cxt->ecaches,
+				     cxt->necaches, sizeof(struct lscpu_cache));
 	cache = &cxt->ecaches[cxt->necaches - 1];
 	memset(cache, 0 , sizeof(*cache));
 
@@ -455,7 +578,9 @@ static int cpuinfo_parse_cache(struct lscpu_cxt *cxt, int keynum, char *data)
 int lscpu_read_cpuinfo(struct lscpu_cxt *cxt)
 {
 	FILE *fp;
-	char buf[BUFSIZ];
+	/* Used to be BUFSIZ which is small on some platforms e.g, musl,
+	 * therefore hardcode to 4K */
+	char buf[4096];
 	size_t i;
 	struct lscpu_cputype *ct;
 	struct cpuinfo_parser _pr = { .cxt = cxt }, *pr = &_pr;
@@ -540,7 +665,8 @@ int lscpu_read_cpuinfo(struct lscpu_cxt *cxt)
 			}
 			break;
 		case CPUINFO_LINE_CPUTYPE:
-			if (pr->curr_type && is_different_cputype(pr->curr_type, pattern->offset, value)) {
+			if (pr->curr_type && is_nonnull_offset(pr->curr_type, pattern->offset)) {
+				/* Don't overwrite the current type, create a new */
 				lscpu_unref_cputype(pr->curr_type);
 				pr->curr_type = NULL;
 			}
@@ -559,10 +685,12 @@ int lscpu_read_cpuinfo(struct lscpu_cxt *cxt)
 		}
 	} while (1);
 
-	DBG(GATHER, fprintf_cputypes(stderr, cxt));
-
 	if (pr->curr_cpu && !pr->curr_cpu->type)
 		lscpu_cpu_set_type(pr->curr_cpu, pr->curr_type);
+
+	deduplicate_cputypes(cxt);
+
+	DBG(GATHER, fprintf_cputypes(stderr, cxt));
 
 	lscpu_unref_cputype(pr->curr_type);
 	lscpu_unref_cpu(pr->curr_cpu);
@@ -599,7 +727,7 @@ struct lscpu_arch *lscpu_read_architecture(struct lscpu_cxt *cxt)
 	ar = xcalloc(1, sizeof(*cxt->arch));
 	ar->name = xstrdup(utsbuf.machine);
 
-	if (cxt->noalive)
+	if (is_dump(cxt))
 		/* reading info from any /{sys,proc} dump, don't mix it with
 		 * information about our real CPU */
 		;
@@ -634,14 +762,24 @@ struct lscpu_arch *lscpu_read_architecture(struct lscpu_cxt *cxt)
 
 		snprintf(buf, sizeof(buf), " %s ", ct->flags);
 		if (strstr(buf, " lm "))
-			ar->bit32 = 1, ar->bit64 = 1;			/* x86_64 */
+			ar->bit32 = ar->bit64 = 1;			/* x86_64 */
 		if (strstr(buf, " zarch "))
-			ar->bit32 = 1, ar->bit64 = 1;			/* s390x */
+			ar->bit32 = ar->bit64 = 1;			/* s390x */
 		if (strstr(buf, " sun4v ") || strstr(buf, " sun4u "))
-			ar->bit32 = 1, ar->bit64 = 1;			/* sparc64 */
+			ar->bit32 = ar->bit64 = 1;			/* sparc64 */
 	}
 
-	if (ar->name && !cxt->noalive) {
+	if (ct && ct->isa) {
+		char buf[BUFSIZ];
+
+		snprintf(buf, sizeof(buf), " %s ", ct->isa);
+		if (strstr(buf, " loongarch32 "))
+			ar->bit32 = 1;
+		if (strstr(buf, " loongarch64 "))
+			ar->bit64 = 1;
+	}
+
+	if (ar->name && is_live(cxt)) {
 		if (strcmp(ar->name, "ppc64") == 0)
 			ar->bit32 = 1, ar->bit64 = 1;
 		else if (strcmp(ar->name, "ppc") == 0)
@@ -674,7 +812,7 @@ int lscpu_read_cpulists(struct lscpu_cxt *cxt)
 		/* note that kernel_max is maximum index [NR_CPUS-1] */
 		cxt->maxcpus += 1;
 
-	else if (!cxt->noalive)
+	else if (is_live(cxt))
 		/* the root is '/' so we are working with data from the current kernel */
 		cxt->maxcpus = get_max_number_of_cpus();
 
@@ -746,7 +884,7 @@ int lscpu_read_archext(struct lscpu_cxt *cxt)
 
 #if defined(HAVE_LIBRTAS)
 	/* Get PowerPC specific info */
-	if (!cxt->noalive) {
+	if (is_live(cxt)) {
 		int rc, len, ntypes;
 
 		ct->physsockets = ct->physchips = ct->physcoresperchip = 0;

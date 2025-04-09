@@ -1,0 +1,26 @@
+# debputy does not need misc:Depends
+debhelper-but-no-misc-depends bsdextrautils
+debhelper-but-no-misc-depends bsdutils
+debhelper-but-no-misc-depends eject
+debhelper-but-no-misc-depends fdisk
+debhelper-but-no-misc-depends lastlog2
+debhelper-but-no-misc-depends libblkid1
+debhelper-but-no-misc-depends libblkid-dev
+debhelper-but-no-misc-depends libfdisk1
+debhelper-but-no-misc-depends libfdisk-dev
+debhelper-but-no-misc-depends liblastlog2-2
+debhelper-but-no-misc-depends liblastlog2-dev
+debhelper-but-no-misc-depends libmount1
+debhelper-but-no-misc-depends libmount-dev
+debhelper-but-no-misc-depends libpam-lastlog2
+debhelper-but-no-misc-depends libsmartcols1
+debhelper-but-no-misc-depends libsmartcols-dev
+debhelper-but-no-misc-depends libuuid1
+debhelper-but-no-misc-depends login
+debhelper-but-no-misc-depends mount
+debhelper-but-no-misc-depends rfkill
+debhelper-but-no-misc-depends util-linux
+debhelper-but-no-misc-depends util-linux-extra
+debhelper-but-no-misc-depends util-linux-locales
+debhelper-but-no-misc-depends uuid-dev
+debhelper-but-no-misc-depends uuid-runtime

@@ -62,6 +62,7 @@ struct fstrim_range {
 
 struct fstrim_control {
 	struct fstrim_range range;
+	char *type_pattern;
 
 	unsigned int verbose : 1,
 		     quiet_unsupp : 1,
@@ -210,7 +211,7 @@ fail:
 	return 1;
 }
 
-static int is_unwanted_fs(struct libmnt_fs *fs, const char *tgt)
+static int is_unwanted_fs(struct libmnt_fs *fs, const char *tgt, const char *types)
 {
 	struct statfs vfs;
 	int fd, rc;
@@ -226,6 +227,8 @@ static int is_unwanted_fs(struct libmnt_fs *fs, const char *tgt)
 	if (mnt_fs_match_options(fs, "ro"))
 		return 1;
 	if (mnt_fs_match_options(fs, "+X-fstrim.notrim"))
+		return 1;
+	if (types && mnt_fs_match_fstype(fs, types) == 0)
 		return 1;
 
 	fd = open(tgt, O_PATH);
@@ -332,7 +335,7 @@ static int fstrim_all_from_file(struct fstrim_control *ctl, const char *filename
 		char *path;
 		int rc = 1;
 
-		if (!tgt || is_unwanted_fs(fs, tgt)) {
+		if (!tgt || is_unwanted_fs(fs, tgt, ctl->type_pattern)) {
 			mnt_table_remove_fs(tab, fs);
 			continue;
 		}
@@ -448,7 +451,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
-	      _(" %s [options] <mount point>\n"), program_invocation_short_name);
+	      _(" %s [options] <-A|-a|mount point>\n"), program_invocation_short_name);
 
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_("Discard unused blocks on a mounted filesystem.\n"), out);
@@ -460,17 +463,18 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -o, --offset <num>       the offset in bytes to start discarding from\n"), out);
 	fputs(_(" -l, --length <num>       the number of bytes to discard\n"), out);
 	fputs(_(" -m, --minimum <num>      the minimum extent length to discard\n"), out);
+	fputs(_(" -t, --types <list>       limit the set of filesystem types\n"), out);
 	fputs(_(" -v, --verbose            print number of discarded bytes\n"), out);
 	fputs(_("     --quiet-unsupported  suppress error messages if trim unsupported\n"), out);
 	fputs(_(" -n, --dry-run            does everything, but trim\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(21));
+	fprintf(out, USAGE_HELP_OPTIONS(21));
 
 	fputs(USAGE_ARGUMENTS, out);
-	printf(USAGE_ARG_SIZE(_("<num>")));
+	fprintf(out, USAGE_ARG_SIZE(_("<num>")));
 
-	printf(USAGE_MAN_TAIL("fstrim(8)"));
+	fprintf(out, USAGE_MAN_TAIL("fstrim(8)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -495,6 +499,7 @@ int main(int argc, char **argv)
 	    { "offset",    required_argument, NULL, 'o' },
 	    { "length",    required_argument, NULL, 'l' },
 	    { "minimum",   required_argument, NULL, 'm' },
+	    { "types",     required_argument, NULL, 't' },
 	    { "verbose",   no_argument,       NULL, 'v' },
 	    { "quiet-unsupported", no_argument,       NULL, OPT_QUIET_UNSUPP },
 	    { "dry-run",   no_argument,       NULL, 'n' },
@@ -512,7 +517,7 @@ int main(int argc, char **argv)
 	textdomain(PACKAGE);
 	close_stdout_atexit();
 
-	while ((c = getopt_long(argc, argv, "AahI:l:m:no:Vv", longopts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "AahI:l:m:no:t:Vv", longopts, NULL)) != -1) {
 
 		err_exclusive_options(c, longopts, excl, excl_st);
 
@@ -543,6 +548,9 @@ int main(int argc, char **argv)
 		case 'm':
 			ctl.range.minlen = strtosize_or_err(optarg,
 					_("failed to parse minimum extent length"));
+			break;
+		case 't':
+			ctl.type_pattern = optarg;
 			break;
 		case 'v':
 			ctl.verbose = 1;

@@ -77,7 +77,7 @@ Note that the system logging infrastructure (for example *systemd* when listenin
 
 *--journald*[**=**__file__]::
 Write a *systemd* journal entry. The entry is read from the given _file_, when specified, otherwise from standard input. Each line must begin with a field that is accepted by *journald*; see *systemd.journal-fields*(7) for details. The use of a MESSAGE_ID field is generally a good idea, as it makes finding entries easy. Examples:
-
++
 ____
     logger --journald <<end
     MESSAGE_ID=67feb6ffbaf24c5cbec13c008dd72309
@@ -88,6 +88,7 @@ ____
 
     logger --journald=entry.txt
 ____
++
 Notice that *--journald* will ignore values of other options, such as priority. If priority is needed it must be within input, and use PRIORITY field. The simple execution of *journalctl*(1) will display MESSAGE field. Use *journalctl --output json-pretty* to see rest of the fields.
 +
 To include newlines in MESSAGE, specify MESSAGE several times. This is handled as a special case, other fields will be stored as an array in the journal if they appear multiple times.
@@ -161,10 +162,16 @@ Most receivers accept messages larger than 1KiB over any type of syslog protocol
 +
 Note: the message-size limit limits the overall message size, including the syslog header. Header sizes vary depending on the selected options and the hostname length. As a rule of thumb, headers are usually not longer than 50 to 80 characters. When selecting a maximum message size, it is important to ensure that the receiver supports the max size as well, otherwise messages may become truncated. Again, as a rule of thumb two to four KiB message size should generally be OK, whereas anything larger should be verified to work.
 
-*--socket-errors*[**=**__mode__]::
-Print errors about Unix socket connections. The _mode_ can be a value of *off*, *on*, or *auto*. When the mode is *auto*, then *logger* will detect if the init process is *systemd*(1), and if so assumption is made _/dev/log_ can be used early at boot. Other init systems lack of _/dev/log_ will not cause errors that is identical with messaging using *openlog*(3) system call. The *logger*(1) before version 2.26 used *openlog*(3), and hence was unable to detected loss of messages sent to Unix sockets.
+*--socket-errors* __mode__::
+Print errors about Unix socket connections. The _mode_ can be *on*, *off*, or *auto*.
+When the mode is *auto* (the default), then *logger* will detect if the init process
+is *systemd*(1), and if so, the assumption is made that _/dev/log_ can be used early
+at boot. The lack of _/dev/log_ on other init systems will not cause errors, just as
+when using the *openlog*(3) system call. The *logger*(1) before version 2.26 used
+*openlog*(3), and thus was unable to detect the loss of messages sent to Unix sockets.
 +
-The default mode is *auto*. When errors are not enabled lost messages are not communicated and will result to successful exit status of *logger*(1) invocation.
+When errors are not enabled, lost messages are not communicated and will result in a
+successful exit status of *logger*(1).
 
 *-T*, *--tcp*::
 Use stream (TCP) only. By default the connection is tried to the _syslog-conn_ port defined in _/etc/services_, which is often _601_.
@@ -230,8 +237,13 @@ For the priority order and intended purposes of these facilities and levels, see
 The *logger* command is expected to be IEEE Std 1003.2 ("POSIX.2") compatible.
 
 == EXAMPLES
+____
+logger System rebooted
 
-*logger System rebooted* *logger -p local0.notice -t HOSTIDM -f /dev/idmc* *logger -n loghost.example.com System rebooted*
+logger -p local0.notice -t HOSTIDM -f /dev/idmc
+
+logger -n loghost.example.com System rebooted
+____
 
 == AUTHORS
 

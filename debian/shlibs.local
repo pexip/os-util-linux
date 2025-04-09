@@ -1,0 +1,6 @@
+deb: libblkid 1 libblkid1 (= ${binary:Version})
+deb: libfdisk 1 libfdisk1 (= ${binary:Version})
+deb: liblastlog2 2 liblastlog2-2 (= ${binary:Version})
+deb: libmount 1 libmount1 (= ${binary:Version})
+deb: libsmartcols 1 libsmartcols1 (= ${binary:Version})
+deb: libuuid 1 libuuid1 (= ${binary:Version})

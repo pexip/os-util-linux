@@ -32,10 +32,13 @@ void lsblk_device_free_properties(struct lsblk_devprop *p)
 	free(p->parttype);
 	free(p->partuuid);
 	free(p->partlabel);
+	free(p->partn);
 	free(p->wwn);
 	free(p->serial);
 	free(p->model);
 	free(p->partflags);
+	free(p->idlink);
+	free(p->revision);
 
 	free(p->mode);
 	free(p->owner);
@@ -51,12 +54,22 @@ static struct lsblk_devprop *get_properties_by_udev(struct lsblk_device *dev
 	return NULL;
 }
 #else
+
+#define LSBLK_UDEV_BYID_PREFIX "/dev/disk/by-id/"
+#define LSBLK_UDEV_BYID_PREFIXSZ (sizeof(LSBLK_UDEV_BYID_PREFIX) - 1)
+
 static struct lsblk_devprop *get_properties_by_udev(struct lsblk_device *ld)
 {
 	struct udev_device *dev;
+	struct udev_list_entry *le;
+	const char *data;
+	struct lsblk_devprop *prop;
+	size_t len;
 
 	if (ld->udev_requested)
 		return ld->properties;
+
+	DBG(DEV, ul_debugobj(ld, " properties by udev"));
 
 	if (!udev)
 		udev = udev_new();	/* global handler */
@@ -64,72 +77,94 @@ static struct lsblk_devprop *get_properties_by_udev(struct lsblk_device *ld)
 		goto done;
 
 	dev = udev_device_new_from_subsystem_sysname(udev, "block", ld->name);
-	if (dev) {
-		const char *data;
-		struct lsblk_devprop *prop;
+	if (!dev)
+		goto done;
 
-		if (ld->properties)
-			lsblk_device_free_properties(ld->properties);
-		prop = ld->properties = xcalloc(1, sizeof(*ld->properties));
+	DBG(DEV, ul_debugobj(ld, "%s: found udev properties", ld->name));
 
-		if ((data = udev_device_get_property_value(dev, "ID_FS_LABEL_ENC"))) {
-			prop->label = xstrdup(data);
-			unhexmangle_string(prop->label);
-		}
-		if ((data = udev_device_get_property_value(dev, "ID_FS_UUID_ENC"))) {
-			prop->uuid = xstrdup(data);
-			unhexmangle_string(prop->uuid);
-		}
-		if ((data = udev_device_get_property_value(dev, "ID_PART_TABLE_UUID")))
-			prop->ptuuid = xstrdup(data);
-		if ((data = udev_device_get_property_value(dev, "ID_PART_TABLE_TYPE")))
-			prop->pttype = xstrdup(data);
-		if ((data = udev_device_get_property_value(dev, "ID_PART_ENTRY_NAME"))) {
-			prop->partlabel = xstrdup(data);
-			unhexmangle_string(prop->partlabel);
-		}
-		if ((data = udev_device_get_property_value(dev, "ID_FS_TYPE")))
-			prop->fstype = xstrdup(data);
-		if ((data = udev_device_get_property_value(dev, "ID_FS_VERSION")))
-			prop->fsversion = xstrdup(data);
-		if ((data = udev_device_get_property_value(dev, "ID_PART_ENTRY_TYPE")))
-			prop->parttype = xstrdup(data);
-		if ((data = udev_device_get_property_value(dev, "ID_PART_ENTRY_UUID")))
-			prop->partuuid = xstrdup(data);
-		if ((data = udev_device_get_property_value(dev, "ID_PART_ENTRY_FLAGS")))
-			prop->partflags = xstrdup(data);
+	if (ld->properties)
+		lsblk_device_free_properties(ld->properties);
+	prop = ld->properties = xcalloc(1, sizeof(*ld->properties));
 
-		data = udev_device_get_property_value(dev, "ID_WWN_WITH_EXTENSION");
-		if (!data)
-			data = udev_device_get_property_value(dev, "ID_WWN");
-		if (data)
-			prop->wwn = xstrdup(data);
+	if ((data = udev_device_get_property_value(dev, "ID_FS_LABEL_ENC"))) {
+		prop->label = xstrdup(data);
+		unhexmangle_string(prop->label);
+	}
+	if ((data = udev_device_get_property_value(dev, "ID_FS_UUID_ENC"))) {
+		prop->uuid = xstrdup(data);
+		unhexmangle_string(prop->uuid);
+	}
+	if ((data = udev_device_get_property_value(dev, "ID_PART_TABLE_UUID")))
+		prop->ptuuid = xstrdup(data);
+	if ((data = udev_device_get_property_value(dev, "ID_PART_TABLE_TYPE")))
+		prop->pttype = xstrdup(data);
+	if ((data = udev_device_get_property_value(dev, "ID_PART_ENTRY_NAME"))) {
+		prop->partlabel = xstrdup(data);
+		unhexmangle_string(prop->partlabel);
+	}
+	if ((data = udev_device_get_property_value(dev, "ID_FS_TYPE")))
+		prop->fstype = xstrdup(data);
+	if ((data = udev_device_get_property_value(dev, "ID_FS_VERSION")))
+		prop->fsversion = xstrdup(data);
+	if ((data = udev_device_get_property_value(dev, "ID_PART_ENTRY_TYPE")))
+		prop->parttype = xstrdup(data);
+	if ((data = udev_device_get_property_value(dev, "ID_PART_ENTRY_UUID")))
+		prop->partuuid = xstrdup(data);
+	if ((data = udev_device_get_property_value(dev, "ID_PART_ENTRY_NUMBER")))
+		prop->partn = xstrdup(data);
+	if ((data = udev_device_get_property_value(dev, "ID_PART_ENTRY_FLAGS")))
+		prop->partflags = xstrdup(data);
 
-		data = udev_device_get_property_value(dev, "SCSI_IDENT_SERIAL");	/* sg3_utils do not use I_D prefix */
-		if (!data)
-			data = udev_device_get_property_value(dev, "ID_SCSI_SERIAL");
-		if(!data)
-			data = udev_device_get_property_value(dev, "ID_SERIAL_SHORT");
-		if(!data)
-			data = udev_device_get_property_value(dev, "ID_SERIAL");
-		if (data) {
-			prop->serial = xstrdup(data);
-			normalize_whitespace((unsigned char *) prop->serial);
-		}
+	data = udev_device_get_property_value(dev, "ID_WWN_WITH_EXTENSION");
+	if (!data)
+		data = udev_device_get_property_value(dev, "ID_WWN");
+	if (data)
+		prop->wwn = xstrdup(data);
 
-		if ((data = udev_device_get_property_value(dev, "ID_MODEL_ENC"))) {
-			prop->model = xstrdup(data);
-			unhexmangle_string(prop->model);
-			normalize_whitespace((unsigned char *) prop->model);
-		} else if ((data = udev_device_get_property_value(dev, "ID_MODEL"))) {
-			prop->model = xstrdup(data);
-			normalize_whitespace((unsigned char *) prop->model);
-		}
-
-		udev_device_unref(dev);
-		DBG(DEV, ul_debugobj(ld, "%s: found udev properties", ld->name));
+	data = udev_device_get_property_value(dev, "SCSI_IDENT_SERIAL");	/* sg3_utils do not use I_D prefix */
+	if (!data)
+		data = udev_device_get_property_value(dev, "ID_SCSI_SERIAL");
+	if(!data)
+		data = udev_device_get_property_value(dev, "ID_SERIAL_SHORT");
+	if(!data)
+		data = udev_device_get_property_value(dev, "ID_SERIAL");
+	if (data) {
+		prop->serial = xstrdup(data);
+		normalize_whitespace((unsigned char *) prop->serial);
 	}
 
+	if ((data = udev_device_get_property_value(dev, "ID_REVISION")))
+		prop->revision = xstrdup(data);
+
+	if ((data = udev_device_get_property_value(dev, "ID_MODEL_ENC"))) {
+		prop->model = xstrdup(data);
+		unhexmangle_string(prop->model);
+		normalize_whitespace((unsigned char *) prop->model);
+	} else if ((data = udev_device_get_property_value(dev, "ID_MODEL"))) {
+		prop->model = xstrdup(data);
+		normalize_whitespace((unsigned char *) prop->model);
+	}
+
+	/* select the shortest udev by-id symlink */
+	len = 0;
+	udev_list_entry_foreach(le, udev_device_get_devlinks_list_entry(dev)) {
+		const char *name = udev_list_entry_get_name(le);
+		size_t sz;
+
+		if (!name || !startswith(name,  LSBLK_UDEV_BYID_PREFIX))
+			continue;
+		name += LSBLK_UDEV_BYID_PREFIXSZ;
+		if (!*name)
+			continue;
+		sz = strlen(name);
+		if (!len || sz < len) {
+			len = sz;
+			free(prop->idlink);
+			prop->idlink = xstrdup(name);
+		}
+	}
+
+	udev_device_unref(dev);
 done:
 	ld->udev_requested = 1;
 
@@ -181,6 +216,8 @@ static struct lsblk_devprop *get_properties_by_file(struct lsblk_device *ld)
 	if (ld->file_requested)
 		return ld->properties;
 
+	DBG(DEV, ul_debugobj(ld, " properties by file"));
+
 	if (ld->properties || ld->filename) {
 		lsblk_device_free_properties(ld->properties);
 		ld->properties = NULL;
@@ -217,6 +254,7 @@ static struct lsblk_devprop *get_properties_by_file(struct lsblk_device *ld)
 		else if (lookup(buf, "ID_PART_ENTRY_TYPE", &prop->parttype)) ;
 		else if (lookup(buf, "ID_PART_ENTRY_UUID", &prop->partuuid)) ;
 		else if (lookup(buf, "ID_PART_ENTRY_FLAGS", &prop->partflags)) ;
+		else if (lookup(buf, "ID_PART_ENTRY_NUMBER", &prop->partn)) ;
 		else if (lookup(buf, "ID_MODEL", &prop->model)) ;
 		else if (lookup(buf, "ID_WWN_WITH_EXTENSION", &prop->wwn)) ;
 		else if (lookup(buf, "ID_WWN", &prop->wwn)) ;
@@ -224,6 +262,7 @@ static struct lsblk_devprop *get_properties_by_file(struct lsblk_device *ld)
 		else if (lookup(buf, "ID_SCSI_SERIAL", &prop->serial)) ;
 		else if (lookup(buf, "ID_SERIAL_SHORT", &prop->serial)) ;
 		else if (lookup(buf, "ID_SERIAL", &prop->serial)) ;
+		else if (lookup(buf, "ID_REVISION", &prop->revision)) ;
 
 		/* lsblk specific */
 		else if (lookup(buf, "MODE", &prop->mode)) ;
@@ -255,6 +294,8 @@ static struct lsblk_devprop *get_properties_by_blkid(struct lsblk_device *dev)
 		goto done;
 	if (getuid() != 0)
 		goto done;;				/* no permissions to read from the device */
+
+	DBG(DEV, ul_debugobj(dev, " properties by blkid"));
 
 	pr = blkid_new_probe_from_filename(dev->filename);
 	if (!pr)
@@ -295,6 +336,8 @@ static struct lsblk_devprop *get_properties_by_blkid(struct lsblk_device *dev)
 			prop->partlabel = xstrdup(data);
 		if (!blkid_probe_lookup_value(pr, "PART_ENTRY_FLAGS", &data, NULL))
 			prop->partflags = xstrdup(data);
+		if (!blkid_probe_lookup_value(pr, "PART_ENTRY_NUMBER", &data, NULL))
+			prop->partn = xstrdup(data);
 
 		DBG(DEV, ul_debugobj(dev, "%s: found blkid properties", dev->name));
 	}
@@ -307,18 +350,64 @@ done:
 	return dev->properties;
 }
 
+static int name2method(const char *name, size_t namesz)
+{
+	if (namesz == 4 && strncasecmp(name, "none", namesz) == 0)
+		return LSBLK_METHOD_NONE;
+	if (namesz == 4 && strncasecmp(name, "udev", namesz) == 0)
+		return LSBLK_METHOD_UDEV;
+	if (namesz == 5 && strncasecmp(name, "blkid", namesz) == 0)
+		return LSBLK_METHOD_BLKID;
+	if (namesz == 4 && strncasecmp(name, "file", namesz) == 0)
+		return LSBLK_METHOD_FILE;
+
+	warnx(_("unknown properties probing method: %s"), name);
+	return -1;
+}
+
+int lsblk_set_properties_method(const char *opts)
+{
+	size_t i;
+
+	for (i = 0; i < __LSBLK_NMETHODS; i++)
+		lsblk->properties_by[i] = LSBLK_METHOD_NONE;
+
+	if (string_to_idarray(opts, lsblk->properties_by,
+			__LSBLK_NMETHODS, name2method) < 0)
+		return -1;
+
+	return 0;
+}
+
 struct lsblk_devprop *lsblk_device_get_properties(struct lsblk_device *dev)
 {
-	struct lsblk_devprop *p = NULL;
+	size_t i;
 
 	DBG(DEV, ul_debugobj(dev, "%s: properties requested", dev->filename));
-	if (lsblk->sysroot)
-		return get_properties_by_file(dev);
 
-	p = get_properties_by_udev(dev);
-	if (!p)
-		p = get_properties_by_blkid(dev);
-	return p;
+	for (i = 0; i < __LSBLK_NMETHODS; i++) {
+		struct lsblk_devprop *p = NULL;
+
+		switch (lsblk->properties_by[i]) {
+		case LSBLK_METHOD_NONE:
+			return NULL;
+		case LSBLK_METHOD_UDEV:
+			p = get_properties_by_udev(dev);
+			break;
+		case LSBLK_METHOD_BLKID:
+			p = get_properties_by_blkid(dev);
+			break;
+		case LSBLK_METHOD_FILE:
+			if (lsblk->sysroot)
+				return get_properties_by_file(dev);
+			break;
+		}
+
+		if (p)
+			return p;
+	}
+
+	return NULL;
 }
 
 void lsblk_properties_deinit(void)

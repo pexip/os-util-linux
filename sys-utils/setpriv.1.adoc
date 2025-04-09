@@ -78,11 +78,46 @@ Set or clear securebits. The argument is a comma-separated list. The valid secur
 **--pdeathsig keep**|**clear**|*<signal>*::
 Keep, clear or set the parent death signal. Some LSMs, most notably SELinux and AppArmor, clear the signal when the process' credentials change. Using *--pdeathsig keep* will restore the parent death signal after changing credentials to remedy that situation.
 
+*--ptracer* _pid_|**any**|**none**::
+When Yama's restricted ptrace mode is in effect (that is, when _/proc/sys/kernel/yama/ptrace_scope_ is set to 1), allow being traced via **ptrace**(2) by the process with the specified PID, or any process, or no process. See **PR_SET_PTRACER**(2const). (Note that this is not inherited by child processes, though it is preserved across **execve**(2).) This option has no effect when Yama is not enabled or is in a mode other than restricted ptrace.
+
 *--selinux-label* _label_::
 Request a particular SELinux transition (using a transition on exec, not dyntrans). This will fail and cause *setpriv* to abort if SELinux is not in use, and the transition may be ignored or cause *execve*(2) to fail at SELinux's whim. (In particular, this is unlikely to work in conjunction with _no_new_privs_.) This is similar to *runcon*(1).
 
 *--apparmor-profile* _profile_::
 Request a particular AppArmor profile (using a transition on exec). This will fail and cause *setpriv* to abort if AppArmor is not in use, and the transition may be ignored or cause *execve*(2) to fail at AppArmor's whim.
+
+*--landlock-access* _access_::
+Enable landlock restrictions for a specific set of system accesses.
+To allow specific subgroups of accesses use *--landlock-rule*.
++
+Block all filesystem access:
++
+*setpriv --landlock-access fs*
++
+Block all file deletions and directory creations:
++
+*setpriv --landlock-access fs:remove-file,make-dir*
++
+For a complete set of supported access categories use *setpriv --help*.
+
+*--landlock-rule* _rule_::
+
+Allow one specific access from the categories blocked by *--landlock-access*.
++
+The syntax is as follows:
++
+*--landlock-rule $ruletype:$access:$rulearg*
++
+For example grant file read access to everything under */boot*:
++
+*--landlock-rule path-beneath:read-file:/boot*
+
+*--seccomp-filter* _file_::
+
+Load raw BPF seccomp filter code from a file.
++
+Filters can for example be created with *enosys*.
 
 *--reset-env*::
 Clears all the environment variables except *TERM*; initializes the environment variables *HOME*, *SHELL*, *USER*, *LOGNAME* according to the user's passwd entry; sets *PATH* to _/usr/local/bin:/bin:/usr/bin_ for a regular user and to _/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin_ for root.
@@ -117,6 +152,7 @@ mailto:luto@amacapital.net[Andy Lutomirski]
 *su*(1),
 *prctl*(2),
 *capabilities*(7)
+*landlock*(7)
 
 include::man-common/bugreports.adoc[]
 

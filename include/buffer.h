@@ -1,7 +1,11 @@
+/*
+ * No copyright is claimed.  This code is in the public domain; do with
+ * it what you wish.
+ */
 #ifndef UTIL_LINUX_BUFFER
 #define UTIL_LINUX_BUFFER
 
-#include "c.h"
+#include <stddef.h>
 
 struct ul_buffer {
 	char *begin;		/* begin of the data */
@@ -31,6 +35,7 @@ int ul_buffer_append_ntimes(struct ul_buffer *buf, size_t n, const char *str);
 int ul_buffer_set_data(struct ul_buffer *buf, const char *data, size_t sz);
 
 char *ul_buffer_get_data(struct ul_buffer *buf,  size_t *sz, size_t *width);
+char *ul_buffer_get_string(struct ul_buffer *buf,  size_t *sz, size_t *width);
 char *ul_buffer_get_safe_data(struct ul_buffer *buf, size_t *sz, size_t *width, const char *safechars);
 
 size_t ul_buffer_get_bufsiz(struct ul_buffer *buf);

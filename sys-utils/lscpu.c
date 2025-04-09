@@ -1,24 +1,16 @@
 /*
- * lscpu - CPU architecture information helper
- *
- * Copyright (C) 2008 Cai Qian <qcai@redhat.com>
- * Copyright (C) 2008 Karel Zak <kzak@redhat.com>
+ * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * This program is distributed in the hope that it would be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (C) 2008 Cai Qian <qcai@redhat.com>
+ * Copyright (C) 2008-2023 Karel Zak <kzak@redhat.com>
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * lscpu - CPU architecture information helper
  */
-
 #include <assert.h>
 #include <ctype.h>
 #include <dirent.h>
@@ -40,17 +32,18 @@
 #include "closestream.h"
 #include "optutils.h"
 #include "c_strtod.h"
+#include "sysfs.h"
 
 #include "lscpu.h"
 
-static const char *virt_types[] = {
+static const char *const virt_types[] = {
 	[VIRT_TYPE_NONE]	= N_("none"),
 	[VIRT_TYPE_PARA]	= N_("para"),
 	[VIRT_TYPE_FULL]	= N_("full"),
 	[VIRT_TYPE_CONTAINER]	= N_("container"),
 };
 
-static const char *hv_vendors[] = {
+static const char *const hv_vendors[] = {
 	[VIRT_VENDOR_NONE]	= NULL,
 	[VIRT_VENDOR_XEN]	= "Xen",
 	[VIRT_VENDOR_KVM]	= "KVM",
@@ -70,7 +63,7 @@ static const char *hv_vendors[] = {
 };
 
 /* dispatching modes */
-static const char *disp_modes[] = {
+static const char *const disp_modes[] = {
 	[DISP_HORIZONTAL]	= N_("horizontal"),
 	[DISP_VERTICAL]		= N_("vertical")
 };
@@ -109,6 +102,7 @@ enum {
 	COL_CPU_SCALMHZ,
 	COL_CPU_MAXMHZ,
 	COL_CPU_MINMHZ,
+	COL_CPU_MODELNAME,
 };
 
 enum {
@@ -133,7 +127,7 @@ struct lscpu_coldesc {
 	const char *help;
 
 	int flags;
-	unsigned int  is_abbr:1;	/* name is abbreviation */
+	bool is_abbr;	/* name is abbreviation */
 	int json_type;
 };
 
@@ -152,10 +146,11 @@ static struct lscpu_coldesc coldescs_cpu[] =
 	[COL_CPU_ADDRESS]      = { "ADDRESS", N_("physical address of a CPU") },
 	[COL_CPU_CONFIGURED]   = { "CONFIGURED", N_("shows if the hypervisor has allocated the CPU"), 0, 0, SCOLS_JSON_BOOLEAN_OPTIONAL },
 	[COL_CPU_ONLINE]       = { "ONLINE", N_("shows if Linux currently makes use of the CPU"), SCOLS_FL_RIGHT, 0, SCOLS_JSON_BOOLEAN_OPTIONAL },
-	[COL_CPU_MHZ]          = { "MHZ", N_("shows the currently MHz of the CPU"), SCOLS_FL_RIGHT, 0, SCOLS_JSON_NUMBER },
+	[COL_CPU_MHZ]          = { "MHZ", N_("shows the current MHz of the CPU"), SCOLS_FL_RIGHT, 0, SCOLS_JSON_NUMBER },
 	[COL_CPU_SCALMHZ]      = { "SCALMHZ%", N_("shows scaling percentage of the CPU frequency"), SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER },
 	[COL_CPU_MAXMHZ]       = { "MAXMHZ", N_("shows the maximum MHz of the CPU"), SCOLS_FL_RIGHT, 0, SCOLS_JSON_NUMBER },
-	[COL_CPU_MINMHZ]       = { "MINMHZ", N_("shows the minimum MHz of the CPU"), SCOLS_FL_RIGHT, 0, SCOLS_JSON_NUMBER }
+	[COL_CPU_MINMHZ]       = { "MINMHZ", N_("shows the minimum MHz of the CPU"), SCOLS_FL_RIGHT, 0, SCOLS_JSON_NUMBER },
+	[COL_CPU_MODELNAME]    = { "MODELNAME", N_("shows CPU model name"), 0, 0, SCOLS_JSON_STRING }
 };
 
 static struct lscpu_coldesc coldescs_cache[] =
@@ -168,12 +163,12 @@ static struct lscpu_coldesc coldescs_cache[] =
 	[COL_CACHE_WAYS]       = { "WAYS", N_("ways of associativity"), SCOLS_FL_RIGHT, 0, SCOLS_JSON_NUMBER },
 	[COL_CACHE_ALLOCPOL]   = { "ALLOC-POLICY", N_("allocation policy") },
 	[COL_CACHE_WRITEPOL]   = { "WRITE-POLICY", N_("write policy") },
-	[COL_CACHE_PHYLINE]    = { "PHY-LINE", N_("number of physical cache line per cache t"), SCOLS_FL_RIGHT, 0, SCOLS_JSON_NUMBER },
-	[COL_CACHE_SETS]       = { "SETS", N_("number of sets in the cache; set lines has the same cache index"), SCOLS_FL_RIGHT, 0, SCOLS_JSON_NUMBER },
+	[COL_CACHE_PHYLINE]    = { "PHY-LINE", N_("number of physical cache lines per cache tag"), SCOLS_FL_RIGHT, 0, SCOLS_JSON_NUMBER },
+	[COL_CACHE_SETS]       = { "SETS", N_("number of sets in the cache (lines in a set have the same cache index)"), SCOLS_FL_RIGHT, 0, SCOLS_JSON_NUMBER },
 	[COL_CACHE_COHERENCYSIZE] = { "COHERENCY-SIZE", N_("minimum amount of data in bytes transferred from memory to cache"), SCOLS_FL_RIGHT, 0, SCOLS_JSON_NUMBER }
 };
 
-static int is_term = 0;
+static int hierarchic = -1;
 
 UL_DEBUG_DEFINE_MASK(lscpu);
 UL_DEBUG_DEFINE_MASKNAMES(lscpu) = UL_DEBUG_EMPTY_MASKNAMES;
@@ -218,6 +213,15 @@ static void lscpu_context_init_paths(struct lscpu_cxt *cxt)
 	DBG(MISC, ul_debugobj(cxt, "initialize paths"));
 	ul_path_init_debug();
 
+	/* / */
+	cxt->rootfs = NULL;
+	if (cxt->prefix) {
+		cxt->rootfs = ul_new_path("/");
+		if (!cxt->rootfs)
+			err(EXIT_FAILURE, _("failed to initialize rootfs handler"));
+		ul_path_set_prefix(cxt->rootfs, cxt->prefix);
+	}
+
 	/* /sys/devices/system/cpu */
 	cxt->syscpu = ul_new_path(_PATH_SYS_CPU);
 	if (!cxt->syscpu)
@@ -250,6 +254,7 @@ static void lscpu_free_context(struct lscpu_cxt *cxt)
 	DBG(MISC, ul_debugobj(cxt, " de-initialize paths"));
 	ul_unref_path(cxt->syscpu);
 	ul_unref_path(cxt->procfs);
+	ul_unref_path(cxt->rootfs);
 
 	DBG(MISC, ul_debugobj(cxt, " freeing cpus"));
 	for (i = 0; i < cxt->npossibles; i++) {
@@ -443,6 +448,10 @@ static char *get_cell_data(
 		if (cpu->mhz_min_freq)
 			snprintf(buf, bufsz, "%.4f", cpu->mhz_min_freq);
 		break;
+	case COL_CPU_MODELNAME:
+		if (cpu->type && cpu->type->modelname)
+			xstrncpy(buf, cpu->type->modelname, bufsz);
+		break;
 	}
 	return buf;
 }
@@ -589,6 +598,8 @@ static void print_caches_readable(struct lscpu_cxt *cxt, int cols[], size_t ncol
 		scols_table_enable_json(tb, 1);
 		scols_table_set_name(tb, "caches");
 	}
+	if (cxt->raw)
+		scols_table_enable_raw(tb, 1);
 
 	for (i = 0; i < ncols; i++) {
 		struct lscpu_coldesc *cd = &coldescs_cache[cols[i]];
@@ -744,6 +755,8 @@ static void print_cpus_readable(struct lscpu_cxt *cxt, int cols[], size_t ncols)
 		scols_table_enable_json(tb, 1);
 		scols_table_set_name(tb, "cpus");
 	}
+	if (cxt->raw)
+		scols_table_enable_raw(tb, 1);
 
 	for (i = 0; i < ncols; i++) {
 		data = get_cell_header(cxt, cols[i], buf, sizeof(buf));
@@ -777,9 +790,13 @@ static void print_cpus_readable(struct lscpu_cxt *cxt, int cols[], size_t ncols)
 			err(EXIT_FAILURE, _("failed to allocate output line"));
 
 		for (c = 0; c < ncols; c++) {
+			struct libscols_column *cl;
 			data = get_cell_data(cxt, cpu, cols[c], buf, sizeof(buf));
-			if (!data || !*data)
+			if (!data || !*data) {
 				data = "-";
+				cl = scols_table_get_column(tb, c);
+				scols_column_set_json_type(cl, SCOLS_JSON_STRING);
+			}
 			if (scols_line_set_data(ln, c, data))
 				err(EXIT_FAILURE, _("failed to add output data"));
 		}
@@ -800,8 +817,8 @@ static struct libscols_line *
 	struct libscols_line *ln;
 	va_list args;
 
-	/* Don't print section lines without data on non-terminal output */
-	if (!is_term && fmt == NULL)
+	/* Don't print section lines without data */
+	if (!hierarchic && fmt == NULL)
 		return NULL;
 
 	ln = scols_table_new_line(tb, sec);
@@ -814,12 +831,13 @@ static struct libscols_line *
 
 	/* data column */
 	if (fmt) {
-		char *data;
+		int ret;
+
 		va_start(args, fmt);
-		xvasprintf(&data, fmt, args);
+		ret = scols_line_vprintf(ln, 1, fmt, args);
 		va_end(args);
 
-		if (data && scols_line_refer_data(ln, 1, data))
+		if (ret < 0)
 			err(EXIT_FAILURE, _("failed to add output data"));
 	}
 
@@ -838,12 +856,14 @@ print_cpuset(struct lscpu_cxt *cxt,
 	     const char *key, cpu_set_t *set)
 {
 	size_t setbuflen = 7 * cxt->maxcpus;
-	char setbuf[setbuflen], *p;
+	char *setbuf, *p;
 
 	assert(set);
 	assert(key);
 	assert(tb);
 	assert(cxt);
+
+	setbuf = xmalloc(setbuflen);
 
 	if (cxt->hex) {
 		p = cpumask_create(setbuf, setbuflen, set, cxt->setsize);
@@ -852,6 +872,8 @@ print_cpuset(struct lscpu_cxt *cxt,
 		p = cpulist_create(setbuf, setbuflen, set, cxt->setsize);
 		add_summary_s(tb, sec, key, p);
 	}
+
+	free(setbuf);
 }
 
 static void
@@ -943,7 +965,7 @@ static void print_summary(struct lscpu_cxt *cxt)
 	char field[256];
 	size_t i = 0;
 	struct libscols_table *tb;
-	struct libscols_line *sec = NULL;
+	struct libscols_line *sec;
 	int hdr_caches = 0;
 
 	scols_init_debug(0);
@@ -956,7 +978,7 @@ static void print_summary(struct lscpu_cxt *cxt)
 	if (cxt->json) {
 		scols_table_enable_json(tb, 1);
 		scols_table_set_name(tb, "lscpu");
-	} else if (is_term) {
+	} else if (hierarchic) {
 		struct libscols_symbols *sy = scols_new_symbols();
 
 		if (!sy)
@@ -968,36 +990,33 @@ static void print_summary(struct lscpu_cxt *cxt)
 		scols_unref_symbols(sy);
 	}
 
-	if (scols_table_new_column(tb, "field", 0, is_term ? SCOLS_FL_TREE : 0) == NULL ||
+	if (scols_table_new_column(tb, "field", 0, hierarchic ? SCOLS_FL_TREE : 0) == NULL ||
 	    scols_table_new_column(tb, "data", 0, SCOLS_FL_NOEXTREMES | SCOLS_FL_WRAP) == NULL)
 		err(EXIT_FAILURE, _("failed to initialize output column"));
 
 	ct = lscpu_cputype_get_default(cxt);
 
 	/* Section: architecture */
-	if (cxt->arch)
-		sec = add_summary_s(tb, NULL, _("Architecture:"), cxt->arch->name);
-	if (cxt->arch && (cxt->arch->bit32 || cxt->arch->bit64)) {
-		char buf[32], *p = buf;
+	sec = add_summary_s(tb, NULL, _("Architecture:"), cxt->arch->name);
+	if (cxt->arch->bit32 || cxt->arch->bit64) {
+		const char *p;
 
-		if (cxt->arch->bit32) {
-			strcpy(p, "32-bit, ");
-			p += 8;
-		}
-		if (cxt->arch->bit64) {
-			strcpy(p, "64-bit, ");
-			p += 8;
-		}
-		*(p - 2) = '\0';
-		add_summary_s(tb, sec, _("CPU op-mode(s):"), buf);
+		if (cxt->arch->bit32 && cxt->arch->bit64)
+			p = "32-bit, 64-bit";
+		else if (cxt->arch->bit32)
+			p = "32-bit";
+		else
+			p = "64-bit";
+
+		add_summary_s(tb, sec, _("CPU op-mode(s):"), p);
 	}
 	if (ct && ct->addrsz)
 		add_summary_s(tb, sec, _("Address sizes:"), ct->addrsz);
-#if !defined(WORDS_BIGENDIAN)
-	add_summary_s(tb, sec, _("Byte Order:"), "Little Endian");
-#else
-	add_summary_s(tb, sec, _("Byte Order:"), "Big Endian");
-#endif
+
+	if (sysfs_get_byteorder(cxt->rootfs) == SYSFS_BYTEORDER_LITTLE)
+		add_summary_s(tb, sec, _("Byte Order:"), "Little Endian");
+	else
+		add_summary_s(tb, sec, _("Byte Order:"), "Big Endian");
 
 	/* Section: CPU lists */
 	sec = add_summary_n(tb, NULL, _("CPU(s):"), cxt->npresents);
@@ -1081,7 +1100,7 @@ static void print_summary(struct lscpu_cxt *cxt)
 				hdr_caches = 1;
 			}
 
-			snprintf(field, sizeof(field), is_term ? _("%s:") : _("%s cache:"), name);
+			snprintf(field, sizeof(field), hierarchic ? _("%s:") : _("%s cache:"), name);
 			if (cxt->bytes)
 				add_summary_sprint(tb, sec, field,
 						P_("%" PRIu64 " (%d instance)",
@@ -1111,7 +1130,7 @@ static void print_summary(struct lscpu_cxt *cxt)
 			sec = add_summary_e(tb, NULL, _("Caches:"));
 			hdr_caches = 1;
 		}
-		snprintf(field, sizeof(field), is_term ? _("%s:") : _("%s cache:"), ca->name);
+		snprintf(field, sizeof(field), hierarchic ? _("%s:") : _("%s cache:"), ca->name);
 		if (cxt->bytes)
 			add_summary_x(tb, sec, field, "%" PRIu64, ca->size);
 		else {
@@ -1142,7 +1161,7 @@ static void print_summary(struct lscpu_cxt *cxt)
 		sec = add_summary_e(tb, NULL, _("Vulnerabilities:"));
 
 		for (i = 0; i < cxt->nvuls; i++) {
-			snprintf(field, sizeof(field), is_term ?
+			snprintf(field, sizeof(field), hierarchic ?
 					_("%s:") : _("Vulnerability %s:"), cxt->vuls[i].name);
 			add_summary_s(tb, sec, field, cxt->vuls[i].text);
 		}
@@ -1172,12 +1191,14 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -J, --json              use JSON for default or extended format\n"), out);
 	fputs(_(" -e, --extended[=<list>] print out an extended readable format\n"), out);
 	fputs(_(" -p, --parse[=<list>]    print out a parsable format\n"), out);
+	fputs(_(" -r, --raw               use raw output format (for -e, -p and -C)\n"), out);
 	fputs(_(" -s, --sysroot <dir>     use specified directory as system root\n"), out);
 	fputs(_(" -x, --hex               print hexadecimal masks rather than lists of CPUs\n"), out);
 	fputs(_(" -y, --physical          print physical instead of logical IDs\n"), out);
+	fputs(_("     --hierarchic[=when] use subsections in summary (auto, never, always)\n"), out);
 	fputs(_("     --output-all        print all available columns for -e, -p or -C\n"), out);
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(25));
+	fprintf(out, USAGE_HELP_OPTIONS(25));
 
 	fputs(_("\nAvailable output columns for -e or -p:\n"), out);
 	for (i = 0; i < ARRAY_SIZE(coldescs_cpu); i++)
@@ -1187,7 +1208,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	for (i = 0; i < ARRAY_SIZE(coldescs_cache); i++)
 		fprintf(out, " %13s  %s\n", coldescs_cache[i].name, _(coldescs_cache[i].help));
 
-	printf(USAGE_MAN_TAIL("lscpu(1)"));
+	fprintf(out, USAGE_MAN_TAIL("lscpu(1)"));
 
 	exit(EXIT_SUCCESS);
 }
@@ -1202,6 +1223,7 @@ int main(int argc, char *argv[])
 	size_t i, ncolumns = 0;
 	enum {
 		OPT_OUTPUT_ALL = CHAR_MAX + 1,
+		OPT_HIERARCHIC,
 	};
 	static const struct option longopts[] = {
 		{ "all",        no_argument,       NULL, 'a' },
@@ -1213,11 +1235,13 @@ int main(int argc, char *argv[])
 		{ "extended",	optional_argument, NULL, 'e' },
 		{ "json",       no_argument,       NULL, 'J' },
 		{ "parse",	optional_argument, NULL, 'p' },
+		{ "raw",        no_argument,       NULL, 'r' },
 		{ "sysroot",	required_argument, NULL, 's' },
 		{ "physical",	no_argument,	   NULL, 'y' },
 		{ "hex",	no_argument,	   NULL, 'x' },
 		{ "version",	no_argument,	   NULL, 'V' },
 		{ "output-all",	no_argument,	   NULL, OPT_OUTPUT_ALL },
+		{ "hierarchic", optional_argument, NULL, OPT_HIERARCHIC },
 		{ NULL,		0, NULL, 0 }
 	};
 
@@ -1235,7 +1259,7 @@ int main(int argc, char *argv[])
 
 	cxt = lscpu_new_context();
 
-	while ((c = getopt_long(argc, argv, "aBbC::ce::hJp::s:xyV", longopts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "aBbC::ce::hJp::rs:xyV", longopts, NULL)) != -1) {
 
 		err_exclusive_options(c, longopts, excl, excl_st);
 
@@ -1275,6 +1299,9 @@ int main(int argc, char *argv[])
 			}
 			cxt->mode = c == 'p' ? LSCPU_OUTPUT_PARSABLE : LSCPU_OUTPUT_READABLE;
 			break;
+		case 'r':
+			cxt->raw = 1;
+			break;
 		case 's':
 			cxt->prefix = optarg;
 			cxt->noalive = 1;
@@ -1288,7 +1315,19 @@ int main(int argc, char *argv[])
 		case OPT_OUTPUT_ALL:
 			all = 1;
 			break;
-
+		case OPT_HIERARCHIC:
+			if (optarg) {
+				if (strcmp(optarg, "auto") == 0)
+					hierarchic = -1;
+				else if (strcmp(optarg, "never") == 0)
+					hierarchic = 0;
+				else if (strcmp(optarg, "always") == 0)
+					hierarchic = 1;
+				else
+					errx(EXIT_FAILURE, _("unsupported --flat argument"));
+			} else
+				hierarchic = 1;
+			break;
 		case 'h':
 			usage();
 		case 'V':
@@ -1326,7 +1365,6 @@ int main(int argc, char *argv[])
 		cxt->show_offline = cxt->mode == LSCPU_OUTPUT_READABLE ? 1 : 0;
 	}
 
-	is_term = isatty(STDOUT_FILENO);	/* global variable */
 
 	lscpu_init_debug();
 
@@ -1341,9 +1379,13 @@ int main(int argc, char *argv[])
 	lscpu_read_numas(cxt);
 	lscpu_read_topology(cxt);
 
-	lscpu_decode_arm(cxt);
+	if (is_arm(cxt))
+		lscpu_decode_arm(cxt);
 
 	cxt->virt = lscpu_read_virtualization(cxt);
+
+	if (hierarchic == -1)
+		hierarchic = isatty(STDOUT_FILENO);	/* default */
 
 	switch(cxt->mode) {
 	case LSCPU_OUTPUT_SUMMARY:
@@ -1411,6 +1453,7 @@ int main(int argc, char *argv[])
 		print_cpus_readable(cxt, columns, ncolumns);
 		break;
 	case LSCPU_OUTPUT_PARSABLE:
+		cxt->show_compatible = 1;
 		if (!ncolumns) {
 			columns[ncolumns++] = COL_CPU_CPU;
 			columns[ncolumns++] = COL_CPU_CORE;
@@ -1420,12 +1463,14 @@ int main(int argc, char *argv[])
 				columns[ncolumns++] = COL_CPU_SOCKET;
 			columns[ncolumns++] = COL_CPU_NODE;
 			columns[ncolumns++] = COL_CPU_CACHE;
-			cxt->show_compatible = 1;
 		}
-		if (outarg && string_add_to_idarray(outarg, columns,
+		if (outarg) {
+			if (string_add_to_idarray(outarg, columns,
 					ARRAY_SIZE(columns),
 					&ncolumns, cpu_column_name_to_id) < 0)
-			return EXIT_FAILURE;
+				return EXIT_FAILURE;
+			cxt->show_compatible = 0;
+		}
 
 		print_cpus_parsable(cxt, columns, ncolumns);
 		break;

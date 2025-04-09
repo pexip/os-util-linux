@@ -101,7 +101,7 @@ static int Table_set_trailing_comment(TableObject *self, PyObject *value,
 	"The initial (intro) file comment is accessible by\n" \
 	"Tab.intro_comment. The intro and the comment of the first fstab" \
 	"entry has to be separated by blank line.  The filesystem comments are\n" \
-	"accessible by Fs.comment. The tailing fstab comment is accessible\n" \
+	"accessible by Fs.comment. The trailing fstab comment is accessible\n" \
 	"by Tab.trailing_comment.\n" \
 	"\n" \
 	"<informalexample>\n" \
@@ -114,7 +114,7 @@ static int Table_set_trailing_comment(TableObject *self, PyObject *value,
 	"LABEL=foo /mnt/foo auto defaults 1 2\n" \
 	"# this comments belongs to the second fs\n" \
 	"LABEL=bar /mnt/bar auto defaults 1 2 \n" \
-	"# tailing comment\n" \
+	"# trailing comment\n" \
 	"</programlisting>\n" \
 	"</informalexample>"
 static PyObject *Table_enable_comments(TableObject *self, PyObject *args,
@@ -731,43 +731,17 @@ static PyObject *Table_repr(TableObject *self)
 
 PyTypeObject TableType = {
 	PyVarObject_HEAD_INIT(NULL, 0)
-	"libmount.Table", /*tp_name*/
-	sizeof(TableObject), /*tp_basicsize*/
-	0, /*tp_itemsize*/
-	(destructor)Table_destructor, /*tp_dealloc*/
-	0, /*tp_print*/
-	NULL, /*tp_getattr*/
-	NULL, /*tp_setattr*/
-	NULL, /*tp_compare*/
-	(reprfunc) Table_repr, /*tp_repr*/
-	NULL, /*tp_as_number*/
-	NULL, /*tp_as_sequence*/
-	NULL, /*tp_as_mapping*/
-	NULL, /*tp_hash */
-	NULL, /*tp_call*/
-	NULL, /*tp_str*/
-	NULL, /*tp_getattro*/
-	NULL, /*tp_setattro*/
-	NULL, /*tp_as_buffer*/
-	Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /*tp_flags*/
-	Table_HELP, /* tp_doc */
-	NULL, /* tp_traverse */
-	NULL, /* tp_clear */
-	NULL, /* tp_richcompare */
-	0, /* tp_weaklistoffset */
-	NULL, /* tp_iter */
-	NULL, /* tp_iternext */
-	Table_methods, /* tp_methods */
-	Table_members, /* tp_members */
-	Table_getseters, /* tp_getset */
-	NULL, /* tp_base */
-	NULL, /* tp_dict */
-	NULL, /* tp_descr_get */
-	NULL, /* tp_descr_set */
-	0, /* tp_dictoffset */
-	(initproc)Table_init, /* tp_init */
-	NULL, /* tp_alloc */
-	Table_new, /* tp_new */
+	.tp_name = "libmount.Table",
+	.tp_basicsize = sizeof(TableObject),
+	.tp_dealloc = (destructor)Table_destructor,
+	.tp_repr = (reprfunc) Table_repr,
+	.tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+	.tp_doc = Table_HELP,
+	.tp_methods = Table_methods,
+	.tp_members = Table_members,
+	.tp_getset = Table_getseters,
+	.tp_init = (initproc)Table_init,
+	.tp_new = Table_new,
 };
 
 void Table_AddModuleObject(PyObject *mod)

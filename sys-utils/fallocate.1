@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: fallocate
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "FALLOCATE" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "FALLOCATE" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -45,7 +45,7 @@ The exit status returned by \fBfallocate\fP is 0 on success and 1 on failure.
 .sp
 The \fIlength\fP and \fIoffset\fP arguments may be followed by the multiplicative suffixes KiB (=1024), MiB (=1024*1024), and so on for GiB, TiB, PiB, EiB, ZiB, and YiB (the "iB" is optional, e.g., "K" has the same meaning as "KiB") or the suffixes KB (=1000), MB (=1000*1000), and so on for GB, TB, PB, EB, ZB, and YB.
 .sp
-The options \fB\-\-collapse\-range\fP, \fB\-\-dig\-holes\fP, \fB\-\-punch\-hole\fP, and \fB\-\-zero\-range\fP are mutually exclusive.
+The options \fB\-\-collapse\-range\fP, \fB\-\-dig\-holes\fP, \fB\-\-punch\-hole\fP, \fB\-\-zero\-range\fP and \fB\-\-posix\fP are mutually exclusive.
 .sp
 \fB\-c\fP, \fB\-\-collapse\-range\fP
 .RS 4
@@ -120,7 +120,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "AUTHORS"
 .sp
@@ -133,8 +133,8 @@ Print version and exit.
 \fBposix_fallocate\fP(3)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBfallocate\fP command is part of the util\-linux package which can be downloaded from \c

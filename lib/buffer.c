@@ -6,11 +6,12 @@
  */
 #include "buffer.h"
 #include "mbsalign.h"
+#include "strutils.h"
 
 void ul_buffer_reset_data(struct ul_buffer *buf)
 {
 	if (buf->begin)
-		buf->begin[0] = '\0';
+		memset(buf->begin, 0, buf->sz);
 	buf->end = buf->begin;
 
 	if (buf->ptrs && buf->nptrs)
@@ -48,7 +49,7 @@ int ul_buffer_is_empty(struct ul_buffer *buf)
 int ul_buffer_save_pointer(struct ul_buffer *buf, unsigned short ptr_idx)
 {
 	if (ptr_idx >= buf->nptrs) {
-		char **tmp = realloc(buf->ptrs, (ptr_idx + 1) * sizeof(char *));
+		char **tmp = reallocarray(buf->ptrs, ptr_idx + 1, sizeof(char *));
 
 		if (!tmp)
 			return -EINVAL;
@@ -133,12 +134,11 @@ int ul_buffer_append_data(struct ul_buffer *buf, const char *data, size_t sz)
 
 	if (!buf)
 		return -EINVAL;
-	if (!data || !*data)
+	if (!data)
 		return 0;
 
 	if (buf->begin && buf->end)
 		maxsz = buf->sz - (buf->end - buf->begin);
-
 	if (maxsz <= sz + 1) {
 		int rc = ul_buffer_alloc_data(buf, buf->sz + sz + 1);
 		if (rc)
@@ -147,8 +147,7 @@ int ul_buffer_append_data(struct ul_buffer *buf, const char *data, size_t sz)
 	if (!buf->end)
 		return -EINVAL;	/* make static analyzers happy */
 
-	memcpy(buf->end, data, sz);
-	buf->end += sz;
+	buf->end = mempcpy(buf->end, data, sz);
 	*buf->end = '\0';	/* make sure it's terminated */
 	return 0;
 }
@@ -187,6 +186,19 @@ char *ul_buffer_get_data(struct ul_buffer *buf, size_t *sz, size_t *width)
 	if (width)
 		*width = buf->begin && *buf->begin ? mbs_width(buf->begin) : 0;
 	return buf->begin;
+}
+
+char *ul_buffer_get_string(struct ul_buffer *buf, size_t *sz, size_t *width)
+{
+	char *ret;
+
+	ret = ul_buffer_get_data(buf, sz, width);
+
+	/* data in buffer is already zero-terminated */
+	if (sz)
+		*sz = *sz + 1;
+
+	return ret;
 }
 
 /* size of allocated area (!= size of stored data */
@@ -285,5 +297,7 @@ int main(void)
 	printf("data [%zu] '%s'\n", sz, str);
 
 	ul_buffer_free_data(&buf);
+
+        return EXIT_SUCCESS;
 }
 #endif /* TEST_PROGRAM_BUFFER */

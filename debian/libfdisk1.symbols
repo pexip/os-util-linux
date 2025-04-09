@@ -11,6 +11,8 @@ libfdisk.so.1 libfdisk1 #MINVER#
  FDISK_2.35@FDISK_2.35 2.35
  FDISK_2.36@FDISK_2.36 2.36
  FDISK_2.38@FDISK_2.38 2.38
+ FDISK_2.40@FDISK_2.40 2.40~rc2
+ FDISK_2_41@FDISK_2_41 2.41~rc1
  fdisk_add_partition@FDISK_2.26 2.26.2
  fdisk_align_lba@FDISK_2.26 2.26.2
  fdisk_align_lba_in_range@FDISK_2.26 2.26.2
@@ -19,6 +21,7 @@ libfdisk.so.1 libfdisk1 #MINVER#
  fdisk_apply_table@FDISK_2.26 2.26.2
  fdisk_ask_get_query@FDISK_2.26 2.26.2
  fdisk_ask_get_type@FDISK_2.26 2.26.2
+ fdisk_ask_menu@FDISK_2_41 2.41~rc1
  fdisk_ask_menu_get_default@FDISK_2.26 2.26.2
  fdisk_ask_menu_get_item@FDISK_2.26 2.26.2
  fdisk_ask_menu_get_nitems@FDISK_2.26 2.26.2
@@ -174,6 +177,7 @@ libfdisk.so.1 libfdisk1 #MINVER#
  fdisk_partition_end_is_default@FDISK_2.26 2.26.2
  fdisk_partition_get_attrs@FDISK_2.26 2.26.2
  fdisk_partition_get_end@FDISK_2.26 2.26.2
+ fdisk_partition_get_max_size@FDISK_2.40 2.40~rc2
  fdisk_partition_get_name@FDISK_2.26 2.26.2
  fdisk_partition_get_parent@FDISK_2.26 2.26.2
  fdisk_partition_get_partno@FDISK_2.26 2.26.2

@@ -1,4 +1,10 @@
 /*
+ * No copyright is claimed.  This code is in the public domain; do with
+ * it what you wish.
+ *
+ * Copyright (C) 2018 Karel Zak <kzak@redhat.com>
+ *
+ *
  * Simple functions to access files. Paths can be globally prefixed to read
  * data from an alternative source (e.g. a /proc dump for regression tests).
  *
@@ -7,11 +13,6 @@
  *
  * The ul_path_read_* API is possible to use without path_cxt handler. In this
  * case is not possible to use global prefix and printf-like formatting.
- *
- * No copyright is claimed.  This code is in the public domain; do with
- * it what you wish.
- *
- * Written by Karel Zak <kzak@redhat.com> [February 2018]
  */
 #include <stdarg.h>
 #include <string.h>
@@ -369,6 +370,25 @@ int ul_path_stat(struct path_cxt *pc, struct stat *sb, int flags, const char *pa
 	return rc;
 }
 
+int ul_path_vstatf(struct path_cxt *pc, struct stat *sb, int flags, const char *path, va_list ap)
+{
+	const char *p = ul_path_mkpath(pc, path, ap);
+
+	return !p ? -errno : ul_path_stat(pc, sb, flags, p);
+}
+
+int ul_path_statf(struct path_cxt *pc, struct stat *sb, int flags, const char *path, ...)
+{
+	va_list ap;
+	int rc;
+
+	va_start(ap, path);
+	rc = ul_path_vstatf(pc, sb, flags, path, ap);
+	va_end(ap);
+
+	return rc;
+}
+
 int ul_path_open(struct path_cxt *pc, int flags, const char *path)
 {
 	int fd;
@@ -482,7 +502,7 @@ FILE *ul_path_fopenf(struct path_cxt *pc, const char *mode, const char *path, ..
 }
 
 /*
- * Open directory @path in read-onl mode. If the path is NULL then duplicate FD
+ * Open directory @path in read-only mode. If the path is NULL then duplicate FD
  * to the directory addressed by @pc.
  */
 DIR *ul_path_opendir(struct path_cxt *pc, const char *path)
@@ -516,7 +536,7 @@ DIR *ul_path_opendir(struct path_cxt *pc, const char *path)
 
 
 /*
- * Open directory @path in read-onl mode. If the path is NULL then duplicate FD
+ * Open directory @path in read-only mode. If the path is NULL then duplicate FD
  * to the directory addressed by @pc.
  */
 DIR *ul_path_vopendirf(struct path_cxt *pc, const char *path, va_list ap)
@@ -527,7 +547,7 @@ DIR *ul_path_vopendirf(struct path_cxt *pc, const char *path, va_list ap)
 }
 
 /*
- * Open directory @path in read-onl mode. If the path is NULL then duplicate FD
+ * Open directory @path in read-only mode. If the path is NULL then duplicate FD
  * to the directory addressed by @pc.
  */
 DIR *ul_path_opendirf(struct path_cxt *pc, const char *path, ...)
@@ -639,17 +659,11 @@ int ul_path_read_string(struct path_cxt *pc, char **str, const char *path)
 		return -EINVAL;
 
 	*str = NULL;
-	rc = ul_path_read(pc, buf, sizeof(buf) - 1, path);
+
+	rc = ul_path_read_buffer(pc, buf, sizeof(buf), path);
 	if (rc < 0)
 		return rc;
 
-	/* Remove tailing newline (usual in sysfs) */
-	if (rc > 0 && *(buf + rc - 1) == '\n')
-		--rc;
-	if (rc == 0)
-		return 0;
-
-	buf[rc] = '\0';
 	*str = strdup(buf);
 	if (!*str)
 		rc = -ENOMEM;
@@ -677,26 +691,35 @@ int ul_path_read_buffer(struct path_cxt *pc, char *buf, size_t bufsz, const char
 		buf[0] = '\0';
 
 	else if (rc > 0) {
-		/* Remove tailing newline (usual in sysfs) */
+		/* Remove trailing newline (usual in sysfs) */
 		if (*(buf + rc - 1) == '\n')
 			buf[--rc] = '\0';
 		else
-			buf[rc - 1] = '\0';
+			buf[rc] = '\0';
 	}
 
 	return rc;
 }
 
-int ul_path_readf_buffer(struct path_cxt *pc, char *buf, size_t bufsz, const char *path, ...)
+int ul_path_vreadf_buffer(struct path_cxt *pc, char *buf, size_t bufsz, const char *path, va_list ap)
 {
 	const char *p;
-	va_list ap;
 
-	va_start(ap, path);
 	p = ul_path_mkpath(pc, path, ap);
-	va_end(ap);
 
 	return !p ? -errno : ul_path_read_buffer(pc, buf, bufsz, p);
+}
+
+int ul_path_readf_buffer(struct path_cxt *pc, char *buf, size_t bufsz, const char *path, ...)
+{
+	va_list ap;
+	int rc;
+
+	va_start(ap, path);
+	rc = ul_path_vreadf_buffer(pc, buf, bufsz, path, ap);
+	va_end(ap);
+
+	return rc;
 }
 
 int ul_path_scanf(struct path_cxt *pc, const char *path, const char *fmt, ...)
@@ -974,7 +997,7 @@ int ul_path_countf_dirents(struct path_cxt *pc, const char *path, ...)
 	return !p ? -errno : ul_path_count_dirents(pc, p);
 }
 
-/* first call (when @sub is NULL) opens the directory, last call closes the diretory */
+/* first call (when @sub is NULL) opens the directory, last call closes the directory */
 int ul_path_next_dirent(struct path_cxt *pc, DIR **sub, const char *dirname, struct dirent **d)
 {
 	if (!pc || !sub || !d)
@@ -995,65 +1018,49 @@ int ul_path_next_dirent(struct path_cxt *pc, DIR **sub, const char *dirname, str
 	return 1;
 }
 
-/*
- * Like fopen() but, @path is always prefixed by @prefix. This function is
- * useful in case when ul_path_* API is overkill.
- */
-FILE *ul_prefix_fopen(const char *prefix, const char *path, const char *mode)
-{
-	char buf[PATH_MAX];
-
-	if (!path)
-		return NULL;
-	if (!prefix)
-		return fopen(path, mode);
-	if (*path == '/')
-		path++;
-
-	snprintf(buf, sizeof(buf), "%s/%s", prefix, path);
-	return fopen(buf, mode);
-}
-
 #ifdef HAVE_CPU_SET_T
 static int ul_path_cpuparse(struct path_cxt *pc, cpu_set_t **set, int maxcpus, int islist, const char *path, va_list ap)
 {
-	FILE *f;
 	size_t setsize, len = maxcpus * 7;
-	char buf[len];
+	char *buf;
 	int rc;
 
 	*set = NULL;
 
-	f = ul_path_vfopenf(pc, "r" UL_CLOEXECSTR, path, ap);
-	if (!f)
-		return -errno;
+	buf = malloc(len);
+	if (!buf)
+		return -ENOMEM;
 
-	rc = fgets(buf, len, f) == NULL ? -errno : 0;
-	fclose(f);
-
-	if (rc)
-		return rc;
-
-	len = strlen(buf);
-	if (buf[len - 1] == '\n')
-		buf[len - 1] = '\0';
+	rc = ul_path_vreadf_buffer(pc, buf, len, path, ap);
+	if (rc < 0)
+		goto out;
 
 	*set = cpuset_alloc(maxcpus, &setsize, NULL);
-	if (!*set)
-		return -ENOMEM;
+	if (!*set) {
+		rc = -EINVAL;
+		goto out;
+	}
 
 	if (islist) {
 		if (cpulist_parse(buf, *set, setsize, 0)) {
-			cpuset_free(*set);
-			return -EINVAL;
+			errno = EINVAL;
+			rc = -errno;
+			goto out;
 		}
 	} else {
 		if (cpumask_parse(buf, *set, setsize)) {
-			cpuset_free(*set);
-			return -EINVAL;
+			errno = EINVAL;
+			rc = -errno;
+			goto out;
 		}
 	}
-	return 0;
+	rc = 0;
+
+out:
+	if (rc)
+		cpuset_free(*set);
+	free(buf);
+	return rc;
 }
 
 int ul_path_readf_cpuset(struct path_cxt *pc, cpu_set_t **set, int maxcpus, const char *path, ...)

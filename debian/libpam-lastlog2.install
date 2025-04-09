@@ -1,0 +1,4 @@
+#!/usr/bin/dh-exec
+debian/pam-configs/lastlog2 /usr/share/pam-configs/
+usr/lib/*/security/pam_lastlog2.so
+<!nodoc> usr/share/man/man8/pam_lastlog2.8

@@ -1,0 +1,3 @@
+#!/usr/bin/dh-exec
+[linux-any] usr/bin/newgrp usr/bin/sg
+[linux-any] <!nodoc> usr/share/man/man1/newgrp.1 usr/share/man/man1/sg.1

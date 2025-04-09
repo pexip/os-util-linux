@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: runuser
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-03-18
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "RUNUSER" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "RUNUSER" "1" "2025-03-18" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -114,20 +114,20 @@ changes to the target user\(cqs home directory
 .  sp -1
 .  IP \(bu 2.3
 .\}
-sets argv[0] of the shell to \(aq\fB\-\fP\(aq in order to make the shell a login shell
+sets argv[0] of the shell to \*(Aq\fB\-\fP\*(Aq in order to make the shell a login shell
 .RE
-.RE
-.sp
-\fB\-P\fP, \fB\-\-pty\fP
-.RS 4
-Create a pseudo\-terminal for the session. The independent terminal provides better security as the user does not share a terminal with the original session. This can be used to avoid TIOCSTI ioctl terminal injection and other security attacks against terminal file descriptors. The entire session can also be moved to the background (e.g., \fBrunuser \-\-pty\fP \fB\-u\fP \fIusername\fP \fB\-\-\fP \fIcommand\fP \fB&\fP). If the pseudo\-terminal is enabled, then \fBrunuser\fP works as a proxy between the sessions (sync stdin and stdout).
-.sp
-This feature is mostly designed for interactive sessions. If the standard input is not a terminal, but for example a pipe (e.g., \fBecho "date" | runuser \-\-pty \-u\fP \fIuser\fP), then the \fBECHO\fP flag for the pseudo\-terminal is disabled to avoid messy output.
 .RE
 .sp
 \fB\-m\fP, \fB\-p\fP, \fB\-\-preserve\-environment\fP
 .RS 4
 Preserve the entire environment, i.e., do not set \fBHOME\fP, \fBSHELL\fP, \fBUSER\fP or \fBLOGNAME\fP. The option is ignored if the option \fB\-\-login\fP is specified.
+.RE
+.sp
+\fB\-P\fP, \fB\-\-pty\fP
+.RS 4
+Create a pseudo\-terminal for the session. The independent terminal provides better security as the user does not share a terminal with the original session. This can be used to avoid TIOCSTI ioctl terminal injection and other security attacks against terminal file descriptors. The entire session can also be moved to the background (e.g., \fBrunuser \-\-pty\fP \fB\-u\fP \fIuser\fP \fB\-\-\fP \fIcommand\fP \fB&\fP). If the pseudo\-terminal is enabled, then \fBrunuser\fP works as a proxy between the sessions (sync stdin and stdout).
+.sp
+This feature is mostly designed for interactive sessions. If the standard input is not a terminal, but for example a pipe (e.g., \fBecho "date" | runuser \-\-pty \-u\fP \fIuser\fP), then the \fBECHO\fP flag for the pseudo\-terminal is disabled to avoid messy output.
 .RE
 .sp
 \fB\-s\fP, \fB\-\-shell\fP=\fIshell\fP
@@ -186,6 +186,17 @@ If the target user has a restricted shell (i.e., not listed in \fI/etc/shells\fP
 Same as \fB\-c\fP, but do not create a new session. (Discouraged.)
 .RE
 .sp
+\fB\-T\fP, \fB\-\-no\-pty\fP
+.RS 4
+Do not create a pseudo\-terminal, opposite of \fB\-\-pty\fP and \fB\-P\fP.
+Note that running without a pseudo\-terminal opens the security risk of privilege escalation through TIOCSTI/TIOCLINUX ioctl command injection.
+.RE
+.sp
+\fB\-u\fP, \fB\-\-user\fP=\fIuser\fP
+.RS 4
+Run \fIcommand\fP with the effective user ID and group ID of the user name \fIuser\fP.
+.RE
+.sp
 \fB\-w\fP, \fB\-\-whitelist\-environment\fP=\fIlist\fP
 .RS 4
 Don\(cqt reset the environment variables specified in the comma\-separated \fIlist\fP when clearing the environment for \fB\-\-login\fP. The whitelist is ignored for the environment variables \fBHOME\fP, \fBSHELL\fP, \fBUSER\fP, \fBLOGNAME\fP, and \fBPATH\fP.
@@ -198,7 +209,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "CONFIG FILES"
 .sp
@@ -263,7 +274,7 @@ global logindef config file
 .RE
 .SH "HISTORY"
 .sp
-This \fBrunuser\fP command was derived from coreutils\(aq \fBsu\fP, which was based on an implementation by David MacKenzie, and the Fedora \fBrunuser\fP command by Dan Walsh.
+This \fBrunuser\fP command was derived from coreutils\*(Aq \fBsu\fP, which was based on an implementation by David MacKenzie, and the Fedora \fBrunuser\fP command by Dan Walsh.
 .SH "SEE ALSO"
 .sp
 \fBsetpriv\fP(1),
@@ -273,8 +284,8 @@ This \fBrunuser\fP command was derived from coreutils\(aq \fBsu\fP, which was ba
 \fBpam\fP(8)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBrunuser\fP command is part of the util\-linux package which can be downloaded from \c

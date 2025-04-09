@@ -1,55 +1,70 @@
 Source: util-linux
-Build-Depends: asciidoctor,
-               bc <!stage1 !nocheck>,
-               bison,
-               debhelper-compat (= 13),
-               dh-exec,
-               gettext,
-               libaudit-dev [linux-any] <!stage1>,
-               libcap-ng-dev [linux-any] <!stage1>,
-               libcrypt-dev <!stage1>,
-               libcryptsetup-dev [linux-any] <!pkg.util-linux.noverity>,
-               libncurses5-dev,
-               libncursesw5-dev,
-               libpam0g-dev <!stage1>,
-               libreadline-dev,
-               libselinux1-dev [linux-any],
-               libsystemd-dev [linux-any] <!stage1>,
-               libtool,
-               libudev-dev [linux-any] <!stage1>,
-               netbase <!stage1 !nocheck>,
-               pkg-config,
-               po-debconf,
-               socat <!stage1 !nocheck>,
-               systemd [linux-any] <!stage1>,
-               zlib1g-dev
-Build-Conflicts: libedit-dev
-Section: base
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-exec,
+ dh-package-notes,
+ dh-sequence-installsysusers,
+ dh-sequence-zz-debputy-rrr (>= 0.1.23~),
+ asciidoctor <!stage1 !nodoc>,
+ bc <!stage1 !nocheck>,
+ bison,
+ flex,
+ gettext,
+ libaudit-dev [linux-any] <!stage1>,
+ libcap-ng-dev [linux-any] <!stage1>,
+ libcrypt-dev <!stage1>,
+ libcryptsetup-dev [linux-any] <!pkg.util-linux.noverity>,
+ libncurses-dev,
+ libpam0g-dev <!stage1>,
+ libreadline-dev,
+ libselinux1-dev [linux-any],
+ libsqlite3-dev,
+ libsystemd-dev [linux-any] <!stage1>,
+ libtool,
+ libudev-dev [linux-any] <!stage1>,
+ netbase <!stage1 !nocheck>,
+ pkgconf,
+ po-debconf,
+ po4a,
+ socat <!stage1 !nocheck>,
+ systemd [linux-any] <!stage1>,
+ systemd-dev [linux-any] <!stage1>,
+ zlib1g-dev,
+Build-Conflicts:
+ libedit-dev,
+Section: utils
 Priority: required
-Maintainer: util-linux packagers <util-linux@packages.debian.org>
-Uploaders: Chris Hofstaedtler <zeha@debian.org>
-Standards-Version: 4.6.0
-Rules-Requires-Root: binary-targets
+Maintainer: Chris Hofstaedtler <zeha@debian.org>
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
 Vcs-Browser: https://salsa.debian.org/debian/util-linux
 Vcs-Git: https://salsa.debian.org/debian/util-linux.git
-Homepage: https://www.kernel.org/pub/linux/utils/util-linux/
+Homepage: https://github.com/util-linux/util-linux
+X-Style: black
 
 Package: util-linux
 Architecture: any
 Build-Profiles: <!stage1>
-Section: utils
 Essential: yes
-Pre-Depends: ${misc:Pre-Depends},
-             ${shlibs:Depends}
-Depends: util-linux-extra,
-         ${misc:Depends}
-Recommends: sensible-utils
-Suggests: dosfstools,
-          kbd,
-          util-linux-locales
-Provides: hardlink
-Conflicts: hardlink
-Replaces: hardlink
+Recommends:
+ sensible-utils,
+Suggests:
+ dosfstools,
+ kbd,
+ util-linux-extra,
+ util-linux-locales,
+ wtmpdb,
+Provides:
+ hardlink,
+Conflicts:
+ hardlink,
+Replaces:
+ hardlink,
+Pre-Depends:
+# (Pre-)Depend on libpam-*, so runuser/su work.
+ libpam-modules,
+ libpam-runtime,
+ ${misc:Pre-Depends},
 Multi-Arch: foreign
 Description: miscellaneous system utilities
  This package contains a number of important utilities, most of which
@@ -63,24 +78,63 @@ Architecture: all
 Build-Profiles: <!stage1>
 Section: localization
 Priority: optional
-Depends: util-linux (>= ${source:Upstream-Version}),
-         ${misc:Depends}
+Depends:
+ util-linux (>= ${source:Upstream-Version}),
+Breaks:
+ manpages-cs (<< 4.19.0-7~),
+ manpages-da (<< 4.19.0-7~),
+ manpages-de (<< 4.19.0-7~),
+ manpages-de-dev (<< 4.19.0-7~),
+ manpages-es (<< 4.19.0-7~),
+ manpages-fi (<< 4.19.0-7~),
+ manpages-fr (<< 4.19.0-7~),
+ manpages-fr-dev (<< 4.19.0-7~),
+ manpages-hu (<< 4.19.0-7~),
+ manpages-id (<< 4.19.0-7~),
+ manpages-it (<< 4.19.0-7~),
+ manpages-nl (<< 4.19.0-7~),
+ manpages-pl (<< 1:4.25.1-1~),
+ manpages-ro (<< 4.19.0-7~),
+ manpages-ro-dev (<< 4.19.0-7~),
+ manpages-sr (<< 4.19.0-7~),
+ manpages-uk (<< 4.19.0-7~),
+ manpages-uk-dev (<< 4.19.0-7~),
+Replaces:
+ manpages-cs (<< 4.19.0-7~),
+ manpages-da (<< 4.19.0-7~),
+ manpages-de (<< 4.19.0-7~),
+ manpages-de-dev (<< 4.19.0-7~),
+ manpages-es (<< 4.19.0-7~),
+ manpages-fi (<< 4.19.0-7~),
+ manpages-fr (<< 4.19.0-7~),
+ manpages-fr-dev (<< 4.19.0-7~),
+ manpages-hu (<< 4.19.0-7~),
+ manpages-id (<< 4.19.0-7~),
+ manpages-it (<< 4.19.0-7~),
+ manpages-nl (<< 4.19.0-7~),
+ manpages-pl (<< 1:4.25.1-1~),
+ manpages-ro (<< 4.19.0-7~),
+ manpages-ro-dev (<< 4.19.0-7~),
+ manpages-sr (<< 4.19.0-7~),
+ manpages-uk (<< 4.19.0-7~),
+ manpages-uk-dev (<< 4.19.0-7~),
 Multi-Arch: foreign
 Description: locales files for util-linux
  This package contains the internationalization files for the util-linux
  package.
  .
  They are needed when you want the programs in util-linux to print their
- messages in other languages than English.
+ messages in other languages than English, or read manual pages in another
+ language than English.
 
 Package: mount
 Architecture: linux-any
 Build-Profiles: <!stage1>
 Section: admin
-Pre-Depends: ${misc:Pre-Depends},
-             ${shlibs:Depends}
-Depends: ${misc:Depends}
-Suggests: nfs-common
+Pre-Depends:
+ ${shlibs:Depends},
+Suggests:
+ nfs-common,
 Multi-Arch: foreign
 Description: tools for mounting and manipulating filesystems
  This package provides the mount(8), umount(8), swapon(8),
@@ -90,11 +144,8 @@ Package: bsdutils
 Architecture: any
 Build-Profiles: <!stage1>
 Essential: yes
-Section: utils
-Pre-Depends: ${misc:Pre-Depends},
-             ${shlibs:Depends}
-Depends: ${misc:Depends}
-Recommends: bsdextrautils
+Recommends:
+ bsdextrautils,
 Multi-Arch: foreign
 Description: basic utilities from 4.4BSD-Lite
  This package contains the bare minimum of BSD utilities needed for a Debian
@@ -104,31 +155,22 @@ Description: basic utilities from 4.4BSD-Lite
 Package: bsdextrautils
 Architecture: any
 Build-Profiles: <!stage1>
-Section: utils
 Priority: optional
-Pre-Depends: ${misc:Pre-Depends}
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
-Replaces: bsdmainutils (<< 12.1.3),
-          nwrite
-Breaks: bsdmainutils (<< 12.1.3),
-        nwrite
-Conflicts: nwrite
+Replaces:
+ bsdmainutils (<< 12.1.3),
+Breaks:
+ bsdmainutils (<< 12.1.3),
 Multi-Arch: foreign
 Description: extra utilities from 4.4BSD-Lite
  This package contains some extra BSD utilities: col, colcrt, colrm, column,
- hd, hexdump, look, ul and write.
+ hd, hexdump, look, ul.
  Other BSD utilities are provided by bsdutils and calendar.
 
 Package: fdisk
 Architecture: any
-Build-Profiles: <!stage1>
-Section: utils
 Priority: important
-Pre-Depends: ${misc:Pre-Depends}
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
-Recommends: sensible-utils
+Recommends:
+ sensible-utils,
 Multi-Arch: foreign
 Description: collection of partitioning utilities
  This package contains the classic fdisk, sfdisk and cfdisk partitioning
@@ -139,7 +181,7 @@ Description: collection of partitioning utilities
  partition tables (eg. GPT, MBR, etc).
  .
  The fdisk utility is the classical text-mode utility.
- The cfdisk utilitity gives a more userfriendly curses based interface.
+ The cfdisk utility gives a more userfriendly curses based interface.
  The sfdisk utility is mostly for automation and scripting uses.
 
 Package: fdisk-udeb
@@ -147,8 +189,6 @@ Architecture: hurd-any linux-any
 Build-Profiles: <!stage1 !noudeb>
 Priority: optional
 Section: debian-installer
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
 Package-Type: udeb
 XB-Installer-Menu-Item: 99999
 Description: Manually partition a hard drive (fdisk)
@@ -157,9 +197,6 @@ Package: libblkid1
 Architecture: any
 Section: libs
 Priority: optional
-Pre-Depends: ${misc:Pre-Depends}
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
 Multi-Arch: same
 Description: block device ID library
  The blkid library allows system programs such as fsck and mount to
@@ -171,8 +208,6 @@ Package: libblkid1-udeb
 Architecture: any
 Section: debian-installer
 Priority: optional
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
 Package-Type: udeb
 Build-Profiles: <!noudeb>
 Description: stripped down block device ID library, for debian-installer
@@ -187,11 +222,10 @@ Package: libblkid-dev
 Architecture: any
 Section: libdevel
 Priority: optional
-Pre-Depends: ${misc:Pre-Depends}
-Depends: libblkid1 (= ${binary:Version}),
-         libc6-dev | libc-dev,
-         uuid-dev,
-         ${misc:Depends}
+Depends:
+ libblkid1 (= ${binary:Version}),
+ libc6-dev | libc-dev,
+ uuid-dev,
 Multi-Arch: same
 Description: block device ID library - headers
  The blkid library allows system programs such as fsck and mount to
@@ -205,9 +239,6 @@ Package: libfdisk1
 Architecture: any
 Section: libs
 Priority: optional
-Pre-Depends: ${misc:Pre-Depends}
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
 Multi-Arch: same
 Description: fdisk partitioning library
  The libfdisk library is used for manipulating partition tables. It is
@@ -217,8 +248,6 @@ Package: libfdisk1-udeb
 Architecture: any
 Section: debian-installer
 Priority: optional
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
 Package-Type: udeb
 Build-Profiles: <!noudeb>
 Description: stripped down fdisk partitioning library, for debian-installer
@@ -231,12 +260,11 @@ Package: libfdisk-dev
 Architecture: any
 Section: libdevel
 Priority: optional
-Pre-Depends: ${misc:Pre-Depends}
-Depends: libblkid-dev,
-         libc6-dev | libc-dev,
-         libfdisk1 (= ${binary:Version}),
-         uuid-dev,
-         ${misc:Depends}
+Depends:
+ libblkid-dev,
+ libc6-dev | libc-dev,
+ libfdisk1 (= ${binary:Version}),
+ uuid-dev,
 Multi-Arch: same
 Description: fdisk partitioning library - headers
  The libfdisk library is used for manipulating partition tables. It is
@@ -248,10 +276,8 @@ Package: libmount1
 Architecture: any
 Section: libs
 Priority: optional
-Pre-Depends: ${misc:Pre-Depends}
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
-Suggests: cryptsetup-bin [linux-any]
+Suggests:
+ cryptsetup-bin [linux-any],
 Multi-Arch: same
 Description: device mounting library
  This device mounting library is used by mount and umount helpers.
@@ -261,8 +287,6 @@ Package-Type: udeb
 Build-Profiles: <!noudeb>
 Section: debian-installer
 Priority: optional
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
 Architecture: linux-any
 Description: stripped down device mounting library, for debian-installer
  The device mounting library, used by mount and umount helpers.
@@ -273,11 +297,11 @@ Package: libmount-dev
 Architecture: linux-any
 Section: libdevel
 Priority: optional
-Depends: libblkid-dev,
-         libc6-dev | libc-dev,
-         libmount1 (= ${binary:Version}),
-         libselinux1-dev,
-         ${misc:Depends}
+Depends:
+ libblkid-dev,
+ libc6-dev | libc-dev,
+ libmount1 (= ${binary:Version}),
+ libselinux1-dev,
 Multi-Arch: same
 Description: device mounting library - headers
  This device mounting library is used by mount and umount helpers.
@@ -288,9 +312,6 @@ Package: libsmartcols1
 Architecture: any
 Section: libs
 Priority: optional
-Pre-Depends: ${misc:Pre-Depends}
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
 Multi-Arch: same
 Description: smart column output alignment library
  This smart column output alignment library is used by fdisk utilities.
@@ -299,11 +320,9 @@ Package: libsmartcols1-udeb
 Architecture: any
 Section: debian-installer
 Priority: optional
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
 Package-Type: udeb
 Build-Profiles: <!noudeb>
-Description: stripped down smart column output aligment library, for debian-installer
+Description: stripped down smart column output alignment library, for debian-installer
  This smart column output alignment library is used by fdisk utilities.
  .
  This is a minimal package for debian-installer.
@@ -312,9 +331,9 @@ Package: libsmartcols-dev
 Architecture: any
 Section: libdevel
 Priority: optional
-Depends: libc6-dev | libc-dev,
-         libsmartcols1 (= ${binary:Version}),
-         ${misc:Depends}
+Depends:
+ libc6-dev | libc-dev,
+ libsmartcols1 (= ${binary:Version}),
 Multi-Arch: same
 Description: smart column output alignment library - headers
  This smart column output alignment library is used by fdisk utilities.
@@ -325,10 +344,14 @@ Package: libuuid1
 Architecture: any
 Section: libs
 Priority: optional
-Pre-Depends: ${misc:Pre-Depends}
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
-Recommends: uuid-runtime
+Breaks:
+ libuuid1t64 (<< ${source:Version}),
+Replaces:
+ libuuid1t64,
+Provides:
+ libuuid1t64 (= ${binary:Version}) [!arm !armeb !armel !armhf !hppa !hurd-i386 !kfreebsd-i386 !m68k !mips !mipsel !mipsn32 !mipsn32el !mipsn32r6 !mipsn32r6el !mipsr6 !mipsr6el !nios2 !powerpc !powerpcel !powerpcspe !s390 !sh3 !sh3eb !sh4 !sh4eb !sparc],
+Suggests:
+ uuid-runtime,
 Multi-Arch: same
 Description: Universally Unique ID library
  The libuuid library generates and parses 128-bit Universally Unique
@@ -342,13 +365,11 @@ Description: Universally Unique ID library
 Package: uuid-runtime
 Architecture: any
 Build-Profiles: <!stage1>
-Section: utils
 Priority: optional
-Pre-Depends: libuuid1,
-             ${misc:Pre-Depends}
-Depends: adduser,
-         ${misc:Depends},
-         ${shlibs:Depends}
+Pre-Depends:
+ libuuid1,
+Depends:
+ adduser,
 Multi-Arch: foreign
 Description: runtime components for the Universally Unique ID library
  The libuuid library generates and parses 128-bit Universally Unique
@@ -370,8 +391,6 @@ Package: libuuid1-udeb
 Architecture: any
 Section: debian-installer
 Priority: optional
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
 Package-Type: udeb
 Build-Profiles: <!noudeb>
 Description: stripped down Universally Unique ID library, for debian-installer
@@ -384,9 +403,9 @@ Package: uuid-dev
 Architecture: any
 Section: libdevel
 Priority: optional
-Depends: libc6-dev | libc-dev,
-         libuuid1 (= ${binary:Version}),
-         ${misc:Depends}
+Depends:
+ libc6-dev | libc-dev,
+ libuuid1 (= ${binary:Version}),
 Multi-Arch: same
 Description: Universally Unique ID library - headers and static libraries
  The libuuid library generates and parses 128-bit Universally Unique IDs
@@ -399,8 +418,6 @@ Architecture: any
 Build-Profiles: <!stage1 !noudeb>
 Priority: optional
 Section: debian-installer
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
 Package-Type: udeb
 Description: stripped down miscellaneous system utilities, for debian-installer
  This is a minimal version of util-linux for debian-installer. It only
@@ -409,11 +426,7 @@ Description: stripped down miscellaneous system utilities, for debian-installer
 Package: rfkill
 Architecture: linux-any
 Build-Profiles: <!stage1>
-Section: utils
 Priority: optional
-Pre-Depends: ${misc:Pre-Depends}
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
 Multi-Arch: foreign
 Description: tool for enabling and disabling wireless devices
  rfkill is a simple tool for accessing the Linux rfkill device interface,
@@ -422,9 +435,7 @@ Description: tool for enabling and disabling wireless devices
 
 Package: eject
 Architecture: linux-any
-Section: utils
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
+Build-Profiles: <!stage1>
 Priority: optional
 Multi-Arch: foreign
 Description: ejects CDs and operates CD-Changers under Linux
@@ -439,25 +450,81 @@ Description: ejects CDs and operates CD-Changers under Linux
 
 Package: eject-udeb
 Architecture: linux-any
+Build-Profiles: <!stage1 !noudeb>
 Section: debian-installer
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
 Priority: optional
 Package-Type: udeb
-Build-Profiles: <!noudeb>
 XB-Installer-Menu-Item: 96000
 Description: ejects CDs from d-i menu
 
 Package: util-linux-extra
 Architecture: any
 Build-Profiles: <!stage1>
-Section: utils
-Depends: ${misc:Depends},
-         ${shlibs:Depends}
-Replaces: util-linux (<< 2.38~)
-Breaks: util-linux (<< 2.38~)
+Replaces:
+ util-linux (<< 2.40.4-4~),
+Breaks:
+ initscripts (<< 3.08-2~),
+ util-linux (<< 2.40.4-4~),
 Priority: standard
 Multi-Arch: foreign
 Description: interactive login tools
  Tools commonly found on systems where humans login interactively,
  or are needed with non-standard system configurations.
+
+Package: liblastlog2-2
+Architecture: any
+Priority: optional
+Section: libs
+Multi-Arch: same
+Description: lastlog2 database shared library
+ Y2038 safe lastlog database implementation, library files.
+
+Package: liblastlog2-dev
+Architecture: any
+Priority: optional
+Section: libdevel
+Multi-Arch: same
+Description: liblastlog2 development files
+ Y2038 safe lastlog database implementation, development files.
+
+Package: libpam-lastlog2
+Architecture: any
+Build-Profiles: <!stage1>
+Priority: optional
+Section: admin
+Depends:
+ libpam-runtime,
+Recommends:
+ wtmpdb,
+Multi-Arch: same
+Description: lastlog2 database PAM module
+ Y2038 safe lastlog database implementation, PAM module.
+
+Package: lastlog2
+Architecture: any
+Build-Profiles: <!stage1>
+Priority: optional
+Recommends:
+ libpam-lastlog2,
+Multi-Arch: foreign
+Description: Read lastlog2 database
+ This package provides the lastlog2 program, to read the
+ lastlog2 database.
+
+Package: login
+Architecture: any
+Build-Profiles: <!stage1>
+Section: admin
+Multi-Arch: foreign
+Protected: yes
+Depends:
+ libpam-modules,
+ libpam-runtime,
+Pre-Depends:
+ login.defs (>= 1:4.16.0-1~),
+Description: system login tools
+ This package provides support for console-based logins and for
+ changing effective user or group IDs, including:
+  * login, the program that invokes a user shell on a virtual terminal,
+  * nologin, a dummy shell for disabled user accounts,
+  * newgrp, a program to change the effective group IDs.

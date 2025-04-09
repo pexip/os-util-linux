@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: mkfs.cramfs
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "MKFS.CRAMFS" "8" "2022-05-11" "util\-linux 2.38.1" "System Administration"
+.TH "MKFS.CRAMFS" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -98,6 +98,16 @@ This option is ignored. Originally the \fB\-s\fP turned on directory entry sorti
 Make explicit holes.
 .RE
 .sp
+\fB\-l\fP[\fB=\fP\fImode\fP]
+.RS 4
+Use exclusive BSD lock for device or file it operates.  The optional argument
+\fImode\fP can be \fIyes\fP, \fIno\fP (or 1 and 0) or \fInonblock\fP.  If the \fImode\fP
+argument is omitted, it defaults to \fI"yes"\fP.  This option overwrites
+environment variable \fB$LOCK_BLOCK_DEVICE\fP.  The default is not to use any
+lock at all, but it\(cqs recommended to avoid collisions with udevd or other
+tools.
+.RE
+.sp
 \fB\-h\fP, \fB\-\-help\fP
 .RS 4
 Display help text and exit.
@@ -105,7 +115,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "EXIT STATUS"
 .sp
@@ -124,8 +134,8 @@ operation error, such as unable to allocate memory
 \fBmount\fP(8)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBmkfs.cramfs\fP command is part of the util\-linux package which can be downloaded from \c

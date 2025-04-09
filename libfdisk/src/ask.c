@@ -2,6 +2,8 @@
 #include "strutils.h"
 #include "fdiskP.h"
 
+#include <stdarg.h>
+
 /**
  * SECTION: ask
  * @title: Ask
@@ -428,7 +430,7 @@ static char *mk_string_list(char *ptr, size_t *len, size_t *begin,
 
 	if (cur == -1 && *begin) {
 		/* end of the list */
-		*(ptr - 1) = '\0';	/* remove tailing ',' from the list */
+		*(ptr - 1) = '\0';	/* remove trailing ',' from the list */
 		return ptr;
 	}
 
@@ -875,6 +877,52 @@ int fdisk_ask_menu_add_item(struct fdisk_ask *ask, int key,
 	return 0;
 }
 
+/**
+ * fdisk_ask_menu:
+ * @cxt: fdisk context
+ * @query: query to ask (menu title)
+ * @result: returns selected key
+ * @dflt: default key
+ * @...: list of char *name and int key pairs
+ *
+ * Displays a menu with the given query and returns the result of the menu selection.
+ *
+ * Returns: <0 on error, 0 on success
+ *
+ * Since: 2.41
+ *
+ */
+int fdisk_ask_menu(struct fdisk_context *cxt, char *query, int *result, int dflt, ...)
+{
+	struct fdisk_ask *ask;
+	va_list ap;
+	char *name;
+	int rc;
+
+	if (!query || !result)
+		return -EINVAL;
+
+	ask = fdisk_new_ask();
+	if (!ask)
+		return -ENOMEM;
+
+	fdisk_ask_set_type(ask, FDISK_ASKTYPE_MENU);
+	fdisk_ask_set_query(ask, query);
+	fdisk_ask_menu_set_default(ask, dflt);
+
+	va_start(ap, dflt);
+
+	while ((name = va_arg(ap, char *)))
+		fdisk_ask_menu_add_item(ask, va_arg(ap, int), name, NULL);
+
+	va_end(ap);
+
+	rc = fdisk_do_ask(cxt, ask);
+	if (~rc)
+		fdisk_ask_menu_get_result(ask, result);
+	fdisk_unref_ask(ask);
+	return rc;
+}
 
 /*
  * print-like
@@ -1035,7 +1083,9 @@ int fdisk_info_new_partition(
 }
 
 #ifdef TEST_PROGRAM
-static int test_ranges(struct fdisk_test *ts, int argc, char *argv[])
+static int test_ranges(struct fdisk_test *ts __attribute__((unused)),
+		       int argc __attribute__((unused)),
+		       char *argv[] __attribute__((unused)))
 {
 	/*                1  -  3,       6,    8, 9,   11    13 */
 	size_t nums[] = { 1, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 1 };

@@ -1,1 +1,2 @@
-libsmartcols1-udeb udeb: missing-depends-on-sensible-utils sensible-pager [usr/lib/x86_64-linux-gnu/libsmartcols.so.1.1.0]
+libsmartcols1-udeb: missing-depends-on-sensible-utils sensible-pager [usr/lib/aarch64-linux-gnu/libsmartcols.so.1.1.0]
+libsmartcols1-udeb: missing-depends-on-sensible-utils sensible-pager [usr/lib/x86_64-linux-gnu/libsmartcols.so.1.1.0]

@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: agetty
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-08-04
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "AGETTY" "8" "2022-08-04" "util\-linux 2.38.1" "System Administration"
+.TH "AGETTY" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -155,14 +155,14 @@ Baud rates should be specified in descending order, so that the null character (
 .sp
 This argument is optional and unnecessary for \fBvirtual terminals\fP.
 .sp
-The default for \fBserial terminals\fP is keep the current baud rate (see \fB\-\-keep\-baud\fP) and if unsuccessful then default to \(aq9600\(aq.
+The default for \fBserial terminals\fP is keep the current baud rate (see \fB\-\-keep\-baud\fP) and if unsuccessful then default to \*(Aq9600\*(Aq.
 .RE
 .sp
 \fIterm\fP
 .RS 4
 The value to be used for the \fBTERM\fP environment variable. This overrides whatever \fBinit\fP(1) may have set, and is inherited by login and the shell.
 .sp
-The default is \(aqvt100\(aq, or \(aqlinux\(aq for Linux on a virtual terminal, or \(aqhurd\(aq for GNU Hurd on a virtual terminal.
+The default is \*(Aqvt100\*(Aq, or \*(Aqlinux\*(Aq for Linux on a virtual terminal, or \*(Aqhurd\*(Aq for GNU Hurd on a virtual terminal.
 .RE
 .SH "OPTIONS"
 .sp
@@ -234,7 +234,7 @@ Do not clear the screen before prompting for the login name. By default the scre
 Invoke the specified \fIlogin_program\fP instead of /bin/login. This allows the use of a non\-standard login program. Such a program could, for example, ask for a dial\-up password or use a different password file. See \fB\-\-login\-options\fP.
 .RE
 .sp
-\fB\-L\fP, \fB\-\-local\-line\fP[=\fImode\fP]
+\fB\-L\fP, \fB\-\-local\-line\fP[\fB=\fP\fImode\fP]
 .RS 4
 Control the CLOCAL line flag. The optional \fImode\fP argument is \fBauto\fP, \fBalways\fP or \fBnever\fP. If the \fImode\fP argument is omitted, then the default is \fBalways\fP. If the \fB\-\-local\-line\fP option is not given at all, then the default is \fBauto\fP.
 .sp
@@ -280,7 +280,7 @@ Do not print a newline before writing out \fI/etc/issue\fP.
 .RS 4
 Options and arguments that are passed to \fBlogin\fP(1). Where \(rsu is replaced by the login name. For example:
 .sp
-\fB\-\-login\-options \(aq\-h darkstar \-\- \(rsu\(aq\fP
+\fB\-\-login\-options \*(Aq\-h darkstar \-\- \(rsu\*(Aq\fP
 .sp
 See \fB\-\-autologin\fP, \fB\-\-login\-program\fP and \fB\-\-remote\fP.
 .sp
@@ -329,7 +329,7 @@ Do not print hints about Num, Caps and Scroll Locks.
 .sp
 \fB\-\-nohostname\fP
 .RS 4
-By default the hostname will be printed. With this option enabled, no hostname at all will be shown.
+By default the hostname will be printed. With this option enabled, no hostname at all will be shown. This setting is also possible to able by LOGIN_PLAIN_PROMPT option in the \fI/etc/login.defs\fP configuration file (see below for more details).
 .RE
 .sp
 \fB\-\-long\-hostname\fP
@@ -339,12 +339,12 @@ By default the hostname is only printed until the first dot. With this option en
 .sp
 \fB\-\-erase\-chars\fP \fIstring\fP
 .RS 4
-This option specifies additional characters that should be interpreted as a backspace ("ignore the previous character") when the user types the login name. The default additional \(aqerase\(aq has been \(aq#\(aq, but since util\-linux 2.23 no additional erase characters are enabled by default.
+This option specifies additional characters that should be interpreted as a backspace ("ignore the previous character") when the user types the login name. The default additional \*(Aqerase\*(Aq has been \*(Aq#\*(Aq, but since util\-linux 2.23 no additional erase characters are enabled by default.
 .RE
 .sp
 \fB\-\-kill\-chars\fP \fIstring\fP
 .RS 4
-This option specifies additional characters that should be interpreted as a kill ("ignore all previous characters") when the user types the login name. The default additional \(aqkill\(aq has been \(aq@\(aq, but since util\-linux 2.23 no additional kill characters are enabled by default.
+This option specifies additional characters that should be interpreted as a kill ("ignore all previous characters") when the user types the login name. The default additional \*(Aqkill\*(Aq has been \*(Aq@\*(Aq, but since util\-linux 2.23 no additional kill characters are enabled by default.
 .RE
 .sp
 \fB\-\-chdir\fP \fIdirectory\fP
@@ -374,7 +374,17 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
+.RE
+.SH "CONFIG FILE ITEMS"
+.sp
+\fBagetty\fP reads the \fI/etc/login.defs\fP configuration file (see \fBlogin.defs\fP(5)).
+Note that the configuration file could be distributed with another package (usually shadow\-utils).
+The following configuration items are relevant for \fBagetty\fP:
+.sp
+\fBLOGIN_PLAIN_PROMPT\fP (boolean)
+.RS 4
+Tell \fBagetty\fP that printing the hostname should be suppressed in the login: prompt. This is an alternative to the \fB\-\-nohostname\fP command line option. The default value is \fIno\fP.
 .RE
 .SH "EXAMPLE"
 .sp
@@ -411,7 +421,7 @@ For a Hayes modem with a fixed 115200 bps interface to the machine (the example 
 .RS 3
 .ll -.6i
 .sp
-\fB/sbin/agetty \-\-wait\-cr \-\-init\-string \(aqATE0Q1&D2&C1S0=1\(rs015\(aq 115200 ttyS1\fP
+\fB/sbin/agetty \-\-wait\-cr \-\-init\-string \*(AqATE0Q1&D2&C1S0=1\(rs015\*(Aq 115200 ttyS1\fP
 .br
 .RE
 .ll
@@ -424,9 +434,11 @@ Some programs use "\-\-" to indicate that the rest of the command line should no
 .sp
 The default issue file is \fI/etc/issue\fP. If the file exists, then \fBagetty\fP also checks for \fI/etc/issue.d\fP directory. The directory is optional extension to the default issue file and content of the directory is printed after \fI/etc/issue\fP content. If the \fI/etc/issue\fP does not exist, then the directory is ignored. All files \fBwith .issue extension\fP from the directory are printed in version\-sort order. The directory can be used to maintain 3rd\-party messages independently on the primary system \fI/etc/issue\fP file.
 .sp
-Since version 2.35 additional locations for issue file and directory are supported. If the default \fI/etc/issue\fP does not exist, then \fBagetty\fP checks for \fI/run/issue\fP and \fI/run/issue.d\fP, thereafter for \fI/usr/lib/issue\fP and \fI/usr/lib/issue.d\fP. The directory \fI/etc\fP is expected for host specific configuration, \fI/run\fP is expected for generated stuff and \fI/usr/lib\fP for static distribution maintained configuration.
+Since version 2.35, additional locations for the issue file and directory are supported. \fBagetty\fP checks for the files \fI/run/issue\fP and \fI/run/issue.d\fP, and then for \fI/usr/lib/issue\fP and \fI/usr/lib/issue.d\fP. The directory \fI/etc\fP is expected for host\-specific configuration, \fI/run\fP is expected for generated content, and \fI/usr/lib\fP is used for static configuration maintained by the distribution.
 .sp
-The default path maybe overridden by \fB\-\-issue\-file\fP option. In this case specified path has to be file or directory and all the default issue file and directory locations are ignored.
+Note that in versions 2.35 to 2.40, the additional locations were only read if the default \fI/etc/issue\fP file did not exist. However, since version 2.41, the additional locations are always read, regardless of the existence of the \fI/etc/issue\fP file. This change allows for the generation of issue files by default.
+.sp
+The default paths maybe completely overridden by \fB\-\-issue\-file\fP option. In this case specified path has to be file or directory and all the default issue file and directory locations are ignored.
 .sp
 The issue file feature can be completely disabled by \fB\-\-noissue\fP option.
 .sp
@@ -461,7 +473,7 @@ Translate the human\-readable \fIname\fP to an escape sequence and insert it (fo
 .sp
 s
 .RS 4
-Insert the system name (the name of the operating system). Same as \(aquname \-s\(aq. See also the \(rsS escape code.
+Insert the system name (the name of the operating system). Same as \*(Aquname \-s\*(Aq. See also the \(rsS escape code.
 .RE
 .sp
 S or S{VARIABLE}
@@ -564,6 +576,16 @@ problem reports (if \fBsyslog\fP(3) is not used).
 .RS 4
 \fBinit\fP(8) configuration file for SysV\-style init daemon.
 .RE
+.SH "CREDENTIALS"
+.sp
+\fBagetty\fP supports configuration via systemd credentials (see \c
+.URL "https://systemd.io/CREDENTIALS/" "" ")."
+\fBagetty\fP reads the following systemd credentials:
+.sp
+\fBagetty.autologin\fP (string)
+.RS 4
+If set, configures \fBagetty\fP to automatically log in the specified user without asking for a username or password, similarly to the \fB\-\-autologin\fP option.
+.RE
 .SH "BUGS"
 .sp
 The baud\-rate detection feature (the \fB\-\-extract\-baud\fP option) requires that \fBagetty\fP be scheduled soon enough after completion of a dial\-in call (within 30 ms with modems that talk at 2400 baud). For robustness, always use the \fB\-\-extract\-baud\fP option in combination with a multiple baud rate command\-line argument, so that BREAK processing is enabled.
@@ -585,8 +607,8 @@ and ported to Linux by
 .MTO "poe\(atdaimi.aau.dk" "Peter Orbaek" "."
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBagetty\fP command is part of the util\-linux package which can be downloaded from \c

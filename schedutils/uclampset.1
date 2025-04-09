@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: uclampset
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "UCLAMPSET" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "UCLAMPSET" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -42,7 +42,7 @@ Utilization clamping is a new feature added in v5.3. It gives a hint to the sche
 .sp
 The utilization of the task affects frequency selection and task placement. Only schedutil cpufreq governor understands handling util clamp hints at the time of writing. Consult your kernel docs for further info about other cpufreq governors support.
 .sp
-If you\(cqre running on asymmetric heterogeneous system like Arm\(cqs big.LITTLE. Utilization clamping can help bias task placement. If the task is boosted such that \fIutil_min\fP value is higher than the little cores\(aq capacity, then the scheduler will do its best to place it on a big core.
+If you\(cqre running on asymmetric heterogeneous system like Arm\(cqs big.LITTLE. Utilization clamping can help bias task placement. If the task is boosted such that \fIutil_min\fP value is higher than the little cores\*(Aq capacity, then the scheduler will do its best to place it on a big core.
 .sp
 Similarly, if \fIutil_max\fP is smaller than or equal the capacity of the little cores, then the scheduler can still choose to place it there even if the actual utilization of the task is at max.
 .sp
@@ -51,6 +51,16 @@ Setting a task\(cqs \fIuclamp_min\fP to a none zero value will effectively boost
 By setting a task\(cqs \fIuclamp_max\fP below 1024, this will effectively cap the task as when it runs it\(cqll never be able to go above this utilization value.
 .sp
 The full utilization range is: [0:1024]. The special value \-1 is used to reset to system\(cqs default.
+.sp
+Consult latest kernel documentation for more details:
+.sp
+.if n .RS 4
+.nf
+.fam C
+https://kernel.org/doc/html/latest/scheduler/sched\-util\-clamp.html
+.fam
+.fi
+.if n .RE
 .SH "OPTIONS"
 .sp
 \fB\-m\fP
@@ -95,7 +105,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "USAGE"
 .sp
@@ -135,7 +145,7 @@ will prevent any task from being boosted higher than 512. And all tasks in the s
 Consult your kernel docs for the exact expected behavior on that kernel.
 .SH "AUTHORS"
 .sp
-.MTO "qais.yousef\(atarm.com" "Qais Yousef" ""
+.MTO "qyousef\(atlayalina.io" "Qais Yousef" ""
 .SH "SEE ALSO"
 .sp
 \fBnice\fP(1),
@@ -146,8 +156,8 @@ Consult your kernel docs for the exact expected behavior on that kernel.
 See \fBsched_setscheduler\fP(2) and \fBsched_setattr\fP(2) for a description of the Linux scheduling scheme.
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBuclampset\fP command is part of the util\-linux package which can be downloaded from \c

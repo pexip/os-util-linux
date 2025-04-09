@@ -4,7 +4,7 @@ Upstream-Contact: util-linux@vger.kernel.org
 Source: https://www.kernel.org/pub/linux/utils/util-linux/
 
 Files: *
-Copyright:      Michal Luscon <mluscon@redhat.com>
+Copyright: Michal Luscon <mluscon@redhat.com>
            1986 Gary S. Brown
            1990 Gordon Irlam (gordoni@cs.ua.oz.au)
            1991, 1992 Linus Torvalds
@@ -26,7 +26,7 @@ Copyright:      Michal Luscon <mluscon@redhat.com>
            2000 Werner Almesberger
            2004-2006 Michael Holzt, kju -at- fqdn.org
            2005 Adrian Bunk
-           2007-2020 Karel Zak <kzak@redhat.com>
+           2007-2023 Karel Zak <kzak@redhat.com>
            2007, 2011, 2012, 2016 SuSE LINUX Products GmbH
            2008 Cai Qian <qcai@redhat.com>
            2008 Hayden A. James (hayden.james@gmail.com)
@@ -68,6 +68,68 @@ Copyright: Steven M. Bellovin <smb@research.att.com>
            1999, 2004 Paul Eggert <eggert@twinsun.com>
 License: GPL-3+
 
+Files: sys-utils/irq-common.c
+  sys-utils/irqtop.c
+  sys-utils/lsirq.c
+Copyright: 2020, Karel Zak <kzak@redhat.com>
+ 2019, zhenwei pi <pizhenwei@bytedance.com>
+License: LGPL-2.1+
+
+Files: sys-utils/irq-common.h
+Copyright: 2012-2023, Karel Zak <kzak@redhat.com>
+ 2012, Sami Kerola <kerolasa@iki.fi>
+License: LGPL-2.1+
+
+Files: sys-utils/ipcmk.c
+Copyright: 2008, Karel Zak <kzak@redhat.com>
+ 2008, Hayden A. James (hayden.james@gmail.com)
+License: GPL-2+
+
+Files: sys-utils/ipcrm.c
+Copyright: 1993, rishna balasubramanian
+License: GPL-2+
+
+Files: sys-utils/ipcs.c
+Copyright: 2006-2023, Karel Zak <kzak@redhat.com>
+ 1995, ike Jagdis <jaggy@purplet.demon.co.uk>
+License: GPL-2+
+
+Files: sys-utils/ipcutils.c
+  sys-utils/ipcutils.h
+Copyright: 2012-2023, Karel Zak <kzak@redhat.com>
+ 2012, Sami Kerola <kerolasa@iki.fi>
+License: GPL-2+
+
+Files: sys-utils/lscpu-arm.c
+Copyright: 2018, Riku Voipio <riku.voipio@iki.fi>
+License: GPL-2+
+
+Files: sys-utils/lscpu-dmi.c
+Copyright: 2020, FUJITSU LIMITED.
+License: GPL-2
+
+Files: sys-utils/lscpu-topology.c
+  sys-utils/lscpu-virt.c
+  sys-utils/lscpu.c
+Copyright: 2008-2023, Karel Zak <kzak@redhat.com>
+ 2008, Cai Qian <qcai@redhat.com>
+License: GPL-2+
+
+Files: sys-utils/lscpu.h
+Copyright: 2013-2023, Karel Zak <kzak@redhat.com>
+ 2013, Ondrej Oprala <ooprala@redhat.com>
+License: GPL-2+
+
+Files: sys-utils/lsipc.c
+Copyright: 2015, Ondrej Oprala <ooprala@redhat.com>
+ 2015, Karel Zak <ooprala@redhat.com>
+License: GPL-2+
+
+Files: sys-utils/lsmem.c
+Copyright: 2016, Karel Zak <kzak@redhat.com>
+ 2016, IBM Corp.
+License: GPL-2+
+
 Files: sys-utils/nsenter.c
 Copyright: 2012-2013 Eric Biederman <ebiederm@xmission.com>
 License: GPL-2
@@ -78,7 +140,12 @@ Copyright: 1991, 1992 Linus Torvalds
 License: GPL-2
 
 Files: lib/blkdev.c
+       lib/color-names.c
+       lib/langinfo.c
        lib/loopdev.c
+       lib/mangle.c
+       lib/path.c
+       lib/procfs.c
        lib/sysfs.c
        lib/ttyutils.c
        misc-utils/mcookie.c
@@ -113,12 +180,25 @@ Files: login-utils/vipw.c
 Copyright: 1980, 1983, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994
                 The Regents of the University of California
            2014 Sami Kerola <kerolasa@iki.fi>
-           2014 Karel Zak <kzak@redhat.com>
+           2014-2023 Karel Zak <kzak@redhat.com>
 License: BSD-4-clause
 
 Files: sys-utils/flock.c
 Copyright: 2003-2005 H. Peter Anvin
-License: MIT
+License: Expat
+
+Files: sys-utils/rfkill.c
+Copyright: 2017, Sami Kerola <kerolasa@iki.fi>
+ 2017, Karel Zak <kzak@redhat.com>
+ 2009, Tim Gardner <tim.gardner@canonical.com>
+ 2009, Marcel Holtmann <marcel@holtmann.org>
+ 2009, Johannes Berg <johannes@sipsolutions.net>
+License: ISC
+
+Files: sys-utils/rtcwake.c
+Copyright: 2007-2023, Karel Zak <kzak@redhat.com>
+ 2007, Bernhard Walle <bwalle@suse.de>
+License: GPL-2+
 
 Files: text-utils/pg.c
 Copyright: 2000-2001 Gunnar Ritter
@@ -129,10 +209,6 @@ Copyright: 1980, 1987, 1988 The Regents of the University of California.
            2011 Karel Zak <kzak@redhat.com>
 License: BSLA
 
-Files: login-utils/logindefs.c
-Copyright: 2003, 2004, 2005 Thorsten Kukuk
-License: BSD-3-clause
-
 Files: libuuid/*
        libuuid/src/*
        libuuid/man/*
@@ -140,9 +216,9 @@ Copyright: 1996, 1997, 1998, 1999, 2007 Theodore Ts'o.
            1999 Andreas Dilger (adilger@enel.ucalgary.ca)
 License: BSD-3-clause
 
-Files: lib/procutils.c
-       include/xalloc.h
-Copyright: 2010, 2011 Davidlohr Bueso <dave@gnu.org>
+Files: include/xalloc.h
+Copyright: 2010 Davidlohr Bueso <dave@gnu.org>
+           2010-2022 Karel Zak <kzak@redhat.com>
 License: LGPL-2+
 
 Files: */colors.*
@@ -162,19 +238,63 @@ Copyright: 2007-2013 Karel Zak <kzak@redhat.com>
            2012 Davidlohr Bueso <dave@gnu.org>
 License: LGPL-2.1+
 
+Files: lib/c_strtod.c
+  lib/canonicalize.c
+  */match.*
+Copyright: 2008-2014, 2016-2018, 2021, 2023, Karel Zak <kzak@redhat.com>
+License: LGPL
+
+Files: lib/colors.c
+Copyright: 2012-2014, Karel Zak <kzak@redhat.com>
+ 2012, Ondrej Oprala <ooprala@redhat.com>
+License: LGPL-2.1+
+
 Files: lib/cpuset.c
-       */match.*
-       lib/canonicalize.c
 Copyright: 2008-2009, 2010, 2011, 2012 Karel Zak <kzak@redhat.com>
 License: LGPL-2.1+
+
+Files: lib/encode.c
+Copyright: 2020, Pali Rohár <pali.rohar@gmail.com>
+ 2009, Karel Zak <kzak@redhat.com>
+ 2008, Kay Sievers <kay.sievers@vrfy.org>
+License: LGPL
+
+Files: lib/fileutils.c
+Copyright: 2012-2020, Karel Zak <kzak@redhat.com>
+ 2012, Sami Kerola <kerolasa@iki.fi>
+License: public-domain
+
+Files: lib/ismounted.c
+Copyright: 1995-2000, 2008, Theodore Tso.
+License: GPL-2+
+
+Files: lib/logindefs.c
+Copyright: 2003-2005, Thorsten Kukuk
+License: GPL-2+
+
+Files: lib/plymouth-ctrl.c
+Copyright: 2016, Werner Fink <werner@suse.de>
+ 2016, SUSE Linux GmbH
+License: GPL-2+
+
+Files: lib/strutils.c
+Copyright: 2010, Karel Zak <kzak@redhat.com>
+ 2010, Davidlohr Bueso <dave@gnu.org>
+License: public-domain
+
+Files: lib/strv.c
+  */timeutils.*
+Copyright: 2014-2022, Karel Zak <kzak@redhat.com>
+ 2010, Lennart Poettering
+License: LGPL-2.1+
+
+Files: lib/xxhash.c
+Copyright: 2012-2020, Yann Collet
+License: BSD-2-clause
 
 Files: */mbsalign.*
 Copyright: 2009-2010 Free Software Foundation, Inc.
            2010-2013 Karel Zak <kzak@redhat.com>
-License: LGPL-2.1+
-
-Files: */timeutils.*
-Copyright: 2010 Lennart Poettering
 License: LGPL-2.1+
 
 Files: include/list.h
@@ -193,7 +313,7 @@ Copyright: 1999, 2001 Andries Brouwer
                Theodore Ts'o.
            2001 Andreas Dilger (adilger@turbolinux.com)
            2004-2008 Kay Sievers <kay.sievers@vrfy.org>
-           2008-2013 Karel Zak <kzak@redhat.com>
+           2008-2023 Karel Zak <kzak@redhat.com>
            2009 Bastian Friedrich <bastian.friedrich@collax.com>
            2009 Corentin Chary <corentincj@iksaif.net>
            2009 Mike Hommey <mh@glandium.org>
@@ -219,9 +339,89 @@ Files: misc-utils/blkid.c
 Copyright: 2001 Andreas Dilger
 License: LGPL
 
+Files: misc-utils/enosys.c
+  misc-utils/lsclocks.c
+  misc-utils/waitpid.c
+  sys-utils/setpriv-landlock.c
+  sys-utils/setpriv-landlock.h
+Copyright: 2022, 2023, Thomas Weißschuh <thomas@t-8ch.de>
+License: GPL-2+
+
+Files: misc-utils/exch.c
+  misc-utils/fadvise.c
+  misc-utils/fincore.c
+  misc-utils/findmnt.c
+  misc-utils/lsblk.c
+  lsfd-cmd/bdev.c
+  lsfd-cmd/cdev.c
+  lsfd-cmd/decode-file-flags.c
+  lsfd-cmd/fifo.c
+  lsfd-cmd/file.c
+  lsfd-cmd/sock-xinfo.c
+  lsfd-cmd/sock.c
+  lsfd-cmd/sock.h
+  lsfd-cmd/unkn.c
+  lsfd-cmd/lsfd.c
+  lsfd-cmd/lsfd.h
+  misc-utils/wipefs.c
+Copyright: 2002-2018, 2021-2023, Red Hat, Inc.
+License: GPL-2+
+
+Files: misc-utils/findfs.c
+  misc-utils/lsblk-devtree.c
+Copyright: 2006-2016, 2018, 2021, Karel Zak <kzak@redhat.com>
+License: GPL-2+
+
+Files: misc-utils/getopt.c
+Copyright: 1997-2014, Frodo Looijaard <frodo@frodo.looijaard.name>
+License: GPL-2+
+
+Files: misc-utils/hardlink.c
+Copyright: 2021, Karel Zak <kzak@redhat.com>
+ 2008-2014, Julian Andres Klode <jak@jak-linux.org>
+License: Expat
+
+Files: misc-utils/lastlog2.c
+Copyright: 2023, 2024, Thorsten Kukuk <kukuk@suse.com>
+License: BSD-2-clause
+
+Files: misc-utils/lsblk.h
+Copyright: 2010-2018, Red Hat, Inc.
+License: GPL-2+
+
+Files: misc-utils/lslocks.c
+Copyright: 2010-2012, Davidlohr Bueso <dave@gnu.org>
+License: GPL-2+
+
+Files: misc-utils/namei.c
+Copyright: 2007-2023, Karel Zak <kzak@redhat.com>
+License: GPL-2+
+
+Files: misc-utils/pipesz.c
+Copyright: 2022, Nathan Sharp
+License: GPL-2+
+
+Files: misc-utils/test_uuidd.c
+Copyright: 2015, Karel Zak <kzak@redhat.com>
+ 2006, Hewlett-Packard Development Company, L.P.
+License: GPL-2+
+
+Files: misc-utils/uuidd.c
+Copyright: 2007, Theodore Tso
+License: GPL-2+
+
+Files: misc-utils/uuidgen.c
+Copyright: 1999, Andreas Dilger and Theodore Tso
+License: GPL-2+
+
+Files: misc-utils/uuidparse.c
+Copyright: 2017, Sami Kerola
+ 1998, 1999, Theodore Tso.
+License: BSD-3-clause
+
 Files: libmount/*
        libmount/src/*
-Copyright: 2008-2012 Karel Zak <kzak@redhat.com>
+Copyright: 2008-2023 Karel Zak <kzak@redhat.com>
 License: LGPL-2.1+
 
 Files: libmount/python/*
@@ -229,9 +429,13 @@ Copyright: 2013, Red Hat, Inc.
 License: LGPL-3+
 
 Files: libsmartcols/*
-Copyright:  2009-2014 Karel Zak <kzak@redhat.com>
+Copyright:  2009-2023 Karel Zak <kzak@redhat.com>
             2014 Ondrej Oprala <ooprala@redhat.com>
 License: LGPL-2.1+
+
+Files: pam_lastlog2/*
+Copyright: 2023-2024 Thorsten Kukuk
+License: BSD-2-clause
 
 Files: debian/*
 Copyright:           Guy Maor <maor@debian.org>
@@ -243,7 +447,7 @@ Copyright:           Guy Maor <maor@debian.org>
            2014      Andreas Henriksson <andreas@fatal.se>
            2017-2020 Michael Biebl <biebl@debian.org>
            2019      Petter Reinholdtsen <pere@debian.org>
-           2017-2020 Chris Hofstaedtler <zeha@debian.org>
+           2017-2024 Chris Hofstaedtler <zeha@debian.org>
 License: GPL-2+
 
 Files: debian/po/*
@@ -392,6 +596,30 @@ License: GPL-3+
  On Debian systems, the complete text of the GNU General Public
  License version 3 can be found in `/usr/share/common-licenses/GPL-3'.
 
+License: BSD-2-clause
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are
+ met:
+ .
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above
+      copyright notice, this list of conditions and the following disclaimer
+      in the documentation and/or other materials provided with the
+      distribution.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 License: BSD-3-clause
  Redistribution and use in source and binary forms, with or without
  modification, are permitted provided that the following conditions are met:
@@ -520,7 +748,7 @@ License: LGPL-3+
  On Debian systems, the complete text of the GNU Lesser General
  Public License can be found in "/usr/share/common-licenses/LGPL-3".
 
-License: MIT
+License: Expat
  Permission is hereby granted, free of charge, to any person
  obtaining a copy of this software and associated documentation files
  (the "Software"), to deal in the Software without restriction,
@@ -540,3 +768,20 @@ License: MIT
  ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
  CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  SOFTWARE.
+
+License: ISC
+ The ISC License
+ .
+ Copyright (c) 2024 by the copyright holder
+ .
+ Permission to use, copy, modify, and/or distribute this software for any
+ purpose with or without fee is hereby granted, provided that the above
+ copyright notice and this permission notice appear in all copies.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.

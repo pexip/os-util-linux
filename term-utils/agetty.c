@@ -31,6 +31,7 @@
 #include <sys/socket.h>
 #include <langinfo.h>
 #include <grp.h>
+#include <pwd.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <ifaddrs.h>
@@ -47,6 +48,10 @@
 #include "ttyutils.h"
 #include "color-names.h"
 #include "env.h"
+#include "path.h"
+#include "fileutils.h"
+
+#include "logindefs.h"
 
 #ifdef USE_PLYMOUTH_SUPPORT
 # include "plymouth-ctrl.h"
@@ -70,35 +75,16 @@
 # endif
 #endif
 
+#ifdef USE_SYSTEMD
+# include <systemd/sd-daemon.h>
+# include <systemd/sd-login.h>
+#endif
+
 #ifdef __linux__
 #  include <sys/kd.h>
 #  define USE_SYSLOG
-#  ifndef DEFAULT_VCTERM
-#    define DEFAULT_VCTERM "linux"
-#  endif
-#  if defined (__s390__) || defined (__s390x__)
-#    define DEFAULT_TTYS0  "dumb"
-#    define DEFAULT_TTY32  "ibm327x"
-#    define DEFAULT_TTYS1  "vt220"
-#  endif
-#  ifndef DEFAULT_STERM
-#    define DEFAULT_STERM  "vt102"
-#  endif
 #elif defined(__GNU__)
 #  define USE_SYSLOG
-#  ifndef DEFAULT_VCTERM
-#    define DEFAULT_VCTERM "hurd"
-#  endif
-#  ifndef DEFAULT_STERM
-#    define DEFAULT_STERM  "vt102"
-#  endif
-#else
-#  ifndef DEFAULT_VCTERM
-#    define DEFAULT_VCTERM "vt100"
-#  endif
-#  ifndef DEFAULT_STERM
-#    define DEFAULT_STERM  "vt100"
-#  endif
 #endif
 
 #ifdef __FreeBSD_kernel__
@@ -136,7 +122,6 @@
 #  define ISSUE_SUPPORT
 #  if defined(HAVE_SCANDIRAT) && defined(HAVE_OPENAT)
 #    include <dirent.h>
-#    include "fileutils.h"
 #    define ISSUEDIR_SUPPORT
 #    define ISSUEDIR_EXT	".issue"
 #    define ISSUEDIR_EXTSIZ	(sizeof(ISSUEDIR_EXT) - 1)
@@ -144,8 +129,10 @@
 #endif
 
 /* Login prompt. */
-#define LOGIN		"login: "
-#define LOGIN_ARGV_MAX	16		/* Numbers of args for login */
+#define LOGIN_PROMPT		"login: "
+
+/* Numbers of args for login(1) */
+#define LOGIN_ARGV_MAX	16
 
 /*
  * agetty --reload
@@ -348,6 +335,7 @@ static void reload_agettys(void);
 static void print_issue_file(struct issue *ie, struct options *op, struct termios *tp);
 static void eval_issue_file(struct issue *ie, struct options *op, struct termios *tp);
 static void show_issue(struct options *op);
+static void load_credentials(struct options *op);
 
 
 /* Fake hostname for ut_host specified on command line. */
@@ -407,6 +395,9 @@ int main(int argc, char **argv)
 		debug("\n");
 	}
 #endif				/* DEBUGGING */
+
+	/* Load systemd credentials. */
+	load_credentials(&options);
 
 	/* Parse command-line arguments. */
 	parse_args(argc, argv, &options);
@@ -493,12 +484,19 @@ int main(int argc, char **argv)
 	if (options.flags & F_NOPROMPT) {	/* --skip-login */
 		eval_issue_file(&issue, &options, &termios);
 		print_issue_file(&issue, &options, &termios);
+
 	} else {				/* regular (auto)login */
+		if ((options.flags & F_NOHOSTNAME) == 0 &&
+		    getlogindefs_bool("LOGIN_PLAIN_PROMPT", 0) == 1)
+			/* /etc/login.defs enbles --nohostname too */
+			options.flags |= F_NOHOSTNAME;
+
 		if (options.autolog) {
 			/* Autologin prompt */
 			eval_issue_file(&issue, &options, &termios);
 			do_prompt(&issue, &options, &termios);
-			printf(_("%s%s (automatic login)\n"), LOGIN, options.autolog);
+			printf(_("%s%s (automatic login)\n"), LOGIN_PROMPT,
+					options.autolog);
 		} else {
 			/* Read the login name. */
 			debug("reading login name\n");
@@ -546,8 +544,7 @@ int main(int argc, char **argv)
 		if (username) {
 			if (options.autolog)
 				login_argv[login_argc++] = "-f";
-			else
-				login_argv[login_argc++] = "--";
+			login_argv[login_argc++] = "--";
 			login_argv[login_argc++] = username;
 		}
 	}
@@ -564,7 +561,6 @@ int main(int argc, char **argv)
 		log_warn(_("%s: can't change process priority: %m"),
 			 options.tty);
 
-	free(options.osrelease);
 #ifdef DEBUGGING
 	if (close_stream(dbf) != 0)
 		log_err("write failed: %s", DEBUG_OUTPUT);
@@ -572,6 +568,10 @@ int main(int argc, char **argv)
 
 	/* Let the login program take care of password validation. */
 	execv(options.login, login_argv);
+
+	free(options.osrelease);
+	free(options.autolog);
+
 	log_err(_("%s: can't exec %s: %m"), options.tty, login_argv[0]);
 }
 
@@ -605,16 +605,13 @@ static char *replace_u(char *str, char *username)
 		if (!tp)
 			log_err(_("failed to allocate memory: %m"));
 
-		if (p != str) {
+		if (p != str)
 			/* copy chars before \u */
-			memcpy(tp, str, p - str);
-			tp += p - str;
-		}
-		if (usz) {
+			tp = mempcpy(tp, str, p - str);
+		if (usz)
 			/* copy username */
-			memcpy(tp, username, usz);
-			tp += usz;
-		}
+			tp = mempcpy(tp, username, usz);
+
 		if (*(p + 2))
 			/* copy chars after \u + \0 */
 			memcpy(tp, p + 2, sz - (p - str) - 1);
@@ -658,7 +655,7 @@ static void login_options_to_argv(char *argv[], int *argc,
 
 static void output_version(void)
 {
-	static const char *features[] = {
+	static const char *const features[] = {
 #ifdef DEBUGGING
 		"debug",
 #endif
@@ -685,6 +682,9 @@ static void output_version(void)
 #endif
 #ifdef USE_SYSLOG
 		"syslog",
+#endif
+#ifdef USE_SYSTEMD
+		"systemd",
 #endif
 #ifdef HAVE_WIDECHAR
 		"widechar",
@@ -771,7 +771,10 @@ static void parse_args(int argc, char **argv, struct options *op)
 			op->flags |= F_EIGHTBITS;
 			break;
 		case 'a':
-			op->autolog = optarg;
+			free(op->autolog);
+			op->autolog = strdup(optarg);
+			if (!op->autolog)
+				log_err(_("failed to allocate memory: %m"));
 			break;
 		case 'c':
 			op->flags |= F_KEEPCFLAGS;
@@ -925,11 +928,15 @@ static void parse_args(int argc, char **argv, struct options *op)
 
 	/* resolve the tty path in case it was provided as stdin */
 	if (strcmp(op->tty, "-") == 0) {
+		int fd;
+		const char *name = op->tty;
+
 		op->tty_is_stdin = 1;
-		int fd = get_terminal_name(NULL, &op->tty, NULL);
-		if (fd < 0) {
+		fd = get_terminal_name(NULL, &name, NULL);
+		if (fd >= 0)
+			op->tty = name;	/* set real device name */
+		else
 			log_warn(_("could not get terminal name: %d"), fd);
-		}
 	}
 
 	/* On virtual console remember the line which is used for */
@@ -1174,35 +1181,6 @@ static void open_tty(const char *tty, struct termios *tp, struct options *op)
 	if (tcgetattr(STDIN_FILENO, tp) < 0)
 		log_err(_("%s: failed to get terminal attributes: %m"), tty);
 
-#ifdef HAVE_GETTTYNAM
-	if (!op->term) {
-		struct ttyent *ent = getttynam(tty);
-		/* a bit nasty as it's never freed */
-		if (ent && ent->ty_type) {
-			op->term = strdup(ent->ty_type);
-			if (!op->term)
-				log_err(_("failed to allocate memory: %m"));
-		}
-	}
-#endif
-
-#if defined (__s390__) || defined (__s390x__)
-	if (!op->term) {
-	        /*
-		 * Special terminal on first serial line on a S/390(x) which
-		 * is due legacy reasons a block terminal of type 3270 or
-		 * higher.  Whereas the second serial line on a S/390(x) is
-		 * a real character terminal which is compatible with VT220.
-		 */
-		if (strcmp(op->tty, "ttyS0") == 0)		/* linux/drivers/s390/char/con3215.c */
-			op->term = DEFAULT_TTYS0;
-		else if (strncmp(op->tty, "3270/tty", 8) == 0)	/* linux/drivers/s390/char/con3270.c */
-			op->term = DEFAULT_TTY32;
-		else if (strcmp(op->tty, "ttyS1") == 0)		/* linux/drivers/s390/char/sclp_vt220.c */
-			op->term = DEFAULT_TTYS1;
-	}
-#endif
-
 #if defined(__FreeBSD_kernel__)
 	login_tty (0);
 #endif
@@ -1219,15 +1197,16 @@ static void open_tty(const char *tty, struct termios *tp, struct options *op)
 #endif
 	{
 		op->flags |= F_VCONSOLE;
-		if (!op->term)
-			op->term = DEFAULT_VCTERM;
 	} else {
 #ifdef K_RAW
 		op->kbmode = K_RAW;
 #endif
-		if (!op->term)
-			op->term = DEFAULT_STERM;
 	}
+
+	if (!op->term)
+		op->term = get_terminal_default_type(op->tty, !(op->flags & F_VCONSOLE));
+	if (!op->term)
+		log_err(_("failed to allocate memory: %m"));
 
 	if (setenv("TERM", op->term, 1) != 0)
 		log_err(_("failed to set the %s environment variable"), "TERM");
@@ -1872,9 +1851,9 @@ static int issuefile_read_stream(
 		ie->output = open_memstream(&ie->mem, &ie->mem_sz);
 	}
 
-	while ((c = getc(f)) != EOF) {
+	while ((c = fgetc(f)) != EOF) {
 		if (c == '\\')
-			output_special_char(ie, getc(f), op, tp, f);
+			output_special_char(ie, fgetc(f), op, tp, f);
 		else
 			putc(c, ie->output);
 	}
@@ -1905,6 +1884,7 @@ static int issue_is_changed(struct issue *ie)
 		free(ie->mem_old);
 		ie->mem_old = ie->mem;
 		ie->mem = NULL;
+		ie->mem_sz = 0;
 		return 0;
 	}
 
@@ -1931,7 +1911,7 @@ static void print_issue_file(struct issue *ie,
 		}
 	}
 
-	if (ie->mem_sz)
+	if (ie->mem_sz && ie->mem)
 		write_all(STDOUT_FILENO, ie->mem, ie->mem_sz);
 
 	if (ie->do_tcrestore) {
@@ -1957,8 +1937,6 @@ static void eval_issue_file(struct issue *ie,
 			    struct options *op,
 			    struct termios *tp)
 {
-	int has_file = 0;
-
 #ifdef AGETTY_RELOAD
 	netlink_groups = 0;
 #endif
@@ -1966,7 +1944,7 @@ static void eval_issue_file(struct issue *ie,
 		goto done;
 	/*
 	 * The custom issue file or directory list specified by:
-	 *   agetty --isue-file <path[:path]...>
+	 *   agetty --issue-file <path[:path]...>
 	 * Note that nothing is printed if the file/dir does not exist.
 	 */
 	if (op->issue) {
@@ -1997,23 +1975,14 @@ static void eval_issue_file(struct issue *ie,
 	if (access(_PATH_ISSUE, F_OK|R_OK) == 0) {
 		issuefile_read(ie, _PATH_ISSUE, op, tp);
 		issuedir_read(ie, _PATH_ISSUEDIR, op, tp);
-		goto done;
 	}
 
-	/* Fallback @runstatedir (usually /run) -- the file is not required to
-	 * read the dir.
-	 */
-	if (issuefile_read(ie, _PATH_RUNSTATEDIR "/" _PATH_ISSUE_FILENAME, op, tp) == 0)
-		has_file++;
-	if (issuedir_read(ie, _PATH_RUNSTATEDIR "/" _PATH_ISSUE_DIRNAME, op, tp) == 0)
-		has_file++;
-	if (has_file)
-		goto done;
+	/* Fallback @runstatedir (usually /run) */
+	issuefile_read(ie, _PATH_RUNSTATEDIR "/" _PATH_ISSUE_FILENAME, op, tp);
+	issuedir_read(ie, _PATH_RUNSTATEDIR "/" _PATH_ISSUE_DIRNAME, op, tp);
 
-	/* Fallback @sysconfstaticdir (usually /usr/lib) -- the file is not
-	 * required to read the dir
-	 */
-	issuefile_read(ie, _PATH_SYSCONFSTATICDIR "/" _PATH_ISSUE_FILENAME, op, tp); 
+	/* Fallback @sysconfstaticdir (usually /usr/lib)*/
+	issuefile_read(ie, _PATH_SYSCONFSTATICDIR "/" _PATH_ISSUE_FILENAME, op, tp);
 	issuedir_read(ie, _PATH_SYSCONFSTATICDIR "/" _PATH_ISSUE_DIRNAME, op, tp);
 
 done:
@@ -2066,7 +2035,8 @@ again:
 		if (!wait_for_term_input(STDIN_FILENO)) {
 			eval_issue_file(ie, op, tp);
 			if (issue_is_changed(ie)) {
-				if (op->flags & F_VCONSOLE)
+				if ((op->flags & F_VCONSOLE)
+				    && (op->flags & F_NOCLEAR) == 0)
 					termio_clear(STDOUT_FILENO);
 				goto again;
 			}
@@ -2136,7 +2106,8 @@ again:
 	}
 	if (!op->autolog) {
 		/* Always show login prompt. */
-		write_all(STDOUT_FILENO, LOGIN, sizeof(LOGIN) - 1);
+		write_all(STDOUT_FILENO, LOGIN_PROMPT,
+				sizeof(LOGIN_PROMPT) - 1);
 	}
 }
 
@@ -2168,7 +2139,7 @@ static char *get_logname(struct issue *ie, struct options *op, struct termios *t
 	char c;			/* input character, full eight bits */
 	char ascval;		/* low 7 bits of input character */
 	int eightbit;
-	static char *erase[] = {	/* backspace-space-backspace */
+	static const char *const erase[] = {	/* backspace-space-backspace */
 		"\010\040\010",		/* space parity */
 		"\010\040\010",		/* odd parity */
 		"\210\240\210",		/* even parity */
@@ -2207,7 +2178,8 @@ static char *get_logname(struct issue *ie, struct options *op, struct termios *t
 			if (!issue_is_changed(ie))
 				goto no_reload;
 			tcflush(STDIN_FILENO, TCIFLUSH);
-			if (op->flags & F_VCONSOLE)
+			if ((op->flags & F_VCONSOLE)
+			    && (op->flags & F_NOCLEAR) == 0)
 				termio_clear(STDOUT_FILENO);
 			bp = logname;
 			*bp = '\0';
@@ -2309,8 +2281,16 @@ static char *get_logname(struct issue *ie, struct options *op, struct termios *t
 			default:
 				if ((size_t)(bp - logname) >= sizeof(logname) - 1)
 					log_err(_("%s: input overrun"), op->tty);
-				if ((tp->c_lflag & ECHO) == 0)
-					write_all(1, &c, 1);	/* echo the character */
+				if ((tp->c_lflag & ECHO) == 0) {
+					/* Visualize escape sequence instead of its execution */
+					if (ascval == CTL('['))
+						/* Ideally it should be "\xe2\x90\x9b"
+						 * if (op->flags & (F_UTF8)),
+						 * but only some fonts contain it */
+						write_all(1, "^[", 2);
+					else
+						write_all(1, &c, 1);	/* echo the character */
+				}
 				*bp++ = ascval;			/* and store it */
 				break;
 			}
@@ -2489,12 +2469,12 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -H, --host <hostname>      specify login host\n"), out);
 	fputs(_(" -i, --noissue              do not display issue file\n"), out);
 	fputs(_(" -I, --init-string <string> set init string\n"), out);
-	fputs(_(" -J  --noclear              do not clear the screen before prompt\n"), out);
+	fputs(_(" -J, --noclear              do not clear the screen before prompt\n"), out);
 	fputs(_(" -l, --login-program <file> specify login program\n"), out);
 	fputs(_(" -L, --local-line[=<mode>]  control the local line flag\n"), out);
 	fputs(_(" -m, --extract-baud         extract baud rate during connect\n"), out);
 	fputs(_(" -n, --skip-login           do not prompt for login\n"), out);
-	fputs(_(" -N  --nonewline            do not print a newline before issue\n"), out);
+	fputs(_(" -N, --nonewline            do not print a newline before issue\n"), out);
 	fputs(_(" -o, --login-options <opts> options that are passed to login\n"), out);
 	fputs(_(" -p, --login-pause          wait for any key before the login\n"), out);
 	fputs(_(" -r, --chroot <dir>         change root to the directory\n"), out);
@@ -2513,9 +2493,9 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("     --nice <number>        run login with this priority\n"), out);
 	fputs(_("     --reload               reload prompts on running agetty instances\n"), out);
 	fputs(_("     --list-speeds          display supported baud rates\n"), out);
-	printf( "     --help                 %s\n", USAGE_OPTSTR_HELP);
-	printf( "     --version              %s\n", USAGE_OPTSTR_VERSION);
-	printf(USAGE_MAN_TAIL("agetty(8)"));
+	fprintf(out, "     --help                 %s\n", USAGE_OPTSTR_HELP);
+	fprintf(out, "     --version              %s\n", USAGE_OPTSTR_VERSION);
+	fprintf(out, USAGE_MAN_TAIL("agetty(8)"));
 
 	exit(EXIT_SUCCESS);
 }
@@ -2545,7 +2525,7 @@ static void dolog(int priority
 	 * automatically prepended to the message. If we write directly to
 	 * /dev/console, we must prepend the process name ourselves.
 	 */
-	openlog(program_invocation_short_name, LOG_PID, LOG_AUTHPRIV);
+	openlog("agetty", LOG_PID, LOG_AUTHPRIV);
 	vsyslog(priority, fmt, ap);
 	closelog();
 #else
@@ -2725,9 +2705,12 @@ static void output_special_char(struct issue *ie,
 		char escname[UL_COLORNAME_MAXSZ];
 
 		if (get_escape_argument(fp, escname, sizeof(escname))) {
-			const char *esc = color_sequence_from_colorname(escname);
-			if (esc)
+			char *esc = color_get_sequence(escname);
+
+			if (esc) {
 				fputs(esc, ie->output);
+				free(esc);
+			}
 		} else
 			fputs("\033", ie->output);
 		break;
@@ -2850,12 +2833,23 @@ static void output_special_char(struct issue *ie,
 	case 'U':
 	{
 		int users = 0;
-		struct utmpx *ut;
-		setutxent();
-		while ((ut = getutxent()))
-			if (ut->ut_type == USER_PROCESS)
-				users++;
-		endutxent();
+#ifdef USE_SYSTEMD
+		if (sd_booted() > 0) {
+			users = sd_get_sessions(NULL);
+			if (users < 0)
+				users = 0;
+		} else {
+#endif
+			users = 0;
+			struct utmpx *ut;
+			setutxent();
+			while ((ut = getutxent()))
+				if (ut->ut_type == USER_PROCESS)
+					users++;
+			endutxent();
+#ifdef USE_SYSTEMD
+		}
+#endif
 		if (c == 'U')
 			fprintf(ie->output, P_("%d user", "%d users", users), users);
 		else
@@ -2960,8 +2954,7 @@ static ssize_t append(char *dest, size_t len, const char  *sep, const char *src)
 
 	p = dest + dsz;
 	if (ssz) {
-		memcpy(p, sep, ssz);
-		p += ssz;
+		p = mempcpy(p, sep, ssz);
 	}
 	memcpy(p, src, sz);
 	*(p + sz) = '\0';
@@ -3006,4 +2999,38 @@ static void reload_agettys(void)
 	/* very unusual */
 	errx(EXIT_FAILURE, _("--reload is unsupported on your system"));
 #endif
+}
+
+static void load_credentials(struct options *op) {
+	char *env;
+	DIR *dir;
+	struct dirent *d;
+	struct path_cxt *pc;
+
+	env = safe_getenv("CREDENTIALS_DIRECTORY");
+        if (!env)
+                return;
+
+	pc = ul_new_path("%s", env);
+	if (!pc) {
+		log_warn(_("failed to initialize path context"));
+		return;
+	}
+
+	dir = ul_path_opendir(pc, NULL);
+	if (!dir) {
+		log_warn(_("failed to open credentials directory"));
+		return;
+	}
+
+	while ((d = xreaddir(dir))) {
+		char *str;
+
+		if (strcmp(d->d_name, "agetty.autologin") == 0) {
+			ul_path_read_string(pc, &str, d->d_name);
+			free(op->autolog);
+			op->autolog = str;
+		}
+	}
+	closedir(dir);
 }

@@ -37,6 +37,8 @@
 # define NAME_MAX PATH_MAX
 #endif
 
+#define BIT(n)                 (1 << (n))
+
 /*
  * __GNUC_PREREQ is deprecated in favour of __has_attribute() and
  * __has_feature(). The __has macros are supported by clang and gcc>=5.
@@ -197,6 +199,10 @@
 #define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
 #endif
 
+#ifndef sizeof_member
+#define sizeof_member(TYPE, MEMBER) sizeof(((TYPE *)0)->MEMBER)
+#endif
+
 /*
  * container_of - cast a member of a structure out to the containing structure
  * @ptr:	the pointer to the member.
@@ -208,6 +214,14 @@
 	const __typeof__( ((type *)0)->member ) *__mptr = (ptr); \
 	(type *)( (char *)__mptr - offsetof(type,member) );})
 #endif
+
+#define read_unaligned_member(p, m) __extension__ ({          \
+	size_t offset = offsetof(__typeof__(* p), m);         \
+	__typeof__(p->m + 0) v;                               \
+	memcpy(&v, ((unsigned char *)p) + offset, sizeof(v)); \
+	v; })
+
+#define member_ptr(p, m) (((unsigned char *)p) + offsetof(__typeof__(*p), m))
 
 #ifndef HAVE_PROGRAM_INVOCATION_SHORT_NAME
 # ifdef HAVE___PROGNAME
@@ -282,6 +296,18 @@ errmsg(char doexit, int excode, char adderr, const char *fmt, ...)
 #endif /* !HAVE_ERR_H */
 
 
+static inline
+__attribute__((__noreturn__))
+void __err_oom(const char *file, unsigned int line)
+{
+	err(EXIT_FAILURE, "%s: %u: cannot allocate memory", file, line);
+}
+#define err_oom()	__err_oom(__FILE__, __LINE__)
+
+#define err_nosys(exitcode, ...) \
+	err(errno == ENOSYS ? EXIT_NOTSUPP : exitcode, __VA_ARGS__)
+
+
 /* Don't use inline function to avoid '#include "nls.h"' in c.h
  */
 #define errtryhelp(eval) __extension__ ({ \
@@ -296,7 +322,6 @@ errmsg(char doexit, int excode, char adderr, const char *fmt, ...)
 #define errexec(name)	err(errno == ENOENT ? EX_EXEC_ENOENT : EX_EXEC_FAILED, \
 			_("failed to execute %s"), name)
 
-
 static inline __attribute__((const)) int is_power_of_2(unsigned long num)
 {
 	return (num != 0 && ((num & (num - 1)) == 0));
@@ -306,8 +331,9 @@ static inline __attribute__((const)) int is_power_of_2(unsigned long num)
 typedef int64_t loff_t;
 #endif
 
-#if !defined(HAVE_DIRFD) && (!defined(HAVE_DECL_DIRFD) || HAVE_DECL_DIRFD == 0) && defined(HAVE_DIR_DD_FD)
-#include <sys/types.h>
+#if !defined(HAVE_DIRFD) \
+    && (!defined(HAVE_DECL_DIRFD) || HAVE_DECL_DIRFD == 0) \
+    && defined(HAVE_DIR_DD_FD)
 #include <dirent.h>
 static inline int dirfd(DIR *d)
 {
@@ -403,6 +429,27 @@ static inline int xusleep(useconds_t usec)
 #endif
 }
 
+/* ul_sig_printf is signal safe as long you don't use floating point formats,
+   positional arguments or wide characters.*/
+#define ul_sig_printf(fmt, ...) ignore_result(dprintf(STDERR_FILENO, fmt, __VA_ARGS__))
+
+/*
+ * warn() for signal handlers
+ */
+static inline void ul_sig_warn(const char *mesg)
+{
+	ul_sig_printf("%s: %s\n", program_invocation_short_name, mesg);
+}
+
+/*
+ * err() for signal handlers
+ */
+static inline void __attribute__((__noreturn__)) ul_sig_err(int excode, const char *mesg)
+{
+	ul_sig_warn(mesg);
+	_exit(excode);
+}
+
 /*
  * Constant strings for usage() functions. For more info see
  * Documentation/{howto-usage-function.txt,boilerplate.c}
@@ -413,6 +460,7 @@ static inline int xusleep(useconds_t usec)
 #define USAGE_COMMANDS   _("\nCommands:\n")
 #define USAGE_ARGUMENTS   _("\nArguments:\n")
 #define USAGE_COLUMNS    _("\nAvailable output columns:\n")
+#define USAGE_DEFAULT_COLUMNS _("\nDefault columns:\n")
 #define USAGE_SEPARATOR    "\n"
 
 #define USAGE_OPTSTR_HELP     _("display this help")
@@ -426,8 +474,8 @@ static inline int xusleep(useconds_t usec)
 
 #define USAGE_ARG_SEPARATOR    "\n"
 #define USAGE_ARG_SIZE(_name) \
-		_(" %s arguments may be followed by the suffixes for\n" \
-		  "   GiB, TiB, PiB, EiB, ZiB, and YiB (the \"iB\" is optional)\n"), _name
+		_(" Values for %s may be followed by a suffix: KiB, MiB,\n" \
+		  " GiB, TiB, PiB, EiB, ZiB, or YiB (where the \"iB\" is optional).\n"), _name
 
 #define USAGE_MAN_TAIL(_man)   _("\nFor more details see %s.\n"), _man
 
@@ -437,6 +485,36 @@ static inline int xusleep(useconds_t usec)
 		printf(UTIL_LINUX_VERSION); \
 		exit(eval); \
 })
+
+static inline void print_features(const char *const*features, const char *prefix)
+{
+	if (features && *features) {
+		const char *const*p = features;
+		while (p && *p) {
+			if (prefix && p == features)
+				printf(" (%s ", prefix);
+			else
+				fputs(p == features ? " (" : ", ", stdout);
+			fputs(*p++, stdout);
+		}
+		fputc(')', stdout);
+	}
+}
+
+#define UTIL_LINUX_VERSION_NOBREAK _("%s from %s"), program_invocation_short_name, PACKAGE_STRING
+
+#define print_version_with_features(eval, features) __extension__ ({ \
+		printf(UTIL_LINUX_VERSION_NOBREAK); \
+		print_features(features, _("features:")); \
+		fputc('\n', stdout); \
+		exit(eval); \
+})
+
+static inline int fputsln(const char *s, FILE *stream) {
+	if (fputs(s, stream) == EOF)
+		return EOF;
+	return fputc('\n', stdout);
+}
 
 /*
  * seek stuff
@@ -500,6 +578,41 @@ static inline int xusleep(useconds_t usec)
  */
 #if !defined MAP_ANONYMOUS && defined MAP_ANON
 # define MAP_ANONYMOUS  (MAP_ANON)
+#endif
+
+#define SINT_MAX(t) (((t)1 << (sizeof(t) * 8 - 2)) - (t)1 + ((t)1 << (sizeof(t) * 8 - 2)))
+
+#ifndef HAVE_REALLOCARRAY
+static inline void *reallocarray(void *ptr, size_t nmemb, size_t size)
+{
+	size_t s = nmemb * size;
+
+	if (nmemb != 0 && s / nmemb != size) {
+		errno = ENOMEM;
+		return NULL;
+	}
+	return realloc(ptr, s);
+}
+#endif
+
+static inline void ul_reset_errno(int *saved_errno) {
+        if (*saved_errno < 0)
+                return;
+
+        errno = *saved_errno;
+}
+
+#define UL_PROTECT_ERRNO __attribute__((__cleanup__(ul_reset_errno))) \
+                         __attribute__((__unused__)) int __ul_saved_errno = errno
+
+
+/*
+ * thread-local storage
+ */
+#ifdef HAVE_TLS
+# define THREAD_LOCAL static __thread
+#else
+# define THREAD_LOCAL static
 #endif
 
 #endif /* UTIL_LINUX_C_H */

@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: unshare
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "UNSHARE" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "UNSHARE" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -147,29 +147,43 @@ When \fBunshare\fP terminates, have \fIsigname\fP be sent to the forked child pr
 Just before running the program, mount the proc filesystem at \fImountpoint\fP (default is \fI/proc\fP). This is useful when creating a new PID namespace. It also implies creating a new mount namespace since the \fI/proc\fP mount would otherwise mess up existing programs on the system. The new proc filesystem is explicitly mounted as private (with \fBMS_PRIVATE\fP|\fBMS_REC\fP).
 .RE
 .sp
-\fB\-\-map\-user=\fP\fIuid|name\fP
+\fB\-\-mount\-binfmt\fP[\fB=\fP\fImountpoint\fP]
+.RS 4
+Just before running the program, mount the binfmt_misc filesystem at \fImountpoint\fP (default is /proc/sys/fs/binfmt_misc).  It also implies creating a new mount namespace since the binfmt_misc mount would otherwise mess up existing programs on the system.  The new binfmt_misc filesystem is explicitly mounted as private (with \fBMS_PRIVATE\fP|\fBMS_REC\fP).
+.RE
+.sp
+\fB\-\-map\-user\fP \fIuid\fP|\fIname\fP
 .RS 4
 Run the program only after the current effective user ID has been mapped to \fIuid\fP. If this option is specified multiple times, the last occurrence takes precedence. This option implies \fB\-\-user\fP.
 .RE
 .sp
-\fB\-\-map\-users=\fP\fIouteruid,inneruid,count\fP|\fBauto\fP
+\fB\-\-map\-users\fP \fIinneruid\fP\fB:\fP\fIouteruid\fP\fB:\fP\fIcount\fP|\fBauto\fP|\fBsubids\fP|\fBall\fP
 .RS 4
-Run the program only after the block of user IDs of size \fIcount\fP beginning at \fIouteruid\fP has been mapped to the block of user IDs beginning at \fIinneruid\fP. This mapping is created with \fBnewuidmap\fP(1). If the range of user IDs overlaps with the mapping specified by \fB\-\-map\-user\fP, then a "hole" will be removed from the mapping. This may result in the highest user ID of the mapping not being mapped. The special value \fBauto\fP will map the first block of user IDs owned by the effective user from \fI/etc/subuid\fP to a block starting at user ID 0. If this option is specified multiple times, the last occurrence takes precedence. This option implies \fB\-\-user\fP.
+Run the program only after the block of user IDs of size \fIcount\fP beginning at \fIouteruid\fP has been mapped to the block of user IDs beginning at \fIinneruid\fP. This mapping is created with \fBnewuidmap\fP(1) if \fBunshare\fP was run unprivileged. If the range of user IDs overlaps with the mapping specified by \fB\-\-map\-user\fP, then a "hole" will be removed from the mapping. This may result in the highest user ID of the mapping not being mapped. Use \fB\-\-map\-users\fP multiple times to map more than one block of user IDs. The special value \fBauto\fP will map the first block of user IDs owned by the effective user from \fI/etc/subuid\fP to a block starting at user ID 0. The special value \fBsubids\fP will identity map the same block. The special value \fBall\fP will create a pass\-through map for every user ID available in the parent namespace. This option implies \fB\-\-user\fP.
+.sp
+Before util\-linux version 2.39, this option expected a comma\-separated argument of the form \fIouteruid\fP\fB,\fP\fIinneruid\fP\fB,\fP\fIcount\fP but that format is now deprecated for consistency with the ordering used in \fI/proc/[pid]/uid_map\fP and the \fIX\-mount.idmap\fP mount option.
 .RE
 .sp
-\fB\-\-map\-group=\fP\fIgid|name\fP
+\fB\-\-map\-group\fP \fIgid\fP|\fIname\fP
 .RS 4
 Run the program only after the current effective group ID has been mapped to \fIgid\fP. If this option is specified multiple times, the last occurrence takes precedence. This option implies \fB\-\-setgroups=deny\fP and \fB\-\-user\fP.
 .RE
 .sp
-\fB\-\-map\-groups=\fP\fIoutergid,innergid,count\fP|\fBauto\fP
+\fB\-\-map\-groups\fP \fIinnergid\fP\fB:\fP\fIoutergid\fP\fB:\fP\fIcount\fP|\fBauto\fP|\fBsubids\fP|\fBall\fP
 .RS 4
-Run the program only after the block of group IDs of size \fIcount\fP beginning at \fIoutergid\fP has been mapped to the block of group IDs beginning at \fIinnergid\fP. This mapping is created with \fBnewgidmap\fP(1). If the range of group IDs overlaps with the mapping specified by \fB\-\-map\-group\fP, then a "hole" will be removed from the mapping. This may result in the highest group ID of the mapping not being mapped. The special value \fBauto\fP will map the first block of user IDs owned by the effective user from \fI/etc/subgid\fP to a block starting at group ID 0. If this option is specified multiple times, the last occurrence takes precedence. This option implies \fB\-\-user\fP.
+Run the program only after the block of group IDs of size \fIcount\fP beginning at \fIoutergid\fP has been mapped to the block of group IDs beginning at \fIinnergid\fP. This mapping is created with \fBnewgidmap\fP(1) if \fBunshare\fP was run unprivileged. If the range of group IDs overlaps with the mapping specified by \fB\-\-map\-group\fP, then a "hole" will be removed from the mapping. This may result in the highest group ID of the mapping not being mapped. Use \fB\-\-map\-groups\fP multiple times to map more than one block of group IDs. The special value \fBauto\fP will map the first block of user IDs owned by the effective user from \fI/etc/subgid\fP to a block starting at group ID 0. The special value \fBsubids\fP will identity map the same block. The special value \fBall\fP will create a pass\-through map for every group ID available in the parent namespace. This option implies \fB\-\-user\fP.
+.sp
+Before util\-linux version 2.39, this option expected a comma\-separated argument of the form \fIoutergid\fP\fB,\fP\fIinnergid\fP\fB,\fP\fIcount\fP but that format is now deprecated for consistency with the ordering used in \fI/proc/[pid]/gid_map\fP and the \fIX\-mount.idmap\fP mount option.
 .RE
 .sp
 \fB\-\-map\-auto\fP
 .RS 4
 Map the first block of user IDs owned by the effective user from \fI/etc/subuid\fP to a block starting at user ID 0. In the same manner, also map the first block of group IDs owned by the effective group from \fI/etc/subgid\fP to a block starting at group ID 0. This option is intended to handle the common case where the first block of subordinate user and group IDs can map the whole user and group ID space. This option is equivalent to specifying \fB\-\-map\-users=auto\fP and \fB\-\-map\-groups=auto\fP.
+.RE
+.sp
+\fB\-\-map\-subids\fP
+.RS 4
+Identity map the first block of user IDs owned by the effective user from \fI/etc/subuid\fP. In the same manner, also identity map the first block of group IDs owned by the effective group from \fI/etc/subgid\fP. This option is equivalent to specifying \fB\-\-map\-users=subids\fP and \fB\-\-map\-groups=subids\fP.
 .RE
 .sp
 \fB\-r\fP, \fB\-\-map\-root\-user\fP
@@ -182,24 +196,24 @@ Run the program only after the current effective user and group IDs have been ma
 Run the program only after the current effective user and group IDs have been mapped to the same UID and GID in the newly created user namespace. This option implies \fB\-\-setgroups=deny\fP and \fB\-\-user\fP. This option is equivalent to \fB\-\-map\-user=$(id \-ru) \-\-map\-group=$(id \-rg)\fP.
 .RE
 .sp
-\fB\-\-propagation private\fP|\fBshared\fP|\fBslave\fP|\fBunchanged\fP
+\fB\-\-propagation\fP \fBprivate\fP|\fBshared\fP|\fBslave\fP|\fBunchanged\fP
 .RS 4
 Recursively set the mount propagation flag in the new mount namespace. The default is to set the propagation to \fIprivate\fP. It is possible to disable this feature with the argument \fBunchanged\fP. The option is silently ignored when the mount namespace (\fB\-\-mount\fP) is not requested.
 .RE
 .sp
-\fB\-\-setgroups allow\fP|\fBdeny\fP
+\fB\-\-setgroups\fP \fBallow\fP|\fBdeny\fP
 .RS 4
 Allow or deny the \fBsetgroups\fP(2) system call in a user namespace.
 .sp
 To be able to call \fBsetgroups\fP(2), the calling process must at least have \fBCAP_SETGID\fP. But since Linux 3.19 a further restriction applies: the kernel gives permission to call \fBsetgroups\fP(2) only after the GID map (\fB/proc/\fP\fIpid\fP*/gid_map*) has been set. The GID map is writable by root when \fBsetgroups\fP(2) is enabled (i.e., \fBallow\fP, the default), and the GID map becomes writable by unprivileged processes when \fBsetgroups\fP(2) is permanently disabled (with \fBdeny\fP).
 .RE
 .sp
-\fB\-R\fP, \fB\-\-root=\fP\fIdir\fP
+\fB\-R\fP, \fB\-\-root\fP \fIdir\fP
 .RS 4
 run the command with root directory set to \fIdir\fP.
 .RE
 .sp
-\fB\-w\fP, \fB\-\-wd=\fP\fIdir\fP
+\fB\-w\fP, \fB\-\-wd\fP \fIdir\fP
 .RS 4
 change working directory to \fIdir\fP.
 .RE
@@ -212,6 +226,13 @@ Set the user ID which will be used in the entered namespace.
 \fB\-G\fP, \fB\-\-setgid\fP \fIgid\fP
 .RS 4
 Set the group ID which will be used in the entered namespace and drop supplementary groups.
+.RE
+.sp
+\fB\-l\fP, \fB\-\-load\-interp\fP \fIstring\fP
+.RS 4
+Load binfmt_misc definition in the namespace (implies \fB\-\-mount\-binfmt\fP). The \fIstring\fP argument is \f(CR:name:type:offset:magic:mask:interpreter:flags\fP. For more details about new binary type registration see  \c
+.URL "https://www.kernel.org/doc/Documentation/admin\-guide/binfmt\-misc.rst" "" "."
+To manage the F flag in \f(CRflags\fP with \fB\-\-root\fP parameter, binfmt_misc is mounted twice, once before the chroot to load the interpreter from the caller filesystem and once after to make it available from the chroot userspace.
 .RE
 .sp
 \fB\-\-monotonic\fP \fIoffset\fP
@@ -231,7 +252,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "NOTES"
 .sp
@@ -258,7 +279,7 @@ $ id \-u; id \-g
 1000
 1000
 $ unshare \-\-user \-\-map\-root\-user \(rs
-        sh \-c \(aq\(aqwhoami; cat /proc/self/uid_map /proc/self/gid_map\(aq\(aq
+        sh \-c \*(Aqwhoami; cat /proc/self/uid_map /proc/self/gid_map\*(Aq
 root
          0       1000          1
          0       1000          1
@@ -323,20 +344,17 @@ The following commands demonstrate the use of the \fB\-\-kill\-child\fP option w
 .if n .RS 4
 .nf
 .fam C
-# set +m                # Don\(aqt print job status messages
-
+# set +m                # Don\*(Aqt print job status messages
 
 # unshare \-\-pid \-\-fork \-\-mount\-proc \-\-kill\-child \-\- \(rs
-
-
-       bash \-\-norc \-c \(aq\(aq(sleep 555 &) && (ps a &) && sleep 999\(aq\(aq &
+       bash \-\-norc \-c \*(Aq(sleep 555 &) && (ps a &) && sleep 999\*(Aq &
 [1] 53456
 #     PID TTY      STAT   TIME COMMAND
       1 pts/3    S+     0:00 sleep 999
       3 pts/3    S+     0:00 sleep 555
       5 pts/3    R+     0:00 ps a
 
-# ps h \-o \(aqcomm\(aq $!     # Show that background job is unshare(1)
+# ps h \-o \*(Aqcomm\*(Aq $!     # Show that background job is unshare(1)
 unshare
 # kill $!               # Kill unshare(1)
 # pidof sleep
@@ -350,9 +368,7 @@ The \fBpidof\fP(1) command prints no output, because the \fBsleep\fP processes h
 .nf
 .fam C
 # unshare \-\-pid \-\-fork \-\-mount\-proc \-\- \(rs
-
-
-       bash \-\-norc \-c \(aq\(aq(sleep 555 &) && (ps a &) && sleep 999\(aq\(aq &
+       bash \-\-norc \-c \*(Aq(sleep 555 &) && (ps a &) && sleep 999\*(Aq &
 [1] 53479
 #     PID TTY      STAT   TIME COMMAND
       1 pts/3    S+     0:00 sleep 999
@@ -378,22 +394,66 @@ up 9 years, 28 weeks, 1 day, 2 hours, 50 minutes
 .fam
 .fi
 .if n .RE
+.sp
+The following example execute a chroot into the directory /chroot/powerpc/jessie and install the interpreter /bin/qemu\-ppc\-static to execute the powerpc binaries.
+.sp
+.if n .RS 4
+.nf
+.fam C
+$  unshare \-\-map\-root\-user \-\-fork \-\-pid \-\-load\-interp=":qemu\-ppc:M::\(rs\(rsx7fELF\(rsx01\(rs\(rsx02\(rs\(rsx01\(rs\(rsx00\(rs\(rsx00\(rs\(rsx00\(rs\(rsx00\(rs\(rsx00\(rs\(rsx00\(rs\(rsx00\(rs\(rsx00\(rs\(rsx00\(rs\(rsx00\(rs\(rsx02\(rs\(rsx00\(rs\(rsx14:\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsx00\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxfe\(rs\(rsxff\(rs\(rsxff:/bin/qemu\-ppc\-static:OCF" \-\-root=/chroot/powerpc/jessie /bin/bash \-l
+.fam
+.fi
+.if n .RE
+.sp
+The \f(CRload\-interp\fP parameter can be read as following
+.RS 4
+.sp
+\f(CRqemu\-ppc\fP
+.RS 4
+is the name of the new file created below \f(CR/proc/sys/fs/binfmt_misc\fP to register the interpreter
+.RE
+.sp
+\f(CRM\fP
+.RS 4
+defines the interpreter for a given type of magic number
+.RE
+.sp
+\f(CR\(rs\(rsx7fELF\(rsx01\(rs\(rsx02\(rs\(rsx01\(rs\(rsx00\(rs\(rsx00\(rs\(rsx00\(rs\(rsx00\(rs\(rsx00\(rs\(rsx00\(rs\(rsx00\(rs\(rsx00\(rs\(rsx00\(rs\(rsx00\(rs\(rsx02\(rs\(rsx00\(rs\(rsx1\fP
+.RS 4
+is the magic number to recognize the file to interpret (in this case, the ELF header for PPC32)
+.RE
+.sp
+\f(CR\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsx00\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxff\(rs\(rsxfe\(rs\(rsxff\(rs\(rsxff\fP
+.RS 4
+the mask to apply to the magic number
+.RE
+.sp
+\f(CR/bin/qemu\-ppc\-static\fP
+.RS 4
+the interpreter to use with the file
+.RE
+.sp
+\f(CROCF\fP
+.RS 4
+the file is open by the kernel with credential and security tokens of the file itself and loaded as soon as we register it.
+.RE
+.RE
 .SH "AUTHORS"
 .sp
 .MTO "dottedmag\(atdottedmag.net" "Mikhail Gusarov" ","
 .MTO "kzak\(atredhat.com" "Karel Zak" ""
 .SH "SEE ALSO"
 .sp
-\fBnewuidmap\fP(1)
-\fBnewgidmap\fP(1)
+\fBnewuidmap\fP(1),
+\fBnewgidmap\fP(1),
 \fBclone\fP(2),
 \fBunshare\fP(2),
 \fBnamespaces\fP(7),
 \fBmount\fP(8)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBunshare\fP command is part of the util\-linux package which can be downloaded from \c

@@ -14,6 +14,7 @@
 # GNU General Public License for more details.
 #
 
+TS_EXIT_NOTSUPP=2
 
 function ts_abspath {
 	cd $1
@@ -76,6 +77,9 @@ function ts_report {
 
 function ts_check_test_command {
 	case "$1" in
+	"")
+		ts_failed "invalid test_command requested"
+		;;
 	*/*)
 		# paths
 		if [ ! -x "$1" ]; then
@@ -98,6 +102,7 @@ function ts_check_test_command {
 
 function ts_check_prog {
 	local cmd=$1
+	[ -z "$cmd" ] && ts_failed "invalid prog requested"
 	type "$cmd" >/dev/null 2>&1 || ts_skip "missing in PATH: $cmd"
 }
 
@@ -117,6 +122,30 @@ function ts_check_losetup {
 	ts_skip "no loop-device support"
 }
 
+function ts_check_wcsspn {
+	# https://gitlab.com/qemu-project/qemu/-/issues/1248
+	if [ -e "$TS_HELPER_SYSINFO" ] &&
+		[ "$("$TS_HELPER_SYSINFO" wcsspn-ok)" = "0" ]; then
+
+		ts_skip "non-functional widestring functions"
+	fi
+}
+
+function ts_check_native_byteorder {
+	if [ "$QEMU_USER" == "1" ] && [ ! -e /sys/kernel/cpu_byteorder ]; then
+		ts_skip "non-native byteorder"
+	fi
+}
+
+function ts_check_enotty {
+	# https://lore.kernel.org/qemu-devel/20230426070659.80649-1-thomas@t-8ch.de/
+	if [ -e "$TS_HELPER_SYSINFO" ] &&
+		[ "$("$TS_HELPER_SYSINFO" enotty-ok)" = "0" ]; then
+
+		ts_skip "broken ENOTTY return"
+	fi
+}
+
 function ts_report_skip {
 	ts_report " SKIPPED ($1)"
 }
@@ -131,6 +160,24 @@ function ts_skip {
 function ts_skip_nonroot {
 	if [ $UID -ne 0 ]; then
 		ts_skip "no root permissions"
+	fi
+}
+
+# Specify the capability needed in your test case like:
+#
+#	ts_skip_capability cap_wake_alarm
+#
+function ts_skip_capability {
+	ts_check_test_command "$TS_HELPER_CAP"
+
+	if ! "$TS_HELPER_CAP" "$1"; then
+		ts_skip "no capability: $1"
+	fi
+}
+
+function ts_skip_qemu_user {
+	if [ "$QEMU_USER" == "1" ]; then
+		ts_skip "running under qemu-user emulation"
 	fi
 }
 
@@ -248,10 +295,10 @@ function ts_init_core_subtest_env {
 	TS_EXPECTED_ERR="$TS_TOPDIR/expected/$TS_NS.err"
 	TS_MOUNTPOINT="$TS_OUTDIR/${TS_TESTNAME}-${TS_SUBNAME}-mnt"
 
-	rm -f $TS_OUTPUT $TS_ERRLOG $TS_VGDUMP $TS_EXIT_CODE
+	rm -f "$TS_OUTPUT" "$TS_ERRLOG" "$TS_VGDUMP" "$TS_EXIT_CODE"
 	[ -d "$TS_OUTDIR" ]  || mkdir -p "$TS_OUTDIR"
 
-	touch $TS_OUTPUT $TS_ERRLOG $TS_EXIT_CODE
+	touch "$TS_OUTPUT" "$TS_ERRLOG" "$TS_EXIT_CODE"
 	[ -n "$TS_VALGRIND_CMD" ] && touch $TS_VGDUMP
 }
 
@@ -265,8 +312,13 @@ function ts_init_env {
 	CHARSET="UTF-8"
 	ASAN_OPTIONS="detect_leaks=0"
 	UBSAN_OPTIONS="print_stacktrace=1:print_summary=1:halt_on_error=1"
+	KERNEL_VERSION_XYZ=$(uname -r | awk -F- '{print $1}')
+	KERNEL_VERSION_MAJOR=$(echo "$KERNEL_VERSION_XYZ" | awk -F. '{print $1}')
+	KERNEL_VERSION_MINOR=$(echo "$KERNEL_VERSION_XYZ" | awk -F. '{print $2}')
+	KERNEL_RELEASE=$(echo "$KERNEL_VERSION_XYZ" | awk -F. '{print $3}')
 
-	export LANG LANGUAGE LC_ALL CHARSET ASAN_OPTIONS UBSAN_OPTIONS
+	export LANG LANGUAGE LC_ALL CHARSET ASAN_OPTIONS UBSAN_OPTIONS \
+	       KERNEL_VERSION_XYZ KERNEL_VERSION_MAJOR KERNEL_VERSION_MINOR KERNEL_RELEASE
 
 	mydir=$(ts_canonicalize "$mydir")
 
@@ -351,6 +403,7 @@ function ts_init_env {
 		TS_ENABLE_UBSAN="yes"
 	fi
 
+	TS_FSTAB="$TS_OUTDIR/${TS_TESTNAME}.fstab"
 	BLKID_FILE="$TS_OUTDIR/${TS_TESTNAME}.blkidtab"
 
 	declare -a TS_SUID_PROGS
@@ -429,7 +482,7 @@ function ts_init_suid {
 	TS_SUID_USER[$ct]=$(stat --printf="%U" $PROG)
 	TS_SUID_GROUP[$ct]=$(stat --printf="%G" $PROG)
 
-	chown root.root $PROG &> /dev/null
+	chown root:root $PROG &> /dev/null
 	chmod u+s $PROG &> /dev/null
 }
 
@@ -494,19 +547,19 @@ function ts_gen_diff_from {
 	local output="$2"
 	local difffile="$3"
 
-	diff -u $expected $output > $difffile
+	diff -u "$expected" "$output" > "$difffile"
 
-	if [ $? -ne 0 ] || [ -s $difffile ]; then
+	if [ $? -ne 0 ] || [ -s "$difffile" ]; then
 		res=1
 		if [ "$TS_SHOWDIFF" == "yes" -a "$TS_KNOWN_FAIL" != "yes" ]; then
 			echo
 			echo "diff-{{{"
-			cat $difffile
+			cat "$difffile"
 			echo "}}}-diff"
 			echo
 		fi
 	else
-		rm -f $difffile;
+		rm -f "$difffile";
 	fi
 
 	return $res
@@ -521,8 +574,8 @@ function ts_gen_diff {
 	[ -f "$TS_EXPECTED" ] || TS_EXPECTED=/dev/null
 
 	# remove libtool lt- prefixes
-	sed --in-place 's/^lt\-\(.*\: \)/\1/g' $TS_OUTPUT
-	sed --in-place 's/^lt\-\(.*\: \)/\1/g' $TS_ERRLOG
+	sed --in-place 's/^lt\-\(.*\: \)/\1/g' "$TS_OUTPUT"
+	sed --in-place 's/^lt\-\(.*\: \)/\1/g' "$TS_ERRLOG"
 
 	[ -d "$TS_DIFFDIR" ] || mkdir -p "$TS_DIFFDIR"
 
@@ -531,10 +584,10 @@ function ts_gen_diff {
 	[ -f "$TS_ERRLOG" ] || TS_ERRLOG=/dev/null
 
 	if [ "$TS_COMPONENT" != "fuzzers" ]; then
-		ts_gen_diff_from $TS_EXPECTED $TS_OUTPUT $TS_DIFF
+		ts_gen_diff_from "$TS_EXPECTED" "$TS_OUTPUT" "$TS_DIFF"
 		status_out=$?
 
-		ts_gen_diff_from $TS_EXPECTED_ERR $TS_ERRLOG $TS_DIFF.err
+		ts_gen_diff_from "$TS_EXPECTED_ERR" "$TS_ERRLOG" "$TS_DIFF.err"
 		status_err=$?
 	else
 		# TS_EXIT_CODE is empty when tests aren't run with ts_run: https://github.com/util-linux/util-linux/issues/1072
@@ -545,8 +598,8 @@ function ts_gen_diff {
 		fi
 
 		if [ $exit_code -ne 0 ]; then
-			ts_gen_diff_from $TS_EXPECTED $TS_OUTPUT $TS_DIFF
-			ts_gen_diff_from $TS_EXPECTED_ERR $TS_ERRLOG $TS_DIFF.err
+			ts_gen_diff_from "$TS_EXPECTED" "$TS_OUTPUT" "$TS_DIFF"
+			ts_gen_diff_from "$TS_EXPECTED_ERR" "$TS_ERRLOG" "$TS_DIFF.err"
 		fi
 	fi
 
@@ -593,6 +646,27 @@ function ts_skip_subtest {
 
 }
 
+# Specify the kernel version X.Y.Z you wish to compare against like:
+#
+#	ts_kernel_ver_lt X Y Z
+#
+function ts_kernel_ver_lt {
+	if [ $KERNEL_VERSION_MAJOR -lt $1 ]; then
+		return 0
+	elif [ $KERNEL_VERSION_MAJOR -eq $1 ]; then
+		if [ $KERNEL_VERSION_MINOR -lt $2 ]; then
+			return 0
+		elif [ $KERNEL_VERSION_MINOR -eq $2 ]; then
+			if [ $KERNEL_RELEASE -lt $3 ]; then
+				return 0
+			fi
+		fi
+
+	fi
+
+	return 1
+}
+
 function ts_finalize {
 	ts_cleanup_on_exit
 
@@ -618,7 +692,7 @@ function ts_cleanup_on_exit {
 	for idx in $(seq 0 $((${#TS_SUID_PROGS[*]} - 1))); do
 		PROG=${TS_SUID_PROGS[$idx]}
 		chmod a-s $PROG &> /dev/null
-		chown ${TS_SUID_USER[$idx]}.${TS_SUID_GROUP[$idx]} $PROG &> /dev/null
+		chown ${TS_SUID_USER[$idx]}:${TS_SUID_GROUP[$idx]} $PROG &> /dev/null
 	done
 
 	for dev in "${TS_LOOP_DEVS[@]}"; do
@@ -654,7 +728,7 @@ function ts_device_init {
 	local dev
 
 	img=$(ts_image_init $1 $2)
-	dev=$($TS_CMD_LOSETUP --show -f "$img")
+	dev=$($TS_CMD_LOSETUP --show --partscan -f "$img")
 	if [ "$?" != "0" -o "$dev" = "" ]; then
 		ts_die "Cannot init device"
 	fi
@@ -740,9 +814,24 @@ function ts_device_has {
 	return $res
 }
 
+# Based on __SYSMACROS_DEFINE_MAKEDEV macro
+# defined in /usr/include/bits/sysmacros.h of GNU libc.
+function ts_makedev
+{
+	local major="$1"
+	local minor="$2"
+	local dev
+
+	dev=$((      ( major & 0x00000fff ) <<  8))
+	dev=$((dev | ( major & 0xfffff000 ) << 32))
+	dev=$((dev | ( minor & 0x000000ff ) <<  0))
+	dev=$((dev | ( minor & 0xffffff00 ) << 12))
+	echo $dev
+}
+
 function ts_is_uuid()
 {
-	printf "%s\n" "$1" | egrep -q '^[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}$'
+	printf "%s\n" "$1" | grep -E -q '^[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}$'
 	return $?
 }
 
@@ -789,12 +878,12 @@ function ts_is_mounted {
 }
 
 function ts_fstab_open {
-	echo "# <!-- util-linux test entry" >> /etc/fstab
+	echo "# <!-- util-linux test entry" >> "$TS_FSTAB"
 }
 
 function ts_fstab_close {
-	echo "# -->" >> /etc/fstab
-	sync /etc/fstab 2>/dev/null
+	echo "# -->" >> "$TS_FSTAB"
+	sync "$TS_FSTAB" 2>/dev/null
 }
 
 function ts_fstab_addline {
@@ -803,7 +892,7 @@ function ts_fstab_addline {
 	local FS=${3:-"auto"}
 	local OPT=${4:-"defaults"}
 
-	echo "$SPEC   $MNT   $FS   $OPT   0   0" >> /etc/fstab
+	echo "$SPEC   $MNT   $FS   $OPT   0   0" >> "$TS_FSTAB"
 }
 
 function ts_fstab_lock {
@@ -827,9 +916,9 @@ function ts_fstab_clean {
   ba
 }
 s/# <!-- util-linux.*-->//;
-/^$/d" /etc/fstab
+/^$/d" "$TS_FSTAB"
 
-	sync /etc/fstab 2>/dev/null
+	sync "$TS_FSTAB" 2>/dev/null
 	ts_unlock "fstab"
 }
 
@@ -838,7 +927,9 @@ function ts_fdisk_clean {
 
 	# remove non comparable parts of fdisk output
 	if [ -n "${DEVNAME}" ]; then
-		sed -i -e "s@${DEVNAME}@<removed>@;" $TS_OUTPUT $TS_ERRLOG
+		# escape "@" with "\@" in $DEVNAME. This way sed correctly
+		# replaces paths containing "@" characters
+		sed -i -e "s@${DEVNAME//\@/\\\@}@<removed>@;" $TS_OUTPUT $TS_ERRLOG
 	fi
 
 	sed -i \
@@ -1073,15 +1164,6 @@ function ts_init_socket_to_file {
 	fi
 }
 
-function ts_has_mtab_support {
-	grep -q '#define USE_LIBMOUNT_SUPPORT_MTAB' ${top_builddir}/config.h
-	if [ $? == 0 ]; then
-		echo "yes"
-	else
-		echo "no"
-	fi
-}
-
 function ts_has_ncurses_support {
 	grep -q '#define HAVE_LIBNCURSES' ${top_builddir}/config.h
 	if [ $? == 0 ]; then
@@ -1103,4 +1185,45 @@ function ts_get_asan_rt_path {
 	if [ -n "$rt_path" -a -f "$rt_path" ]; then
 		echo "$rt_path"
 	fi
+}
+
+function ts_skip_exitcode_not_supported {
+	if [ $? -eq $TS_EXIT_NOTSUPP ]; then
+		ts_skip "functionality not implemented by system"
+	fi
+}
+
+function ts_inhibit_custom_colorscheme {
+	export XDG_CONFIG_HOME=/dev/null
+}
+
+function ts_is_virt {
+	type "systemd-detect-virt" >/dev/null 2>&1
+	if [ $? -ne 0 ]; then
+		return 1
+	fi
+
+	virt="$(systemd-detect-virt)"
+	for arg in "$@"; do
+		if [ "$virt" = "$arg" ]; then
+			return 0;
+		fi
+	done
+	return 1
+}
+
+function ts_check_enosys_syscalls {
+	ts_check_test_command "$TS_CMD_ENOSYS"
+	"$TS_CMD_ENOSYS" ${@/#/-s } true 2> /dev/null
+	[ $? -ne 0 ] && ts_skip "test_enosys does not work: $*"
+}
+
+function ts_skip_docker {
+	test -e /.dockerenv && ts_skip "unsupported in docker environment"
+}
+
+function ts_check_ipv6 {
+       if [ ! -e /proc/net/if_inet6 ]; then
+               ts_skip "IPv6 is not supported"
+       fi
 }

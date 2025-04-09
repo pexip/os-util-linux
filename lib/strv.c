@@ -1,6 +1,8 @@
 /*
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  *
- * Copyright 2010 Lennart Poettering
+ * Copyright (C) 2010 Lennart Poettering
+ * Copyright (C) 2015-2022 Karel Zak <kzak@redhat.com>
  *
  * This is free software; you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by
@@ -72,7 +74,7 @@ unsigned strv_length(char * const *l) {
         return n;
 }
 
-char **strv_new_ap(const char *x, va_list ap) {
+static char **strv_new_ap(const char *x, va_list ap) {
         const char *s;
         char **a;
         unsigned n = 0, i = 0;
@@ -263,7 +265,7 @@ int strv_push(char ***l, char *value) {
         if (m < n)
                 return -ENOMEM;
 
-        c = realloc(*l, sizeof(char *) * m);
+        c = reallocarray(*l, m, sizeof(char *));
         if (!c)
                 return -ENOMEM;
 

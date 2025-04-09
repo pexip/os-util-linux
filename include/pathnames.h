@@ -108,6 +108,9 @@
 #define _PATH_PROC_SETGROUPS	"/proc/self/setgroups"
 
 #define _PATH_PROC_FDDIR	"/proc/self/fd"
+#define _PATH_PROC_TIMENS_OFF   "/proc/self/timens_offsets"
+
+#define _PATH_PROC_OOM_ADJ	"/proc/self/oom_score_adj"
 
 #define _PATH_PROC_ATTR_CURRENT	"/proc/self/attr/current"
 #define _PATH_PROC_ATTR_EXEC	"/proc/self/attr/exec"
@@ -119,6 +122,8 @@
 #define _PATH_SYS_DEVCHAR	"/sys/dev/char"
 #define _PATH_SYS_CLASS		"/sys/class"
 #define _PATH_SYS_SCSI		"/sys/bus/scsi"
+#define _PATH_SYS_CPU_BYTEORDER	"/sys/kernel/cpu_byteorder"
+#define _PATH_SYS_ADDRESS_BITS	"/sys/kernel/address_bits"
 
 #define _PATH_SYS_SELINUX	"/sys/fs/selinux"
 #define _PATH_SYS_APPARMOR	"/sys/kernel/security/apparmor"
@@ -141,7 +146,7 @@
 
 #ifndef _PATH_DEV
   /*
-   * The tailing '/' in _PATH_DEV is there for compatibility with libc.
+   * The trailing '/' in _PATH_DEV is there for compatibility with libc.
    */
 # define _PATH_DEV		"/dev/"
 #endif
@@ -182,7 +187,7 @@
 
 #define _PATH_PROC_KERNEL	"/proc/sys/kernel"
 
-/* ipc paths */
+/* System V ipc paths */
 #define _PATH_PROC_SYSV_MSG	"/proc/sysvipc/msg"
 #define _PATH_PROC_SYSV_SEM	"/proc/sysvipc/sem"
 #define _PATH_PROC_SYSV_SHM	"/proc/sysvipc/shm"
@@ -197,6 +202,18 @@
 /* util clamp */
 #define _PATH_PROC_UCLAMP_MIN	_PATH_PROC_KERNEL "/sched_util_clamp_min"
 #define _PATH_PROC_UCLAMP_MAX	_PATH_PROC_KERNEL "/sched_util_clamp_max"
+
+/* sysctl fs paths */
+#define _PATH_PROC_SYS_FS	"/proc/sys/fs"
+#define _PATH_PROC_PIPE_MAX_SIZE	_PATH_PROC_SYS_FS "/pipe-max-size"
+#define _PATH_PROC_BINFMT_MISC	_PATH_PROC_SYS_FS "/binfmt_misc"
+
+/* Posix ipc paths */
+#define _PATH_DEV_MQUEUE	"/dev/mqueue"
+#define _PATH_PROC_POSIX_IPC_MSGMAX _PATH_PROC_SYS_FS "/mqueue/msgsize_max"
+#define _PATH_PROC_POSIX_IPC_MSGMNB _PATH_PROC_SYS_FS "/mqueue/msg_max"
+#define _PATH_PROC_POSIX_IPC_MSGMNI _PATH_PROC_SYS_FS "/mqueue/queues_max"
+#define _PATH_DEV_SHM	"/dev/shm"
 
 /* irqtop paths */
 #define _PATH_PROC_INTERRUPTS	"/proc/interrupts"
@@ -220,5 +237,17 @@
 #define _PATH_DEV_RFKILL	"/dev/rfkill"
 #define _PATH_SYS_RFKILL	"/sys/class/rfkill"
 
+/* cgroup path */
+#define _PATH_SYS_CGROUP	"/sys/fs/cgroup"
+
+/* Maximum number of PIDs system supports */
+#define _PATH_PROC_PIDMAX	"/proc/sys/kernel/pid_max"
+
+/* econf path */
+#if USE_VENDORDIR
+# define UL_VENDORDIR_PATH      _PATH_VENDORDIR
+#else
+# define UL_VENDORDIR_PATH      NULL
+#endif
 
 #endif /* PATHNAMES_H */

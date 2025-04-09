@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include <pwd.h>
 #include <grp.h>
+#include <libgen.h>
 #include <security/pam_appl.h>
 #ifdef HAVE_SECURITY_PAM_MISC_H
 # include <security/pam_misc.h>
@@ -68,6 +69,7 @@
 
 #include "logindefs.h"
 #include "su-common.h"
+#include "shells.h"
 
 #include "debug.h"
 
@@ -142,29 +144,28 @@ struct su_context {
 	pid_t		child;			/* fork() baby */
 	int		childstatus;		/* wait() status */
 
-	char		**env_whitelist_names;	/* environment whitelist */
-	char		**env_whitelist_vals;
+	struct ul_env_list *env_whitelist;	/* environment whitelist */
 
 	struct sigaction oldact[SIGNALS_IDX_COUNT];	/* original sigactions indexed by SIG*_IDX */
 #ifdef USE_PTY
 	struct ul_pty	*pty;			/* pseudo terminal handler (for --pty) */
 #endif
-	unsigned int runuser :1,		/* flase=su, true=runuser */
-		     runuser_uopt :1,		/* runuser -u specified */
-		     isterm :1,			/* is stdin terminal? */
-		     fast_startup :1,		/* pass the `-f' option to the subshell. */
-		     simulate_login :1,		/* simulate a login instead of just starting a shell. */
-		     change_environment :1,	/* change some environment vars to indicate the user su'd to.*/
-		     same_session :1,		/* don't call setsid() with a command. */
-		     suppress_pam_info:1,	/* don't print PAM info messages (Last login, etc.). */
-		     pam_has_session :1,	/* PAM session opened */
-		     pam_has_cred :1,		/* PAM cred established */
-		     force_pty :1,		/* create pseudo-terminal */
-		     restricted :1;		/* false for root user */
+	bool		runuser,		/* flase=su, true=runuser */
+			runuser_uopt,		/* runuser -u specified */
+			isterm,			/* is stdin terminal? */
+			fast_startup,		/* pass the `-f' option to the subshell. */
+			simulate_login,		/* simulate a login instead of just starting a shell. */
+			change_environment,	/* change some environment vars to indicate the user su'd to.*/
+			same_session,		/* don't call setsid() with a command. */
+			suppress_pam_info,	/* don't print PAM info messages (Last login, etc.). */
+			pam_has_session,	/* PAM session opened */
+			pam_has_cred,		/* PAM cred established */
+			force_pty,		/* create pseudo-terminal */
+			restricted;		/* false for root user */
 };
 
 
-static sig_atomic_t volatile caught_signal = false;
+static sig_atomic_t volatile caught_signal = 0;
 
 /* Signal handler for parent process.  */
 static void
@@ -288,7 +289,7 @@ static void log_syslog(struct su_context *su, bool successful)
 {
 	DBG(LOG, ul_debug("syslog logging"));
 
-	openlog(program_invocation_short_name, LOG_PID, LOG_AUTH);
+	openlog(su->runuser ? "runuser" : "su", LOG_PID, LOG_AUTH);
 	syslog(LOG_NOTICE, "%s(to %s) %s on %s",
 	       successful ? "" :
 	       su->runuser ? "FAILED RUNUSER " : "FAILED SU ",
@@ -342,6 +343,8 @@ static int supam_conv(	int num_msg,
 	return misc_conv(num_msg, msg, resp, data);
 #elif defined(HAVE_SECURITY_OPENPAM_H)
 	return openpam_ttyconv(num_msg, msg, resp, data);
+#else
+	return PAM_CONV_ERR;
 #endif
 }
 
@@ -379,6 +382,7 @@ static void supam_export_environment(struct su_context *su)
 static void supam_authenticate(struct su_context *su)
 {
 	const char *srvname = NULL;
+	const char *pam_user = NULL;
 	int rc;
 
 	srvname = su->runuser ?
@@ -419,6 +423,18 @@ static void supam_authenticate(struct su_context *su)
 	rc = pam_acct_mgmt(su->pamh, 0);
 	if (rc == PAM_NEW_AUTHTOK_REQD)
 		rc = pam_chauthtok(su->pamh, PAM_CHANGE_EXPIRED_AUTHTOK);
+	if (is_pam_failure(rc))
+		goto done;
+
+	rc = pam_get_item(su->pamh, PAM_USER, (const void **) &pam_user);
+	if (is_pam_failure(rc))
+		goto done;
+
+	if (pam_user == NULL || strcmp(pam_user, su->pwd->pw_name) != 0) {
+		rc = PAM_USER_UNKNOWN;
+		goto done;
+	}
+
  done:
 	log_syslog(su, !is_pam_failure(rc));
 
@@ -443,9 +459,10 @@ static void supam_open_session(struct su_context *su)
 
 	rc = pam_open_session(su->pamh, 0);
 	if (is_pam_failure(rc)) {
+		const char *msg = pam_strerror(su->pamh, rc);
+
 		supam_cleanup(su, rc);
-		errx(EXIT_FAILURE, _("cannot open session: %s"),
-		     pam_strerror(su->pamh, rc));
+		errx(EXIT_FAILURE, _("cannot open session: %s"), msg);
 	} else
 		su->pam_has_session = 1;
 }
@@ -542,6 +559,8 @@ static void create_watching_parent(struct su_context *su)
 		/* create pty */
 		if (ul_pty_setup(su->pty))
 			err(EXIT_FAILURE, _("failed to create pseudo-terminal"));
+		if (ul_pty_signals_setup(su->pty))
+			err(EXIT_FAILURE, _("failed to initialize signals handler"));
 	}
 #endif
 	fflush(stdout);			/* ??? */
@@ -656,56 +675,6 @@ static void create_watching_parent(struct su_context *su)
 	exit(status);
 }
 
-/* Adds @name from the current environment to the whitelist. If @name is not
- * set then nothing is added to the whitelist and returns 1.
- */
-static int env_whitelist_add(struct su_context *su, const char *name)
-{
-	const char *env = getenv(name);
-
-	if (!env)
-		return 1;
-	if (strv_extend(&su->env_whitelist_names, name))
-                err_oom();
-	if (strv_extend(&su->env_whitelist_vals, env))
-                err_oom();
-	return 0;
-}
-
-static int env_whitelist_setenv(struct su_context *su, int overwrite)
-{
-	char **one;
-	size_t i = 0;
-	int rc;
-
-	STRV_FOREACH(one, su->env_whitelist_names) {
-		rc = setenv(*one, su->env_whitelist_vals[i], overwrite);
-		if (rc)
-			return rc;
-		i++;
-	}
-
-	return 0;
-}
-
-/* Creates (add to) whitelist from comma delimited string */
-static int env_whitelist_from_string(struct su_context *su, const char *str)
-{
-	char **all = strv_split(str, ",");
-	char **one;
-
-	if (!all) {
-		if (errno == ENOMEM)
-			err_oom();
-		return -EINVAL;
-	}
-
-	STRV_FOREACH(one, all)
-		env_whitelist_add(su, *one);
-	strv_free(all);
-	return 0;
-}
-
 static void setenv_path(const struct passwd *pw)
 {
 	int rc;
@@ -736,12 +705,12 @@ static void modify_environment(struct su_context *su, const char *shell)
 	 */
 	if (su->simulate_login) {
 		/* leave TERM unchanged */
-		env_whitelist_add(su, "TERM");
+		su->env_whitelist = env_list_add_getenv(su->env_whitelist, "TERM", NULL);
 
 		/* Note that original su(1) has allocated environ[] by malloc
 		 * to the number of expected variables. This seems unnecessary
 		 * optimization as libc later re-alloc(current_size+2) and for
-		 * empty environ[] the curren_size is zero. It seems better to
+		 * empty environ[] the current_size is zero. It seems better to
 		 * keep all logic around environment in glibc's hands.
 		 *                                           --kzak [Aug 2018]
 		 */
@@ -761,7 +730,8 @@ static void modify_environment(struct su_context *su, const char *shell)
 		xsetenv("LOGNAME", pw->pw_name, 1);
 
 		/* apply all from whitelist, but no overwrite */
-		env_whitelist_setenv(su, 0);
+		if (env_list_setenv(su->env_whitelist, 0) != 0)
+			err(EXIT_FAILURE, _("failed to set environment variables"));
 
 	/* Set HOME, SHELL, and (if not becoming a superuser) USER and LOGNAME.
 	 */
@@ -780,6 +750,9 @@ static void modify_environment(struct su_context *su, const char *shell)
 	}
 
 	supam_export_environment(su);
+
+	env_list_free(su->env_whitelist);
+	su->env_whitelist = NULL;
 }
 
 static void init_groups(struct su_context *su, gid_t *groups, size_t ngroups)
@@ -829,23 +802,25 @@ static void run_shell(
 	size_t n_args = 1 + su->fast_startup + 2 * ! !command + n_additional_args + 1;
 	const char **args = xcalloc(n_args, sizeof *args);
 	size_t argno = 1;
+	char *tmp;
 
 	DBG(MISC, ul_debug("starting shell [shell=%s, command=\"%s\"%s%s]",
 				shell, command,
 				su->simulate_login ? " login" : "",
 				su->fast_startup ? " fast-start" : ""));
+	tmp = xstrdup(shell);
 
 	if (su->simulate_login) {
 		char *arg0;
 		char *shell_basename;
 
-		shell_basename = basename(shell);
+		shell_basename = basename(tmp);
 		arg0 = xmalloc(strlen(shell_basename) + 2);
 		arg0[0] = '-';
 		strcpy(arg0 + 1, shell_basename);
 		args[0] = arg0;
 	} else
-		args[0] = basename(shell);
+		args[0] = basename(tmp);
 
 	if (su->fast_startup)
 		args[argno++] = "-f";
@@ -865,18 +840,14 @@ static void run_shell(
  */
 static bool is_restricted_shell(const char *shell)
 {
-	char *line;
-
-	setusershell();
-	while ((line = getusershell()) != NULL) {
-		if (*line != '#' && !strcmp(line, shell)) {
-			endusershell();
-			return false;
-		}
+	if (is_known_shell(shell)) {
+		return false;
 	}
-	endusershell();
-
+#ifdef USE_VENDORDIR
+	DBG(MISC, ul_debug("%s is restricted shell (not in e.g. vendor shells file, /etc/shells, ...)", shell));
+#else
 	DBG(MISC, ul_debug("%s is restricted shell (not in /etc/shells)", shell));
+#endif
 	return true;
 }
 
@@ -897,6 +868,7 @@ static void usage_common(void)
 	fputs(_(" -f, --fast                      pass -f to the shell (for csh or tcsh)\n"), stdout);
 	fputs(_(" -s, --shell <shell>             run <shell> if /etc/shells allows it\n"), stdout);
 	fputs(_(" -P, --pty                       create a new pseudo-terminal\n"), stdout);
+	fputs(_(" -T, --no-pty                    do not create a new pseudo-terminal (bad security!)\n"), stdout);
 
 	fputs(USAGE_SEPARATOR, stdout);
 	printf(USAGE_HELP_OPTIONS(33));
@@ -1018,7 +990,7 @@ static gid_t add_supp_group(const char *name, gid_t **groups, size_t *ngroups)
 
 	DBG(MISC, ul_debug("add %s group [name=%s, GID=%d]", name, gr->gr_name, (int) gr->gr_gid));
 
-	*groups = xrealloc(*groups, sizeof(gid_t) * (*ngroups + 1));
+	*groups = xreallocarray(*groups, *ngroups + 1, sizeof(gid_t));
 	(*groups)[*ngroups] = gr->gr_gid;
 	(*ngroups)++;
 
@@ -1052,6 +1024,7 @@ int su_main(int argc, char **argv, int mode)
 		{"login", no_argument, NULL, 'l'},
 		{"preserve-environment", no_argument, NULL, 'p'},
 		{"pty", no_argument, NULL, 'P'},
+		{"no-pty", no_argument, NULL, 'T'},
 		{"shell", required_argument, NULL, 's'},
 		{"group", required_argument, NULL, 'g'},
 		{"supp-group", required_argument, NULL, 'G'},
@@ -1077,7 +1050,7 @@ int su_main(int argc, char **argv, int mode)
 	su->conv.appdata_ptr = (void *) su;
 
 	while ((optc =
-		getopt_long(argc, argv, "c:fg:G:lmpPs:u:hVw:", longopts,
+		getopt_long(argc, argv, "c:fg:G:lmpPTs:u:hVw:", longopts,
 			    NULL)) != -1) {
 
 		err_exclusive_options(optc, longopts, excl, excl_st);
@@ -1116,7 +1089,7 @@ int su_main(int argc, char **argv, int mode)
 			break;
 
 		case 'w':
-			env_whitelist_from_string(su, optarg);
+			su->env_whitelist = env_list_add_getenvs(su->env_whitelist, optarg);
 			break;
 
 		case 'P':
@@ -1125,6 +1098,10 @@ int su_main(int argc, char **argv, int mode)
 #else
 			errx(EXIT_FAILURE, _("--pty is not supported for your system"));
 #endif
+			break;
+
+		case 'T':
+			su->force_pty = 0;
 			break;
 
 		case 's':

@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: lslocks
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "LSLOCKS" "8" "2022-05-11" "util\-linux 2.38.1" "System Administration"
+.TH "LSLOCKS" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -35,8 +35,6 @@ lslocks \- list local system locks
 .SH "DESCRIPTION"
 .sp
 \fBlslocks\fP lists information about all the currently held file locks in a Linux system.
-.sp
-Note that lslocks also lists OFD (Open File Description) locks, these locks are not associated with any process (PID is \-1). OFD locks are associated with the open file description on which they are acquired. This lock type is available since Linux 3.15, see \fBfcntl\fP(2) for more details.
 .SH "OPTIONS"
 .sp
 \fB\-b\fP, \fB\-\-bytes\fP
@@ -48,6 +46,11 @@ power of 2^10 (1024). Abbreviations of symbols are exhibited truncated in order
 to reach a better readability, by exhibiting alone the first letter of them;
 examples: "1 KiB" and "1 MiB" are respectively exhibited as "1 K" and "1 M",
 then omitting on purpose the mention "iB", which is part of these abbreviations.
+.RE
+.sp
+\fB\-H\fP, \fB\-\-list\-columns\fP
+.RS 4
+List the available columns, use with \fB\-\-json\fP or \fB\-\-raw\fP to get output in machine\-readable format.
 .RE
 .sp
 \fB\-i\fP, \fB\-\-noinaccessible\fP
@@ -99,7 +102,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "OUTPUT"
 .sp
@@ -110,12 +113,12 @@ The command name of the process holding the lock.
 .sp
 PID
 .RS 4
-The process ID of the process which holds the lock or \-1 for OFDLCK.
+The process ID of the process.
 .RE
 .sp
 TYPE
 .RS 4
-The type of lock; can be FLOCK (created with \fBflock\fP(2)), POSIX (created with \fBfcntl\fP(2) and \fBlockf\fP(3)) or OFDLCK (created with \fBfcntl\fP(2)).
+The type of lock; can be LEASE (created with \fBfcntl\fP(2)), FLOCK (created with \fBflock\fP(2)), POSIX (created with \fBfcntl\fP(2) and \fBlockf\fP(3)) or OFDLCK (created with \fBfcntl\fP(2)).
 .RE
 .sp
 SIZE
@@ -123,9 +126,19 @@ SIZE
 Size of the locked file.
 .RE
 .sp
+INODE
+.RS 4
+The inode number.
+.RE
+.sp
+MAJ:MIN
+.RS 4
+The major:minor device number.
+.RE
+.sp
 MODE
 .RS 4
-The lock\(cqs access permissions (read, write). If the process is blocked and waiting for the lock, then the mode is postfixed with an \(aq*\(aq (asterisk).
+The lock\(cqs access permissions (read, write). If the process is blocked and waiting for the lock, then the mode is postfixed with an \*(Aq*\*(Aq (asterisk).
 .RE
 .sp
 M
@@ -152,11 +165,25 @@ BLOCKER
 .RS 4
 The PID of the process which blocks the lock.
 .RE
+.sp
+HOLDERS
+.RS 4
+The holder(s) of the lock.  The format of the holder is \fIPID\fP,\fICOMMAND\fP,\fIFD\fP.
+If a lock is an open file description\-oriented lock, there can be more than one holder for the lock.
+See the NOTES below.
+.RE
 .SH "NOTES"
 .sp
 The \fBlslocks\fP command is meant to replace the \fBlslk\fP(8) command, originally written by \c
 .MTO "abe\(atpurdue.edu" "Victor A. Abell" ""
 and unmaintained since 2001.
+.sp
+"The process holding the lock" for leases, FLOCK locks, and
+OFD locks is a fake\-concept.  They are associated with the open file
+description on which they are acquired.  With \fBfork\fP(2) and/or
+\fBcmsg\fP(3), multiple processes can share an open file description. So
+the holder process of a lease (or a lock) is not uniquely determined.
+\fBlslocks\fP shows the one of the holder processes in COMMAND and PID columns.
 .SH "AUTHORS"
 .sp
 .MTO "dave\(atgnu.org" "Davidlohr Bueso" ""
@@ -167,8 +194,8 @@ and unmaintained since 2001.
 \fBlockf\fP(3)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBlslocks\fP command is part of the util\-linux package which can be downloaded from \c

@@ -18,7 +18,7 @@ hardlink - link multiple copies of a file
 
 == SYNOPSIS
 
-*hardlink* [options] [_directory_|_file_]...
+*hardlink* [options] _directory_|_file_...
 
 == DESCRIPTION
 
@@ -40,16 +40,87 @@ are very often different from the beginning.
 
 == OPTIONS
 
-include::man-common/help-version.adoc[]
+*-c*, *--content*::
+Consider only file content, not attributes, when determining whether two files are equal. Same as *-pot*.
 
-*-v*, *--verbose*::
-Verbose output, explain to the user what is being done. If specified once, every hardlinked file is displayed. If specified twice, it also shows every comparison.
+*-b*, *--io-size* _size_::
+The size of the *read*(2) or *sendfile*(2) buffer used when comparing file contents.
+The _size_ argument may be followed by the multiplicative suffixes KiB, MiB,
+etc.  The "iB" is optional, e.g., "K" has the same meaning as "KiB". The
+default is 8KiB for memcmp method and 1MiB for the other methods. The only
+memcmp method uses process memory for the buffer, other methods use zero-copy
+way and I/O operation is done in the kernel. The size may be altered on the fly
+to fit a number of cached content checksums.
+
+*-d*, *--respect-dir*::
+Only try to link files with the same directory name. The top-level directory (as specified on the *hardlink* command line) is ignored. For example, *hardlink --respect-dir /foo /bar* will link _/foo/some/file_ with _/bar/some/file_, but not _/bar/other/file_. If combined with *--respect-name*, then entire paths (except the top-level directory) are compared.
+
+*-f*, *--respect-name*::
+Only try to link files with the same (base)name. It's strongly recommended to use long options rather than *-f* which is interpreted in a different way by other *hardlink* implementations.
+
+*-F*, *--prioritize-trees*::
+Keep files found in the earliest specified top-level directory if there are multiple identical files in different trees.
+For example, *hardlink foo/ bar/* will link files in bar/ to equal files in the foo/ directory.
+
+*-i*, *--include* _regex_::
+A regular expression to include files. If the option *--exclude* has been given, this option re-includes files which would otherwise be excluded. If the option is used without *--exclude*, only files matched by the pattern are included.
+
+*-m*, *--maximize*::
+Among equal files, keep the file with the highest link count.
+
+*-M*, *--minimize*::
+Among equal files, keep the file with the lowest link count.
+
+*-n*, *--dry-run*::
+Do not act, just print what would happen.
+
+*-l*, *--list-duplicates*::
+Don't link anything, but list the absolute path of every duplicate file, one per line, preceded by a unique 16-byte discriminator and a tab.
+
+*-z*, *--zero*::
+Separate lines with a NUL instead of a newline in *-l* mode.
+
+*-o*, *--ignore-owner*::
+Link and compare files even if their owner information (user and group) differs. Results may be unpredictable.
+
+*-O*, *--keep-oldest*::
+Among equal files, keep the oldest file (least recent modification time). By default, the newest file is kept. If *--maximize* or *--minimize* is specified, the link count has a higher precedence than the time of modification.
+
+*-p*, *--ignore-mode*::
+Link and compare files even if their mode is different. Results may be slightly unpredictable.
 
 *-q*, *--quiet*::
 Quiet mode, don't print anything.
 
-*-n*, *--dry-run*::
-Do not act, just print what would happen.
+*-r*, *--cache-size* _size_::
+The size of the cache for content checksums. All non-memcmp methods calculate checksum for each
+file content block (see *--io-size*), these checksums are cached for the next comparison. The
+size is important for large files or a large sets of files of the same size. The default is
+10MiB.
+
+*-s*, *--minimum-size* _size_::
+The minimum size to consider. By default this is 1, so empty files will not be linked. The _size_ argument may be followed by the multiplicative suffixes KiB (=1024), MiB (=1024*1024), and so on for GiB, TiB, PiB, EiB, ZiB and YiB (the "iB" is optional, e.g., "K" has the same meaning as "KiB").
+
+*-S*, *--maximum-size* _size_::
+The maximum size to consider. By default this is 0 and 0 has the special meaning of unlimited. The _size_ argument may be followed by the multiplicative suffixes KiB (=1024), MiB (=1024*1024), and so on for GiB, TiB, PiB, EiB, ZiB and YiB (the "iB" is optional, e.g., "K" has the same meaning as "KiB").
+
+*-t*, *--ignore-time*::
+Link and compare files even if their time of modification is different. This is usually a good choice.
+
+*-v*, *--verbose*::
+Verbose output, explain to the user what is being done. If specified once, every hardlinked file is displayed. If specified twice, it also shows every comparison.
+
+*-x*, *--exclude* _regex_::
+A regular expression that excludes files from being compared and linked. This option can be used multiple times.
+
+*--exclude-subtree* _regex_::
+A regular expression that excludes entire directories from being compared and linked. This option can also be used multiple times.
+
+*--mount*::
+Do not traverse directories on different filesystems (remain within the same filesystem).
+
+*-X*, *--respect-xattrs*::
+Only try to link files with the same extended attributes.
 
 *-y*, *--method* _name_::
 Set the file content comparison method. The currently supported methods are
@@ -58,7 +129,7 @@ Crypto API is not available. The methods based on checksums are implemented in
 zero-copy way, in this case file contents are not copied to the userspace and all
 calculation is done in kernel.
 
-*--reflink*[=_when_]::
+*--reflink*[**=**_when_]::
 Create copy-on-write clones (aka reflinks) rather than hardlinks. The reflinked files
 share only on-disk data, but the file mode and owner can be different. It's recommended
 to use it with *--ignore-owner* and *--ignore-mode* options. This option implies
@@ -73,59 +144,7 @@ only reflinks are allowed.
 *--skip-reflinks*::
 Ignore already cloned files. This option may be used without *--reflink* when creating classic hardlinks.
 
-*-f*, *--respect-name*::
-Only try to link files with the same (base)name. It's strongly recommended to use long options rather than *-f* which is interpreted in a different way by other *hardlink* implementations.
-
-*-p*, *--ignore-mode*::
-Link and compare files even if their mode is different. Results may be slightly unpredictable.
-
-*-o*, *--ignore-owner*::
-Link and compare files even if their owner information (user and group) differs. Results may be unpredictable.
-
-*-t*, *--ignore-time*::
-Link and compare files even if their time of modification is different. This is usually a good choice.
-
-*-c* *--content*::
-Consider only file content, not attributes, when determining whether two files are equal. Same as *-pot*.
-
-*-X*, *--respect-xattrs*::
-Only try to link files with the same extended attributes.
-
-*-m*, *--maximize*::
-Among equal files, keep the file with the highest link count.
-
-*-M*, *--minimize*::
-Among equal files, keep the file with the lowest link count.
-
-*-O*, *--keep-oldest*::
-Among equal files, keep the oldest file (least recent modification time). By default, the newest file is kept. If *--maximize* or *--minimize* is specified, the link count has a higher precedence than the time of modification.
-
-*-x*, *--exclude* _regex_::
-A regular expression which excludes files from being compared and linked.
-
-*-i*, *--include* _regex_::
-A regular expression to include files. If the option *--exclude* has been given, this option re-includes files which would otherwise be excluded. If the option is used without *--exclude*, only files matched by the pattern are included.
-
-*-s*, *--minimum-size* _size_::
-The minimum size to consider. By default this is 1, so empty files will not be linked. The _size_ argument may be followed by the multiplicative suffixes KiB (=1024), MiB (=1024*1024), and so on for GiB, TiB, PiB, EiB, ZiB and YiB (the "iB" is optional, e.g., "K" has the same meaning as "KiB").
-
-*-S*, *--maximum-size* _size_::
-The maximum size to consider. By default this is 0 and 0 has the special meaning of unlimited. The _size_ argument may be followed by the multiplicative suffixes KiB (=1024), MiB (=1024*1024), and so on for GiB, TiB, PiB, EiB, ZiB and YiB (the "iB" is optional, e.g., "K" has the same meaning as "KiB").
-
-*-b*, *--io-size* _size_::
-The size of the *read*(2) or *sendfile*(2) buffer used when comparing file contents.
-The _size_ argument may be followed by the multiplicative suffixes KiB, MiB,
-etc.  The "iB" is optional, e.g., "K" has the same meaning as "KiB". The
-default is 8KiB for memcmp method and 1MiB for the other methods. The only
-memcmp method uses process memory for the buffer, other methods use zero-copy
-way and I/O operation is done in the kernel. The size may be altered on the fly
-to fit a number of cached content checksums.
-
-*-r*, *--cache-size* _size_::
-The size of the cache for content checksums. All non-memcmp methods calculate checksum for each
-file content block (see *--io-size*), these checksums are cached for the next comparison. The
-size is important for large files or a large sets of files of the same size. The default is
-10MiB.
+include::man-common/help-version.adoc[]
 
 == ARGUMENTS
 

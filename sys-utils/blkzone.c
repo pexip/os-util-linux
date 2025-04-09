@@ -149,7 +149,7 @@ static int init_device(struct blkzone_control *ctl, int mode)
 		errx(EXIT_FAILURE, _("%s: not a block device"), ctl->devname);
 
 	if (blkdev_get_sectors(fd, (unsigned long long *) &ctl->total_sectors))
-		err(EXIT_FAILURE, _("%s: blkdev_get_sectors ioctl failed"), ctl->devname);
+		err(EXIT_FAILURE, _("%s: failed to get number of sectors"), ctl->devname);
 
 	if (blkdev_get_sector_size(fd, &ctl->secsize))
 		err(EXIT_FAILURE, _("%s: BLKSSZGET ioctl failed"), ctl->devname);
@@ -207,14 +207,14 @@ done:
  */
 #define DEF_REPORT_LEN		(1U << 12) /* 4k zones per report (256k kzalloc) */
 
-static const char *type_text[] = {
+static const char *const type_text[] = {
 	"RESERVED",
 	"CONVENTIONAL",
 	"SEQ_WRITE_REQUIRED",
 	"SEQ_WRITE_PREFERRED",
 };
 
-static const char *condition_str[] = {
+static const char *const condition_str[] = {
 	"nw", /* Not write pointer */
 	"em", /* Empty */
 	"oi", /* Implicitly opened */
@@ -271,19 +271,12 @@ static int blkzone_report(struct blkzone_control *ctl)
 			break;
 
 		for (i = 0; i < zi->nr_zones; i++) {
-/*
- * blk_zone_report hasn't been packed since https://github.com/torvalds/linux/commit/b3e7e7d2d668de0102264302a4d10dd9d4438a42
- * was merged. See https://github.com/util-linux/util-linux/issues/1083
- */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
-			const struct blk_zone *entry = &zi->zones[i];
-#pragma GCC diagnostic pop
-			unsigned int type = entry->type;
-			uint64_t start = entry->start;
-			uint64_t wp = entry->wp;
-			uint8_t cond = entry->cond;
-			uint64_t len = entry->len;
+			const struct blk_zone entry = zi->zones[i];
+			unsigned int type = entry.type;
+			uint64_t start = entry.start;
+			uint64_t wp = entry.wp;
+			uint8_t cond = entry.cond;
+			uint64_t len = entry.len;
 			uint64_t cap;
 
 			if (!len) {
@@ -292,9 +285,9 @@ static int blkzone_report(struct blkzone_control *ctl)
 			}
 
 			if (has_zone_capacity(zi))
-				cap = zone_capacity(entry);
+				cap = zone_capacity(&entry);
 			else
-				cap = entry->len;
+				cap = entry.len;
 
 			if (only_capacity_sum) {
 				capacity_sum += cap;
@@ -303,7 +296,7 @@ static int blkzone_report(struct blkzone_control *ctl)
 					", cap 0x%06"PRIx64", wptr 0x%06"PRIx64
 					" reset:%u non-seq:%u, zcond:%2u(%s) [type: %u(%s)]\n"),
 					start, len, cap, (type == 0x1) ? 0 : wp - start,
-					entry->reset, entry->non_seq,
+					entry.reset, entry.non_seq,
 					cond, condition_str[cond & (ARRAY_SIZE(condition_str) - 1)],
 					type, type_text[type]);
 			} else {
@@ -311,7 +304,7 @@ static int blkzone_report(struct blkzone_control *ctl)
 					", wptr 0x%06"PRIx64
 					" reset:%u non-seq:%u, zcond:%2u(%s) [type: %u(%s)]\n"),
 					start, len, (type == 0x1) ? 0 : wp - start,
-					entry->reset, entry->non_seq,
+					entry.reset, entry.non_seq,
 					cond, condition_str[cond & (ARRAY_SIZE(condition_str) - 1)],
 					type, type_text[type]);
 			}
@@ -347,7 +340,7 @@ static int blkzone_action(struct blkzone_control *ctl)
 
 	fd = init_device(ctl, O_WRONLY | (ctl->force ? 0 : O_EXCL));
 
-	if (ctl->offset & (zonesize - 1))
+	if (ctl->offset % zonesize )
 		errx(EXIT_FAILURE, _("%s: offset %" PRIu64 " is not aligned "
 			"to zone size %lu"),
 			ctl->devname, ctl->offset, zonesize);
@@ -365,7 +358,7 @@ static int blkzone_action(struct blkzone_control *ctl)
 		zlen = ctl->total_sectors - ctl->offset;
 
 	if (ctl->length &&
-	    (zlen & (zonesize - 1)) &&
+	   (zlen % zonesize) &&
 	    ctl->offset + zlen != ctl->total_sectors)
 		errx(EXIT_FAILURE, _("%s: number of sectors %" PRIu64 " is not aligned "
 			"to zone size %lu"),
@@ -409,12 +402,12 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -f, --force            enforce on block devices used by the system\n"), out);
 	fputs(_(" -v, --verbose          display more details\n"), out);
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(24));
+	fprintf(out, USAGE_HELP_OPTIONS(24));
 
 	fputs(USAGE_ARGUMENTS, out);
-	printf(USAGE_ARG_SIZE(_("<sector> and <sectors>")));
+	fprintf(out, USAGE_ARG_SIZE(_("<sector> and <sectors>")));
 
-	printf(USAGE_MAN_TAIL("blkzone(8)"));
+	fprintf(out, USAGE_MAN_TAIL("blkzone(8)"));
 	exit(EXIT_SUCCESS);
 }
 

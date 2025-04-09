@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * mkcramfs - make a cramfs file system
  *
  * Copyright (C) 1999-2002 Transmeta Corporation
@@ -44,6 +46,7 @@
  */
 #include <zlib.h>
 
+#include "blkdev.h"
 #include "c.h"
 #include "cramfs.h"
 #include "md5.h"
@@ -125,26 +128,28 @@ struct entry {
 static void __attribute__((__noreturn__)) usage(void)
 {
 	fputs(USAGE_HEADER, stdout);
-	printf(_(" %s [-h] [-v] [-b blksize] [-e edition] [-N endian] [-i file] [-n name] dirname outfile\n"),
+	fprintf(stdout, _(" %s [-h] [-v] [-b blksize] [-e edition] [-N endian] [-i file] [-n name] dirname outfile\n"),
 		program_invocation_short_name);
 	fputs(USAGE_SEPARATOR, stdout);
-	puts(_("Make compressed ROM file system."));
+	fputsln(_("Make compressed ROM file system."), stdout);
 	fputs(USAGE_OPTIONS, stdout);
-	puts(_(  " -v             be verbose"));
-	puts(_(  " -E             make all warnings errors (non-zero exit status)"));
-	puts(_(  " -b blksize     use this blocksize, must equal page size"));
-	puts(_(  " -e edition     set edition number (part of fsid)"));
-	printf(_(" -N endian      set cramfs endianness (%s|%s|%s), default %s\n"), "big", "little", "host", "host");
-	puts(_(  " -i file        insert a file image into the filesystem"));
-	puts(_(  " -n name        set name of cramfs filesystem"));
-	printf(_(" -p             pad by %d bytes for boot code\n"), PAD_SIZE);
-	puts(_(  " -s             sort directory entries (old option, ignored)"));
-	puts(_(  " -z             make explicit holes"));
-	puts(_(  " dirname        root of the filesystem to be compressed"));
-	puts(_(  " outfile        output file"));
+	fputsln(_(  " -v             be verbose"), stdout);
+	fputsln(_(  " -E             make all warnings errors (non-zero exit status)"), stdout);
+	fputsln(_(  " -b blksize     use this blocksize, must equal page size"), stdout);
+	fputsln(_(  " -e edition     set edition number (part of fsid)"), stdout);
+	fprintf(stdout, _(" -N endian      set cramfs endianness (%s|%s|%s), default %s\n"), "big", "little", "host", "host");
+	fputsln(_(  " -i file        insert a file image into the filesystem"), stdout);
+	fputsln(_(  " -n name        set name of cramfs filesystem"), stdout);
+	fprintf(stdout, _(" -p             pad by %d bytes for boot code\n"), PAD_SIZE);
+	fputsln(_(  " -s             sort directory entries (old option, ignored)"), stdout);
+	fputsln(_(  " -z             make explicit holes"), stdout);
+	fputsln(_(  " -l[=<mode>]    use exclusive device lock (yes, no or nonblock)"), stdout);
 	fputs(USAGE_SEPARATOR, stdout);
-	printf(USAGE_HELP_OPTIONS(16));
-	printf(USAGE_MAN_TAIL("mkfs.cramfs(8)"));
+	fputsln(_(  " dirname        root of the filesystem to be compressed"), stdout);
+	fputsln(_(  " outfile        output file"), stdout);
+	fputs(USAGE_SEPARATOR, stdout);
+	fprintf(stdout, USAGE_HELP_OPTIONS(16));
+	fprintf(stdout, USAGE_MAN_TAIL("mkfs.cramfs(8)"));
 	exit(MKFS_EX_OK);
 }
 
@@ -493,7 +498,7 @@ static unsigned int write_directory_structure(struct entry *entry, char *base, u
 			if (entry->child) {
 				if (stack_entries >= stack_size) {
 					stack_size *= 2;
-					entry_stack = xrealloc(entry_stack, stack_size * sizeof(struct entry *));
+					entry_stack = xreallocarray(entry_stack, stack_size, sizeof(struct entry *));
 				}
 				entry_stack[stack_entries] = entry;
 				stack_entries++;
@@ -707,6 +712,7 @@ int main(int argc, char **argv)
 	loff_t fslen_ub = sizeof(struct cramfs_super);
 	unsigned int fslen_max;
 	char const *dirname, *outfile;
+	char *lockmode = 0;
 	uint32_t crc = crc32(0L, NULL, 0);
 	int c;
 	cramfs_is_big_endian = HOST_IS_BIG_ENDIAN; /* default is to use host order */
@@ -730,7 +736,7 @@ int main(int argc, char **argv)
 	strutils_set_exitcode(MKFS_EX_USAGE);
 
 	/* command line options */
-	while ((c = getopt(argc, argv, "hb:Ee:i:n:N:psVvz")) != EOF) {
+	while ((c = getopt(argc, argv, "hb:Ee:i:n:N:l::psVvz")) != EOF) {
 		switch (c) {
 		case 'h':
 			usage();
@@ -760,6 +766,14 @@ int main(int argc, char **argv)
 				err(MKFS_EX_USAGE, _("stat of %s failed"), opt_image);
 			image_length = st.st_size; /* may be padded later */
 			fslen_ub += (image_length + 3); /* 3 is for padding */
+			break;
+		case 'l':
+                        lockmode = "1";
+			if (optarg) {
+                                if (*optarg == '=')
+					optarg++;
+				lockmode = optarg;
+			}
 			break;
 		case 'n':
 			opt_name = optarg;
@@ -799,6 +813,9 @@ int main(int argc, char **argv)
 	fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0666);
 	if (fd < 0)
 		err(MKFS_EX_USAGE, _("cannot open %s"), outfile);
+
+        if (blkdev_lock(fd, outfile, lockmode) != 0)
+		exit(MKFS_EX_ERROR);
 
 	root_entry = xcalloc(1, sizeof(struct entry));
 	root_entry->mode = st.st_mode;

@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: chcpu
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "CHCPU" "8" "2022-05-11" "util\-linux 2.38.1" "System Administration"
+.TH "CHCPU" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -61,6 +61,10 @@ Enable the specified CPUs. Enabling a CPU means that the kernel sets it online. 
 \fB\-g\fP, \fB\-\-deconfigure\fP \fIcpu\-list\fP
 .RS 4
 Deconfigure the specified CPUs. Deconfiguring a CPU means that the hypervisor removes the CPU from the virtual hardware on which the Linux instance runs and returns it to the CPU pool. A CPU must be offline, see \fB\-d\fP, before it can be deconfigured.
+.sp
+\fBchcpu \-g\fP is not supported on IBM z/VM, CPUs are always in a configured state.
+.sp
+if \fBchcpu \-g\fP is supported, any \fBdisabled\fP CPUs should be \fBdeconfigured\fP to inform the hypervisor that these CPUs won\(cqt be used, avoiding potential performance penalties.
 .RE
 .sp
 \fB\-p\fP, \fB\-\-dispatch\fP \fImode\fP
@@ -90,7 +94,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "EXIT STATUS"
 .sp
@@ -121,8 +125,8 @@ Copyright IBM Corp. 2011
 \fBlscpu\fP(1)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBchcpu\fP command is part of the util\-linux package which can be downloaded from \c

@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: mkswap
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "MKSWAP" "8" "2022-05-11" "util\-linux 2.38.1" "System Administration"
+.TH "MKSWAP" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,14 +31,16 @@
 mkswap \- set up a Linux swap area
 .SH "SYNOPSIS"
 .sp
-\fBmkswap\fP [options] \fIdevice\fP [\fIsize\fP]
+\fBmkswap\fP [options] \fIdevice\fP [\fIblocks\fP]
+.sp
+\fBmkswap\fP [options] \-\-size \fIsize\fP \-\-file \fIfile\fP
 .SH "DESCRIPTION"
 .sp
 \fBmkswap\fP sets up a Linux swap area on a device or in a file.
 .sp
 The \fIdevice\fP argument will usually be a disk partition (something like \fI/dev/sdb7\fP) but can also be a file. The Linux kernel does not look at partition IDs, but many installation scripts will assume that partitions of hex type 82 (LINUX_SWAP) are meant to be swap partitions. (\fBWarning: Solaris also uses this type. Be careful not to kill your Solaris partitions.\fP)
 .sp
-The \fIsize\fP parameter is superfluous but retained for backwards compatibility. (It specifies the desired size of the swap area in 1024\-byte blocks. \fBmkswap\fP will use the entire partition or file if it is omitted. Specifying it is unwise \- a typo may destroy your disk.)
+The \fIblocks\fP parameter is superfluous but retained for backwards compatibility. (It specifies the desired size of the swap area in 1024\-byte blocks. \fBmkswap\fP will use the entire partition or file if it is omitted. Specifying it is unwise \- a typo may destroy your disk.)
 .sp
 After creating the swap area, you need the \fBswapon\fP(8) command to start using it. Usually swap areas are listed in \fI/etc/fstab\fP so that they can be taken into use at boot time by a \fBswapon \-a\fP command in some boot script.
 .SH "WARNING"
@@ -53,6 +55,11 @@ However, \fBmkswap\fP refuses to erase the first block on a device with a disk l
 \fB\-c\fP, \fB\-\-check\fP
 .RS 4
 Check the device (if it is a block device) for bad blocks before creating the swap area. If any bad blocks are found, the count is printed.
+.RE
+.sp
+\fB\-F\fP, \fB\-\-file\fP
+.RS 4
+Create a swap file with the appropriate file permissions and populated blocks on disk.
 .RE
 .sp
 \fB\-f\fP, \fB\-\-force\fP
@@ -72,7 +79,7 @@ Suppress output and warning messages.
 Specify a \fIlabel\fP for the device, to allow \fBswapon\fP(8) by label.
 .RE
 .sp
-\fB\-\-lock\fP[=\fImode\fP]
+\fB\-\-lock\fP[\fB=\fP\fImode\fP]
 .RS 4
 Use exclusive BSD lock for device or file it operates. The optional argument \fImode\fP can be \fByes\fP, \fBno\fP (or 1 and 0) or \fBnonblock\fP. If the \fImode\fP argument is omitted, it defaults to \fByes\fP. This option overwrites environment variable \fB$LOCK_BLOCK_DEVICE\fP. The default is not to use any lock at all, but it\(cqs recommended to avoid collisions with \fBsystemd\-udevd\fP(8) or other tools.
 .RE
@@ -104,6 +111,21 @@ generate a new time\-based UUID
 .RE
 .RE
 .sp
+\fB\-e\fP, \fB\-\-endianness\fP \fIENDIANNESS\fP
+.RS 4
+Specify the \fIENDIANNESS\fP to use, valid arguments are \fBnative\fP, \fBlittle\fP or \fBbig\fP. The default is \fBnative\fP.
+.RE
+.sp
+\fB\-o\fP, \fB\-\-offset\fP \fIoffset\fP
+.RS 4
+Specify the \fIoffset\fP to write the swap area to.
+.RE
+.sp
+\fB\-s\fP, \fB\-\-size\fP \fIsize\fP
+.RS 4
+Specify the size of the created swap file in bytes and may be followed by a multiplicative suffix: KiB (=1024), MiB (=1024*1024), and so on for GiB, TiB, PiB, EiB, ZiB and YiB (the "iB" is optional, e.g., "K" has the same meaning as "KiB"). If the file exists and is larger than \fIsize\fP, it will be truncated to this size. This option only makes sense when used with \fB\-\-file\fP.
+.RE
+.sp
 \fB\-v\fP, \fB\-\-swapversion 1\fP
 .RS 4
 Specify the swap\-space version. (This option is currently pointless, as the old \fB\-v 0\fP option has become obsolete and now only \fB\-v 1\fP is supported. The kernel has not supported v0 swap\-space format since 2.5.22 (June 2002). The new version v1 is supported since 2.1.117 (August 1998).)
@@ -121,7 +143,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "ENVIRONMENT"
 .sp
@@ -146,7 +168,9 @@ Presently, Linux allows 32 swap areas. The areas in use can be seen in the file 
 .sp
 If you don\(cqt know the page size that your machine uses, you can look it up with \fBgetconf PAGESIZE\fP.
 .sp
-To set up a swap file, it is necessary to create that file before initializing it with \fBmkswap\fP, e.g. using a command like
+Aside from \fBmkswap \-\-file\fP, it is also possible to create the swapfile manually before initializing it with \fBmkswap\fP, e.g. using a command like
+.sp
+Since version 2.41, \fBmkswap \-\-file\fP sets the nocow attribute for newly created files to support swapfiles on Btrfs.
 .sp
 .if n .RS 4
 .nf
@@ -158,15 +182,15 @@ To set up a swap file, it is necessary to create that file before initializing i
 .sp
 to create 8GiB swapfile.
 .sp
-Please read notes from \fBswapon\fP(8) about \fBthe swap file use restrictions\fP (holes, preallocation and copy\-on\-write issues).
+In such a case, please read notes from \fBswapon\fP(8) about \fBthe swap file use restrictions\fP (holes, preallocation and copy\-on\-write issues).
 .SH "SEE ALSO"
 .sp
 \fBfdisk\fP(8),
 \fBswapon\fP(8)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBmkswap\fP command is part of the util\-linux package which can be downloaded from \c

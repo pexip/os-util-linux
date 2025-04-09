@@ -46,6 +46,7 @@
 
 #include <ctype.h>		/* for isdigit() */
 #include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -66,12 +67,16 @@
 /* partial success, otherwise we return regular EXIT_{SUCCESS,FAILURE} */
 #define KILL_EXIT_SOMEOK	64
 
+#if defined(HAVE_PIDFD_OPEN) && defined(HAVE_PIDFD_SEND_SIGNAL)
+# define USE_KILL_WITH_TIMEOUT 1
+#endif
+
 enum {
 	KILL_FIELD_WIDTH = 11,
 	KILL_OUTPUT_WIDTH = 72
 };
 
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 # include <poll.h>
 # include "list.h"
 struct timeouts {
@@ -88,35 +93,98 @@ struct kill_control {
 #ifdef HAVE_SIGQUEUE
 	union sigval sigdata;
 #endif
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 	struct list_head follow_ups;
 #endif
-	unsigned int
-		check_all:1,
-		do_kill:1,
-		do_pid:1,
-		use_sigval:1,
-#ifdef UL_HAVE_PIDFD
-		timeout:1,
+	bool	check_all,
+		do_kill,
+		do_pid,
+		require_handler,
+		use_sigval,
+#ifdef USE_KILL_WITH_TIMEOUT
+		timeout,
 #endif
-		verbose:1;
+		verbose;
 };
 
-static void print_signal_name(int signum)
+static void print_signal_name(int signum, bool newline)
 {
 	const char *name = signum_to_signame(signum);
+	const char *eol = newline? "\n": "";
 
 	if (name) {
-		printf("%s\n", name);
+		printf("%s%s", name, eol);
 		return;
 	}
 #ifdef SIGRTMIN
 	if (SIGRTMIN <= signum && signum <= SIGRTMAX) {
-		printf("RT%d\n", signum - SIGRTMIN);
+		printf("RT%d%s", signum - SIGRTMIN, eol);
 		return;
 	}
 #endif
-	printf("%d\n", signum);
+	printf("%d%s", signum, eol);
+}
+
+static void print_signal_mask(uint64_t sigmask, const char sep)
+{
+	for (size_t i = 0; i < sizeof(sigmask) * 8; i++) {
+		if ((((uint64_t)0x1) << i) & sigmask) {
+			const int signum = i + 1;
+			print_signal_name(signum, false);
+			putchar(sep);
+		}
+	}
+}
+
+static void print_process_signal_state(pid_t pid)
+{
+	struct path_cxt *pc = NULL;
+	FILE *fp;
+	char buf[BUFSIZ];
+
+	static const struct sigfield {
+		char *key;
+		char *label;
+	} sigfields[] = {
+		{ "SigPnd:\t", N_("Pending (thread)")  },
+		{ "ShdPnd:\t", N_("Pending (process)") },
+		{ "SigBlk:\t", N_("Blocked")           },
+		{ "SigIgn:\t", N_("Ignored")           },
+		{ "SigCgt:\t", N_("Caught")            },
+	};
+
+	pc = ul_new_procfs_path(pid, NULL);
+	if (!pc)
+		err(EXIT_FAILURE, _("failed to initialize procfs handler"));
+	fp = ul_path_fopen(pc, "r", "status");
+	if (!fp)
+		err(EXIT_FAILURE, _("cannot open /proc/%d/status"), pid);
+
+	while (fgets(buf, sizeof(buf), fp) != NULL) {
+		for (size_t i = 0; i < ARRAY_SIZE(sigfields); i++) {
+			const char *key = sigfields[i].key;
+			size_t keylen = strlen(key);
+
+			if (strncmp(buf, key, keylen) == 0) {
+				char *val = buf + keylen;
+				uint64_t sigmask;
+
+				rtrim_whitespace((unsigned char*)val);
+				if (ul_strtou64(val, &sigmask, 16) < 0) {
+					warnx( _("unexpected sigmask format: %s (%s)"), val, key);
+					continue;
+				}
+				if (sigmask != 0) {
+					printf("%s: ", _(sigfields[i].label));
+					print_signal_mask(sigmask, ' ');
+					putchar('\n');
+				}
+			}
+		}
+	}
+
+	fclose(fp);
+	ul_unref_path(pc);
 }
 
 static void pretty_print_signal(FILE *fp, size_t term_width, size_t *lpos,
@@ -205,29 +273,34 @@ static void __attribute__((__noreturn__)) usage(void)
 #ifdef HAVE_SIGQUEUE
 	fputs(_(" -q, --queue <value>    use sigqueue(2), not kill(2), and pass <value> as data\n"), out);
 #endif
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 	fputs(_("     --timeout <milliseconds> <follow-up signal>\n"
 		"                        wait up to timeout and send follow-up signal\n"), out);
 #endif
 	fputs(_(" -p, --pid              print pids without signaling them\n"), out);
-	fputs(_(" -l, --list[=<signal>]  list signal names, or convert a signal number to a name\n"), out);
+	fputs(_(" -l, --list[=<signal>|=0x<sigmask>]\n"
+		"                        list signal names, convert a signal number to a name,\n"
+		"                         or convert a signal mask to names\n"), out);
 	fputs(_(" -L, --table            list signal names and numbers\n"), out);
+	fputs(_(" -r, --require-handler  do not send signal if signal handler is not present\n"), out);
+	fputs(_(" -d, --show-process-state <pid>\n"
+		"                        show signal related fields in /proc/<pid>/status\n"), out);
 	fputs(_("     --verbose          print pids that will be signaled\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(24));
-	printf(USAGE_MAN_TAIL("kill(1)"));
+	fprintf(out, USAGE_HELP_OPTIONS(24));
+	fprintf(out, USAGE_MAN_TAIL("kill(1)"));
 
 	exit(EXIT_SUCCESS);
 }
 
 static void __attribute__((__noreturn__)) print_kill_version(void)
 {
-	static const char *features[] = {
+	static const char *const features[] = {
 #ifdef HAVE_SIGQUEUE
 		"sigqueue",
 #endif
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 		"pidfd",
 #endif
 	};
@@ -284,23 +357,60 @@ static char **parse_arguments(int argc, char **argv, struct kill_control *ctl)
 				errx(EXIT_FAILURE, _("too many arguments"));
 			/* argc == 2, accept "kill -l $?" */
 			arg = argv[1];
+			if (arg[0] == '0' && arg[1] == 'x') {
+				uint64_t sigmask;
+				if (ul_strtou64(arg + 2, &sigmask, 16) < 0)
+					errx(EXIT_FAILURE, _("invalid sigmask format: %s"), arg);
+				print_signal_mask(sigmask, '\n');
+				exit(EXIT_SUCCESS);
+			}
 			if ((ctl->numsig = arg_to_signum(arg, 1)) < 0)
 				errx(EXIT_FAILURE, _("unknown signal: %s"),
 				     arg);
-			print_signal_name(ctl->numsig);
+			print_signal_name(ctl->numsig, true);
 			exit(EXIT_SUCCESS);
 		}
 		/* for compatibility with procps kill(1) */
 		if (!strncmp(arg, "--list=", 7) || !strncmp(arg, "-l=", 3)) {
 			char *p = strchr(arg, '=') + 1;
+			if (p[0] == '0' && p[1] == 'x') {
+				uint64_t sigmask;
+				if (ul_strtou64(p + 2, &sigmask, 16) < 0)
+					errx(EXIT_FAILURE, _("invalid sigmask format: %s"), p);
+				print_signal_mask(sigmask, '\n');
+				exit(EXIT_SUCCESS);
+			}
 			if ((ctl->numsig = arg_to_signum(p, 1)) < 0)
 				errx(EXIT_FAILURE, _("unknown signal: %s"), p);
-			print_signal_name(ctl->numsig);
+			print_signal_name(ctl->numsig, true);
 			exit(EXIT_SUCCESS);
 		}
 		if (!strcmp(arg, "-L") || !strcmp(arg, "--table")) {
 			print_all_signals(stdout, 1);
 			exit(EXIT_SUCCESS);
+		}
+		if (!strcmp(arg, "-d") || !strcmp(arg, "--show-process-state")) {
+			pid_t pid;
+			if (argc < 2)
+				errx(EXIT_FAILURE, _("too few arguments"));
+			if (2 < argc)
+				errx(EXIT_FAILURE, _("too many arguments"));
+			arg = argv[1];
+			pid = strtopid_or_err(arg, _("invalid pid argument"));
+			print_process_signal_state(pid);
+			exit(EXIT_SUCCESS);
+		}
+		if (!strncmp(arg, "-d=", 3) || !strncmp(arg, "--show-process-state=", 21)) {
+			pid_t pid;
+			char *p = strchr(arg, '=') + 1;
+
+			pid = strtopid_or_err(p, _("invalid pid argument"));
+			print_process_signal_state((pid_t)pid);
+			exit(EXIT_SUCCESS);
+		}
+		if (!strcmp(arg, "-r") || !strcmp(arg, "--require-handler")) {
+			ctl->require_handler = 1;
+			continue;
 		}
 		if (!strcmp(arg, "-p") || !strcmp(arg, "--pid")) {
 			ctl->do_pid = 1;
@@ -337,7 +447,7 @@ static char **parse_arguments(int argc, char **argv, struct kill_control *ctl)
 			continue;
 		}
 #endif
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 		if (!strcmp(arg, "--timeout")) {
 			struct timeouts *next;
 
@@ -379,7 +489,7 @@ static char **parse_arguments(int argc, char **argv, struct kill_control *ctl)
 	return argv;
 }
 
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 static int kill_with_timeout(const struct kill_control *ctl)
 {
 	int pfd, n;
@@ -431,7 +541,7 @@ static int kill_verbose(const struct kill_control *ctl)
 		printf("%ld\n", (long) ctl->pid);
 		return 0;
 	}
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 	if (ctl->timeout) {
 		rc = kill_with_timeout(ctl);
 	} else
@@ -448,6 +558,32 @@ static int kill_verbose(const struct kill_control *ctl)
 	return rc;
 }
 
+static int check_signal_handler(const struct kill_control *ctl)
+{
+	uintmax_t sigcgt = 0;
+	int rc = 0, has_hnd = 0;
+	struct path_cxt *pc;
+
+	if (!ctl->require_handler)
+		return 1;
+
+	pc = ul_new_procfs_path(ctl->pid, NULL);
+	if (!pc)
+		return -ENOMEM;
+
+	rc = procfs_process_get_stat_nth(pc, 34, &sigcgt);
+	if (rc)
+		return -EINVAL;
+
+	ul_unref_path(pc);
+
+	has_hnd = ((1UL << (ctl->numsig - 1)) & sigcgt) != 0;
+	if (ctl->verbose && !has_hnd)
+		printf(_("not signalling pid %d, it has no userspace handler for signal %d\n"), ctl->pid, ctl->numsig);
+
+	return has_hnd;
+}
+
 int main(int argc, char **argv)
 {
 	struct kill_control ctl = { .numsig = SIGTERM };
@@ -458,7 +594,7 @@ int main(int argc, char **argv)
 	textdomain(PACKAGE);
 	close_stdout_atexit();
 
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 	INIT_LIST_HEAD(&ctl.follow_ups);
 #endif
 	argv = parse_arguments(argc, argv, &ctl);
@@ -470,6 +606,8 @@ int main(int argc, char **argv)
 		errno = 0;
 		ctl.pid = strtol(ctl.arg, &ep, 10);
 		if (errno == 0 && ep && *ep == '\0' && ctl.arg < ep) {
+			if (check_signal_handler(&ctl) <= 0)
+				continue;
 			if (kill_verbose(&ctl) != 0)
 				nerrs++;
 			ct++;
@@ -491,6 +629,8 @@ int main(int argc, char **argv)
 					continue;
 				if (procfs_dirent_get_pid(d, &ctl.pid) != 0)
 					continue;
+				if (check_signal_handler(&ctl) <= 0)
+					continue;
 
 				if (kill_verbose(&ctl) != 0)
 					nerrs++;
@@ -506,7 +646,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 	while (!list_empty(&ctl.follow_ups)) {
 		struct timeouts *x = list_entry(ctl.follow_ups.next,
 				                  struct timeouts, follow_ups);
@@ -521,4 +661,3 @@ int main(int argc, char **argv)
 
 	return KILL_EXIT_SOMEOK;	/* partial success */
 }
-

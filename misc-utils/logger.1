@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: logger
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "LOGGER" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "LOGGER" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -71,7 +71,6 @@ Note that the system logging infrastructure (for example \fBsystemd\fP when list
 \fB\-\-journald\fP[\fB=\fP\fIfile\fP]
 .RS 4
 Write a \fBsystemd\fP journal entry. The entry is read from the given \fIfile\fP, when specified, otherwise from standard input. Each line must begin with a field that is accepted by \fBjournald\fP; see \fBsystemd.journal\-fields\fP(7) for details. The use of a MESSAGE_ID field is generally a good idea, as it makes finding entries easy. Examples:
-.RE
 .RS 3
 .ll -.6i
 .sp
@@ -101,8 +100,8 @@ logger \-\-journald=entry.txt
 .sp
 Notice that \fB\-\-journald\fP will ignore values of other options, such as priority. If priority is needed it must be within input, and use PRIORITY field. The simple execution of \fBjournalctl\fP(1) will display MESSAGE field. Use \fBjournalctl \-\-output json\-pretty\fP to see rest of the fields.
 .sp
-+
 To include newlines in MESSAGE, specify MESSAGE several times. This is handled as a special case, other fields will be stored as an array in the journal if they appear multiple times.
+.RE
 .sp
 \fB\-\-msgid\fP \fImsgid\fP
 .RS 4
@@ -212,11 +211,17 @@ Most receivers accept messages larger than 1KiB over any type of syslog protocol
 Note: the message\-size limit limits the overall message size, including the syslog header. Header sizes vary depending on the selected options and the hostname length. As a rule of thumb, headers are usually not longer than 50 to 80 characters. When selecting a maximum message size, it is important to ensure that the receiver supports the max size as well, otherwise messages may become truncated. Again, as a rule of thumb two to four KiB message size should generally be OK, whereas anything larger should be verified to work.
 .RE
 .sp
-\fB\-\-socket\-errors\fP[\fB=\fP\fImode\fP]
+\fB\-\-socket\-errors\fP \fImode\fP
 .RS 4
-Print errors about Unix socket connections. The \fImode\fP can be a value of \fBoff\fP, \fBon\fP, or \fBauto\fP. When the mode is \fBauto\fP, then \fBlogger\fP will detect if the init process is \fBsystemd\fP(1), and if so assumption is made \fI/dev/log\fP can be used early at boot. Other init systems lack of \fI/dev/log\fP will not cause errors that is identical with messaging using \fBopenlog\fP(3) system call. The \fBlogger\fP(1) before version 2.26 used \fBopenlog\fP(3), and hence was unable to detected loss of messages sent to Unix sockets.
+Print errors about Unix socket connections. The \fImode\fP can be \fBon\fP, \fBoff\fP, or \fBauto\fP.
+When the mode is \fBauto\fP (the default), then \fBlogger\fP will detect if the init process
+is \fBsystemd\fP(1), and if so, the assumption is made that \fI/dev/log\fP can be used early
+at boot. The lack of \fI/dev/log\fP on other init systems will not cause errors, just as
+when using the \fBopenlog\fP(3) system call. The \fBlogger\fP(1) before version 2.26 used
+\fBopenlog\fP(3), and thus was unable to detect the loss of messages sent to Unix sockets.
 .sp
-The default mode is \fBauto\fP. When errors are not enabled lost messages are not communicated and will result to successful exit status of \fBlogger\fP(1) invocation.
+When errors are not enabled, lost messages are not communicated and will result in a
+successful exit status of \fBlogger\fP(1).
 .RE
 .sp
 \fB\-T\fP, \fB\-\-tcp\fP
@@ -248,7 +253,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "EXIT STATUS"
 .sp
@@ -321,8 +326,17 @@ For the priority order and intended purposes of these facilities and levels, see
 .sp
 The \fBlogger\fP command is expected to be IEEE Std 1003.2 ("POSIX.2") compatible.
 .SH "EXAMPLES"
+.RS 3
+.ll -.6i
 .sp
-\fBlogger System rebooted\fP \fBlogger \-p local0.notice \-t HOSTIDM \-f /dev/idmc\fP \fBlogger \-n loghost.example.com System rebooted\fP
+logger System rebooted
+.sp
+logger \-p local0.notice \-t HOSTIDM \-f /dev/idmc
+.sp
+logger \-n loghost.example.com System rebooted
+.br
+.RE
+.ll
 .SH "AUTHORS"
 .sp
 The \fBlogger\fP command was originally written by University of California in 1983\-1993 and later rewritten by \c
@@ -337,8 +351,8 @@ and
 \fBsystemd.journal\-fields\fP(7)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBlogger\fP command is part of the util\-linux package which can be downloaded from \c

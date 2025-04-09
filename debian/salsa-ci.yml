@@ -1,0 +1,38 @@
+---
+include: https://salsa.debian.org/salsa-ci-team/pipeline/raw/master/salsa-ci.yml
+
+extract-source:
+  extends: .provisioning-extract-source
+
+variables:
+  RELEASE: 'unstable'
+
+build:
+  extends: .build-package
+
+test-build-any:
+  extends: .test-build-package-any
+
+test-build-all:
+  extends: .test-build-package-all
+
+lintian:
+  extends: .test-lintian
+
+autopkgtest:
+  extends: .test-autopkgtest
+
+blhc:
+  extends: .test-blhc
+
+variables:
+  SALSA_CI_ENABLE_BUILD_PACKAGE_PROFILES: 1
+
+test-build-profiles:
+  extends: .test-build-package-profiles
+  parallel:
+    matrix:
+      - BUILD_PROFILES: nocheck
+      - BUILD_PROFILES: nodoc
+      - BUILD_PROFILES: stage1
+

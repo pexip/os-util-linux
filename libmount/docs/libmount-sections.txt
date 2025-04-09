@@ -9,6 +9,7 @@ mnt_cache_device_has_tag
 mnt_cache_find_tag_value
 mnt_cache_read_tags
 mnt_cache_set_targets
+mnt_cache_set_sbprobe
 mnt_get_fstype
 mnt_pretty_path
 mnt_resolve_path
@@ -35,6 +36,8 @@ mnt_context_enable_force
 mnt_context_enable_fork
 mnt_context_enable_lazy
 mnt_context_enable_loopdel
+mnt_context_enable_noautofs
+mnt_context_enable_onlyonce
 mnt_context_enable_rdonly_umount
 mnt_context_enable_rwonly_mount
 mnt_context_enable_sloppy
@@ -77,6 +80,7 @@ mnt_context_is_loopdel
 mnt_context_is_nocanonicalize
 mnt_context_is_nohelpers
 mnt_context_is_nomtab
+mnt_context_is_onlyonce
 mnt_context_is_parent
 mnt_context_is_rdonly_umount
 mnt_context_is_restricted
@@ -103,6 +107,8 @@ mnt_context_set_target
 mnt_context_set_target_ns
 mnt_context_set_target_prefix
 mnt_context_set_user_mflags
+mnt_context_get_mesgs
+mnt_context_get_nmesgs
 mnt_context_strerror
 mnt_context_switch_ns
 mnt_context_switch_origin_ns
@@ -225,10 +231,12 @@ mnt_fs_get_freq
 mnt_fs_get_fs_options
 mnt_fs_get_fstype
 mnt_fs_get_id
+mnt_fs_get_uniq_id
 mnt_fs_get_option
 mnt_fs_get_optional_fields
 mnt_fs_get_options
 mnt_fs_get_parent_id
+mnt_fs_get_parent_uniq_id
 mnt_fs_get_passno
 mnt_fs_get_priority
 mnt_fs_get_propagation
@@ -269,13 +277,31 @@ mnt_fs_set_priority
 mnt_fs_set_root
 mnt_fs_set_source
 mnt_fs_set_target
+mnt_fs_set_uniq_id
 mnt_fs_set_userdata
 mnt_fs_strdup_options
 mnt_fs_streq_srcpath
 mnt_fs_streq_target
 mnt_fs_to_mntent
+mnt_fs_fetch_statmount
+mnt_fs_get_ns
+mnt_fs_set_ns
 mnt_new_fs
 mnt_reset_fs
+</SECTION>
+
+<SECTION>
+<FILE>statmount</FILE>
+libmnt_statmnt
+mnt_new_statmnt
+mnt_ref_statmnt
+mnt_unref_statmnt
+mnt_statmnt_disable_fetching
+mnt_statmnt_set_mask
+mnt_fs_fetch_statmount
+mnt_fs_get_statmnt
+mnt_fs_refer_statmnt
+mnt_table_refer_statmnt
 </SECTION>
 
 <SECTION>
@@ -298,6 +324,8 @@ libmnt_lock
 mnt_free_lock
 mnt_lock_file
 mnt_new_lock
+mnt_ref_lock
+mnt_unref_lock
 mnt_unlock_file
 mnt_lock_block_signals
 </SECTION>
@@ -342,8 +370,12 @@ mnt_table_add_fs
 mnt_table_append_intro_comment
 mnt_table_append_trailing_comment
 mnt_table_enable_comments
+mnt_table_enable_listmount
+mnt_table_enable_noautofs
+mnt_table_fetch_listmount
 mnt_table_find_devno
 mnt_table_find_fs
+mnt_table_find_id
 mnt_table_find_mountpoint
 mnt_table_find_next_fs
 mnt_table_find_pair
@@ -352,6 +384,7 @@ mnt_table_find_srcpath
 mnt_table_find_tag
 mnt_table_find_target
 mnt_table_find_target_with_option
+mnt_table_find_uniq_id
 mnt_table_first_fs
 mnt_table_get_cache
 mnt_table_get_intro_comment
@@ -362,7 +395,11 @@ mnt_table_get_userdata
 mnt_table_insert_fs
 mnt_table_is_empty
 mnt_table_is_fs_mounted
+mnt_table_is_noautofs
 mnt_table_last_fs
+mnt_table_listmount_set_id
+mnt_table_listmount_set_ns
+mnt_table_listmount_set_stepsiz
 mnt_table_move_fs
 mnt_table_next_child_fs
 mnt_table_next_fs
@@ -419,6 +456,7 @@ mnt_get_mtab_path
 mnt_get_swaps_path
 mnt_guess_system_root
 mnt_has_regular_mtab
+mnt_id_from_path
 mnt_mangle
 mnt_match_fstype
 mnt_tag_is_valid
@@ -448,5 +486,6 @@ mnt_monitor_get_fd
 mnt_monitor_close_fd
 mnt_monitor_next_change
 mnt_monitor_event_cleanup
+mnt_monitor_veil_kernel
 mnt_monitor_wait
 </SECTION>

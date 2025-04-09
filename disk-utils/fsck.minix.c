@@ -1,11 +1,17 @@
 /*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
  * fsck.minix.c - a file system consistency checker for Linux.
  *
  * (C) 1991, 1992 Linus Torvalds. This file may be redistributed
  * as per the GNU copyleft.
- */
-
-/*
+ *
+ *
  * 09.11.91  -  made the first rudimentary functions
  *
  * 10.11.91  -  updated, does checking, no repairs yet.
@@ -192,8 +198,8 @@ usage(void) {
 	fputs(_(" -m, --uncleared  activate mode not cleared warnings\n"), out);
 	fputs(_(" -f, --force      force check\n"), out);
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(18));
-	printf(USAGE_MAN_TAIL("fsck.minix(8)"));
+	fprintf(out, USAGE_HELP_OPTIONS(18));
+	fprintf(out, USAGE_MAN_TAIL("fsck.minix(8)"));
 	exit(FSCK_EX_OK);
 }
 
@@ -542,7 +548,7 @@ get_dirsize(void) {
 		block = Inode[ROOT_INO].i_zone[0];
 	read_block(block, blk);
 
-	for (size = 16; size < MINIX_BLOCK_SIZE; size <<= 1) {
+	for (size = 16; size + 2 < MINIX_BLOCK_SIZE; size <<= 1) {
 		if (strcmp(blk + size + 2, "..") == 0) {
 			dirsize = size;
 			namelen = size - 2;

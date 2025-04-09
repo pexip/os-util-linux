@@ -9,6 +9,7 @@
  * %End-Header%
  */
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -25,6 +26,7 @@
 #define OUTPUT_PRETTY_LIST	(1 << 3)		/* deprecated */
 #define OUTPUT_UDEV_LIST	(1 << 4)		/* deprecated */
 #define OUTPUT_EXPORT_LIST	(1 << 5)
+#define OUTPUT_JSON		(1 << 6)
 
 #define BLKID_EXIT_NOTFOUND	2	/* token or device not found */
 #define BLKID_EXIT_OTHER	4	/* bad usage or other error */
@@ -47,21 +49,22 @@
 #include "xalloc.h"
 
 #include "sysfs.h"
+#include "jsonwrt.h"
 
 struct blkid_control {
 	int output;
 	uintmax_t offset;
 	uintmax_t size;
 	char *show[128];
-	unsigned int
-		eval:1,
-		gc:1,
-		lookup:1,
-		lowprobe:1,
-		lowprobe_superblocks:1,
-		lowprobe_topology:1,
-		no_part_details:1,
-		raw_chars:1;
+	struct ul_jsonwrt *json_fmt;
+	bool	eval,
+		gc,
+		lookup,
+		lowprobe,
+		lowprobe_superblocks,
+		lowprobe_topology,
+		no_part_details,
+		raw_chars;
 };
 
 static void __attribute__((__noreturn__)) usage(void)
@@ -81,7 +84,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(	" -d, --no-encoding          don't encode non-printing characters\n"), out);
 	fputs(_(	" -g, --garbage-collect      garbage collect the blkid cache\n"), out);
 	fputs(_(	" -o, --output <format>      output format; can be one of:\n"
-			"                              value, device, export or full; (default: full)\n"), out);
+			"                              value, device, export, json or full; (default: full)\n"), out);
 	fputs(_(	" -k, --list-filesystems     list all known filesystems/RAIDs and exit\n"), out);
 	fputs(_(	" -s, --match-tag <tag>      show specified tag(s) (default show all tags)\n"), out);
 	fputs(_(	" -t, --match-token <token>  find device with a specific token (NAME=value pair)\n"), out);
@@ -93,21 +96,21 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(	" -p, --probe                low-level superblocks probing (bypass cache)\n"), out);
 	fputs(_(	" -i, --info                 gather information about I/O limits\n"), out);
 	fputs(_(        " -H, --hint <value>         set hint for probing function\n"), out);
-	fputs(_(	" -S, --size <size>          overwrite device size\n"), out);
+	fputs(_(	" -S, --size <size>          override device size\n"), out);
 	fputs(_(	" -O, --offset <offset>      probe at the given offset\n"), out);
 	fputs(_(	" -u, --usages <list>        filter by \"usage\" (e.g. -u filesystem,raid)\n"), out);
 	fputs(_(	" -n, --match-types <list>   filter by filesystem type (e.g. -n vfat,ext3)\n"), out);
 	fputs(_(	" -D, --no-part-details      don't print info from partition table\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(28));
+	fprintf(out, USAGE_HELP_OPTIONS(28));
 
 	fputs(USAGE_ARGUMENTS, out);
-	printf(USAGE_ARG_SIZE(_("<size> and <offset>")));
+	fprintf(out, USAGE_ARG_SIZE(_("<size> and <offset>")));
 	fputs(USAGE_ARG_SEPARATOR, out);
 	fputs(_(" <dev> specify device(s) to probe (default: all devices)\n"), out);
 
-	printf(USAGE_MAN_TAIL("blkid(8)"));
+	fprintf(out, USAGE_MAN_TAIL("blkid(8)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -333,6 +336,9 @@ static void print_value(const struct blkid_control *ctl, int num,
 		safe_print(ctl, value, valsz, " \\\"'$`<>");
 		fputs("\n", stdout);
 
+	} else if (ctl->output & OUTPUT_JSON) {
+		ul_jsonwrt_value_s_sized(ctl->json_fmt, name, value, valsz);
+
 	} else {
 		if (num == 1 && devname)
 			printf("%s:", devname);
@@ -366,6 +372,11 @@ static void print_tags(const struct blkid_control *ctl, blkid_dev dev)
 		return;
 	}
 
+	if (ctl->output == OUTPUT_JSON) {
+		ul_jsonwrt_init(ctl->json_fmt, stdout, 0);
+		ul_jsonwrt_open(ctl->json_fmt, NULL, UL_JSON_OBJECT);
+	}
+
 	iter = blkid_tag_iterate_begin(dev);
 	while (blkid_tag_next(iter, &type, &value) == 0) {
 		if (ctl->show[0] && !has_item(ctl, type))
@@ -380,9 +391,13 @@ static void print_tags(const struct blkid_control *ctl, blkid_dev dev)
 	}
 	blkid_tag_iterate_end(iter);
 
+	if (ctl->output == OUTPUT_JSON)
+		ul_jsonwrt_close(ctl->json_fmt, UL_JSON_OBJECT);
+
 	if (num > 1) {
 		if (!(ctl->output & (OUTPUT_VALUE_ONLY | OUTPUT_UDEV_LIST |
-						OUTPUT_EXPORT_LIST)))
+						OUTPUT_EXPORT_LIST |
+						OUTPUT_JSON)))
 			printf("\n");
 		first = 0;
 	}
@@ -402,14 +417,11 @@ static int append_str(char **res, size_t *sz, const char *a, const char *b)
 	*res = str = xrealloc(str, len + 1);
 	str += *sz;
 
-	if (a) {
-		memcpy(str, a, asz);
-		str += asz;
-	}
-	if (b) {
-		memcpy(str, b, bsz);
-		str += bsz;
-	}
+	if (a)
+		str = mempcpy(str, a, asz);
+	if (b)
+		str = mempcpy(str, b, bsz);
+
 	*str = '\0';
 	*sz = len;
 	return 0;
@@ -452,7 +464,7 @@ static int print_udev_ambivalent(blkid_probe pr)
 	}
 
 	if (count > 1) {
-		*(val + valsz - 1) = '\0';		/* rem tailing whitespace */
+		*(val + valsz - 1) = '\0';		/* rem trailing whitespace */
 		printf("ID_FS_AMBIVALENT=%s\n", val);
 		rc = 0;
 	}
@@ -542,6 +554,11 @@ static int lowprobe_device(blkid_probe pr, const char *devname,
 		/* add extra line between output from devices */
 		fputc('\n', stdout);
 
+	if (ctl->output == OUTPUT_JSON) {
+		ul_jsonwrt_init(ctl->json_fmt, stdout, 0);
+		ul_jsonwrt_open(ctl->json_fmt, NULL, UL_JSON_OBJECT);
+	}
+
 	if (nvals && (ctl->output & OUTPUT_DEVICE_ONLY)) {
 		printf("%s\n", devname);
 		goto done;
@@ -560,8 +577,12 @@ static int lowprobe_device(blkid_probe pr, const char *devname,
 		first = 0;
 
 	if (nvals >= 1 && !(ctl->output & (OUTPUT_VALUE_ONLY |
-					OUTPUT_UDEV_LIST | OUTPUT_EXPORT_LIST)))
+					OUTPUT_UDEV_LIST | OUTPUT_EXPORT_LIST |
+					OUTPUT_JSON)))
 		printf("\n");
+
+	if (ctl->output == OUTPUT_JSON)
+		ul_jsonwrt_close(ctl->json_fmt, UL_JSON_OBJECT);
 done:
 	if (rc == -2) {
 		if (ctl->output & OUTPUT_UDEV_LIST)
@@ -667,7 +688,11 @@ static void free_types_list(char *list[])
 
 int main(int argc, char **argv)
 {
-	struct blkid_control ctl = { .output = OUTPUT_FULL, 0 };
+	struct ul_jsonwrt json_fmt;
+	struct blkid_control ctl = {
+		.output = OUTPUT_FULL,
+		.json_fmt = &json_fmt,
+	};
 	blkid_cache cache = NULL;
 	char **devices = NULL;
 	char *search_type = NULL, *search_value = NULL;
@@ -720,7 +745,7 @@ int main(int argc, char **argv)
 	while ((c = getopt_long (argc, argv,
 			    "c:DdgH:hilL:n:ko:O:ps:S:t:u:U:w:Vv", longopts, NULL)) != -1) {
 
-		err_exclusive_options(c, NULL, excl, excl_st);
+		err_exclusive_options(c, longopts, excl, excl_st);
 
 		switch (c) {
 		case 'c':
@@ -780,6 +805,8 @@ int main(int argc, char **argv)
 				ctl.output = OUTPUT_UDEV_LIST;
 			else if (!strcmp(optarg, "export"))
 				ctl.output = OUTPUT_EXPORT_LIST;
+			else if (!strcmp(optarg, "json"))
+				ctl.output = OUTPUT_JSON;
 			else if (!strcmp(optarg, "full"))
 				ctl.output = 0;
 			else
@@ -921,8 +948,8 @@ int main(int argc, char **argv)
 			blkid_probe_set_superblocks_flags(pr,
 				BLKID_SUBLKS_LABEL | BLKID_SUBLKS_UUID |
 				BLKID_SUBLKS_TYPE | BLKID_SUBLKS_SECTYPE |
-				BLKID_SUBLKS_USAGE | BLKID_SUBLKS_VERSION);
-
+				BLKID_SUBLKS_USAGE | BLKID_SUBLKS_VERSION |
+				BLKID_SUBLKS_FSINFO);
 
 			if (fltr_usage &&
 			    blkid_probe_filter_superblocks_usage(pr, fltr_flag, fltr_usage))

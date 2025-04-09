@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: mcookie
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "MCOOKIE" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "MCOOKIE" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -48,7 +48,7 @@ The "random" number generated is actually the MD5 message digest of random infor
 .sp
 \fB\-f\fP, \fB\-\-file\fP \fIfile\fP
 .RS 4
-Use this \fIfile\fP as an additional source of randomness (for example \fI/dev/urandom\fP). When \fIfile\fP is \(aq\-\(aq, characters are read from standard input.
+Use this \fIfile\fP as an additional source of randomness (for example \fI/dev/urandom\fP). When \fIfile\fP is \*(Aq\-\*(Aq, characters are read from standard input.
 .RE
 .sp
 \fB\-m\fP, \fB\-\-max\-size\fP \fInumber\fP
@@ -70,7 +70,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "FILES"
 .sp
@@ -88,8 +88,8 @@ It is assumed that none of the randomness sources will block.
 \fBrand\fP(3)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBmcookie\fP command is part of the util\-linux package which can be downloaded from \c

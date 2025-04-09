@@ -17,10 +17,6 @@ tests
   - add Coverity to GitHub Actions (see for example .github/workflows/coverity.yml
     in systemd repo).
 
-agetty
-------
-   - follow LOGIN_PLAIN_PROMPT from /etc/login.defs as alternative to --nohostname
-
 fstrim
 ------
   - "fstrim --fstab" uses root= from /proc/cmdline to get root FS when it's missing
@@ -65,11 +61,6 @@ lscpu
 
   - read cpuid and uname information from file if --sysroot is specified, then
     we can prepare regression tests completely independent on hw and architecture.
-
-nsenter(1)
-----------
- - read the default UID and GID from the target process.
-   http://thread.gmane.org/gmane.linux.utilities.util-linux-ng/9553/focus=9585
 
 hwclock
 ------
@@ -137,12 +128,12 @@ login-utils:
   - consolidate newgrp(1)
     * we have "su --group/--supp-group" to switch between groups, newgrp(1) in
       util-linux and shadow-utils (and sg(1) alias in shadow-utils)
-    * the unique functionality provided by newgpr(1) is support for group
+    * the unique functionality provided by newgrp(1) is support for group
       passwords [/etc/gshadow] -- do we really need this functionality?
     * maybe we can mark group-passwords as deprecated, and replace sg(1) and
-      newgpr(1) with su(1) code. The another way is to ask for group password in
+      newgrp(1) with su(1) code. The another way is to ask for group password in
       su --group too.
-    * note that shadow-utils newgpr(1) provides support for syslog and audit log.
+    * note that shadow-utils newgrp(1) provides support for syslog and audit log.
 
 
 libsmartcols / column -t

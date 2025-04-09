@@ -1,0 +1,59 @@
+From: Masatake YAMATO <yamato@redhat.com>
+Date: Mon, 6 Jan 2025 03:30:25 +0900
+Subject: lsfd: (bug fix) scan the protocol field of /proc/net/packet as a hex
+ number
+
+Signed-off-by: Masatake YAMATO <yamato@redhat.com>
+(cherry picked from commit 0da7e8201aa7b9b2c5d0e901c0ccfd6f3bdc54d3)
+---
+ lsfd-cmd/sock-xinfo.c                          | 2 +-
+ tests/expected/lsfd/mkfds-mapped-packet-socket | 4 ++--
+ tests/ts/lsfd/mkfds-mapped-packet-socket       | 3 ++-
+ 3 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/lsfd-cmd/sock-xinfo.c b/lsfd-cmd/sock-xinfo.c
+index f681121..42d8e09 100644
+--- a/lsfd-cmd/sock-xinfo.c
++++ b/lsfd-cmd/sock-xinfo.c
+@@ -2373,7 +2373,7 @@ static void load_xinfo_from_proc_packet(ino_t netns_inode)
+ 		unsigned long inode;
+ 		struct packet_xinfo *pkt;
+ 
+-		if (sscanf(line, "%*x %*d %" SCNu16 " %" SCNu16 " %u %*d %*d %*d %lu",
++		if (sscanf(line, "%*x %*d %" SCNu16 " %" SCNx16 " %u %*d %*d %*d %lu",
+ 			   &type, &protocol, &iface, &inode) < 4)
+ 			continue;
+ 
+diff --git a/tests/expected/lsfd/mkfds-mapped-packet-socket b/tests/expected/lsfd/mkfds-mapped-packet-socket
+index ec8795b..2e9db5e 100644
+--- a/tests/expected/lsfd/mkfds-mapped-packet-socket
++++ b/tests/expected/lsfd/mkfds-mapped-packet-socket
+@@ -1,8 +1,8 @@
+ PACKET
+ SOCK.PROTONAME: 0
+-type=raw protocol=all iface=lo raw PACKET lo all
++type=raw protocol=ppptalk iface=lo raw PACKET lo ppptalk
+ NAME,SOCK.TYPE,SOCK.PROTONAME,PACKET.IFACE,PACKET.PROTOCOL: 0
+ PACKET
+ SOCK.PROTONAME: 0
+-type=dgram protocol=all iface=lo dgram PACKET lo all
++type=dgram protocol=ppptalk iface=lo dgram PACKET lo ppptalk
+ NAME,SOCK.TYPE,SOCK.PROTONAME,PACKET.IFACE,PACKET.PROTOCOL: 0
+diff --git a/tests/ts/lsfd/mkfds-mapped-packet-socket b/tests/ts/lsfd/mkfds-mapped-packet-socket
+index 12c5ef6..c3a73c5 100755
+--- a/tests/ts/lsfd/mkfds-mapped-packet-socket
++++ b/tests/ts/lsfd/mkfds-mapped-packet-socket
+@@ -35,11 +35,12 @@ FD=3
+ EXPR=
+ INTERFACE=lo
+ SOCKTYPE=
++PROTOCOL=$(printf "%d" 0x10)
+ ERR=
+ 
+ for SOCKTYPE in RAW DGRAM; do
+     coproc MKFDS { "$TS_HELPER_MKFDS" mapped-packet-socket $FD \
+-				      interface=${INTERFACE} socktype=${SOCKTYPE}; }
++				      interface=${INTERFACE} socktype=${SOCKTYPE} protocol=${PROTOCOL}; }
+     if read -u ${MKFDS[0]} PID; then
+ 	EXPR='(ASSOC == "shm") and (STTYPE == "SOCK") and (MODE == "-w-")'
+ 	${TS_CMD_LSFD} -p "$PID" -n -o SOCK.PROTONAME -Q "${EXPR}"

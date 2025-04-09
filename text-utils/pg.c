@@ -146,7 +146,9 @@ static long startline;			/* start line from argv[] */
 static int nextfile = 1;		/* files to advance */
 static jmp_buf jmpenv;			/* jump from signal handlers */
 static int canjump;			/* jmpenv is valid */
+#ifdef HAVE_WIDECHAR
 static wchar_t wbuf[READBUF];		/* used in several widechar routines */
+#endif
 
 static char *copyright;
 static const char *helpscreen = N_("\
@@ -219,7 +221,7 @@ static my_sighandler_t my_sigset(int sig, my_sighandler_t disp)
 /* Quit pg. */
 static void __attribute__((__noreturn__)) quit(int status)
 {
-	exit(status < 0100 ? status : 077);
+	_exit(status < 0100 ? status : 077);
 }
 
 /* Usage message and similar routines. */
@@ -247,9 +249,9 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" +/pattern/   start at the line containing pattern\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(16));
+	fprintf(out, USAGE_HELP_OPTIONS(16));
 
-	printf(USAGE_MAN_TAIL("pg(1)"));
+	fprintf(out, USAGE_MAN_TAIL("pg(1)"));
 	exit(0);
 }
 
@@ -371,6 +373,7 @@ static void skip(int direction)
 /* Signal handler while reading from input file. */
 static void sighandler(int signum)
 {
+	UL_PROTECT_ERRNO;
 	if (canjump && (signum == SIGINT || signum == SIGQUIT))
 		longjmp(jmpenv, signum);
 	tcsetattr(STDOUT_FILENO, TCSADRAIN, &otio);
@@ -618,9 +621,9 @@ static void prompt(long long pageno)
 		if ((p = strstr(pstring, "%d")) == NULL) {
 			mesg(pstring);
 		} else {
-			strcpy(b, pstring);
-			sprintf(b + (p - pstring), "%lld", pageno);
-			strcat(b, p + 2);
+			snprintf(b, sizeof(b),
+				"%.*s%lld%s", (int) (p - pstring), pstring,
+				pageno, p + 2);
 			mesg(b);
 		}
 	}
@@ -745,6 +748,10 @@ static void prompt(long long pageno)
 			}
 		}
 		write_all(STDOUT_FILENO, &key, 1);
+
+		if (cmd.cmdlen + 1 >= sizeof(cmd.cmdline))
+			goto endprompt;
+
 		cmd.cmdline[cmd.cmdlen++] = key;
 		cmd.cmdline[cmd.cmdlen] = '\0';
 		if (nflag && state == CMD_FIN)
