@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: swapon
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "SWAPON" "8" "2022-05-11" "util\-linux 2.38.1" "System Administration"
+.TH "SWAPON" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -48,6 +48,11 @@ Calls to \fBswapon\fP normally occur in the system boot scripts making all swap 
 \fB\-a\fP, \fB\-\-all\fP
 .RS 4
 All devices marked as "swap" in \fI/etc/fstab\fP are made available, except for those with the "noauto" option. Devices that are already being used as swap are silently skipped.
+.RE
+.sp
+\fB\-T\fP, \fB\-\-fstab\fP \fIpath\fP
+.RS 4
+Specifies an alternative fstab file for compatibility with \fBmount\fP(8). If \fIpath\fP is a directory, then the files in the directory are sorted by \fBstrverscmp\fP(3); files that start with "." or without an .fstab extension are ignored. The option can be specified more than once. This option is mostly designed for initramfs or chroot scripts where additional configuration is specified beyond standard system configuration.
 .RE
 .sp
 \fB\-d\fP, \fB\-\-discard\fP[\fB=\fP\fIpolicy\fP]
@@ -93,7 +98,7 @@ The \fIopts\fP string is evaluated last and overrides all other command line opt
 .sp
 \fB\-p\fP, \fB\-\-priority\fP \fIpriority\fP
 .RS 4
-Specify the priority of the swap device. \fIpriority\fP is a value between \-1 and 32767. Higher numbers indicate higher priority. See \fBswapon\fP(2) for a full description of swap priorities. Add \fBpri=\fP\fIvalue\fP to the option field of \fI/etc/fstab\fP for use with \fBswapon \-a\fP. When no priority is defined, it defaults to \-1.
+Specify the priority of the swap device. \fIpriority\fP is a value between 0 and 32767. Higher numbers indicate higher priority. See \fBswapon\fP(2) for a full description of swap priorities. Add \fBpri=\fP\fIvalue\fP to the option field of \fI/etc/fstab\fP for use with \fBswapon \-a\fP. When no priority is defined, Linux kernel defaults to negative numbers.
 .RE
 .sp
 \fB\-s\fP, \fB\-\-summary\fP
@@ -143,7 +148,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "EXIT STATUS"
 .sp
@@ -223,6 +228,8 @@ The most portable solution to create a swap file is to use \fBdd\fP(1) and \fI/d
 .SS "Btrfs"
 .sp
 Swap files on Btrfs are supported since Linux 5.0 on files with \fBnocow\fP attribute. See the \fBbtrfs\fP(5) manual page for more details.
+.sp
+Since version 2.41, the command \fBmkswap \-\-file\fP can create a new swap file with the \fBnocow\fP attribute.
 .SS "NFS"
 .sp
 Swap over \fBNFS\fP may not work.
@@ -244,8 +251,8 @@ The \fBswapon\fP command appeared in 4.0BSD.
 \fBrc\fP(8)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBswapon\fP command is part of the util\-linux package which can be downloaded from \c

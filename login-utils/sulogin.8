@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: sulogin
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "SULOGIN" "8" "2022-05-11" "util\-linux 2.38.1" "System Administration"
+.TH "SULOGIN" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -49,7 +49,7 @@ When the user exits from the single\-user shell, or presses control\-D at the pr
 .sp
 \fB\-e\fP, \fB\-\-force\fP
 .RS 4
-If the default method of obtaining the root password from the system via \fBgetpwnam\fP(3) fails, then examine \fI/etc/passwd\fP and \fI/etc/shadow\fP to get the password. If these files are damaged or nonexistent, or when root account is locked by \(aq!\(aq or \(aq*\(aq at the begin of the password then \fBsulogin\fP will \fBstart a root shell without asking for a password\fP.
+If the default method of obtaining the root password from the system via \fBgetpwnam\fP(3) fails, then examine \fI/etc/passwd\fP and \fI/etc/shadow\fP to get the password. If these files are damaged or nonexistent, or when root account is locked by \*(Aq!\*(Aq or \*(Aq*\*(Aq at the begin of the password then \fBsulogin\fP will \fBstart a root shell without asking for a password\fP.
 .sp
 Only use the \fB\-e\fP option if you are sure the console is physically protected against unauthorized access.
 .RE
@@ -71,7 +71,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "ENVIRONMENT"
 .sp
@@ -81,8 +81,8 @@ Print version and exit.
 \fBsulogin\fP was written by Miquel van Smoorenburg for sysvinit and later ported to util\-linux by Dave Reisner and Karel Zak.
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBsulogin\fP command is part of the util\-linux package which can be downloaded from \c

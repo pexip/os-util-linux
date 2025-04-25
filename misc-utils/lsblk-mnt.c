@@ -60,11 +60,13 @@ static void add_filesystem(struct lsblk_device *dev, struct libmnt_fs *fs)
 	assert(dev);
 	assert(fs);
 
-	dev->fss = xrealloc(dev->fss, (dev->nfss + 1)
-					* sizeof(struct libmnt_fs *));
+	dev->fss = xreallocarray(dev->fss, dev->nfss + 1, sizeof(struct libmnt_fs *));
 	dev->fss[dev->nfss] = fs;
 	dev->nfss++;
 	dev->is_mounted = 1;
+
+	if (mnt_fs_is_swaparea(fs))
+		dev->is_swap = 1;
 }
 
 struct libmnt_fs **lsblk_device_get_filesystems(struct lsblk_device *dev, size_t *n)
@@ -102,7 +104,7 @@ struct libmnt_fs **lsblk_device_get_filesystems(struct lsblk_device *dev, size_t
 
 	devno = makedev(dev->maj, dev->min);
 
-	/* All mounpoint where is used devno or device name
+	/* All mountpoint where is used devno or device name
 	 */
 	itr = mnt_new_iter(MNT_ITER_BACKWARD);
 	while (mnt_table_next_fs(mtab, itr, &fs) == 0) {
@@ -132,7 +134,7 @@ done:
 	return dev->fss;
 }
 
-/* Returns mounpoint where the device is mounted. If the device is used for
+/* Returns mountpoint where the device is mounted. If the device is used for
  * more filesystems (subvolumes, ...) than returns the "best" one.
  */
 const char *lsblk_device_get_mountpoint(struct lsblk_device *dev)
@@ -163,8 +165,10 @@ const char *lsblk_device_get_mountpoint(struct lsblk_device *dev)
 			}
 		}
 	}
-	if (mnt_fs_is_swaparea(fs))
+	if (mnt_fs_is_swaparea(fs)) {
+		dev->is_swap = 1;
 		return "[SWAP]";
+	}
 	return mnt_fs_get_target(fs);
 }
 

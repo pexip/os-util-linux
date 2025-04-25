@@ -72,13 +72,12 @@ struct chfn_control {
 	 *          NULL in fields that haven't been changed.
 	 *  In the end, "newf" is folded into "oldf".  */
 	struct finfo oldf, newf;
-	unsigned int
-		allow_fullname:1,	/* The login.defs restriction */
-		allow_room:1,		   /* see: man login.defs(5) */
-		allow_work:1,		   /* and look for CHFN_RESTRICT */
-		allow_home:1,		   /* keyword for these four. */
-		changed:1,		/* is change requested */
-		interactive:1;		/* whether to prompt for fields or not */
+	bool 	allow_fullname,	/* The login.defs restriction */
+		allow_room,	/* see: man login.defs(5) */
+		allow_work,	/* and look for CHFN_RESTRICT */
+		allow_home,	/* keyword for these four. */
+		changed,	/* is change requested */
+		interactive;	/* whether to prompt for fields or not */
 };
 
 /* we do not accept gecos field sizes longer than MAX_FIELD_SIZE */
@@ -100,7 +99,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -h, --home-phone <phone>     home phone number\n"), fp);
 	fputs(USAGE_SEPARATOR, fp);
 	printf( " -u, --help                   %s\n", USAGE_OPTSTR_HELP);
-	printf( " -v, --version                %s\n", USAGE_OPTSTR_VERSION);
+	printf( " -V, --version                %s\n", USAGE_OPTSTR_VERSION);
 	printf(USAGE_MAN_TAIL("chfn(1)"));
 	exit(EXIT_SUCCESS);
 }
@@ -139,11 +138,11 @@ static void parse_argv(struct chfn_control *ctl, int argc, char **argv)
 		{ "office-phone", required_argument, NULL, 'p' },
 		{ "home-phone",   required_argument, NULL, 'h' },
 		{ "help",         no_argument,       NULL, 'u' },
-		{ "version",      no_argument,       NULL, 'v' },
+		{ "version",      no_argument,       NULL, 'V' },
 		{ NULL, 0, NULL, 0 },
 	};
 
-	while ((c = getopt_long(argc, argv, "f:r:p:h:o:uv", long_options,
+	while ((c = getopt_long(argc, argv, "f:r:p:h:o:uvV", long_options,
 				&index)) != -1) {
 		switch (c) {
 		case 'f':
@@ -170,7 +169,8 @@ static void parse_argv(struct chfn_control *ctl, int argc, char **argv)
 			ctl->newf.home_phone = optarg;
 			status += check_gecos_string(_("Home Phone"), optarg);
 			break;
-		case 'v':
+		case 'v': /* deprecated */
+		case 'V':
 			print_version(EXIT_SUCCESS);
 		case 'u':
 			usage();

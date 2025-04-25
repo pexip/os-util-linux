@@ -87,6 +87,7 @@ enum {
 	ACT_PARTUUID,
 	ACT_PARTLABEL,
 	ACT_PARTATTRS,
+	ACT_DISCARD_FREE,
 	ACT_DISKID,
 	ACT_DELETE,
 	ACT_BACKUP_SECTORS,
@@ -119,7 +120,7 @@ struct sfdisk {
 		     json : 1,		/* JSON dump */
 		     movedata: 1,	/* move data after resize */
 		     movefsync: 1,	/* use fsync() after each write() */
-		     notell : 1,	/* don't tell kernel aout new PT */
+		     notell : 1,	/* don't tell kernel about new PT */
 		     noact  : 1;	/* do not write to device */
 };
 
@@ -435,7 +436,6 @@ static int move_partition_data(struct sfdisk *sf, size_t partno, struct fdisk_pa
 	from = fdisk_partition_get_start(orig_pa);
 	to = fdisk_partition_get_start(pa);
 
-
 	if ((to >= from && from + nsectors >= to) ||
 	    (from >= to && to + nsectors >= from)) {
 		/* source and target overlay, check if we need to copy
@@ -462,7 +462,8 @@ static int move_partition_data(struct sfdisk *sf, size_t partno, struct fdisk_pa
 
 #if defined(POSIX_FADV_SEQUENTIAL) && defined(HAVE_POSIX_FADVISE)
 	if (!backward)
-		posix_fadvise(fd, from * ss, nsectors * ss, POSIX_FADV_SEQUENTIAL);
+		ignore_result( posix_fadvise(fd, from * ss,
+					nsectors * ss, POSIX_FADV_SEQUENTIAL) );
 #endif
 	devname = fdisk_partname(fdisk_get_devname(sf->cxt), partno+1);
 	if (sf->move_typescript)
@@ -566,8 +567,9 @@ static int move_partition_data(struct sfdisk *sf, size_t partno, struct fdisk_pa
 				ioerr++;
 				goto next;
 			}
-			if (sf->movefsync)
-				fsync(fd);
+			if (sf->movefsync && fsync(fd) != 0)
+				fdisk_warn(sf->cxt,
+					_("cannot fsync at offset: %ju; continue"), dst);
 		}
 
 		/* write log */
@@ -608,7 +610,7 @@ next:
 			src += step_bytes, dst += step_bytes;
 	}
 
-	if (progress) {
+	if (progress && nsectors) {
 		int x = get_terminal_width(80);
 		for (; x > 0; x--)
 			fputc(' ', stdout);
@@ -1008,6 +1010,8 @@ static int command_delete(struct sfdisk *sf, int argc, char **argv)
 		for (i = 1; i < (size_t) argc; i++) {
 			size_t n = strtou32_or_err(argv[i], _("failed to parse partition number"));
 
+			if (n == 0)
+				errx(EXIT_FAILURE, _("partition number must be a positive number"));
 			if (fdisk_delete_partition(sf->cxt, n - 1) != 0)
 				errx(EXIT_FAILURE, _("%s: partition %zu: failed to delete"), devname, n);
 		}
@@ -1367,6 +1371,76 @@ static int command_partattrs(struct sfdisk *sf, int argc, char **argv)
 	fdisk_unref_partition(pa);
 	return write_changes(sf);
 }
+
+#ifdef BLKDISCARD
+/*
+ * sfdisk --discard-free <device>
+ */
+static int command_discard_free(struct sfdisk *sf, int argc, char **argv)
+{
+	struct fdisk_table *tb = NULL;
+	struct fdisk_iter *itr = NULL;
+	struct fdisk_partition *pa = NULL;
+	const char *devname = NULL;
+	uint64_t ss;
+	int rc;
+
+	if (!argc)
+		errx(EXIT_FAILURE, _("no disk device specified"));
+	devname = argv[0];
+	if (argc > 1)
+		errx(EXIT_FAILURE, _("unexpected arguments"));
+
+	itr = fdisk_new_iter(FDISK_ITER_FORWARD);
+	if (!itr)
+		err(EXIT_FAILURE, _("failed to allocate iterator"));
+
+	assign_device(sf, devname, 0);
+
+	ss = fdisk_get_sector_size(sf->cxt);
+
+	rc = fdisk_get_freespaces(sf->cxt, &tb);
+	if (rc) {
+		 fdisk_warn(sf->cxt, _("failed to gather unpartitioned space"));
+		 goto done;
+	}
+
+	while (fdisk_table_next_partition(tb, itr, &pa) == 0) {
+		uint64_t range[2];
+
+		if (!fdisk_partition_has_size(pa) ||
+		    !fdisk_partition_has_start(pa))
+			continue;
+
+		range[0] = (uint64_t) fdisk_partition_get_start(pa);
+		range[1] = (uint64_t) fdisk_partition_get_size(pa);
+
+		fdisk_info(sf->cxt, _("Discarding region %"PRIu64
+					     "-%"PRIu64""),
+				range[0], range[0] + range[1] - 1);
+
+		range[0] *= ss;
+		range[1] *= ss;
+
+		errno = 0;
+		if (ioctl(fdisk_get_devfd(sf->cxt), BLKDISCARD, &range)) {
+			rc = -errno;
+			fdisk_warn(sf->cxt, _("BLKDISCARD ioctl failed"));
+			break;
+		}
+	}
+
+done:
+	fdisk_free_iter(itr);
+	fdisk_unref_table(tb);
+	return rc;
+}
+#else /* BLKDISCARD */
+static int command_discard_free(struct sfdisk *sf, int argc, char **argv)
+{
+	fdisk_warnx(sf->cxt, _("Discard unsupported on your system."));
+}
+#endif /* BLKDISCARD */
 
 /*
  * sfdisk --disk-id <device> [<str>]
@@ -1924,7 +1998,14 @@ static int command_fdisk(struct sfdisk *sf, int argc, char **argv)
 				ignored++;
 				continue;
 			}
-			if (!created) {		/* create a new disklabel */
+			if (!created) {
+				/* ignore "last-lba" and use default if --force specified */
+				if (sf->force && fdisk_script_get_header(dp, "last-lba")) {
+					fdisk_info(sf->cxt, _("Ignoring last-lba script header."));
+					fdisk_script_set_header(dp, "last-lba", NULL);
+				}
+
+				/* create a new disklabel */
 				rc = fdisk_apply_script_headers(sf->cxt, dp);
 				created = !rc;
 				if (rc) {
@@ -1932,7 +2013,6 @@ static int command_fdisk(struct sfdisk *sf, int argc, char **argv)
 					fdisk_warn(sf->cxt, _(
 					  "Failed to apply script headers, disk label not created"));
 				}
-
 				if (rc == 0 && fdisk_get_collision(sf->cxt))
 					follow_wipe_mode(sf);
 			}
@@ -2063,6 +2143,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" --part-attrs <dev> <part> [<str>] print or change partition attributes\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
+	fputs(_(" --discard-free <dev>              discard (trim) unpartitioned areas\n"), out);
 	fputs(_(" --disk-id <dev> [<str>]           print or change disk label ID (UUID)\n"), out);
 	fputs(_(" --relocate <oper> <dev>           move partition header\n"), out);
 
@@ -2083,6 +2164,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	      _("     --color[=<when>]      colorize output (%s, %s or %s)\n"), "auto", "always", "never");
 	fprintf(out,
 	        "                             %s\n", USAGE_COLORS_DEFAULT);
+	fputs(_("     --sector-size <size>  physical and logical sector size\n"), out);
+
 	fprintf(out,
 	      _("     --lock[=<mode>]       use exclusive device lock (%s, %s or %s)\n"), "yes", "no", "nonblock");
 	fputs(_(" -N, --partno <num>        specify partition number\n"), out);
@@ -2104,12 +2187,12 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -u, --unit S              deprecated, only sector unit is supported\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf( " -h, --help                %s\n", USAGE_OPTSTR_HELP);
-	printf( " -v, --version             %s\n", USAGE_OPTSTR_VERSION);
+	fprintf(out, " -h, --help                %s\n", USAGE_OPTSTR_HELP);
+	fprintf(out, " -v, --version             %s\n", USAGE_OPTSTR_VERSION);
 
 	list_available_columns(out);
 
-	printf(USAGE_MAN_TAIL("sfdisk(8)"));
+	fprintf(out, USAGE_MAN_TAIL("sfdisk(8)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -2119,6 +2202,7 @@ int main(int argc, char *argv[])
 	const char *outarg = NULL;
 	int rc = -EINVAL, c, longidx = -1, bytes = 0;
 	int colormode = UL_COLORMODE_UNDEF;
+	size_t user_ss = 0;
 	struct sfdisk _sf = {
 		.partno = -1,
 		.wipemode = WIPEMODE_AUTO,
@@ -2135,6 +2219,7 @@ int main(int argc, char *argv[])
 		OPT_PARTLABEL,
 		OPT_PARTTYPE,
 		OPT_PARTATTRS,
+		OPT_DISCARDFREE,
 		OPT_DISKID,
 		OPT_BYTES,
 		OPT_COLOR,
@@ -2144,6 +2229,7 @@ int main(int argc, char *argv[])
 		OPT_NOTELL,
 		OPT_RELOCATE,
 		OPT_LOCK,
+		OPT_SECTORSIZE
 	};
 
 	static const struct option longopts[] = {
@@ -2173,6 +2259,7 @@ int main(int argc, char *argv[])
 		{ "output",  required_argument, NULL, 'o' },
 		{ "partno",  required_argument, NULL, 'N' },
 		{ "reorder", no_argument,       NULL, 'r' },
+		{ "sector-size", required_argument, NULL, OPT_SECTORSIZE },
 		{ "show-geometry", no_argument, NULL, 'g' },
 		{ "quiet",   no_argument,       NULL, 'q' },
 		{ "verify",  no_argument,       NULL, 'V' },
@@ -2186,6 +2273,8 @@ int main(int argc, char *argv[])
 		{ "part-label", no_argument,    NULL, OPT_PARTLABEL },
 		{ "part-type",  no_argument,    NULL, OPT_PARTTYPE },
 		{ "part-attrs", no_argument,    NULL, OPT_PARTATTRS },
+
+		{ "discard-free", no_argument, NULL, OPT_DISCARDFREE },
 
 		{ "disk-id",    no_argument,	NULL, OPT_DISKID },
 
@@ -2333,6 +2422,9 @@ int main(int argc, char *argv[])
 		case OPT_PARTATTRS:
 			sf->act = ACT_PARTATTRS;
 			break;
+		case OPT_DISCARDFREE:
+			sf->act = ACT_DISCARD_FREE;
+			break;
 		case OPT_DISKID:
 			sf->act = ACT_DISKID;
 			break;
@@ -2372,6 +2464,13 @@ int main(int argc, char *argv[])
 				sf->lockmode = optarg;
 			}
 			break;
+		case OPT_SECTORSIZE:
+			user_ss = strtou32_or_err(optarg,
+					_("invalid sector size argument"));
+			if (user_ss != 512 && user_ss != 1024 &&
+			    user_ss != 2048 && user_ss != 4096)
+				errx(EXIT_FAILURE, _("invalid sector size argument"));
+			break;
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}
@@ -2382,6 +2481,8 @@ int main(int argc, char *argv[])
 	sfdisk_init(sf);
 	if (bytes)
 		fdisk_set_size_unit(sf->cxt, FDISK_SIZEUNIT_BYTES);
+	if (user_ss)
+		fdisk_save_user_sector_size(sf->cxt, user_ss, user_ss);
 
 	if (outarg)
 		init_fields(NULL, outarg, NULL);
@@ -2455,6 +2556,10 @@ int main(int argc, char *argv[])
 		rc = command_partattrs(sf, argc - optind, argv + optind);
 		break;
 
+	case ACT_DISCARD_FREE:
+		rc = command_discard_free(sf, argc - optind, argv + optind);
+		break;
+
 	case ACT_DISKID:
 		rc = command_diskid(sf, argc - optind, argv + optind);
 		break;
@@ -2473,4 +2578,3 @@ int main(int argc, char *argv[])
 	DBG(MISC, ul_debug("bye! [rc=%d]", rc));
 	return rc == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
-

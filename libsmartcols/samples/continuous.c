@@ -14,6 +14,7 @@
 #include "c.h"
 #include "nls.h"
 #include "strutils.h"
+#include "timeutils.h"
 #include "xalloc.h"
 
 #include "libsmartcols.h"
@@ -21,11 +22,6 @@
 #define TIME_PERIOD	3.0	/* seconds */
 
 enum { COL_NUM, COL_DATA, COL_TIME };
-
-static double time_diff(struct timeval *a, struct timeval *b)
-{
-	return (a->tv_sec - b->tv_sec) + (a->tv_usec - b->tv_usec) / 1E6;
-}
 
 /* add columns to the @tb */
 static void setup_columns(struct libscols_table *tb)
@@ -45,18 +41,16 @@ fail:
 
 static struct libscols_line *add_line(struct libscols_table *tb, size_t i)
 {
-	char *p;
 	struct libscols_line *ln = scols_table_new_line(tb, NULL);
 
 	if (!ln)
 		err(EXIT_FAILURE, "failed to create output line");
 
-	xasprintf(&p, "%zu", i);
-	if (scols_line_refer_data(ln, COL_NUM, p))
+	if (scols_line_sprintf(ln, COL_NUM, "%zu", i))
 		goto fail;
 
-	xasprintf(&p, "data-%02zu-%02zu-%02zu-end", i + 1, i + 2, i + 3);
-	if (scols_line_refer_data(ln, COL_DATA, p))
+	if (scols_line_sprintf(ln, COL_DATA,  "data-%02zu-%02zu-%02zu-end",
+			       i + 1, i + 2, i + 3))
 		goto fail;
 
 	return ln;
@@ -65,11 +59,11 @@ fail:
 	err(EXIT_FAILURE, "failed to create output line");
 }
 
-int main(int argc, char *argv[])
+int main(void)
 {
 	struct libscols_table *tb;
 	size_t i;
-	const size_t timecellsz = sizeof(stringify_value(UINT_MAX));
+	const size_t timecellsz = 500;
 	struct timeval last;
 
 	scols_init_debug(0);
@@ -85,7 +79,7 @@ int main(int argc, char *argv[])
 		struct libscols_line *line;
 		struct timeval now;
 		int done = 0;
-		char *timecell = xmalloc( timecellsz );
+		char *timecell = xcalloc(1, timecellsz );
 
 		line = add_line(tb, i);
 
@@ -112,7 +106,7 @@ int main(int argc, char *argv[])
 
 			/* Note that libsmartcols don't print \n for last line
 			 * in the table, but if you print a line somewhere in
-			 * the midle of the table you need
+			 * the middle of the table you need
 			 *
 			 *    scols_table_enable_nolinesep(tb, !done);
 			 *

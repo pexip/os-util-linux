@@ -1,3 +1,13 @@
+/*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Copyright (C) 2014-2023 Karel Zak <kzak@redhat.com>
+ */
 #ifndef UTIL_LINUX_FDISK_LIST_H
 #define UTIL_LINUX_FDISK_LIST_H
 
@@ -5,6 +15,10 @@ extern void list_disklabel(struct fdisk_context *cxt);
 extern void list_disk_identifier(struct fdisk_context *cxt);
 extern void list_disk_geometry(struct fdisk_context *cxt);
 extern void list_freespace(struct fdisk_context *cxt);
+extern int list_freespace_get_table(
+				struct fdisk_context *cxt,
+				struct fdisk_table **tb0,
+				size_t *best0);
 
 extern char *next_proc_partition(FILE **f);
 extern int print_device_pt(struct fdisk_context *cxt, char *device, int warnme, int verify, int separator);
@@ -27,7 +41,7 @@ enum {
 static inline int wipemode_from_string(const char *str)
 {
 	size_t i;
-	static const char *modes[] = {
+	static const char *const modes[] = {
 		[WIPEMODE_AUTO]   = "auto",
 		[WIPEMODE_NEVER]  = "never",
 		[WIPEMODE_ALWAYS] = "always"

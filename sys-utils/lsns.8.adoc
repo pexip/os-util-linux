@@ -17,7 +17,7 @@ lsns - list namespaces
 
 == SYNOPSIS
 
-*lsns* [options] _namespace_
+*lsns* [options] [_namespace_]
 
 == DESCRIPTION
 
@@ -30,6 +30,9 @@ The *NSFS* column, printed when *net* is specified for the *--type* option, is s
 Note that *lsns* reads information directly from the _/proc_ filesystem and for non-root users it may return incomplete information. The current _/proc_ filesystem may be unshared and affected by a PID namespace (see *unshare --mount-proc* for more details). *lsns* is not able to see persistent namespaces without processes where the namespace instance is held by a bind mount to /proc/_pid_/ns/_type_.
 
 == OPTIONS
+
+*-H*, *--list-columns*::
+List the available columns, use with *--json* or *--raw* to get output in machine-readable format.
 
 *-J*, *--json*::
 Use JSON output format.
@@ -48,8 +51,22 @@ The default list of columns may be extended if _list_ is specified in the format
 *--output-all*::
 Output all available columns.
 
+*-P*, *--persistent*::
+Display only the namespaces without processes (aka persistent namespaces), created by bind mounting
+/proc/pid/ns/type files to a filesystem path.
+
 *-p*, *--task* _PID_::
 Display only the namespaces held by the process with this _PID_.
+
+*-Q*, *--filter* _expr_::
+Print only the namespaces that meet the conditions specified by the expr.
++
+This feature is EXPERIMENTAL. See also *scols-filter*(5). For example
+exclude root as username, but print every namespaces more than one process
+belongs to:
+____
+ lsns --filter 'USER != "root" and NPROCS > 1'
+____
 
 *-r*, *--raw*::
 Use the raw output format.
@@ -63,10 +80,26 @@ Do not truncate text in columns.
 *-W*, *--nowrap*::
 Do not use multi-line text in columns.
 
-*-T*, *--tree* _rel_::
+*-T*, *--tree*[**=**__rel__]::
 Use tree-like output format. If *process* is given as _rel_, print process tree(s) in each name space. This is default when *--tree* is not specified. If *parent* is given, print tree(s) constructed by the parent/child relationship. If *owner* is given, print tree(s) constructed by the owner/owned relationship. *owner* is used as default when _rel_ is omitted.
 
 include::man-common/help-version.adoc[]
+
+== EXIT STATUS
+
+The *lsns* utility exits with one of the following values:
+
+*0*::
+Success.
+*1*::
+General error.
+*2*::
+An ioctl was unknown to the kernel.
+
+== ENVIRONMENT
+
+*LSNS_DEBUG*=all::
+enables *lsns* debug output.
 
 == AUTHORS
 
@@ -80,6 +113,7 @@ mailto:kzak@redhat.com[Karel Zak]
 *namespaces*(7),
 *ioctl_ns*(2),
 *ip-netns*(8)
+*scols-filter*(5)
 
 include::man-common/bugreports.adoc[]
 

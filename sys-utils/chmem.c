@@ -67,7 +67,7 @@ enum zone_id {
 	ZONE_DEVICE,
 };
 
-static char *zone_names[] = {
+static const char *const zone_names[] = {
 	[ZONE_DMA]	= "DMA",
 	[ZONE_DMA32]	= "DMA32",
 	[ZONE_NORMAL]	= "Normal",
@@ -348,13 +348,13 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -b, --blocks       use memory blocks\n"), out);
 	fputs(_(" -z, --zone <name>  select memory zone (see below)\n"), out);
 	fputs(_(" -v, --verbose      verbose output\n"), out);
-	printf(USAGE_HELP_OPTIONS(20));
+	fprintf(out, USAGE_HELP_OPTIONS(20));
 
 	fputs(_("\nSupported zones:\n"), out);
 	for (i = 0; i < ARRAY_SIZE(zone_names); i++)
 		fprintf(out, " %s\n", zone_names[i]);
 
-	printf(USAGE_MAN_TAIL("chmem(8)"));
+	fprintf(out, USAGE_MAN_TAIL("chmem(8)"));
 
 	exit(EXIT_SUCCESS);
 }
@@ -367,7 +367,7 @@ int main(int argc, char **argv)
 	int c, rc;
 
 	static const struct option longopts[] = {
-		{"block",	no_argument,		NULL, 'b'},
+		{"blocks",	no_argument,		NULL, 'b'},
 		{"disable",	no_argument,		NULL, 'd'},
 		{"enable",	no_argument,		NULL, 'e'},
 		{"help",	no_argument,		NULL, 'h'},

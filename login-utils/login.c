@@ -46,6 +46,7 @@
 #include <grp.h>
 #include <pwd.h>
 #include <utmpx.h>
+#include <path.h>
 
 #ifdef HAVE_LASTLOG_H
 # include <lastlog.h>
@@ -131,18 +132,14 @@ struct login_context {
 
 	pid_t		pid;
 
-	unsigned int	quiet:1,        /* hush file exists */
-			remote:1,	/* login -h */
-			nohost:1,	/* login -H */
-			noauth:1,	/* login -f */
-			keep_env:1;	/* login -p */
+	bool		quiet,		/* hush file exists */
+			remote,		/* login -h */
+			nohost,		/* login -H */
+			noauth,		/* login -f */
+			keep_env;	/* login -p */
 };
 
-/*
- * This bounds the time given to login.  Not a define, so it can
- * be patched on machines where it's too small.
- */
-static int child_pid = 0;
+static pid_t child_pid = 0;
 static volatile sig_atomic_t got_sig = 0;
 static char *timeout_msg;
 
@@ -176,9 +173,10 @@ static void __attribute__((__noreturn__))
 	struct termios ti;
 
 	/* reset echo */
-	tcgetattr(0, &ti);
-	ti.c_lflag |= ECHO;
-	tcsetattr(0, TCSANOW, &ti);
+	if (tcgetattr(0, &ti) >= 0) {
+		ti.c_lflag |= ECHO;
+		tcsetattr(0, TCSANOW, &ti);
+	}
 	_exit(EXIT_SUCCESS);	/* %% */
 }
 
@@ -203,12 +201,12 @@ static void timedout(int sig __attribute__((__unused__)))
  */
 static void sig_handler(int signal)
 {
-	if (child_pid)
+	if (child_pid > 0) {
 		kill(-child_pid, signal);
-	else
+		if (signal == SIGTERM)
+			kill(-child_pid, SIGHUP);	/* because the shell often ignores SIGTERM */
+	} else
 		got_sig = 1;
-	if (signal == SIGTERM)
-		kill(-child_pid, SIGHUP);	/* because the shell often ignores SIGTERM */
 }
 
 /*
@@ -512,12 +510,14 @@ static void chown_tty(struct login_context *cxt)
 static void init_tty(struct login_context *cxt)
 {
 	struct stat st;
-	struct termios tt, ttt;
-	struct winsize ws;
+	struct termios tt, ttt = { 0 };
+	struct winsize ws = { 0 };
+	int fd;
 
 	cxt->tty_mode = (mode_t) getlogindefs_num("TTYPERM", TTY_MODE);
 
 	get_terminal_name(&cxt->tty_path, &cxt->tty_name, &cxt->tty_number);
+	fd = get_terminal_stdfd();
 
 	/*
 	 * In case login is suid it was possible to use a hardlink as stdin
@@ -530,7 +530,7 @@ static void init_tty(struct login_context *cxt)
 	if (!cxt->tty_path || !*cxt->tty_path ||
 	    lstat(cxt->tty_path, &st) != 0 || !S_ISCHR(st.st_mode) ||
 	    (st.st_nlink > 1 && strncmp(cxt->tty_path, "/dev/", 5) != 0) ||
-	    access(cxt->tty_path, R_OK | W_OK) != 0) {
+	    access(cxt->tty_path, R_OK | W_OK) != 0 || fd == -EINVAL) {
 
 		syslog(LOG_ERR, _("FATAL: bad tty"));
 		sleepexit(EXIT_FAILURE);
@@ -546,15 +546,20 @@ static void init_tty(struct login_context *cxt)
 
 	/* The TTY size might be reset to 0x0 by the kernel when we close the stdin/stdout/stderr file
 	 * descriptors so let's save the size now so we can reapply it later */
-	memset(&ws, 0, sizeof(struct winsize));
-	if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) < 0)
+	if (ioctl(fd, TIOCGWINSZ, &ws) < 0) {
 		syslog(LOG_WARNING, _("TIOCGWINSZ ioctl failed: %m"));
+		ws.ws_row = 0;
+		ws.ws_col = 0;
+	}
 
-	tcgetattr(0, &tt);
-	ttt = tt;
-	ttt.c_cflag &= ~HUPCL;
+	if (tcgetattr(fd, &tt) >= 0) {
+		ttt = tt;
+		ttt.c_cflag &= ~HUPCL;
+	} else {
+		ttt.c_cflag = HUPCL;
+	}
 
-	if ((fchown(0, 0, 0) || fchmod(0, cxt->tty_mode)) && errno != EROFS) {
+	if ((fchown(fd, 0, 0) || fchmod(fd, cxt->tty_mode)) && errno != EROFS) {
 
 		syslog(LOG_ERR, _("FATAL: %s: change permissions failed: %m"),
 				cxt->tty_path);
@@ -562,7 +567,8 @@ static void init_tty(struct login_context *cxt)
 	}
 
 	/* Kill processes left on this tty */
-	tcsetattr(0, TCSANOW, &ttt);
+	if ((ttt.c_cflag & HUPCL) == 0)
+		tcsetattr(fd, TCSANOW, &ttt);
 
 	/*
 	 * Let's close file descriptors before vhangup
@@ -580,7 +586,8 @@ static void init_tty(struct login_context *cxt)
 	open_tty(cxt->tty_path);
 
 	/* restore tty modes */
-	tcsetattr(0, TCSAFLUSH, &tt);
+	if ((ttt.c_cflag & HUPCL) == 0)
+		tcsetattr(STDIN_FILENO, TCSAFLUSH, &tt);
 
 	/* Restore tty size */
 	if ((ws.ws_row > 0 || ws.ws_col > 0)
@@ -638,16 +645,16 @@ static void log_audit(struct login_context *cxt, int status)
 	if (!pwd && cxt->username)
 		pwd = getpwnam(cxt->username);
 
-	audit_log_acct_message(audit_fd,
-			       AUDIT_USER_LOGIN,
-			       NULL,
-			       "login",
-			       cxt->username ? cxt->username : "(unknown)",
-			       pwd ? pwd->pw_uid : (unsigned int)-1,
-			       cxt->hostname,
-			       NULL,
-			       cxt->tty_name,
-			       status);
+	ignore_result( audit_log_acct_message(audit_fd,
+					      AUDIT_USER_LOGIN,
+					      NULL,
+					      "login",
+					      cxt->username ? cxt->username : "(unknown)",
+					      pwd ? pwd->pw_uid : (unsigned int)-1,
+					      cxt->hostname,
+					      NULL,
+					      cxt->tty_name,
+					      status) );
 
 	close(audit_fd);
 }
@@ -655,6 +662,7 @@ static void log_audit(struct login_context *cxt, int status)
 # define log_audit(cxt, status)
 #endif				/* HAVE_LIBAUDIT */
 
+#ifdef USE_LOGIN_LASTLOG
 static void log_lastlog(struct login_context *cxt)
 {
 	struct sigaction sa, oldsa_xfsz;
@@ -721,6 +729,9 @@ done:
 
 	sigaction(SIGXFSZ, &oldsa_xfsz, NULL);		/* restore original setting */
 }
+#else
+# define log_lastlog(cxt)
+#endif 	/* USE_LOGIN_LASTLOG */
 
 /*
  * Update wtmp and utmp logs.
@@ -854,8 +865,7 @@ static void loginpam_err(pam_handle_t *pamh, int retcode)
 static const char *loginpam_get_prompt(struct login_context *cxt)
 {
 	const char *host;
-	char *prompt, *dflt_prompt = _("login: ");
-	size_t sz;
+	char *prompt = NULL, *dflt_prompt = _("login: ");
 
 	if (cxt->nohost)
 		return dflt_prompt;	/* -H on command line */
@@ -866,9 +876,7 @@ static const char *loginpam_get_prompt(struct login_context *cxt)
 	if (!(host = get_thishost(cxt, NULL)))
 		return dflt_prompt;
 
-	sz = strlen(host) + 1 + strlen(dflt_prompt) + 1;
-	prompt = xmalloc(sz);
-	snprintf(prompt, sz, "%s %s", host, dflt_prompt);
+	xasprintf(&prompt, "%s %s", host, dflt_prompt);
 
 	return prompt;
 }
@@ -1180,23 +1188,29 @@ static void fork_session(struct login_context *cxt)
 static void init_environ(struct login_context *cxt)
 {
 	struct passwd *pwd = cxt->pwd;
-	char *termenv, **env;
+	struct ul_env_list *saved;
+	char **env;
 	char tmp[PATH_MAX];
 	int len, i;
 
-	termenv = getenv("TERM");
-	if (termenv)
-		termenv = xstrdup(termenv);
+	saved = env_list_add_getenv(NULL, "TERM", "dumb");
 
 	/* destroy environment unless user has requested preservation (-p) */
-	if (!cxt->keep_env)
+	if (!cxt->keep_env) {
+		const char *str = getlogindefs_str("LOGIN_ENV_SAFELIST", NULL);
+
+		saved = env_list_add_getenvs(saved, str);
 		environ = xcalloc(1, sizeof(char *));
+	}
+
+	if (env_list_setenv(saved, 1) != 0)
+		err(EXIT_FAILURE, _("failed to set the environment variables"));
+
+	env_list_free(saved);
 
 	xsetenv("HOME", pwd->pw_dir, 0);	/* legal to override */
 	xsetenv("USER", pwd->pw_name, 1);
 	xsetenv("SHELL", pwd->pw_shell, 1);
-	xsetenv("TERM", termenv ? termenv : "dumb", 1);
-	free(termenv);
 
 	if (pwd->pw_uid) {
 		if (logindefs_setenv("PATH", "ENV_PATH", _PATH_DEFPATH) != 0)
@@ -1287,6 +1301,28 @@ static void __attribute__((__noreturn__)) usage(void)
 	exit(EXIT_SUCCESS);
 }
 
+static void load_credentials(struct login_context *cxt) {
+	char str[32] = { 0 };
+	char *env;
+	struct path_cxt *pc;
+
+	env = safe_getenv("CREDENTIALS_DIRECTORY");
+        if (!env)
+                return;
+
+	pc = ul_new_path("%s", env);
+	if (!pc) {
+		syslog(LOG_WARNING, _("failed to initialize path context"));
+		return;
+	}
+
+	if (ul_path_read_buffer(pc, str, sizeof(str), "login.noauth") > 0
+	    && *str && strcmp(str, "yes") == 0)
+		cxt->noauth = 1;
+
+	ul_unref_path(pc);
+}
+
 static void initialize(int argc, char **argv, struct login_context *cxt)
 {
 	int c;
@@ -1301,6 +1337,10 @@ static void initialize(int argc, char **argv, struct login_context *cxt)
 		{NULL, 0, NULL, 0}
 	};
 
+	/*
+	 * This bounds the time given to login.  Not a define, so it can
+	 * be patched on machines where it's too small.
+	 */
 	timeout = (unsigned int)getlogindefs_num("LOGIN_TIMEOUT", LOGIN_TIMEOUT);
 
 	/* TRANSLATORS: The standard value for %u is 60. */
@@ -1317,6 +1357,8 @@ static void initialize(int argc, char **argv, struct login_context *cxt)
 
 	setpriority(PRIO_PROCESS, 0, 0);
 	process_title_init(argc, argv);
+
+	load_credentials(cxt);
 
 	while ((c = getopt_long(argc, argv, "fHh:pV", longopts, NULL)) != -1)
 		switch (c) {
@@ -1388,6 +1430,7 @@ int main(int argc, char **argv)
 		.conv = { openpam_ttyconv, NULL } /* OpenPAM conversation function */
 #endif
 	};
+	bool script;
 
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
@@ -1450,7 +1493,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	cxt.quiet = get_hushlogin_status(pwd, 1) == 1 ? 1 : 0;
+	cxt.quiet = get_hushlogin_status(pwd, pam_getenv(cxt.pamh, "HOME"), 1) == 1 ? 1 : 0;
 
 	/*
 	 * Open PAM session (after successful authentication and account check).
@@ -1500,8 +1543,9 @@ int main(int argc, char **argv)
 	}
 
 	/* wait until here to change directory! */
-	if (chdir(pwd->pw_dir) < 0) {
-		warn(_("%s: change directory failed"), pwd->pw_dir);
+	const char *home = getenv("HOME") ?: pwd->pw_dir;
+	if (chdir(home) < 0) {
+		warn(_("%s: change directory failed"), home);
 
 		if (!getlogindefs_bool("DEFAULT_HOME", 1))
 			exit(0);
@@ -1512,7 +1556,9 @@ int main(int argc, char **argv)
 	}
 
 	/* if the shell field has a space: treat it like a shell script */
-	if (strchr(pwd->pw_shell, ' ')) {
+	script = strchr(pwd->pw_shell, ' ') != NULL;
+
+	if (script) {
 		char *buff;
 
 		xasprintf(&buff, "exec %s", pwd->pw_shell);
@@ -1521,14 +1567,13 @@ int main(int argc, char **argv)
 		child_argv[child_argc++] = "-c";
 		child_argv[child_argc++] = buff;
 	} else {
-		char tbuf[PATH_MAX + 2], *p;
+		char *buff, *p;
 
-		tbuf[0] = '-';
-		xstrncpy(tbuf + 1, ((p = strrchr(pwd->pw_shell, '/')) ?
-				    p + 1 : pwd->pw_shell), sizeof(tbuf) - 1);
-
+		xasprintf(&buff, "-%.*s", PATH_MAX,
+			  ((p = strrchr(pwd->pw_shell, '/')) ?
+			  p + 1 : pwd->pw_shell));
 		child_argv[child_argc++] = pwd->pw_shell;
-		child_argv[child_argc++] = xstrdup(tbuf);
+		child_argv[child_argc++] = buff;
 	}
 
 	child_argv[child_argc++] = NULL;
@@ -1538,7 +1583,7 @@ int main(int argc, char **argv)
 
 	execvp(child_argv[0], child_argv + 1);
 
-	if (!strcmp(child_argv[0], "/bin/sh"))
+	if (script)
 		warn(_("couldn't exec shell script"));
 	else
 		warn(_("no shell"));

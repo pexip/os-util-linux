@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: scriptlive
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-03-04
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "SCRIPTLIVE" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "SCRIPTLIVE" "1" "2025-03-04" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,36 +31,52 @@
 scriptlive \- re\-run session typescripts, using timing information
 .SH "SYNOPSIS"
 .sp
-\fBscriptlive\fP [options] [\fB\-t\fP] \fItimingfile\fP [\fB\-I\fP|\fB\-B\fP] \fItypescript\fP
+\fBscriptlive\fP [options] \fItimingfile\fP \fItypescript\fP
 .SH "DESCRIPTION"
 .sp
 This program re\-runs a typescript, using stdin typescript and timing information to ensure that input happens in the same rhythm as it originally appeared when the script was recorded.
 .sp
 The \fBsession is executed\fP in a newly created pseudoterminal with the user\(cqs $SHELL (or defaults to \fI/bin/bash\fP).
 .sp
-\fBBe careful!\fP Do not forget that the typescript may contains arbitrary commands. It is recommended to use \fB"scriptreplay \-\-stream in \-\-log\-in typescript"\fP (or with \fB\-\-log\-io\fP instead of \fB\-\-log\-in\fP) to verify the typescript before it is executed by \fBscriptlive\fP.
+\fBBe careful!\fP The typescript may contain arbitrary commands. It is
+recommended to use \fB"scriptreplay \-\-stream in \-\-log\-in typescript"\fP
+(or with \fB\-\-log\-io\fP instead of \fB\-\-log\-in\fP) to verify the typescript
+before it is executed with \fBscriptlive\fP.
 .sp
-The timing information is what \fBscript\fP(1) outputs to file specified by \fB\-\-log\-timing\fP. The typescript has to contain stdin information and it is what script1 outputs to file specified by \fB\-\-log\-in\fP or \fB\-\-log\-io\fP.
+The timing information is what \fBscript\fP(1) outputs to the file specified by
+\fB\-\-log\-timing\fP. The typescript has to contain stdin information, and is what
+\fBscript\fP(1) outputs to the file specified by \fB\-\-log\-in\fP or \fB\-\-log\-io\fP.
 .SH "OPTIONS"
 .sp
 \fB\-I\fP, \fB\-\-log\-in\fP \fIfile\fP
 .RS 4
-File containing \fBscript\fP\(aqs terminal input.
+File containing \fBscript\fP\*(Aqs terminal input.
 .RE
 .sp
 \fB\-B\fP, \fB\-\-log\-io\fP \fIfile\fP
 .RS 4
-File containing \fBscript\fP\(aqs terminal output and input.
+File containing \fBscript\fP\*(Aqs terminal output and input.
+.RE
+.sp
+\fB\-E\fP, \fB\-\-echo\fP \fIwhen\fP
+.RS 4
+This option controls the \fBECHO\fP flag for the slave end of the session\(cqs
+pseudoterminal. The supported modes are \fBalways\fP, \fBnever\fP, and \fBauto\fP.
+.sp
+The default is \fBauto\fP \(em in which case \fBECHO\fP is enabled. This default
+behavior is subject to change.
 .RE
 .sp
 \fB\-t\fP, \fB\-\-timing\fP \fIfile\fP
 .RS 4
-File containing \fBscript\fP\(aqs timing output. This option overrides old\-style arguments.
+File containing \fBscript\fP\*(Aqs timing output.
+This option replaces the \fItimingfile\fP positional argument.
 .RE
 .sp
 \fB\-T\fP, \fB\-\-log\-timing\fP \fIfile\fP
 .RS 4
-Aliased to \fB\-t\fP, maintained for compatibility with \fBscript\fP(1) command\-line options.
+An alias for \fB\-t\fP; maintained for compatibility with the \fBscript\fP(1)
+command\-line options.
 .RE
 .sp
 \fB\-d\fP, \fB\-\-divisor\fP \fInumber\fP
@@ -80,7 +96,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "EXAMPLES"
 .sp
@@ -113,8 +129,8 @@ Released under the GNU General Public License version 2 or later.
 \fBscriptreplay\fP(1)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBscriptlive\fP command is part of the util\-linux package which can be downloaded from \c

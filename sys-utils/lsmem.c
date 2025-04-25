@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * lsmem - Show memory configuration
  *
  * Copyright IBM Corp. 2016
@@ -8,15 +10,6 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- *
- * This program is distributed in the hope that it would be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 #include <c.h>
 #include <nls.h>
@@ -25,6 +18,7 @@
 #include <closestream.h>
 #include <xalloc.h>
 #include <getopt.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <dirent.h>
@@ -60,7 +54,7 @@ struct memory_block {
 	int		node;
 	int		nr_zones;
 	int		zones[MAX_NR_ZONES];
-	unsigned int	removable:1;
+	bool		removable;
 };
 
 struct lsmem {
@@ -102,7 +96,7 @@ enum {
 	COL_ZONES,
 };
 
-static char *zone_names[] = {
+static const char *const zone_names[] = {
 	[ZONE_DMA]	= "DMA",
 	[ZONE_DMA32]	= "DMA32",
 	[ZONE_NORMAL]	= "Normal",
@@ -312,22 +306,22 @@ static void fill_scols_table(struct lsmem *lsmem)
 static void print_summary(struct lsmem *lsmem)
 {
 	if (lsmem->bytes) {
-		printf("%-23s %15"PRId64"\n",_("Memory block size:"), lsmem->block_size);
-		printf("%-23s %15"PRId64"\n",_("Total online memory:"), lsmem->mem_online);
-		printf("%-23s %15"PRId64"\n",_("Total offline memory:"), lsmem->mem_offline);
+		printf("%-32s %15"PRId64"\n",_("Memory block size:"), lsmem->block_size);
+		printf("%-32s %15"PRId64"\n",_("Total online memory:"), lsmem->mem_online);
+		printf("%-32s %15"PRId64"\n",_("Total offline memory:"), lsmem->mem_offline);
 	} else {
 		char *p;
 
 		if ((p = size_to_human_string(SIZE_SUFFIX_1LETTER, lsmem->block_size)))
-			printf("%-23s %5s\n",_("Memory block size:"), p);
+			printf("%-32s %5s\n",_("Memory block size:"), p);
 		free(p);
 
 		if ((p = size_to_human_string(SIZE_SUFFIX_1LETTER, lsmem->mem_online)))
-			printf("%-23s %5s\n",_("Total online memory:"), p);
+			printf("%-32s %5s\n",_("Total online memory:"), p);
 		free(p);
 
 		if ((p = size_to_human_string(SIZE_SUFFIX_1LETTER, lsmem->mem_offline)))
-			printf("%-23s %5s\n",_("Total offline memory:"), p);
+			printf("%-32s %5s\n",_("Total offline memory:"), p);
 		free(p);
 	}
 }
@@ -477,7 +471,7 @@ static void read_info(struct lsmem *lsmem)
 			continue;
 		}
 		lsmem->nblocks++;
-		lsmem->blocks = xrealloc(lsmem->blocks, lsmem->nblocks * sizeof(blk));
+		lsmem->blocks = xreallocarray(lsmem->blocks, lsmem->nblocks, sizeof(blk));
 		*&lsmem->blocks[lsmem->nblocks - 1] = blk;
 	}
 }
@@ -492,6 +486,7 @@ static int memory_block_filter(const struct dirent *de)
 static void read_basic_info(struct lsmem *lsmem)
 {
 	char dir[PATH_MAX];
+	int i = 0;
 
 	if (ul_path_access(lsmem->sysmem, F_OK, "block_size_bytes") != 0)
 		errx(EXIT_FAILURE, _("This system does not support memory blocks"));
@@ -502,8 +497,12 @@ static void read_basic_info(struct lsmem *lsmem)
 	if (lsmem->ndirs <= 0)
 		err(EXIT_FAILURE, _("Failed to read %s"), dir);
 
-	if (memory_block_get_node(lsmem, lsmem->dirs[0]->d_name) != -1)
-		lsmem->have_nodes = 1;
+	for (i = 0; i < lsmem->ndirs; i++) {
+		if (memory_block_get_node(lsmem, lsmem->dirs[i]->d_name) != -1)	{
+			lsmem->have_nodes = 1;
+			break;
+		}
+	}
 
 	/* The valid_zones sysmem attribute was introduced with kernel 3.18 */
 	if (ul_path_access(lsmem->sysmem, F_OK, "memory0/valid_zones") == 0)
@@ -535,13 +534,13 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("     --summary[=when] print summary information (never,always or only)\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(22));
+	fprintf(out, USAGE_HELP_OPTIONS(22));
 
 	fputs(USAGE_COLUMNS, out);
 	for (i = 0; i < ARRAY_SIZE(coldescs); i++)
 		fprintf(out, " %10s  %s\n", coldescs[i].name, _(coldescs[i].help));
 
-	printf(USAGE_MAN_TAIL("lsmem(1)"));
+	fprintf(out, USAGE_MAN_TAIL("lsmem(1)"));
 
 	exit(EXIT_SUCCESS);
 }
@@ -714,7 +713,7 @@ int main(int argc, char **argv)
 
 		cl = scols_table_new_column(lsmem->table, ci->name, ci->whint, ci->flags);
 		if (!cl)
-			err(EXIT_FAILURE, _("Failed to initialize output column"));
+			err(EXIT_FAILURE, _("failed to initialize output column"));
 
 		if (lsmem->json) {
 			int id = get_column_id(i);

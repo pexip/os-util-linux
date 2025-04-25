@@ -107,6 +107,7 @@ host_triplet = @host@
 subdir = libmount/docs
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/ax_check_vscript.m4 \
+	$(top_srcdir)/m4/ax_compare_version.m4 \
 	$(top_srcdir)/m4/compiler.m4 $(top_srcdir)/m4/gettext.m4 \
 	$(top_srcdir)/m4/gtk-doc.m4 $(top_srcdir)/m4/iconv.m4 \
 	$(top_srcdir)/m4/intlmacosx.m4 $(top_srcdir)/m4/lib-ld.m4 \
@@ -116,7 +117,8 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_check_vscript.m4 \
 	$(top_srcdir)/m4/lt~obsolete.m4 $(top_srcdir)/m4/nls.m4 \
 	$(top_srcdir)/m4/pkg.m4 $(top_srcdir)/m4/po.m4 \
 	$(top_srcdir)/m4/progtest.m4 $(top_srcdir)/m4/tls.m4 \
-	$(top_srcdir)/m4/ul.m4 $(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/ul.m4 $(top_srcdir)/m4/year2038.m4 \
+	$(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(am__DIST_COMMON)
@@ -158,10 +160,12 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
+BISON = @BISON@
 BSD_WARN_CFLAGS = @BSD_WARN_CFLAGS@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
+COVERAGE_LDFLAGS = @COVERAGE_LDFLAGS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
 CRYPTSETUP_CFLAGS = @CRYPTSETUP_CFLAGS@
@@ -191,6 +195,7 @@ ETAGS = @ETAGS@
 EXEEXT = @EXEEXT@
 FGREP = @FGREP@
 FILECMD = @FILECMD@
+FLEX = @FLEX@
 FUZZING_ENGINE_LDFLAGS = @FUZZING_ENGINE_LDFLAGS@
 GETTEXT_MACRO_VERSION = @GETTEXT_MACRO_VERSION@
 GMSGFMT = @GMSGFMT@
@@ -218,6 +223,8 @@ LIBFDISK_VERSION = @LIBFDISK_VERSION@
 LIBFDISK_VERSION_INFO = @LIBFDISK_VERSION_INFO@
 LIBICONV = @LIBICONV@
 LIBINTL = @LIBINTL@
+LIBLASTLOG2_VERSION = @LIBLASTLOG2_VERSION@
+LIBLASTLOG2_VERSION_INFO = @LIBLASTLOG2_VERSION_INFO@
 LIBMOUNT_MAJOR_VERSION = @LIBMOUNT_MAJOR_VERSION@
 LIBMOUNT_MINOR_VERSION = @LIBMOUNT_MINOR_VERSION@
 LIBMOUNT_PATCH_VERSION = @LIBMOUNT_PATCH_VERSION@
@@ -243,6 +250,7 @@ MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
 MATH_LIBS = @MATH_LIBS@
 MKDIR_P = @MKDIR_P@
+MQ_LIBS = @MQ_LIBS@
 MSGFMT = @MSGFMT@
 MSGFMT_015 = @MSGFMT_015@
 MSGMERGE = @MSGMERGE@
@@ -256,7 +264,6 @@ NCURSES_CFLAGS = @NCURSES_CFLAGS@
 NCURSES_LIBS = @NCURSES_LIBS@
 NM = @NM@
 NMEDIT = @NMEDIT@
-NO_UNUSED_WARN_CFLAGS = @NO_UNUSED_WARN_CFLAGS@
 OBJDUMP = @OBJDUMP@
 OBJEXT = @OBJEXT@
 OTOOL = @OTOOL@
@@ -273,7 +280,9 @@ PKG_CONFIG = @PKG_CONFIG@
 PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
 PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 PO4A = @PO4A@
+POSIXIPC_LIBS = @POSIXIPC_LIBS@
 POSUB = @POSUB@
+PTHREAD_LIBS = @PTHREAD_LIBS@
 PYTHON = @PYTHON@
 PYTHON_CFLAGS = @PYTHON_CFLAGS@
 PYTHON_EXEC_PREFIX = @PYTHON_EXEC_PREFIX@
@@ -296,6 +305,8 @@ SHELL = @SHELL@
 SOCKET_LIBS = @SOCKET_LIBS@
 SOLIB_CFLAGS = @SOLIB_CFLAGS@
 SOLIB_LDFLAGS = @SOLIB_LDFLAGS@
+SQLITE3_CFLAGS = @SQLITE3_CFLAGS@
+SQLITE3_LIBS = @SQLITE3_LIBS@
 STRIP = @STRIP@
 SUID_CFLAGS = @SUID_CFLAGS@
 SUID_LDFLAGS = @SUID_LDFLAGS@
@@ -375,12 +386,15 @@ pyexecdir = @pyexecdir@
 pythondir = @pythondir@
 runstatedir = @runstatedir@
 sbindir = @sbindir@
+securelib_execdir = @securelib_execdir@
 sharedstatedir = @sharedstatedir@
 srcdir = @srcdir@
 sysconfdir = @sysconfdir@
 sysconfstaticdir = @sysconfstaticdir@
 systemdsystemunitdir = @systemdsystemunitdir@
+sysusersdir = @sysusersdir@
 target_alias = @target_alias@
+tmpfilesdir = @tmpfilesdir@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
@@ -388,6 +402,10 @@ usrbin_execdir = @usrbin_execdir@
 usrlib_execdir = @usrlib_execdir@
 usrsbin_execdir = @usrsbin_execdir@
 vendordir = @vendordir@
+with_bashcompletiondir = @with_bashcompletiondir@
+with_systemdsystemunitdir = @with_systemdsystemunitdir@
+with_sysusersdir = @with_sysusersdir@
+with_tmpfilesdir = @with_tmpfilesdir@
 
 # We require automake 1.10 at least.
 AUTOMAKE_OPTIONS = 1.10

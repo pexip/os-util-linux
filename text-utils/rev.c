@@ -63,6 +63,7 @@
 #include "widechar.h"
 #include "c.h"
 #include "closestream.h"
+#include "fgetwc_or_err.h"
 
 static void sig_handler(int signo __attribute__ ((__unused__)))
 {
@@ -72,15 +73,15 @@ static void sig_handler(int signo __attribute__ ((__unused__)))
 static void __attribute__((__noreturn__)) usage(void)
 {
 	FILE *out = stdout;
-	fprintf(out, _("Usage: %s [options] [file ...]\n"),
-		program_invocation_short_name);
+	fputs(USAGE_HEADER, out);
+	fprintf(out, _(" %s [options] [<file> ...]\n"), program_invocation_short_name);
 
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_("Reverse lines characterwise.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
-	printf(USAGE_HELP_OPTIONS(16));
-	printf(USAGE_MAN_TAIL("rev(1)"));
+	fprintf(out, USAGE_HELP_OPTIONS(16));
+	fprintf(out, USAGE_MAN_TAIL("rev(1)"));
 
 	exit(EXIT_SUCCESS);
 }
@@ -96,16 +97,38 @@ static void reverse_str(wchar_t *str, size_t n)
 	}
 }
 
+static size_t read_line(wchar_t sep, wchar_t *str, size_t n, FILE *stream)
+{
+	size_t r = 0;
+	while (r < n) {
+		wint_t c = fgetwc_or_err(stream);
+		if (c == WEOF)
+			break;
+		str[r++] = c;
+		if ((wchar_t) c == sep)
+			break;
+	}
+	return r;
+}
+
+static void write_line(wchar_t *str, size_t n, FILE *stream)
+{
+	for (size_t i = 0; i < n; i++)
+		fputwc(str[i], stream);
+}
+
 int main(int argc, char *argv[])
 {
 	char const *filename = "stdin";
 	wchar_t *buf;
+	wchar_t sep = L'\n';
 	size_t len, bufsiz = BUFSIZ;
 	FILE *fp = stdin;
 	int ch, rval = EXIT_SUCCESS;
 	uintmax_t line;
 
 	static const struct option longopts[] = {
+		{ "zero",       no_argument,       NULL, '0' },
 		{ "version",    no_argument,       NULL, 'V' },
 		{ "help",       no_argument,       NULL, 'h' },
 		{ NULL,         0, NULL, 0 }
@@ -119,8 +142,11 @@ int main(int argc, char *argv[])
 	signal(SIGINT, sig_handler);
 	signal(SIGTERM, sig_handler);
 
-	while ((ch = getopt_long(argc, argv, "Vh", longopts, NULL)) != -1)
+	while ((ch = getopt_long(argc, argv, "Vh0", longopts, NULL)) != -1)
 		switch(ch) {
+		case '0':
+			sep = L'\0';
+			break;
 		case 'V':
 			print_version(EXIT_SUCCESS);
 		case 'h':
@@ -132,7 +158,7 @@ int main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
-	buf = xmalloc(bufsiz * sizeof(wchar_t));
+	buf = xreallocarray(NULL, bufsiz, sizeof(wchar_t));
 
 	do {
 		if (*argv) {
@@ -146,35 +172,31 @@ int main(int argc, char *argv[])
 		}
 
 		line = 0;
-		while (fgetws(buf, bufsiz, fp)) {
-			len = wcslen(buf);
-
-			if (len == 0)
-				continue;
+		while (!feof(fp)) {
+			len = read_line(sep, buf, bufsiz, fp);
 
 			/* This is my hack from setpwnam.c -janl */
-			while (buf[len-1] != '\n' && !feof(fp)) {
+			while (len == bufsiz && !feof(fp)) {
 				/* Extend input buffer if it failed getting the whole line */
 				/* So now we double the buffer size */
 				bufsiz *= 2;
 
-				buf = xrealloc(buf, bufsiz * sizeof(wchar_t));
+				buf = xreallocarray(buf, bufsiz, sizeof(wchar_t));
 
 				/* And fill the rest of the buffer */
-				if (!fgetws(&buf[len], bufsiz/2, fp))
-					break;
-
-				len = wcslen(buf);
+				len += read_line(sep, &buf[len], bufsiz/2, fp);
 			}
-			if (buf[len - 1] == '\n')
-				buf[len--] = '\0';
-			reverse_str(buf, len);
-			fputws(buf, stdout);
+			if (ferror(fp)) {
+				warn("%s: %ju", filename, line);
+				rval = EXIT_FAILURE;
+				break;
+			}
+			if (len == 0)
+				continue;
+
+			reverse_str(buf, buf[len - 1] == sep ? len - 1 : len);
+			write_line(buf, len, stdout);
 			line++;
-		}
-		if (ferror(fp)) {
-			warn("%s: %ju", filename, line);
-			rval = EXIT_FAILURE;
 		}
 		if (fp != stdin)
 			fclose(fp);
@@ -183,4 +205,3 @@ int main(int argc, char *argv[])
 	free(buf);
 	return rval;
 }
-

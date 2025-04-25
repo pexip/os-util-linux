@@ -1,6 +1,12 @@
 /*
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ *
  * i386 CMOS starts out with 14 bytes clock data alpha has something
  * similar, but with details depending on the machine type.
  *
@@ -82,7 +88,7 @@ static unsigned short clock_ctl_addr = 0x70;
 static unsigned short clock_data_addr = 0x71;
 
 /*
- * Hmmh, this isn't very atomic. Maybe we should force an error instead?
+ * Hmm, this isn't very atomic. Maybe we should force an error instead?
  *
  * TODO: optimize the access to CMOS by mlockall(MCL_CURRENT) and SCHED_FIFO
  */
@@ -346,7 +352,6 @@ static int i386_iopl(const int level)
 # else
 static int i386_iopl(const int level __attribute__ ((__unused__)))
 {
-	extern int ioperm(unsigned long from, unsigned long num, int turn_on);
 	return ioperm(clock_ctl_addr, 2, 1);
 }
 # endif
@@ -369,7 +374,7 @@ static const char *get_device_path(void)
 	return NULL;
 }
 
-static struct clock_ops cmos_interface = {
+static const struct clock_ops cmos_interface = {
 	N_("Using direct ISA access to the clock"),
 	get_permissions_cmos,
 	read_hardware_clock_cmos,
@@ -381,7 +386,7 @@ static struct clock_ops cmos_interface = {
 /*
  * return &cmos if cmos clock present, NULL otherwise.
  */
-struct clock_ops *probe_for_cmos_clock(void)
+const struct clock_ops *probe_for_cmos_clock(void)
 {
 	return &cmos_interface;
 }

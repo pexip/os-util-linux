@@ -1,6 +1,9 @@
 /*
- * Copyright (C) 2012 Ondrej Oprala <ooprala@redhat.com>
- * Copyright (C) 2012-2014 Karel Zak <kzak@redhat.com>
+ * No copyright is claimed.  This code is in the public domain; do with
+ * it what you wish.
+ *
+ * Authors: 2012 Ondrej Oprala <ooprala@redhat.com>
+ *          2012-2025 Karel Zak <kzak@redhat.com>
  *
  * This file may be distributed under the terms of the
  * GNU Lesser General Public License.
@@ -230,8 +233,8 @@ static int filename_to_tokens(const char *str,
 
 	/* parse utilname */
 	p = term_start ? term_start : type_start;
-	*name =  str;
-	*namesz	= p - str - 1;
+	*name = str;
+	*namesz = p - str - 1;
 
 	return 0;
 }
@@ -244,7 +247,7 @@ static int filename_to_tokens(const char *str,
 static int colors_readdir(struct ul_color_ctl *cc, const char *dirname)
 {
 	DIR *dir;
-	int rc = 0;
+	int rc = -ENOENT;
 	struct dirent *d;
 	char sfile[PATH_MAX] = { '\0' };
 	size_t namesz, termsz;
@@ -310,6 +313,7 @@ static int colors_readdir(struct ul_color_ctl *cc, const char *dirname)
 					type == UL_COLORFILE_ENABLE ? "enable" : "???",
 					cc->scores[type], score));
 		cc->scores[type] = score;
+		rc = 0;
 		if (type == UL_COLORFILE_SCHEME)
 			strncpy(sfile, d->d_name, sizeof(sfile));
 	}
@@ -351,96 +355,12 @@ static char *colors_get_homedir(char *buf, size_t bufsz)
 	return NULL;
 }
 
-/* canonicalize sequence */
-static int cn_sequence(const char *str, char **seq)
-{
-	char *in, *out;
-	int len;
-
-	if (!str)
-		return -EINVAL;
-
-	*seq = NULL;
-
-	/* convert logical names like "red" to the real sequence */
-	if (*str != '\\' && isalpha(*str)) {
-		const char *s = color_sequence_from_colorname(str);
-		*seq = strdup(s ? s : str);
-
-		return *seq ? 0 : -ENOMEM;
-	}
-
-	/* convert xx;yy sequences to "\033[xx;yy" */
-	if ((len = asprintf(seq, "\033[%sm", str)) < 1)
-		return -ENOMEM;
-
-	for (in = *seq, out = *seq; in && *in; in++) {
-		if (*in != '\\') {
-			*out++ = *in;
-			continue;
-		}
-		switch(*(in + 1)) {
-		case 'a':
-			*out++ = '\a';	/* Bell */
-			break;
-		case 'b':
-			*out++ = '\b';	/* Backspace */
-			break;
-		case 'e':
-			*out++ = '\033';	/* Escape */
-			break;
-		case 'f':
-			*out++ = '\f';	/* Form Feed */
-			break;
-		case 'n':
-			*out++ = '\n';	/* Newline */
-			break;
-		case 'r':
-			*out++ = '\r';	/* Carriage Return */
-			break;
-		case 't':
-			*out++ = '\t';	/* Tab */
-			break;
-		case 'v':
-			*out++ = '\v';	/* Vertical Tab */
-			break;
-		case '\\':
-			*out++ = '\\';	/* Backslash */
-			break;
-		case '_':
-			*out++ = ' ';	/* Space */
-			break;
-		case '#':
-			*out++ = '#';	/* Hash mark */
-			break;
-		case '?':
-			*out++ = '?';	/* Question mark */
-			break;
-		default:
-			*out++ = *in;
-			*out++ = *(in + 1);
-			break;
-		}
-		in++;
-	}
-
-	if (out) {
-		assert ((out - *seq) <= len);
-		*out = '\0';
-	}
-
-	return 0;
-}
-
-
 /*
  * Adds one color sequence to array with color scheme.
- * When returning success (0) this function takes ownership of
- * @seq and @name, which have to be allocated strings.
  */
 static int colors_add_scheme(struct ul_color_ctl *cc,
-			     char *name,
-			     char *seq0)
+			     const char *name,
+			     const char *seq0)
 {
 	struct ul_color_scheme *cs = NULL;
 	char *seq = NULL;
@@ -451,34 +371,15 @@ static int colors_add_scheme(struct ul_color_ctl *cc,
 
 	DBG(SCHEME, ul_debug("add '%s'", name));
 
-	rc = cn_sequence(seq0, &seq);
-	if (rc)
-		return rc;
-
+	seq = color_get_sequence(seq0);
+	if (!seq)
+		return -EINVAL;
 	rc = -ENOMEM;
-
-	/* convert logical name (e.g. "red") to real ESC code */
-	if (isalpha(*seq)) {
-		const char *s = color_sequence_from_colorname(seq);
-		char *p;
-
-		if (!s) {
-			DBG(SCHEME, ul_debug("unknown logical name: %s", seq));
-			rc = -EINVAL;
-			goto err;
-		}
-
-		p = strdup(s);
-		if (!p)
-			goto err;
-		free(seq);
-		seq = p;
-	}
 
 	/* enlarge the array */
 	if (cc->nschemes == cc->schemes_sz) {
-		void *tmp = realloc(cc->schemes, (cc->nschemes + 10)
-					* sizeof(struct ul_color_scheme));
+		void *tmp = reallocarray(cc->schemes, cc->nschemes + 10,
+					 sizeof(struct ul_color_scheme));
 		if (!tmp)
 			goto err;
 		cc->schemes = tmp;
@@ -659,8 +560,11 @@ static int colors_terminal_is_ready(void)
 	{
 		int ret;
 
-		if (setupterm(NULL, STDOUT_FILENO, &ret) == 0 && ret == 1)
+		/* setupterm() allocates memory, del_curterm() deallocates it */
+		if (setupterm(NULL, STDOUT_FILENO, &ret) == 0 && ret == 1) {
 			ncolors = tigetnum("colors");
+			del_curterm(cur_term);
+		}
 	}
 #endif
 	if (1 < ncolors) {
@@ -697,7 +601,9 @@ int colors_init(int mode, const char *name)
 		cc->mode = mode;
 
 	if (cc->mode == UL_COLORMODE_UNDEF
+	    && getenv("NO_COLOR") == NULL
 	    && (ready = colors_terminal_is_ready())) {
+
 		int rc = colors_read_configuration(cc);
 		if (rc)
 			cc->mode = UL_COLORMODE_DEFAULT;
@@ -809,12 +715,23 @@ void color_fdisable(FILE *f)
 }
 
 /*
+ * Get reset sequence
+ */
+const char *color_get_disable_sequence(void)
+{
+	if (!ul_colors.disabled && ul_colors.has_colors)
+		return UL_COLOR_RESET;
+	else
+		return "";
+}
+
+/*
  * Parses @str to return UL_COLORMODE_*
  */
 int colormode_from_string(const char *str)
 {
 	size_t i;
-	static const char *modes[] = {
+	static const char *const modes[] = {
 		[UL_COLORMODE_AUTO]   = "auto",
 		[UL_COLORMODE_NEVER]  = "never",
 		[UL_COLORMODE_ALWAYS] = "always",
@@ -862,7 +779,7 @@ int main(int argc, char *argv[])
 	};
 	int c, mode = UL_COLORMODE_UNDEF;	/* default */
 	const char *color = "red", *name = NULL, *color_scheme = NULL;
-	const char *seq = NULL;
+	char *seq = NULL;
 
 	while ((c = getopt_long(argc, argv, "C:c:m:n:", longopts, NULL)) != -1) {
 		switch (c) {
@@ -891,7 +808,10 @@ int main(int argc, char *argv[])
 
 	colors_init(mode, name ? name : program_invocation_short_name);
 
-	seq = color_sequence_from_colorname(color);
+	if (color_is_sequence(color))
+		seq = strdup(color);
+	else
+		seq = color_get_sequence(color);
 
 	if (color_scheme)
 		color_scheme_enable(color_scheme, seq);
@@ -900,6 +820,8 @@ int main(int argc, char *argv[])
 	printf("Hello World!");
 	color_disable();
 	fputc('\n', stdout);
+
+	free(seq);
 
 	return EXIT_SUCCESS;
 }

@@ -27,7 +27,7 @@ The device may be specified by device name, major:minor numbers, filesystem labe
 
 The command-line option *--target* accepts any file or directory and then *findmnt* displays the filesystem for the given path.
 
-The command prints all mounted filesystems in the tree-like format by default.
+The command prints all mounted filesystems in the tree-like format by default. The default output, is subject to change. So whenever possible, you should avoid using default output in your scripts. Always explicitly define expected columns by using *--output columns-list* in environments where a stable output is required.
 
 The relationship between block devices and filesystems is not always one-to-one. The filesystem may use more block devices. This is why *findmnt* provides  SOURCE and SOURCES (pl.) columns. The column SOURCES displays all devices where it is possible to find the same filesystem  UUID (or another tag specified in _fstab_ when executed with *--fstab* and *--evaluate*).
 
@@ -48,11 +48,8 @@ Do not canonicalize paths at all. This option affects the comparing of paths and
 *-c*, *--canonicalize*::
 Canonicalize all printed paths.
 
-*--deleted*::
-Print filesystems where target (mountpoint) is marked as deleted by kernel.
-
 *-D*, *--df*::
-Imitate the output of *df*(1). This option is equivalent to *-o SOURCE,FSTYPE,SIZE,USED,AVAIL,USE%,TARGET* but excludes all pseudo filesystems. Use *--all* to print all filesystems.
+Imitate the output of *df*(1). This option is equivalent to *-o SOURCE,FSTYPE,SIZE,USED,AVAIL,USE%,TARGET* but excludes all pseudo filesystems. Use *--all* to print all filesystems. See also *-I*, *--dfi* options.
 
 *-d*, *--direction* _word_::
 The search direction, either *forward* or *backward*.
@@ -60,20 +57,41 @@ The search direction, either *forward* or *backward*.
 *-e*, *--evaluate*::
 Convert all tags (LABEL, UUID, PARTUUID, or PARTLABEL) to the corresponding device names for the SOURCE column.  It's an unusual situation, but the same tag may be duplicated (used for more devices). For this purpose, there is SOURCES (pl.) column. This column displays by multi-line cell all devices where the tag is detected by libblkid. This option makes sense for _fstab_ only.
 
+*--hyperlink*[**=**_mode_]::
+Print mountpoint paths as terminal hyperlinks. The _mode_ can be set to "always", "never", or "auto". The optional argument _when_ can be set to "auto", "never", or "always". If the _when_ argument is omitted, it will default to "auto". The "auto" setting means that hyperlinks will only be used if the output is on a terminal.
+
 *-F*, *--tab-file* _path_::
 Search in an alternative file. If used with *--fstab*, *--mtab* or *--kernel*, then it overrides the default paths. If specified more than once, then tree-like output is disabled (see the *--list* option).
 
 *-f*, *--first-only*::
 Print the first matching filesystem only.
 
+*-H*, *--list-columns*::
+List the available columns, use with *--json* or *--raw* to get output in machine-readable format.
+
+*-I*, *--dfi*::
+Imitate the output of *df*(1) with its *-i* option. This option is equivalent to *-o SOURCE,FSTYPE,INO.TOTAL,INO.USED,INO.AVAIL,INO.USE%,TARGET* but excludes all pseudo filesystems. Use *--all* to print all filesystems.
+
 *-i*, *--invert*::
 Invert the sense of matching.
+
+*--id* _number_::
+Select a filesystem using the mount node ID.
+
+*--uniq-id* _number_::
+Select a filesystem using the mount node 64-bit ID, use with *--kernel=listmount* option.
 
 *-J*, *--json*::
 Use JSON output format.
 
-*-k*, *--kernel*::
-Search in _/proc/self/mountinfo_. The output is in the tree-like format. This is the default. The output contains only mount options maintained by kernel (see also *--mtab*).
+*-k*, *--kernel*[_=method_]::
+Reads information about filesystems from the kernel. This is the default output. The format is tree-like and only includes mount options managed by the kernel (see also *--mtab*).
++
+The optional argument _method_ can be either:
++
+* *mountinfo* - this is the default method and it reads data from the _/proc/self/mountinfo_ file.
++
+* *listmount* - This is an EXPERIMENTAL method that uses the listmount() and statmount() syscalls to generate the mount table. The output may not contain all details about mount nodes (for example, SOURCE is currently missing).
 
 *-l*, *--list*::
 Use the list output format. This output format is automatically enabled if the output is restricted by the *-t*, *-O*, *-S* or *-T* option and the option *--submounts* is not used or if more that one source file (the option *-F*) is specified.
@@ -105,6 +123,8 @@ Output almost all available columns. The columns that require *--poll* are not i
 
 *-P*, *--pairs*::
 Produce output in the form of key="value" pairs. All potentially unsafe value characters are hex-escaped (\x<code>). See also option *--shell*.
++
+Note that SOURCES column, use multi-line cells. In these cases, the column use an array-like formatting in the output, for example *name=("aaa" "bbb" "ccc")*.
 
 *-p*, *--poll*[_=list_]::
 Monitor changes in the _/proc/self/mountinfo_ file. Supported actions are: mount, umount, remount and move. More than one action may be specified in a comma-separated list. All actions are monitored by default.
@@ -126,11 +146,22 @@ Print only pseudo filesystems.
 *--shadow*::
 Print only filesystems over-mounted by another filesystem.
 
+*-Q*, *--filter* _expr_::
+Print only the filesystems that meet the conditions specified by the expr.
++
+This feature is EXPERIMENTAL. See also *scols-filter*(5).
+For example, include xfs having more than 50% free space:
+____
+ findmnt -Q 'INO.USED < INO.AVAIL && FSTYPE == "xfs"'
+____
+
 *-R*, *--submounts*::
 Print recursively all submounts for the selected filesystems. The restrictions defined by options *-t*, *-O*, *-S*, *-T* and *--direction* are not applied to submounts. All submounts are always printed in tree-like order. The option enables the tree-like output format by default. This option has no effect for *--mtab* or *--fstab*.
 
 *-r*, *--raw*::
 Use raw output format. All potentially unsafe characters are hex-escaped (\x<code>).
++
+Note that column SOURCES, use multi-line cells. In these cases, the column may produce more strings on the same line.
 
 *--real*::
 Print only real filesystems.
@@ -236,6 +267,7 @@ mailto:kzak@redhat.com[Karel Zak]
 
 *fstab*(5),
 *mount*(8)
+*scols-filter*(5)
 
 include::man-common/bugreports.adoc[]
 

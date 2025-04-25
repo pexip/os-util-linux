@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: mkfs.minix
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "MKFS.MINIX" "8" "2022-05-11" "util\-linux 2.38.1" "System Administration"
+.TH "MKFS.MINIX" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -64,7 +64,7 @@ Check the device for bad blocks before creating the filesystem. If any are found
 Specify the maximum length of filenames. Currently, the only allowable values are 14 and 30 for file system versions 1 and 2. Version 3 allows only value 60. The default is 30.
 .RE
 .sp
-\fB\-\-lock\fP[=\fImode\fP]
+\fB\-\-lock\fP[\fB=\fP\fImode\fP]
 .RS 4
 Use exclusive BSD lock for device or file it operates. The optional argument \fImode\fP can be \fByes\fP, \fBno\fP (or 1 and 0) or \fBnonblock\fP. If the \fImode\fP argument is omitted, it defaults to \fByes\fP. This option overwrites environment variable \fB$LOCK_BLOCK_DEVICE\fP. The default is not to use any lock at all, but it\(cqs recommended to avoid collisions with \fBsystemd\-udevd\fP(8) or other tools.
 .RE
@@ -101,7 +101,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 The long option cannot be combined with other options.
 .RE
 .SH "ENVIRONMENT"
@@ -135,8 +135,8 @@ Usage or syntax error
 \fBreboot\fP(8)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBmkfs.minix\fP command is part of the util\-linux package which can be downloaded from \c

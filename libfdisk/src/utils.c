@@ -29,6 +29,7 @@ static int read_from_device(struct fdisk_context *cxt,
 		return -errno;
 	}
 
+	errno = 0;
 	r = read(cxt->dev_fd, buf, size);
 	if (r < 0 || (size_t)r != size) {
 		if (!errno)
@@ -182,11 +183,15 @@ done:
 }
 
 #ifdef TEST_PROGRAM
-struct fdisk_label *fdisk_new_dos_label(struct fdisk_context *cxt) { return NULL; }
-struct fdisk_label *fdisk_new_bsd_label(struct fdisk_context *cxt) { return NULL; }
+struct fdisk_label *fdisk_new_dos_label(struct fdisk_context *cxt __attribute__((unused))) { return NULL; }
+struct fdisk_label *fdisk_new_bsd_label(struct fdisk_context *cxt __attribute__((unused))) { return NULL; }
 
-static int test_partnames(struct fdisk_test *ts, int argc, char *argv[])
+static int test_partnames(struct fdisk_test *ts __attribute__((unused)),
+			  int argc, char *argv[])
 {
+	if (argc != 2)
+		return -1;
+
 	size_t i;
 	const char *disk = argv[1];
 

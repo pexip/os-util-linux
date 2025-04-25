@@ -1,4 +1,13 @@
-
+/*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Copyright (C) 2014 Karel Zak <kzak@redhat.com>
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -102,6 +111,8 @@ static const struct menu menu_generic = {
 		MENU_ENT  ('t', N_("change a partition type")),
 		MENU_BENT_E('v', N_("verify the partition table"), FDISK_DISKLABEL_BSD),
 		MENU_ENT  ('i', N_("print information about a partition")),
+		MENU_ENT  ('e', N_("resize a partition")),
+		MENU_ENT  ('T', N_("discard (trim) sectors")),
 
 		MENU_XENT('d', N_("print the raw data of the first sector from the device")),
 		MENU_XENT('D', N_("print the raw data of the disklabel from the device")),
@@ -122,7 +133,7 @@ static const struct menu menu_generic = {
 		MENU_BENT ('q', N_("quit without saving changes")),
 		MENU_XENT ('r', N_("return to main menu")),
 
-		MENU_ENT_NEST('r', N_("return from BSD to DOS"), FDISK_DISKLABEL_BSD, FDISK_DISKLABEL_DOS),
+		MENU_ENT_NEST('r', N_("return from BSD to DOS (MBR)"), FDISK_DISKLABEL_BSD, FDISK_DISKLABEL_DOS),
 
 		MENU_ENT_NEST('r', N_("return from protective/hybrid MBR to GPT"), FDISK_DISKLABEL_DOS, FDISK_DISKLABEL_GPT),
 
@@ -138,7 +149,7 @@ static const struct menu menu_createlabel = {
 		MENU_SEP(N_("Create a new label")),
 		MENU_ENT('g', N_("create a new empty GPT partition table")),
 		MENU_ENT('G', N_("create a new empty SGI (IRIX) partition table")),
-		MENU_ENT('o', N_("create a new empty DOS partition table")),
+		MENU_ENT('o', N_("create a new empty MBR (DOS) partition table")),
 		MENU_ENT('s', N_("create a new empty Sun partition table")),
 
 		/* backward compatibility -- be sensitive to 'g', but don't
@@ -243,7 +254,7 @@ static const struct menu menu_bsd = {
 	}
 };
 
-static const struct menu *menus[] = {
+static const struct menu *const menus[] = {
 	&menu_gpt,
 	&menu_sun,
 	&menu_sgi,
@@ -433,8 +444,10 @@ int process_fdisk_menu(struct fdisk_context **cxt0)
 		/* Map ^C and ^D in main menu to 'q' */
 		if (is_interactive
 		    && fdisk_label_is_changed(fdisk_get_label(cxt, NULL))) {
+			/* TRANSLATORS: these yes no questions use rpmatch(),
+			 * and should be translated.  */
 			rc = get_user_reply(
-				_("\nAll unwritten changes will be lost, do you really want to quit? "),
+				_("\nAll unwritten changes will be lost, do you really want to quit? (y/n)"),
 				buf, sizeof(buf));
 			if (rc || !rpmatch(buf))
 				return 0;
@@ -675,6 +688,9 @@ static int generic_menu_cb(struct fdisk_context **cxt0,
 			rc = ask_for_wipe(cxt, partno);
 		break;
 	}
+	case 'e':
+		resize_partition(cxt);
+		break;
 	case 't':
 		change_partition_type(cxt);
 		break;
@@ -698,6 +714,10 @@ static int generic_menu_cb(struct fdisk_context **cxt0,
 			fdisk_info(cxt, _("Leaving nested disklabel."));
 			fdisk_unref_context(cxt);
 		}
+		break;
+	case 'T':
+		/* discard (trim) */
+		discard_sectors(cxt);
 		break;
 	}
 
@@ -959,7 +979,7 @@ static int sgi_menu_cb(struct fdisk_context **cxt0,
 			rc = fdisk_toggle_partition_flag(cxt, n, SGI_FLAG_BOOT);
 		break;
 	case 'b':
-		fdisk_sgi_set_bootfile(cxt);
+		rc = fdisk_sgi_set_bootfile(cxt);
 		break;
 	case 'c':
 		rc = fdisk_ask_partnum(cxt, &n, FALSE);

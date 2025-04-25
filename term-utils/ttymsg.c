@@ -100,7 +100,7 @@ ttymsg(struct iovec *iov, size_t iovcnt, char *line, int tmout) {
 	 * if not running as root; not an error.
 	 */
 	if ((fd = open(device, O_WRONLY|O_NONBLOCK, 0)) < 0) {
-		if (errno == EBUSY || errno == EACCES)
+		if (errno == EBUSY || errno == EACCES || errno == ENOENT)
 			return NULL;
 
 		len = snprintf(errbuf, sizeof(errbuf), "%s: %m", device);
@@ -123,7 +123,7 @@ ttymsg(struct iovec *iov, size_t iovcnt, char *line, int tmout) {
 				    iovcnt * sizeof(struct iovec));
 				iov = localiov;
 			}
-			for (cnt = 0; wret >= (ssize_t) iov->iov_len; ++cnt) {
+			for (cnt = 0; wret >= (ssize_t) iov->iov_len && iovcnt > 0; ++cnt) {
 				wret -= iov->iov_len;
 				++iov;
 				--iovcnt;

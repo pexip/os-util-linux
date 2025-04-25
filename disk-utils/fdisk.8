@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: fdisk
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-03-17
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "FDISK" "8" "2022-05-11" "util\-linux 2.38.1" "System Administration"
+.TH "FDISK" "8" "2025-03-17" "util\-linux 2.41" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -38,18 +38,18 @@ fdisk \- manipulate disk partition table
 .sp
 \fBfdisk\fP is a dialog\-driven program for creation and manipulation of partition tables. It understands GPT, MBR, Sun, SGI and BSD partition tables.
 .sp
-Block devices can be divided into one or more logical disks called \fIpartitions\fP. This division is recorded in the \fIpartition table\fP, usually found in sector 0 of the disk. (In the BSD world one talks about `disk slices\(aq and a `disklabel\(aq.)
+Block devices can be divided into one or more logical disks called \fIpartitions\fP. This division is recorded in the \fIpartition table\fP, usually found in sector 0 of the disk. (In the BSD world one talks about `disk slices\*(Aq and a `disklabel\*(Aq.)
 .sp
-All partitioning is driven by device I/O limits (the topology) by default. \fBfdisk\fP is able to optimize the disk layout for a 4K\-sector size and use an alignment offset on modern devices for MBR and GPT. It is always a good idea to follow \fBfdisk\fP\(aqs defaults as the default values (e.g., first and last partition sectors) and partition sizes specified by the +/\-<size>{M,G,...} notation are always aligned according to the device properties.
+All partitioning is driven by device I/O limits (the topology) by default. \fBfdisk\fP is able to optimize the disk layout for a 4K\-sector size and use an alignment offset on modern devices for MBR and GPT. It is always a good idea to follow \fBfdisk\fP\*(Aqs defaults as the default values (e.g., first and last partition sectors) and partition sizes specified by the +/\-<size>{M,G,...} notation are always aligned according to the device properties.
 .sp
-CHS (Cylinder\-Head\-Sector) addressing is deprecated and not used by default. Please, do not follow old articles and recommendations with \fBfdisk \-S <n> \-H <n>\fP advices for SSD or 4K\-sector devices.
+CHS (Cylinder\-Head\-Sector) addressing is deprecated and not used by default. Please, do not follow old articles and recommendations with \fBfdisk \-S <n> \-H <n>\fP advice for SSD or 4K\-sector devices.
 .sp
 Note that \fBpartx\fP(8) provides a rich interface for scripts to print disk layouts, \fBfdisk\fP is mostly designed for humans. Backward compatibility in the output of \fBfdisk\fP is not guaranteed. The input (the commands) should always be backward compatible.
 .SH "OPTIONS"
 .sp
 \fB\-b\fP, \fB\-\-sector\-size\fP \fIsectorsize\fP
 .RS 4
-Specify the sector size of the disk. Valid values are 512, 1024, 2048, and 4096. (Recent kernels know the sector size. Use this option only on old kernels or to override the kernel\(cqs ideas.) Since util\-linux\-2.17, \fBfdisk\fP differentiates between logical and physical sector size. This option changes both sector sizes to \fIsectorsize\fP.
+Specify the sector size of the disk. Valid values are 512, 1024, 2048, and 4096. The kernel is aware of the sector size for regular block devices. Use this option only on very old kernels, when working with disk images, or to override the kernel\(cqs default sector size. Since util\-linux\-2.17, \fBfdisk\fP distinguishes between logical and physical sector size. This option changes both sector sizes to the specified \fIsectorsize\fP.
 .RE
 .sp
 \fB\-B\fP, \fB\-\-protect\-boot\fP
@@ -57,22 +57,12 @@ Specify the sector size of the disk. Valid values are 512, 1024, 2048, and 4096.
 Don\(cqt erase the beginning of the first disk sector when creating a new disk label. This feature is supported for GPT and MBR.
 .RE
 .sp
-\fB\-c\fP, \fB\-\-compatibility\fP[=\fImode\fP]
+\fB\-c\fP, \fB\-\-compatibility\fP[\fB=\fP\fImode\fP]
 .RS 4
-Specify the compatibility mode, \(aqdos\(aq or \(aqnondos\(aq. The default is non\-DOS mode. For backward compatibility, it is possible to use the option without the \fImode\fP argument \(em then the default is used. Note that the optional \fImode\fP argument cannot be separated from the \fB\-c\fP option by a space, the correct form is for example \fB\-c\fP=\fIdos\fP.
+Specify the compatibility mode, \*(Aqdos\*(Aq or \*(Aqnondos\*(Aq. The default is non\-DOS mode. For backward compatibility, it is possible to use the option without the \fImode\fP argument \(em then the default is used. Note that the optional \fImode\fP argument cannot be separated from the \fB\-c\fP option by a space, the correct form is for example \fB\-c\fP=\fIdos\fP.
 .RE
 .sp
-\fB\-h\fP, \fB\-\-help\fP
-.RS 4
-Display help text and exit.
-.RE
-.sp
-\fB\-V\fP, \fB\-\-version\fP
-.RS 4
-Print version and exit.
-.RE
-.sp
-\fB\-L\fP, \fB\-\-color\fP[=\fIwhen\fP]
+\fB\-L\fP, \fB\-\-color\fP[\fB=\fP\fIwhen\fP]
 .RS 4
 Colorize the output. The optional argument \fIwhen\fP can be \fBauto\fP, \fBnever\fP or \fBalways\fP. If the \fIwhen\fP argument is omitted, it defaults to \fBauto\fP. The colors can be disabled; for the current built\-in default see the \fB\-\-help\fP output. See also the \fBCOLORS\fP section.
 .RE
@@ -89,14 +79,14 @@ If no devices are given, the devices mentioned in \fI/proc/partitions\fP (if thi
 Like \fB\-\-list\fP, but provides more details.
 .RE
 .sp
-\fB\-\-lock\fP[=\fImode\fP]
+\fB\-\-lock\fP[\fB=\fP\fImode\fP]
 .RS 4
 Use exclusive BSD lock for device or file it operates. The optional argument \fImode\fP can be \fByes\fP, \fBno\fP (or 1 and 0) or \fBnonblock\fP. If the \fImode\fP argument is omitted, it defaults to \fByes\fP. This option overwrites environment variable \fB$LOCK_BLOCK_DEVICE\fP. The default is not to use any lock at all, but it\(cqs recommended to avoid collisions with \fBsystemd\-udevd\fP(8) or other tools.
 .RE
 .sp
 \fB\-n\fP, \fB\-\-noauto\-pt\fP
 .RS 4
-Don\(cqt automatically create a default partition table on empty device. The partition table has to be explicitly created by user (by command like \(aqo\(aq, \(aqg\(aq, etc.).
+Don\(cqt automatically create a default partition table on empty device. The partition table has to be explicitly created by user (by command like \*(Aqo\*(Aq, \*(Aqg\*(Aq, etc.).
 .RE
 .sp
 \fB\-o\fP, \fB\-\-output\fP \fIlist\fP
@@ -116,9 +106,9 @@ Print the size in 512\-byte sectors of each given block device. This option is D
 Enable support only for disklabels of the specified \fItype\fP, and disable support for all other types.
 .RE
 .sp
-\fB\-u\fP, \fB\-\-units\fP[=\fIunit\fP]
+\fB\-u\fP, \fB\-\-units\fP[\fB=\fP\fIunit\fP]
 .RS 4
-When listing partition tables, show sizes in \(aqsectors\(aq or in \(aqcylinders\(aq. The default is to show sizes in sectors. For backward compatibility, it is possible to use the option without the \fIunit\fP argument \(em then the default is used. Note that the optional \fIunit\fP argument cannot be separated from the \fB\-u\fP option by a space, the correct form is for example \(aq\fB\-u=\fP\fIcylinders\fP\(aq.
+When listing partition tables, show sizes in \*(Aqsectors\*(Aq or in \*(Aqcylinders\*(Aq. The default is to show sizes in sectors. For backward compatibility, it is possible to use the option without the \fIunit\fP argument \(em then the default is used. Note that the optional \fIunit\fP argument cannot be separated from the \fB\-u\fP option by a space, the correct form is for example \*(Aq\fB\-u=\fP\fIcylinders\fP\*(Aq.
 .RE
 .sp
 \fB\-C\fP, \fB\-\-cylinders\fP \fInumber\fP
@@ -146,9 +136,14 @@ Wipe filesystem, RAID and partition\-table signatures from the device, in order 
 Wipe filesystem, RAID and partition\-table signatures from a newly created partitions, in order to avoid possible collisions. The argument \fIwhen\fP can be \fBauto\fP, \fBnever\fP or \fBalways\fP. When this option is not given, the default is \fBauto\fP, in which case signatures are wiped only when in interactive mode and after confirmation by user. In all cases detected signatures are reported by warning messages before a new partition is created. See also \fBwipefs\fP(8) command.
 .RE
 .sp
+\fB\-h\fP, \fB\-\-help\fP
+.RS 4
+Display help text and exit.
+.RE
+.sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Display version information and exit.
+Display version and exit.
 .RE
 .SH "DEVICES"
 .sp
@@ -159,18 +154,20 @@ The \fIpartition\fP is a device name followed by a partition number. For example
 .sp
 The "last sector" dialog accepts partition size specified by number of sectors or by +/\-<size>{K,B,M,G,...} notation.
 .sp
-If the size is prefixed by \(aq+\(aq then it is interpreted as relative to the partition first sector. If the size is prefixed by \(aq\-\(aq then it is interpreted as relative to the high limit (last available sector for the partition).
+If the size is prefixed by \*(Aq+\*(Aq then it is interpreted as relative to the partition first sector. If the size is prefixed by \*(Aq\-\*(Aq then it is interpreted as relative to the high limit (last available sector for the partition).
 .sp
-In the case the size is specified in bytes than the number may be followed by the multiplicative suffixes KiB=1024, MiB=1024*1024, and so on for GiB, TiB, PiB, EiB, ZiB and YiB. The "iB" is optional, e.g., "K" has the same meaning as "KiB".
+In the case the size is specified in bytes, then the number may be followed by the multiplicative suffixes KiB (1024 bytes), MiB (1024*1024 bytes), and so on for GiB, TiB, PiB, EiB, ZiB and YiB. The "iB" is optional, e.g., "K" has the same meaning as "KiB".
 .sp
-The relative sizes are always aligned according to device I/O limits. The +/\-<size>{K,B,M,G,...} notation is recommended.
+The relative sizes if specified with multiplicative suffixes (e.g. +100MiB) are always aligned according to device I/O limits. The +/\-<size>{K,B,M,G,...} notation is recommended.
 .sp
-For backward compatibility \fBfdisk\fP also accepts the suffixes KB=1000, MB=1000*1000, and so on for GB, TB, PB, EB, ZB and YB. These 10^N suffixes are deprecated.
+The last sector of the partition is strictly calculated as <start> + <size> (without \-1) if the size is specified by the +<sectors> notation. In this case, the size is not aligned to the device I/O limits.
+.sp
+For backward compatibility \fBfdisk\fP also accepts the suffixes KB (1000 bytes), MB (1000*1000 bytes), and so on for GB, TB, PB, EB, ZB and YB. These 10^N suffixes are deprecated.
 .SH "SCRIPT FILES"
 .sp
-\fBfdisk\fP allows reading (by \(aqI\(aq command) \fBsfdisk\fP(8) compatible script files. The script is applied to in\-memory partition table, and then it is possible to modify the partition table before you write it to the device.
+\fBfdisk\fP allows reading (by \*(AqI\*(Aq command) \fBsfdisk\fP(8) compatible script files. The script is applied to in\-memory partition table, and then it is possible to modify the partition table before you write it to the device.
 .sp
-And vice\-versa it is possible to write the current in\-memory disk layout to the script file by command \(aqO\(aq.
+And vice\-versa it is possible to write the current in\-memory disk layout to the script file by command \*(AqO\*(Aq.
 .sp
 The script files are compatible between \fBcfdisk\fP(8), \fBsfdisk\fP(8), \fBfdisk\fP and other libfdisk applications. For more details see \fBsfdisk\fP(8).
 .SH "DISK LABELS"
@@ -186,7 +183,7 @@ GPT is always a better choice than MBR, especially on modern hardware with a UEF
 .sp
 \fBDOS\-type (MBR)\fP
 .RS 4
-A DOS\-type partition table can describe an unlimited number of partitions. In sector 0 there is room for the description of 4 partitions (called `primary\(aq). One of these may be an extended partition; this is a box holding logical partitions, with descriptors found in a linked list of sectors, each preceding the corresponding logical partitions. The four primary partitions, present or not, get numbers 1\-4. Logical partitions are numbered starting from 5.
+A DOS\-type partition table can describe an unlimited number of partitions. In sector 0 there is room for the description of 4 partitions (called `primary\*(Aq). One of these may be an extended partition; this is a box holding logical partitions, with descriptors found in a linked list of sectors, each preceding the corresponding logical partitions. The four primary partitions, present or not, get numbers 1\-4. Logical partitions are numbered starting from 5.
 .sp
 In a DOS\-type partition table the starting offset and the size of each partition is stored in two ways: as an absolute number of sectors (given in 32 bits), and as a \fBCylinders/Heads/Sectors\fP triple (given in 10+8+6 bits). The former is OK \(em with 512\-byte sectors this will work up to 2 TB. The latter has two problems. First, these C/H/S fields can be filled only when the number of heads and the number of sectors per track are known. And second, even if we know what these numbers should be, the 24 bits that are available do not suffice. DOS uses C/H/S only, Windows uses both, Linux never uses C/H/S. The \fBC/H/S addressing is deprecated\fP and may be unsupported in some later \fBfdisk\fP version.
 .sp
@@ -195,18 +192,18 @@ In a DOS\-type partition table the starting offset and the size of each partitio
 .sp
 \fBBSD/Sun\-type\fP
 .RS 4
-A BSD/Sun disklabel can describe 8 partitions, the third of which should be a `whole disk\(aq partition. Do not start a partition that actually uses its first sector (like a swap partition) at cylinder 0, since that will destroy the disklabel. Note that a \fBBSD label\fP is usually nested within a DOS partition.
+A BSD/Sun disklabel can describe 8 partitions, the third of which should be a `whole disk\*(Aq partition. Do not start a partition that actually uses its first sector (like a swap partition) at cylinder 0, since that will destroy the disklabel. Note that a \fBBSD label\fP is usually nested within a DOS partition.
 .RE
 .sp
 \fBIRIX/SGI\-type\fP
 .RS 4
-An IRIX/SGI disklabel can describe 16 partitions, the eleventh of which should be an entire `volume\(aq partition, while the ninth should be labeled `volume header\(aq. The volume header will also cover the partition table, i.e., it starts at block zero and extends by default over five cylinders. The remaining space in the volume header may be used by header directory entries. No partitions may overlap with the volume header. Also do not change its type or make some filesystem on it, since you will lose the partition table. Use this type of label only when working with Linux on IRIX/SGI machines or IRIX/SGI disks under Linux.
+An IRIX/SGI disklabel can describe 16 partitions, the eleventh of which should be an entire `volume\*(Aq partition, while the ninth should be labeled `volume header\*(Aq. The volume header will also cover the partition table, i.e., it starts at block zero and extends by default over five cylinders. The remaining space in the volume header may be used by header directory entries. No partitions may overlap with the volume header. Also do not change its type or make some filesystem on it, since you will lose the partition table. Use this type of label only when working with Linux on IRIX/SGI machines or IRIX/SGI disks under Linux.
 .sp
 A \fBsync\fP(2) and an ioctl(BLKRRPART) (rereading the partition table from disk) are performed before exiting when the partition table has been updated.
 .RE
 .SH "DOS MODE AND DOS 6.X WARNING"
 .sp
-\fBNote that all this is deprecated. You don\(cqt have to care about things like\fP \fBgeometry and cylinders on modern operating systems. If you really want\fP \fBDOS\-compatible partitioning then you have to enable DOS mode and cylinder\fP \fBunits by using the \(aq\-c=dos \-u=cylinders\(aq fdisk command\-line options.\fP
+\fBNote that all this is deprecated. You don\(cqt have to care about things like\fP \fBgeometry and cylinders on modern operating systems. If you really want\fP \fBDOS\-compatible partitioning then you have to enable DOS mode and cylinder\fP \fBunits by using the \*(Aq\-c=dos \-u=cylinders\*(Aq fdisk command\-line options.\fP
 .sp
 The DOS 6.x FORMAT command looks for some information in the first sector of the data area of the partition, and treats this information as more reliable than the information in the partition table. DOS FORMAT expects DOS FDISK to clear the first 512 bytes of the data area of a partition whenever a size change occurs. DOS FORMAT will look at this extra information even if the /U flag is given \(em we consider this a bug in DOS FORMAT and DOS FDISK.
 .sp
@@ -241,6 +238,9 @@ for the \fBfdisk\fP command or for all tools by
 .br
 .RE
 .ll
+.sp
+Since version 2.41, the $NO_COLOR environment variable is also supported to
+disable output colorization unless explicitly enabled by a command\-line option.
 .sp
 The user\-specific \fI$XDG_CONFIG_HOME/terminal\-colors.d\fP
 or \fI$HOME/.config/terminal\-colors.d\fP overrides the global setting.
@@ -314,8 +314,8 @@ The original version was written by Andries E. Brouwer, A. V. Le Blanc and other
 \fBsfdisk\fP(8)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBfdisk\fP command is part of the util\-linux package which can be downloaded from \c

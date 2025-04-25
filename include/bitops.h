@@ -31,7 +31,7 @@
 # define be16toh(x) betoh16(x)
 # define be32toh(x) betoh32(x)
 # define be64toh(x) betoh64(x)
-#elif defined(__NetBSD__) || defined(__FreeBSD__) || defined(__DragonFly__)
+#elif defined(__NetBSD__) || defined(__DragonFly__)
 # define bswap_16(x) bswap16(x)
 # define bswap_32(x) bswap32(x)
 # define bswap_64(x) bswap64(x)
@@ -87,7 +87,7 @@
 #endif
 
 #ifndef htobe16
-# if !defined(WORDS_BIGENDIAN)
+# if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 #  define htobe16(x) bswap_16 (x)
 #  define htole16(x) (x)
 #  define be16toh(x) bswap_16 (x)

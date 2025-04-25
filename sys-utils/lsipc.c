@@ -3,6 +3,9 @@
  *
  * Copyright (C) 2015 Ondrej Oprala <ooprala@redhat.com>
  * Copyright (C) 2015 Karel Zak <ooprala@redhat.com>
+ * 
+ * 2025 Prasanna Paithankar <paithankarprasanna@gmail.com>
+ * - Added POSIX IPC support
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -59,18 +62,29 @@ enum {
 	COLDESC_IDX_GEN_FIRST = 0,
 		COL_KEY = COLDESC_IDX_GEN_FIRST,
 		COL_ID,
-		COL_OWNER,
-		COL_PERMS,
-		COL_CUID,
-		COL_CUSER,
-		COL_CGID,
-		COL_CGROUP,
+
+		/* generic and posix */
+		COLDESC_IDX_GEN_POSIX_FIRST,
+			COL_OWNER = COLDESC_IDX_GEN_POSIX_FIRST,
+			COL_PERMS,
+			COL_CUID,
+			COL_CUSER,
+			COL_CGID,
+			COL_CGROUP,
+		COLDSEC_IDX_GEN_POSIX_LAST = COL_CGROUP,
+
 		COL_UID,
 		COL_USER,
 		COL_GID,
 		COL_GROUP,
 		COL_CTIME,
 	COLDESC_IDX_GEN_LAST = COL_CTIME,
+
+	/* posix-specific */
+	COLDESC_IDX_POSIX_FIRST,
+		COL_NAME = COLDESC_IDX_POSIX_FIRST,
+		COL_MTIME,
+	COLDESC_IDX_POSIX_LAST = COL_MTIME,
 
 	/* msgq-specific */
 	COLDESC_IDX_MSG_FIRST,
@@ -107,7 +121,12 @@ enum {
 		COL_LIMIT,
 		COL_USED,
 		COL_USEPERC,
-	COLDESC_IDX_SUM_LAST = COL_USEPERC
+	COLDESC_IDX_SUM_LAST = COL_USEPERC,
+
+	/* posix-sem-specific */
+	COLDESC_IDX_POSIX_SEM_FIRST,
+		COL_SVAL = COLDESC_IDX_POSIX_SEM_FIRST,
+	COLDESC_IDX_POSIX_SEM_LAST = COL_SVAL
 };
 
 /* not all columns apply to all options, so we specify a legal range for each */
@@ -129,14 +148,14 @@ struct lsipc_control {
 	int outmode;
 	unsigned int noheadings : 1,		/* don't print header line */
 		     notrunc : 1,		/* don't truncate columns */
-		     shellvar : 1,              /* use shell compatible colum names */
+		     shellvar : 1,              /* use shell compatible column names */
 		     bytes : 1,			/* SIZE in bytes */
 		     numperms : 1,		/* numeric permissions */
 		     time_mode : 2;
 };
 
 struct lsipc_coldesc {
-	const char *name;
+	const char * const name;
 	const char *help;
 	const char *pretty_name;
 
@@ -160,6 +179,10 @@ static const struct lsipc_coldesc coldescs[] =
 	[COL_GID]	= { "GID",	N_("Group ID"), N_("GID"), 1, SCOLS_FL_RIGHT},
 	[COL_GROUP]	= { "GROUP",	N_("Group name"), N_("Group name"), 1},
 	[COL_CTIME]	= { "CTIME",	N_("Time of the last change"), N_("Last change"), 1, SCOLS_FL_RIGHT},
+
+	/* posix-common */
+	[COL_NAME]	= { "NAME",     N_("POSIX resource name"), N_("Name"), 1 },
+	[COL_MTIME]	= { "MTIME",   N_("Time of last action"), N_("Last action"), 1, SCOLS_FL_RIGHT},
 
 	/* msgq-specific */
 	[COL_USEDBYTES]	= { "USEDBYTES",N_("Bytes used"), N_("Bytes used"), 1, SCOLS_FL_RIGHT},
@@ -189,6 +212,9 @@ static const struct lsipc_coldesc coldescs[] =
 	[COL_USED]      = { "USED",     N_("Currently used"), N_("Used"), 1, SCOLS_FL_RIGHT },
 	[COL_USEPERC]	= { "USE%",     N_("Currently use percentage"), N_("Use"), 1, SCOLS_FL_RIGHT },
 	[COL_LIMIT]     = { "LIMIT",    N_("System-wide limit"), N_("Limit"), 1, SCOLS_FL_RIGHT },
+
+	/* posix-sem-specific */
+	[COL_SVAL]	= { "SVAL",	N_("Semaphore value"), N_("Value"), 1, SCOLS_FL_RIGHT}
 };
 
 
@@ -296,17 +322,22 @@ static void __attribute__((__noreturn__)) usage(void)
 
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_("Resource options:\n"), out);
-	fputs(_(" -m, --shmems      shared memory segments\n"), out);
-	fputs(_(" -q, --queues      message queues\n"), out);
-	fputs(_(" -s, --semaphores  semaphores\n"), out);
-	fputs(_(" -g, --global      info about system-wide usage (may be used with -m, -q and -s)\n"), out);
-	fputs(_(" -i, --id <id>     print details on resource identified by <id>\n"), out);
+	fputs(_(" -m, --shmems             shared memory segments\n"), out);
+	fputs(_(" -M, --posix-shmems       POSIX shared memory segments\n"), out);
+	fputs(_(" -q, --queues             message queues\n"), out);
+	fputs(_(" -Q, --posix-mqueues      POSIX message queues\n"), out);
+	fputs(_(" -s, --semaphores         semaphores\n"), out);
+	fputs(_(" -S, --posix-semaphores   POSIX semaphores\n"), out);
+	fputs(_(" -g, --global             info about system-wide usage\n"
+	        "                            (may be used with -m, -q and -s)\n"), out);
+	fputs(_(" -i, --id <id>            System V resource identified by <id>\n"), out);
+	fputs(_(" -N, --name <name>        POSIX resource identified by <name>\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
 	fputs(_("     --noheadings         don't print headings\n"), out);
 	fputs(_("     --notruncate         don't truncate output\n"), out);
 	fputs(_("     --time-format=<type> display dates in short, full or iso format\n"), out);
-	fputs(_(" -b, --bytes              print SIZE in bytes rather than in human readable format\n"), out);
+	fputs(_(" -b, --bytes              print SIZE in bytes rather\n"), out);
 	fputs(_(" -c, --creator            show creator and owner\n"), out);
 	fputs(_(" -e, --export             display in an export-able output format\n"), out);
 	fputs(_(" -J, --json               use the JSON output format\n"), out);
@@ -316,33 +347,43 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -P, --numeric-perms      print numeric permissions (PERMS column)\n"), out);
 	fputs(_(" -r, --raw                display in raw mode\n"), out);
 	fputs(_(" -t, --time               show attach, detach and change times\n"), out);
-	fputs(_(" -y, --shell              use column names to be usable as shell variable identifiers\n"), out);
+	fputs(_(" -y, --shell              use column names to be usable as shell variables\n"), out);
 
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(26));
+	fprintf(out, USAGE_HELP_OPTIONS(26));
 
-	fprintf(out, _("\nGeneric columns:\n"));
+	fprintf(out, _("\nGeneric System V columns:\n"));
 	for (i = COLDESC_IDX_GEN_FIRST; i <= COLDESC_IDX_GEN_LAST; i++)
 		fprintf(out, " %14s  %s\n", coldescs[i].name, _(coldescs[i].help));
 
-	fprintf(out, _("\nShared-memory columns (--shmems):\n"));
+	fprintf(out, _("\nGeneric POSIX columns:\n"));
+	fprintf(out, " %14s  %s\n", coldescs[COL_NAME].name, _(coldescs[COL_NAME].help));
+	for (i = COLDESC_IDX_GEN_POSIX_FIRST; i <= COLDSEC_IDX_GEN_POSIX_LAST; i++)
+		fprintf(out, " %14s  %s\n", coldescs[i].name, _(coldescs[i].help));
+	fprintf(out, " %14s  %s\n", coldescs[COL_MTIME].name, _(coldescs[COL_MTIME].help));
+
+	fprintf(out, _("\nSystem V Shared-memory columns (--shmems):\n"));
 	for (i = COLDESC_IDX_SHM_FIRST; i <= COLDESC_IDX_SHM_LAST; i++)
 		fprintf(out, " %14s  %s\n", coldescs[i].name, _(coldescs[i].help));
 
-	fprintf(out, _("\nMessage-queue columns (--queues):\n"));
+	fprintf(out, _("\nSystem V Message-queue columns (--queues):\n"));
 	for (i = COLDESC_IDX_MSG_FIRST; i <= COLDESC_IDX_MSG_LAST; i++)
 		fprintf(out, " %14s  %s\n", coldescs[i].name, _(coldescs[i].help));
 
-	fprintf(out, _("\nSemaphore columns (--semaphores):\n"));
+	fprintf(out, _("\nSystem V Semaphore columns (--semaphores):\n"));
 	for (i = COLDESC_IDX_SEM_FIRST; i <= COLDESC_IDX_SEM_LAST; i++)
+		fprintf(out, " %14s  %s\n", coldescs[i].name, _(coldescs[i].help));
+
+	fprintf(out, _("\nPOSIX Semaphore columns (--posix-semaphores):\n"));
+	for (i = COLDESC_IDX_POSIX_SEM_FIRST; i <= COLDESC_IDX_POSIX_SEM_LAST; i++)
 		fprintf(out, " %14s  %s\n", coldescs[i].name, _(coldescs[i].help));
 
 	fprintf(out, _("\nSummary columns (--global):\n"));
 	for (i = COLDESC_IDX_SUM_FIRST; i <= COLDESC_IDX_SUM_LAST; i++)
 		fprintf(out, " %14s  %s\n", coldescs[i].name, _(coldescs[i].help));
 
-	printf(USAGE_MAN_TAIL("lsipc(1)"));
+	fprintf(out, USAGE_MAN_TAIL("lsipc(1)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -507,10 +548,10 @@ static void global_set_data(struct lsipc_control *ctl, struct libscols_table *tb
 				rc = scols_line_set_data(ln, n, "-");
 			break;
 		case COL_USEPERC:
-			if (usage) {
-				xasprintf(&arg, "%2.2f%%", (double) used / limit * 100);
-				rc = scols_line_refer_data(ln, n, arg);
-			} else
+			if (usage)
+				rc = scols_line_sprintf(ln, n, "%2.2f%%",
+					(double) used / limit * 100);
+			else
 				rc = scols_line_set_data(ln, n, "-");
 			break;
 		case COL_LIMIT:
@@ -549,7 +590,7 @@ static void do_sem(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 	struct libscols_line *ln;
 	struct passwd *pw = NULL, *cpw = NULL;
 	struct group *gr = NULL, *cgr = NULL;
-	struct sem_data *semds, *semdsp;
+	struct sem_data *semds, *p;
 	char *arg = NULL;
 
 	scols_table_set_name(tb, "semaphores");
@@ -559,7 +600,7 @@ static void do_sem(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 			warnx(_("id %d not found"), id);
 		return;
 	}
-	for (semdsp = semds;  semdsp->next != NULL || id > -1; semdsp = semdsp->next) {
+	for (p = semds; p->next != NULL || id > -1; p = p->next) {
 		size_t n;
 
 		ln = scols_table_new_line(tb, NULL);
@@ -570,80 +611,73 @@ static void do_sem(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 			int rc = 0;
 			switch (get_column_id(n)) {
 			case COL_KEY:
-				xasprintf(&arg, "0x%08x",semdsp->sem_perm.key);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "0x%08x", p->sem_perm.key);
 				break;
 			case COL_ID:
-				xasprintf(&arg, "%d",semdsp->sem_perm.id);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%d", p->sem_perm.id);
 				break;
 			case COL_OWNER:
-				arg = get_username(&pw, semdsp->sem_perm.uid);
+				arg = get_username(&pw, p->sem_perm.uid);
 				if (!arg)
-					xasprintf(&arg, "%u", semdsp->sem_perm.uid);
+					xasprintf(&arg, "%u", p->sem_perm.uid);
 				rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_PERMS:
 				if (ctl->numperms)
-					xasprintf(&arg, "%#o", semdsp->sem_perm.mode & 0777);
+					xasprintf(&arg, "%#o", p->sem_perm.mode & 0777);
 				else {
 					arg = xmalloc(11);
-					xstrmode(semdsp->sem_perm.mode & 0777, arg);
+					xstrmode(p->sem_perm.mode & 0777, arg);
 				}
 				rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_CUID:
-				xasprintf(&arg, "%u", semdsp->sem_perm.cuid);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%u", p->sem_perm.cuid);
 				break;
 			case COL_CUSER:
-				arg = get_username(&cpw, semdsp->sem_perm.cuid);
+				arg = get_username(&cpw, p->sem_perm.cuid);
 				if (arg)
 					rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_CGID:
-				xasprintf(&arg, "%u", semdsp->sem_perm.cgid);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%u", p->sem_perm.cgid);
 				break;
 			case COL_CGROUP:
-				arg = get_groupname(&cgr, semdsp->sem_perm.cgid);
+				arg = get_groupname(&cgr, p->sem_perm.cgid);
 				if (arg)
 					rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_UID:
-				xasprintf(&arg, "%u", semdsp->sem_perm.uid);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%u", p->sem_perm.uid);
 				break;
 			case COL_USER:
-				arg = get_username(&pw, semdsp->sem_perm.uid);
+				arg = get_username(&pw, p->sem_perm.uid);
 				if (arg)
 					rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_GID:
-				xasprintf(&arg, "%u", semdsp->sem_perm.gid);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%u", p->sem_perm.gid);
 				break;
 			case COL_GROUP:
-				arg = get_groupname(&gr, semdsp->sem_perm.gid);
+				arg = get_groupname(&gr, p->sem_perm.gid);
 				if (arg)
 					rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_CTIME:
-				if (semdsp->sem_ctime != 0) {
+				if (p->sem_ctime != 0) {
 					rc = scols_line_refer_data(ln, n,
 							make_time(ctl->time_mode,
-							  (time_t)semdsp->sem_ctime));
+							  (time_t) p->sem_ctime));
 				}
 				break;
 			case COL_NSEMS:
-				xasprintf(&arg, "%ju", semdsp->sem_nsems);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%ju", p->sem_nsems);
 				break;
 			case COL_OTIME:
-				if (semdsp->sem_otime != 0) {
+				if (p->sem_otime != 0) {
 					rc = scols_line_refer_data(ln, n,
 							make_time(ctl->time_mode,
-							  (time_t)semdsp->sem_otime));
+							  (time_t) p->sem_otime));
 				}
 				break;
 			}
@@ -669,32 +703,27 @@ static void do_sem(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 					err(EXIT_FAILURE, _("failed to allocate output line"));
 
 				/* SEMNUM */
-				xasprintf(&arg, "%zu", i);
-				rc = scols_line_refer_data(sln, 0, arg);
+				rc = scols_line_sprintf(sln, 0, "%zu", i);
 				if (rc)
 					break;
 
 				/* VALUE */
-				xasprintf(&arg, "%d", e->semval);
-				rc = scols_line_refer_data(sln, 1, arg);
+				rc = scols_line_sprintf(sln, 1, "%d", e->semval);
 				if (rc)
 					break;
 
 				/* NCOUNT */
-				xasprintf(&arg, "%d", e->ncount);
-				rc = scols_line_refer_data(sln, 2, arg);
+				rc = scols_line_sprintf(sln, 2, "%d", e->ncount);
 				if (rc)
 					break;
 
 				/* ZCOUNT */
-				xasprintf(&arg, "%d", e->zcount);
-				rc = scols_line_refer_data(sln, 3, arg);
+				rc = scols_line_sprintf(sln, 3, "%d", e->zcount);
 				if (rc)
 					break;
 
 				/* PID */
-				xasprintf(&arg, "%d", e->pid);
-				rc = scols_line_refer_data(sln, 4, arg);
+				rc = scols_line_sprintf(sln, 4, "%d", e->pid);
 				if (rc)
 					break;
 
@@ -717,16 +746,18 @@ static void do_sem(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 
 static void do_sem_global(struct lsipc_control *ctl, struct libscols_table *tb)
 {
-	struct sem_data *semds, *semdsp;
+	struct sem_data *semds;
 	struct ipc_limits lim;
 	int nsems = 0, nsets = 0;
 
 	ipc_sem_get_limits(&lim);
 
 	if (ipc_sem_get_info(-1, &semds) > 0) {
-		for (semdsp = semds; semdsp->next != NULL; semdsp = semdsp->next) {
+		struct sem_data *p;
+
+		for (p = semds; p->next != NULL; p = p->next) {
 			++nsets;
-			nsems += semds->sem_nsems;
+			nsems += p->sem_nsems;
 		}
 		ipc_sem_free_info(semds);
 	}
@@ -738,12 +769,105 @@ static void do_sem_global(struct lsipc_control *ctl, struct libscols_table *tb)
 	global_set_data(ctl, tb, "SEMVMX", _("Semaphore max value"), 0, lim.semvmx, 0, 0);
 }
 
+static void do_posix_sem(const char *name, struct lsipc_control *ctl,
+			struct libscols_table *tb)
+{
+	struct libscols_line *ln;
+	struct passwd *pw = NULL;
+	struct group *gr = NULL;
+	struct posix_sem_data *semds, *p;
+	char *arg = NULL;
+
+	int retval = posix_ipc_sem_get_info(name, &semds);
+	if (retval == -1)
+		return;
+
+	if (retval < 1) {
+		if (name != NULL)
+			warnx(_("mqueue %s not found"), name);
+		return;
+	}
+
+	scols_table_set_name(tb, "posix-semaphores");
+
+	for (p = semds; p->next != NULL || name != NULL; p = p->next) {
+		size_t n;
+
+		ln = scols_table_new_line(tb, NULL);
+		if (!ln)
+			err(EXIT_FAILURE, _("failed to allocate output line"));
+
+		/* no need to call getpwuid() for the same user */
+		if (!(pw && pw->pw_uid == p->cuid))
+			pw = getpwuid(p->cuid);
+
+		/* no need to call getgrgid() for the same user */
+		if (!(gr && gr->gr_gid == p->cgid))
+			gr = getgrgid(p->cgid);
+
+		for (n = 0; n < ncolumns; n++) {
+			int rc = 0;
+			switch (get_column_id(n)) {
+			case COL_NAME:
+				rc = scols_line_set_data(ln, n, p->sname);
+				break;
+			case COL_OWNER:
+				arg = get_username(&pw, p->cuid);
+				if (!arg)
+					xasprintf(&arg, "%u", p->cuid);
+				rc = scols_line_refer_data(ln, n, arg);
+				break;
+			case COL_PERMS:
+				if (ctl->numperms)
+					xasprintf(&arg, "%#o", p->mode & 0777);
+				else {
+					arg = xmalloc(11);
+					xstrmode(p->mode & 0777, arg);
+				}
+				rc = scols_line_refer_data(ln, n, arg);
+				break;
+			case COL_MTIME:
+				if (p->mtime != 0)
+					rc = scols_line_refer_data(ln, n,
+						make_time(ctl->time_mode,
+							  (time_t) p->mtime));
+				break;
+			case COL_CUID:
+				rc = scols_line_sprintf(ln, n, "%u", p->cuid);
+				break;
+			case COL_CUSER:
+				arg = get_username(&pw, p->cuid);
+				if (arg)
+					rc = scols_line_refer_data(ln, n, arg);
+				break;
+			case COL_CGID:
+				rc = scols_line_sprintf(ln, n, "%u", p->cgid);
+				break;
+			case COL_CGROUP:
+				arg = get_groupname(&gr, p->cgid);
+				if (arg)
+					rc = scols_line_refer_data(ln, n, arg);
+				break;
+			case COL_SVAL:
+				rc = scols_line_sprintf(ln, n, "%d", p->sval);
+				break;
+			}
+			if (rc != 0)
+				err(EXIT_FAILURE, _("failed to add output data"));
+			arg = NULL;
+		}
+		if (name != NULL)
+			break;
+	}
+	posix_ipc_sem_free_info(semds);
+}
+
 static void do_msg(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 {
 	struct libscols_line *ln;
 	struct passwd *pw = NULL;
 	struct group *gr = NULL;
-	struct msg_data *msgds, *msgdsp;
+	struct msg_data *msgds, *p;
 	char *arg = NULL;
 
 	if (ipc_msg_get_info(id, &msgds) < 1) {
@@ -753,7 +877,7 @@ static void do_msg(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 	}
 	scols_table_set_name(tb, "messages");
 
-	for (msgdsp = msgds; msgdsp->next != NULL || id > -1 ; msgdsp = msgdsp->next) {
+	for (p = msgds; p->next != NULL || id > -1 ; p = p->next) {
 		size_t n;
 		ln = scols_table_new_line(tb, NULL);
 
@@ -761,112 +885,104 @@ static void do_msg(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 			err(EXIT_FAILURE, _("failed to allocate output line"));
 
 		/* no need to call getpwuid() for the same user */
-		if (!(pw && pw->pw_uid == msgdsp->msg_perm.uid))
-			pw = getpwuid(msgdsp->msg_perm.uid);
+		if (!(pw && pw->pw_uid == p->msg_perm.uid))
+			pw = getpwuid(p->msg_perm.uid);
 
 		/* no need to call getgrgid() for the same user */
-		if (!(gr && gr->gr_gid == msgdsp->msg_perm.gid))
-			gr = getgrgid(msgdsp->msg_perm.gid);
+		if (!(gr && gr->gr_gid == p->msg_perm.gid))
+			gr = getgrgid(p->msg_perm.gid);
 
 		for (n = 0; n < ncolumns; n++) {
 			int rc = 0;
 
 			switch (get_column_id(n)) {
 			case COL_KEY:
-				xasprintf(&arg, "0x%08x",msgdsp->msg_perm.key);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "0x%08x", p->msg_perm.key);
 				break;
 			case COL_ID:
-				xasprintf(&arg, "%d",msgdsp->msg_perm.id);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%d", p->msg_perm.id);
 				break;
 			case COL_OWNER:
-				arg = get_username(&pw, msgdsp->msg_perm.uid);
+				arg = get_username(&pw, p->msg_perm.uid);
 				if (!arg)
-					xasprintf(&arg, "%u", msgdsp->msg_perm.uid);
+					xasprintf(&arg, "%u", p->msg_perm.uid);
 				rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_PERMS:
 				if (ctl->numperms)
-					xasprintf(&arg, "%#o", msgdsp->msg_perm.mode & 0777);
+					xasprintf(&arg, "%#o", p->msg_perm.mode & 0777);
 				else {
 					arg = xmalloc(11);
-					xstrmode(msgdsp->msg_perm.mode & 0777, arg);
+					xstrmode(p->msg_perm.mode & 0777, arg);
 					rc = scols_line_refer_data(ln, n, arg);
 				}
 				break;
 			case COL_CUID:
-				xasprintf(&arg, "%u", msgdsp->msg_perm.cuid);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%u", p->msg_perm.cuid);
 				break;
 			case COL_CUSER:
-				arg = get_username(&pw, msgdsp->msg_perm.cuid);
+				arg = get_username(&pw, p->msg_perm.cuid);
 				if (arg)
 					rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_CGID:
-				xasprintf(&arg, "%u", msgdsp->msg_perm.cuid);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%u", p->msg_perm.cgid);
 				break;
 			case COL_CGROUP:
-				arg = get_groupname(&gr, msgdsp->msg_perm.cgid);
+				arg = get_groupname(&gr, p->msg_perm.cgid);
 				if (arg)
 					rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_UID:
-				xasprintf(&arg, "%u", msgdsp->msg_perm.uid);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%u", p->msg_perm.uid);
 				break;
 			case COL_USER:
-				arg = get_username(&pw, msgdsp->msg_perm.uid);
+				arg = get_username(&pw, p->msg_perm.uid);
 				if (arg)
 					rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_GID:
-				xasprintf(&arg, "%u", msgdsp->msg_perm.gid);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%u", p->msg_perm.gid);
 				break;
 			case COL_GROUP:
-				arg = get_groupname(&gr,msgdsp->msg_perm.gid);
+				arg = get_groupname(&gr, p->msg_perm.gid);
 				if (arg)
 					rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_CTIME:
-				if (msgdsp->q_ctime != 0)
+				if (p->q_ctime != 0)
 					rc = scols_line_refer_data(ln, n,
 						make_time(ctl->time_mode,
-							  (time_t)msgdsp->q_ctime));
+							  (time_t) p->q_ctime));
 				break;
 			case COL_USEDBYTES:
 				if (ctl->bytes)
-					xasprintf(&arg, "%ju", msgdsp->q_cbytes);
+					xasprintf(&arg, "%ju", p->q_cbytes);
 				else
-					arg = size_to_human_string(SIZE_SUFFIX_1LETTER, msgdsp->q_cbytes);
+					arg = size_to_human_string(SIZE_SUFFIX_1LETTER,
+							p->q_cbytes);
 				rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_MSGS:
-				xasprintf(&arg, "%ju", msgdsp->q_qnum);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%ju", p->q_qnum);
 				break;
 			case COL_SEND:
-				if (msgdsp->q_stime != 0)
+				if (p->q_stime != 0)
 					rc = scols_line_refer_data(ln, n,
 						make_time(ctl->time_mode,
-							  (time_t)msgdsp->q_stime));
+							  (time_t) p->q_stime));
 				break;
 			case COL_RECV:
-				if (msgdsp->q_rtime != 0)
+				if (p->q_rtime != 0)
 					rc = scols_line_refer_data(ln, n,
 						make_time(ctl->time_mode,
-							  (time_t)msgdsp->q_rtime));
+							  (time_t) p->q_rtime));
 				break;
 			case COL_LSPID:
-				xasprintf(&arg, "%u", msgdsp->q_lspid);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%u", p->q_lspid);
 				break;
 			case COL_LRPID:
-				xasprintf(&arg, "%u", msgdsp->q_lrpid);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%u", p->q_lrpid);
 				break;
 			}
 			if (rc != 0)
@@ -879,10 +995,111 @@ static void do_msg(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 	ipc_msg_free_info(msgds);
 }
 
+static void do_posix_msg(const char *name, struct lsipc_control *ctl,
+			struct libscols_table *tb)
+{
+	struct libscols_line *ln;
+	struct passwd *pw = NULL;
+	struct group *gr = NULL;
+	struct posix_msg_data *msgds, *p;
+	char *arg = NULL;
+
+	int retval = posix_ipc_msg_get_info(name, &msgds);
+	if (retval == -1)
+		return;
+
+	if (retval < 1) {
+		if (name != NULL)
+			warnx(_("mqueue %s not found"), name);
+		return;
+	}
+
+	scols_table_set_name(tb, "posix-messages");
+
+	for (p = msgds; p->next != NULL || name != NULL; p = p->next) {
+		size_t n;
+		ln = scols_table_new_line(tb, NULL);
+
+		if (!ln)
+			err(EXIT_FAILURE, _("failed to allocate output line"));
+
+		/* no need to call getpwuid() for the same user */
+		if (!(pw && pw->pw_uid == p->cuid))
+			pw = getpwuid(p->cuid);
+
+		/* no need to call getgrgid() for the same user */
+		if (!(gr && gr->gr_gid == p->cgid))
+			gr = getgrgid(p->cgid);
+
+		for (n = 0; n < ncolumns; n++) {
+			int rc = 0;
+
+			switch (get_column_id(n)) {
+			case COL_NAME:
+				rc = scols_line_refer_data(ln, n, p->mname);
+				break;
+			case COL_OWNER:
+				arg = get_username(&pw, p->cuid);
+				if (!arg)
+					xasprintf(&arg, "%u", p->cuid);
+				rc = scols_line_refer_data(ln, n, arg);
+				break;
+			case COL_PERMS:
+				if (ctl->numperms)
+					xasprintf(&arg, "%#o", p->mode & 0777);
+				else {
+					arg = xmalloc(11);
+					xstrmode(p->mode & 0777, arg);
+					rc = scols_line_refer_data(ln, n, arg);
+				}
+				break;
+			case COL_CUID:
+				rc = scols_line_sprintf(ln, n, "%u", p->cuid);
+				break;
+			case COL_CUSER:
+				arg = get_username(&pw, p->cuid);
+				if (arg)
+					rc = scols_line_refer_data(ln, n, arg);
+				break;
+			case COL_CGID:
+				rc = scols_line_sprintf(ln, n, "%u", p->cgid);
+				break;
+			case COL_CGROUP:
+				arg = get_groupname(&gr, p->cgid);
+				if (arg)
+					rc = scols_line_refer_data(ln, n, arg);
+				break;
+			case COL_MTIME:
+				if (p->mtime != 0)
+					rc = scols_line_refer_data(ln, n,
+						make_time(ctl->time_mode,
+							  (time_t) p->mtime));
+				break;
+			case COL_USEDBYTES:
+				if (ctl->bytes)
+					xasprintf(&arg, "%ju", p->q_cbytes);
+				else
+					arg = size_to_human_string(SIZE_SUFFIX_1LETTER,
+							p->q_cbytes);
+				rc = scols_line_refer_data(ln, n, arg);
+				break;
+			case COL_MSGS:
+				rc = scols_line_sprintf(ln, n, "%ld", p->q_qnum);
+				break;
+			}
+			if (rc != 0)
+				err(EXIT_FAILURE, _("failed to set data"));
+			arg = NULL;
+		}
+		if (name != NULL)
+			break;
+	}
+	posix_ipc_msg_free_info(msgds);
+}
 
 static void do_msg_global(struct lsipc_control *ctl, struct libscols_table *tb)
 {
-	struct msg_data *msgds, *msgdsp;
+	struct msg_data *msgds;
 	struct ipc_limits lim;
 	int msgqs = 0;
 
@@ -890,15 +1107,40 @@ static void do_msg_global(struct lsipc_control *ctl, struct libscols_table *tb)
 
 	/* count number of used queues */
 	if (ipc_msg_get_info(-1, &msgds) > 0) {
-		for (msgdsp = msgds; msgdsp->next != NULL; msgdsp = msgdsp->next)
+		struct msg_data *p;
+
+		for (p = msgds; p->next != NULL; p = p->next)
 			++msgqs;
 		ipc_msg_free_info(msgds);
 	}
 
-	global_set_data(ctl, tb, "MSGMNI", _("Number of message queues"), msgqs, lim.msgmni, 1, 0);
-	global_set_data(ctl, tb, "MSGMAX", _("Max size of message (bytes)"),	0, lim.msgmax, 0, 1);
-	global_set_data(ctl, tb, "MSGMNB", _("Default max size of queue (bytes)"), 0, lim.msgmnb, 0, 1);
+	global_set_data(ctl, tb, "MSGMNI", _("Number of System V message queues"), msgqs, lim.msgmni, 1, 0);
+	global_set_data(ctl, tb, "MSGMAX", _("Max size of System V message (bytes)"),	0, lim.msgmax, 0, 1);
+	global_set_data(ctl, tb, "MSGMNB", _("Default max size of System V queue (bytes)"), 0, lim.msgmnb, 0, 1);
 }
+
+#ifndef HAVE_MQUEUE_H
+static void do_posix_msg_global(struct lsipc_control *ctl __attribute__((unused)), struct libscols_table *tb __attribute__((unused)))
+{
+	return;
+}
+#else
+static void do_posix_msg_global(struct lsipc_control *ctl, struct libscols_table *tb)
+{
+	struct posix_msg_data *pmsgds;
+	struct ipc_limits lim;
+	int pmsgqs = posix_ipc_msg_get_info(NULL, &pmsgds);
+
+	ipc_msg_get_limits(&lim);
+
+	if (pmsgqs == -1)
+		pmsgqs = 0;
+
+	global_set_data(ctl, tb, "MQUMNI", _("Number of POSIX message queues"), pmsgqs, lim.msgmni_posix, 1, 0);
+	global_set_data(ctl, tb, "MQUMAX", _("Max size of POSIX message (bytes)"), 0, lim.msgmax_posix, 0, 1);
+	global_set_data(ctl, tb, "MQUMNB", _("Number of messages in POSIX message queue"), 0, lim.msgmnb_posix, 0, 0);
+}
+#endif
 
 
 static void do_shm(int id, struct lsipc_control *ctl, struct libscols_table *tb)
@@ -906,7 +1148,7 @@ static void do_shm(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 	struct libscols_line *ln;
 	struct passwd *pw = NULL;
 	struct group *gr = NULL;
-	struct shm_data *shmds, *shmdsp;
+	struct shm_data *shmds, *p;
 	char *arg = NULL;
 
 	if (ipc_shm_get_info(id, &shmds) < 1) {
@@ -917,7 +1159,7 @@ static void do_shm(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 
 	scols_table_set_name(tb, "sharedmemory");
 
-	for (shmdsp = shmds; shmdsp->next != NULL || id > -1 ; shmdsp = shmdsp->next) {
+	for (p = shmds; p->next != NULL || id > -1 ; p = p->next) {
 		size_t n;
 		ln = scols_table_new_line(tb, NULL);
 
@@ -929,80 +1171,74 @@ static void do_shm(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 
 			switch (get_column_id(n)) {
 			case COL_KEY:
-				xasprintf(&arg, "0x%08x",shmdsp->shm_perm.key);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "0x%08x", p->shm_perm.key);
 				break;
 			case COL_ID:
-				xasprintf(&arg, "%d",shmdsp->shm_perm.id);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%d", p->shm_perm.id);
 				break;
 			case COL_OWNER:
-				arg = get_username(&pw, shmdsp->shm_perm.uid);
+				arg = get_username(&pw, p->shm_perm.uid);
 				if (!arg)
-					xasprintf(&arg, "%u", shmdsp->shm_perm.uid);
+					xasprintf(&arg, "%u", p->shm_perm.uid);
 				rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_PERMS:
 				if (ctl->numperms)
-					xasprintf(&arg, "%#o", shmdsp->shm_perm.mode & 0777);
+					xasprintf(&arg, "%#o", p->shm_perm.mode & 0777);
 				else {
 					arg = xmalloc(11);
-					xstrmode(shmdsp->shm_perm.mode & 0777, arg);
+					xstrmode(p->shm_perm.mode & 0777, arg);
 				}
 				rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_CUID:
-				xasprintf(&arg, "%u", shmdsp->shm_perm.cuid);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%u", p->shm_perm.cuid);
 				break;
 			case COL_CUSER:
-				arg = get_username(&pw, shmdsp->shm_perm.cuid);
+				arg = get_username(&pw, p->shm_perm.cuid);
 				if (arg)
 					rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_CGID:
-				xasprintf(&arg, "%u", shmdsp->shm_perm.cuid);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%u", p->shm_perm.cuid);
 				break;
 			case COL_CGROUP:
-				arg = get_groupname(&gr, shmdsp->shm_perm.cgid);
+				arg = get_groupname(&gr, p->shm_perm.cgid);
 				if (arg)
 					rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_UID:
-				xasprintf(&arg, "%u", shmdsp->shm_perm.uid);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%u", p->shm_perm.uid);
 				break;
 			case COL_USER:
-				arg = get_username(&pw, shmdsp->shm_perm.uid);
+				arg = get_username(&pw, p->shm_perm.uid);
 				if (arg)
 					rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_GID:
-				xasprintf(&arg, "%u", shmdsp->shm_perm.gid);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%u", p->shm_perm.gid);
 				break;
 			case COL_GROUP:
-				arg = get_groupname(&gr, shmdsp->shm_perm.gid);
+				arg = get_groupname(&gr, p->shm_perm.gid);
 				if (arg)
 					rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_CTIME:
-				if (shmdsp->shm_ctim != 0)
+				if (p->shm_ctim != 0)
 					rc = scols_line_refer_data(ln, n,
 						make_time(ctl->time_mode,
-							  (time_t)shmdsp->shm_ctim));
+							  (time_t) p->shm_ctim));
 				break;
 			case COL_SIZE:
 				if (ctl->bytes)
-					xasprintf(&arg, "%ju", shmdsp->shm_segsz);
+					xasprintf(&arg, "%ju", p->shm_segsz);
 				else
-					arg = size_to_human_string(SIZE_SUFFIX_1LETTER, shmdsp->shm_segsz);
+					arg = size_to_human_string(SIZE_SUFFIX_1LETTER,
+							p->shm_segsz);
 				rc = scols_line_refer_data(ln, n, arg);
 				break;
 			case COL_NATTCH:
-				xasprintf(&arg, "%ju", shmdsp->shm_nattch);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%ju", p->shm_nattch);
 				break;
 			case COL_STATUS: {
 					int comma = 0;
@@ -1014,27 +1250,27 @@ static void do_shm(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 							+ strlen(_("hugetlb"))
 							+ strlen(_("noreserve")) + 4);
 #ifdef SHM_DEST
-					if (shmdsp->shm_perm.mode & SHM_DEST) {
+					if (p->shm_perm.mode & SHM_DEST) {
 						offt += sprintf(arg, "%s", _("dest"));
 						comma++;
 					}
 #endif
 #ifdef SHM_LOCKED
-					if (shmdsp->shm_perm.mode & SHM_LOCKED) {
+					if (p->shm_perm.mode & SHM_LOCKED) {
 						if (comma)
 							arg[offt++] = ',';
 						offt += sprintf(arg + offt, "%s", _("locked"));
 					}
 #endif
 #ifdef SHM_HUGETLB
-					if (shmdsp->shm_perm.mode & SHM_HUGETLB) {
+					if (p->shm_perm.mode & SHM_HUGETLB) {
 						if (comma)
 							arg[offt++] = ',';
 						offt += sprintf(arg + offt, "%s", _("hugetlb"));
 					}
 #endif
 #ifdef SHM_NORESERVE
-					if (shmdsp->shm_perm.mode & SHM_NORESERVE) {
+					if (p->shm_perm.mode & SHM_NORESERVE) {
 						if (comma)
 							arg[offt++] = ',';
 						sprintf(arg + offt, "%s", _("noreserve"));
@@ -1044,27 +1280,25 @@ static void do_shm(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 				}
 				break;
 			case COL_ATTACH:
-				if (shmdsp->shm_atim != 0)
+				if (p->shm_atim != 0)
 					rc = scols_line_refer_data(ln, n,
 							make_time(ctl->time_mode,
-							  (time_t)shmdsp->shm_atim));
+							  (time_t) p->shm_atim));
 				break;
 			case COL_DETACH:
-				if (shmdsp->shm_dtim != 0)
+				if (p->shm_dtim != 0)
 					rc = scols_line_refer_data(ln, n,
 							make_time(ctl->time_mode,
-							  (time_t)shmdsp->shm_dtim));
+							  (time_t) p->shm_dtim));
 				break;
 			case COL_CPID:
-				xasprintf(&arg, "%u", shmdsp->shm_cprid);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%u", p->shm_cprid);
 				break;
 			case COL_LPID:
-				xasprintf(&arg, "%u", shmdsp->shm_lprid);
-				rc = scols_line_refer_data(ln, n, arg);
+				rc = scols_line_sprintf(ln, n, "%u", p->shm_lprid);
 				break;
 			case COL_COMMAND:
-				arg = pid_get_cmdline(shmdsp->shm_cprid);
+				arg = pid_get_cmdline(p->shm_cprid);
 				rc = scols_line_refer_data(ln, n, arg);
 				break;
 			}
@@ -1078,18 +1312,118 @@ static void do_shm(int id, struct lsipc_control *ctl, struct libscols_table *tb)
 	ipc_shm_free_info(shmds);
 }
 
+static void do_posix_shm(const char *name, struct lsipc_control *ctl, struct libscols_table *tb)
+{
+	struct libscols_line *ln;
+	struct passwd *pw = NULL;
+	struct group *gr = NULL;
+	struct posix_shm_data *shmds, *p;
+	char *arg = NULL;
+
+	int retval = posix_ipc_shm_get_info(name, &shmds);
+	if (retval == -1)
+		return;
+
+	if (retval < 1) {
+		if (name != NULL)
+			warnx(_("shm %s not found"), name);
+		return;
+	}
+
+	scols_table_set_name(tb, "posix-sharedmemory");
+
+	for (p = shmds; p->next != NULL || name != NULL ; p = p->next) {
+		size_t n;
+		ln = scols_table_new_line(tb, NULL);
+
+		if (!ln)
+			err(EXIT_FAILURE, _("failed to allocate output line"));
+
+		/* no need to call getpwuid() for the same user */
+		if (!(pw && pw->pw_uid == p->cuid))
+			pw = getpwuid(p->cuid);
+
+		/* no need to call getgrgid() for the same user */
+		if (!(gr && gr->gr_gid == p->cgid))
+			gr = getgrgid(p->cgid);
+
+		for (n = 0; n < ncolumns; n++) {
+			int rc = 0;
+
+			switch (get_column_id(n)) {
+			case COL_NAME:
+				rc = scols_line_refer_data(ln, n, p->name);
+				break;
+			case COL_OWNER:
+				arg = get_username(&pw, p->cuid);
+				if (!arg)
+					xasprintf(&arg, "%u", p->cuid);
+				rc = scols_line_refer_data(ln, n, arg);
+				break;
+			case COL_PERMS:
+				if (ctl->numperms)
+					xasprintf(&arg, "%#o", p->mode & 0777);
+				else {
+					arg = xmalloc(11);
+					xstrmode(p->mode & 0777, arg);
+				}
+				rc = scols_line_refer_data(ln, n, arg);
+				break;
+			case COL_CUID:
+				rc = scols_line_sprintf(ln, n, "%u", p->cuid);
+				break;
+			case COL_CUSER:
+				arg = get_username(&pw, p->cuid);
+				if (arg)
+					rc = scols_line_refer_data(ln, n, arg);
+				break;
+			case COL_CGID:
+				rc = scols_line_sprintf(ln, n, "%u", p->cgid);
+				break;
+			case COL_CGROUP:
+				arg = get_groupname(&gr, p->cgid);
+				if (arg)
+					rc = scols_line_refer_data(ln, n, arg);
+				break;
+			case COL_SIZE:
+				if (ctl->bytes)
+					xasprintf(&arg, "%ju", p->size);
+				else
+					arg = size_to_human_string(SIZE_SUFFIX_1LETTER,
+							p->size);
+				rc = scols_line_refer_data(ln, n, arg);
+				break;
+			case COL_MTIME:
+				if (p->mtime != 0)
+					rc = scols_line_refer_data(ln, n,
+						make_time(ctl->time_mode,
+							  (time_t) p->mtime));
+				break;
+			}
+			if (rc != 0)
+				err(EXIT_FAILURE, _("failed to set data"));
+			arg = NULL;
+		}
+		if (name != NULL)
+			break;
+	}
+	posix_ipc_shm_free_info(shmds);
+}
+
 static void do_shm_global(struct lsipc_control *ctl, struct libscols_table *tb)
 {
-	struct shm_data *shmds, *shmdsp;
+	struct shm_data *shmds;
 	uint64_t nsegs = 0, sum_segsz = 0;
 	struct ipc_limits lim;
 
 	ipc_shm_get_limits(&lim);
 
 	if (ipc_shm_get_info(-1, &shmds) > 0) {
-		for (shmdsp = shmds; shmdsp->next != NULL; shmdsp = shmdsp->next) {
+		struct shm_data *p;
+
+		for (p = shmds; p->next != NULL; p = p->next) {
 			++nsegs;
-			sum_segsz += shmdsp->shm_segsz;
+			sum_segsz += p->shm_segsz;
 		}
 		ipc_shm_free_info(shmds);
 	}
@@ -1103,11 +1437,13 @@ static void do_shm_global(struct lsipc_control *ctl, struct libscols_table *tb)
 int main(int argc, char *argv[])
 {
 	int opt, msg = 0, sem = 0, shm = 0, id = -1;
+	int pmsg = 0, pshm = 0, psem = 0;
 	int show_time = 0, show_creat = 0, global = 0;
 	size_t i;
 	struct lsipc_control *ctl = xcalloc(1, sizeof(struct lsipc_control));
 	static struct libscols_table *tb;
 	char *outarg = NULL;
+	char *name = NULL;
 
 	/* long only options. */
 	enum {
@@ -1125,11 +1461,15 @@ int main(int argc, char *argv[])
 		{ "id",             required_argument,	NULL, 'i' },
 		{ "json",           no_argument,	NULL, 'J' },
 		{ "list",           no_argument,        NULL, 'l' },
+		{ "name",           required_argument,	NULL, 'N' },
 		{ "newline",        no_argument,	NULL, 'n' },
 		{ "noheadings",     no_argument,	NULL, OPT_NOHEAD },
 		{ "notruncate",     no_argument,	NULL, OPT_NOTRUNC },
 		{ "numeric-perms",  no_argument,	NULL, 'P' },
 		{ "output",         required_argument,	NULL, 'o' },
+		{ "posix-mqueues",  no_argument,	NULL, 'Q' },
+		{ "posix-semaphores", no_argument,	NULL, 'S' },
+		{ "posix-shmems",   no_argument,	NULL, 'M' },
 		{ "queues",         no_argument,	NULL, 'q' },
 		{ "raw",            no_argument,	NULL, 'r' },
 		{ "semaphores",     no_argument,	NULL, 's' },
@@ -1143,9 +1483,9 @@ int main(int argc, char *argv[])
 
 	static const ul_excl_t excl[] = {	/* rows and cols in ASCII order */
 		{ 'J', 'e', 'l', 'n', 'r' },
-		{ 'g', 'i' },
+		{ 'N', 'g', 'i' },
 		{ 'c', 'o', 't' },
-		{ 'm', 'q', 's' },
+		{ 'M', 'Q', 'S', 'm', 'q', 's' },
 		{ 0 }
 	};
 	int excl_st[ARRAY_SIZE(excl)] = UL_EXCL_STATUS_INIT;
@@ -1159,7 +1499,7 @@ int main(int argc, char *argv[])
 
 	scols_init_debug(0);
 
-	while ((opt = getopt_long(argc, argv, "bceghi:Jlmno:PqrstVy", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "bceghi:JlMmN:no:PQqrSstVy", longopts, NULL)) != -1) {
 
 		err_exclusive_options(opt, longopts, excl, excl_st);
 
@@ -1169,6 +1509,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'i':
 			id = strtos32_or_err(optarg, _("failed to parse IPC identifier"));
+			break;
+		case 'N':
+			name = optarg;
 			break;
 		case 'e':
 			ctl->outmode = OUT_EXPORT;
@@ -1195,6 +1538,17 @@ int main(int argc, char *argv[])
 			LOWER = COLDESC_IDX_MSG_FIRST;
 			UPPER = COLDESC_IDX_MSG_LAST;
 			break;
+		case 'Q':
+			pmsg = 1;
+			add_column(columns, ncolumns++, COL_NAME);
+			add_column(columns, ncolumns++, COL_PERMS);
+			add_column(columns, ncolumns++, COL_OWNER);
+			add_column(columns, ncolumns++, COL_MTIME);
+			add_column(columns, ncolumns++, COL_USEDBYTES);
+			add_column(columns, ncolumns++, COL_MSGS);
+			LOWER = COLDESC_IDX_POSIX_FIRST;
+			UPPER = COLDESC_IDX_POSIX_LAST;
+			break;
 		case 'l':
 			ctl->outmode = OUT_LIST;
 			break;
@@ -1214,6 +1568,16 @@ int main(int argc, char *argv[])
 			LOWER = COLDESC_IDX_SHM_FIRST;
 			UPPER = COLDESC_IDX_SHM_LAST;
 			break;
+		case 'M':
+			pshm = 1;
+			add_column(columns, ncolumns++, COL_NAME);
+			add_column(columns, ncolumns++, COL_PERMS);
+			add_column(columns, ncolumns++, COL_OWNER);
+			add_column(columns, ncolumns++, COL_SIZE);
+			add_column(columns, ncolumns++, COL_MTIME);
+			LOWER = COLDESC_IDX_POSIX_FIRST;
+			UPPER = COLDESC_IDX_POSIX_LAST;
+			break;
 		case 'n':
 			ctl->outmode = OUT_NEWLINE;
 			break;
@@ -1229,6 +1593,16 @@ int main(int argc, char *argv[])
 			add_column(columns, ncolumns++, COL_NSEMS);
 			LOWER = COLDESC_IDX_SEM_FIRST;
 			UPPER = COLDESC_IDX_SEM_LAST;
+			break;
+		case 'S':
+			psem = 1;
+			add_column(columns, ncolumns++, COL_NAME);
+			add_column(columns, ncolumns++, COL_PERMS);
+			add_column(columns, ncolumns++, COL_OWNER);
+			add_column(columns, ncolumns++, COL_MTIME);
+			add_column(columns, ncolumns++, COL_SVAL);
+			LOWER = COLDESC_IDX_POSIX_FIRST;
+			UPPER = COLDESC_IDX_POSIX_LAST;
 			break;
 		case OPT_NOTRUNC:
 			ctl->notrunc = 1;
@@ -1262,10 +1636,10 @@ int main(int argc, char *argv[])
 	}
 
 	/* default is global */
-	if (msg + shm + sem == 0) {
-		msg = shm = sem = global = 1;
-		if (show_time || show_creat || id != -1)
-			errx(EXIT_FAILURE, _("--global is mutually exclusive with --creator, --id and --time"));
+	if (msg + shm + sem + pmsg + pshm + psem == 0) {
+		msg = shm = sem = pmsg = pshm = psem = global = 1;
+		if (show_time || show_creat || id != -1 || name != NULL)
+			errx(EXIT_FAILURE, _("--global is mutually exclusive with --creator, --id, --name and --time"));
 	}
 	if (global) {
 		add_column(columns, ncolumns++, COL_RESOURCE);
@@ -1278,7 +1652,7 @@ int main(int argc, char *argv[])
 	}
 
 	/* default to pretty-print if --id specified */
-	if (id != -1 && !ctl->outmode)
+	if ((id != -1 || name != NULL) && !ctl->outmode)
 		ctl->outmode = OUT_PRETTY;
 
 	if (!ctl->time_mode)
@@ -1292,8 +1666,10 @@ int main(int argc, char *argv[])
 		if (show_creat) {
 			add_column(columns, ncolumns++, COL_CUID);
 			add_column(columns, ncolumns++, COL_CGID);
-			add_column(columns, ncolumns++, COL_UID);
-			add_column(columns, ncolumns++, COL_GID);
+			if (!(pmsg || pshm || psem)) {
+				add_column(columns, ncolumns++, COL_UID);
+				add_column(columns, ncolumns++, COL_GID);
+			}
 		}
 		if (msg && show_time) {
 			add_column(columns, ncolumns++, COL_SEND);
@@ -1334,17 +1710,31 @@ int main(int argc, char *argv[])
 		else
 			do_msg(id, ctl, tb);
 	}
+	if (pmsg) {
+		if (global)
+			do_posix_msg_global(ctl, tb);
+		else
+			do_posix_msg(name, ctl, tb);
+	}
 	if (shm) {
 		if (global)
 			do_shm_global(ctl ,tb);
 		else
 			do_shm(id, ctl, tb);
 	}
+	if (pshm) {
+		if (!global)
+			do_posix_shm(name, ctl, tb);
+	}
 	if (sem) {
 		if (global)
 			do_sem_global(ctl, tb);
 		else
 			do_sem(id, ctl, tb);
+	}
+	if (psem) {
+		if (!global)
+			do_posix_sem(name, ctl, tb);
 	}
 
 	print_table(ctl, tb);
@@ -1354,4 +1744,3 @@ int main(int argc, char *argv[])
 
 	return EXIT_SUCCESS;
 }
-

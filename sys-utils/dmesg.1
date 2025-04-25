@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: dmesg
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "DMESG" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "DMESG" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -83,7 +83,7 @@ Display the local time and the delta in human\-readable format. Be aware that co
 .sp
 \fB\-F\fP, \fB\-\-file\fP \fIfile\fP
 .RS 4
-Read the syslog messages from the given \fIfile\fP. Note that \fB\-F\fP does not support messages in kmsg format. The old syslog format is supported only.
+Read the syslog messages from the given \fIfile\fP. Note that \fB\-F\fP does not support messages in kmsg format. See \fB\-K\fP instead.
 .RE
 .sp
 \fB\-f\fP, \fB\-\-facility\fP \fIlist\fP
@@ -105,12 +105,17 @@ Enable human\-readable output. See also \fB\-\-color\fP, \fB\-\-reltime\fP and \
 Use JSON output format. The time output format is in "sec.usec" format only, log priority level is not decoded by default (use \fB\-\-decode\fP to split into facility and priority), the other options to control the output format or time format are silently ignored.
 .RE
 .sp
+\fB\-K\fP, \fB\-\-kmsg\-file\fP \fIfile\fP
+.RS 4
+Read the /dev/kmsg messages from the given \fIfile\fP. Different record as expected to be separated by a NULL byte.
+.RE
+.sp
 \fB\-k\fP, \fB\-\-kernel\fP
 .RS 4
 Print kernel messages.
 .RE
 .sp
-\fB\-L\fP, \fB\-\-color\fP[=\fIwhen\fP]
+\fB\-L\fP, \fB\-\-color\fP[\fB=\fP\fIwhen\fP]
 .RS 4
 Colorize the output. The optional argument \fIwhen\fP can be \fBauto\fP, \fBnever\fP or \fBalways\fP. If the \fIwhen\fP argument is omitted, it defaults to \fBauto\fP. The colors can be disabled; for the current built\-in default see the \fB\-\-help\fP output. See also the \fBCOLORS\fP section below.
 .RE
@@ -122,6 +127,14 @@ Restrict output to the given (comma\-separated) \fIlist\fP of levels. For exampl
 \fBdmesg \-\-level=err,warn\fP
 .sp
 will print error and warning messages only. For all supported levels see the \fB\-\-help\fP output.
+.sp
+Appending a plus \fB+\fP to a level name also includes all higher levels. For example:
+.sp
+\fBdmesg \-\-level=err+\fP
+.sp
+will print levels \fBerr\fP, \fBcrit\fP, \fBalert\fP and \fBemerg\fP.
+.sp
+Prepending it will include all lower levels.
 .RE
 .sp
 \fB\-n\fP, \fB\-\-console\-level\fP \fIlevel\fP
@@ -150,7 +163,7 @@ Add facility, level or timestamp information to each line of a multi\-line messa
 .RS 4
 Print the raw message buffer, i.e., do not strip the log\-level prefixes, but all unprintable characters are still escaped (see also \fB\-\-noescape\fP).
 .sp
-Note that the real raw format depends on the method how \fBdmesg\fP reads kernel messages. The \fI/dev/kmsg\fP device uses a different format than \fBsyslog\fP(2). For backward compatibility, \fBdmesg\fP returns data always in the \fBsyslog\fP(2) format. It is possible to read the real raw data from \fI/dev/kmsg\fP by, for example, the command \(aqdd if=/dev/kmsg iflag=nonblock\(aq.
+Note that the real raw format depends on the method how \fBdmesg\fP reads kernel messages. The \fI/dev/kmsg\fP device uses a different format than \fBsyslog\fP(2). For backward compatibility, \fBdmesg\fP returns data always in the \fBsyslog\fP(2) format. It is possible to read the real raw data from \fI/dev/kmsg\fP by, for example, the command \*(Aqdd if=/dev/kmsg iflag=nonblock\*(Aq.
 .RE
 .sp
 \fB\-S\fP, \fB\-\-syslog\fP
@@ -172,12 +185,12 @@ Print human\-readable timestamps.
 .sp
 \fB\-\-since\fP \fItime\fP
 .RS 4
-Display record since the specified time. The time is possible to specify in absolute way as well as by relative notation (e.g. \(aq1 hour ago\(aq). Be aware that the timestamp could be inaccurate and see \fB\-\-ctime\fP for more details.
+Display record since the specified time. Supported is the subsecond granularity. The time is possible to specify in absolute way as well as by relative notation (e.g. \*(Aq1 hour ago\*(Aq). Be aware that the timestamp could be inaccurate and see \fB\-\-ctime\fP for more details.
 .RE
 .sp
 \fB\-\-until\fP \fItime\fP
 .RS 4
-Display record until the specified time. The time is possible to specify in absolute way as well as by relative notation (e.g. \(aq1 hour ago\(aq). Be aware that the timestamp could be inaccurate and see \fB\-\-ctime\fP for more details.
+Display record until the specified time. Supported is the subsecond granularity. The time is possible to specify in absolute way as well as by relative notation (e.g. \*(Aq1 hour ago\*(Aq). Be aware that the timestamp could be inaccurate and see \fB\-\-ctime\fP for more details.
 .RE
 .sp
 \fB\-t\fP, \fB\-\-notime\fP
@@ -187,9 +200,13 @@ Do not print kernel\(cqs timestamps.
 .sp
 \fB\-\-time\-format\fP \fIformat\fP
 .RS 4
-Print timestamps using the given \fIformat\fP, which can be \fBctime\fP, \fBreltime\fP, \fBdelta\fP or \fBiso\fP. The first three formats are aliases of the time\-format\-specific options. The \fBiso\fP format is a \fBdmesg\fP implementation of the ISO\-8601 timestamp format. The purpose of this format is to make the comparing of timestamps between two systems, and any other parsing, easy. The definition of the \fBiso\fP timestamp is: YYYY\-MM\-DD<T>HH:MM:SS,<microseconds>\(<-+><timezone offset from UTC>.
+Print timestamps using the given \fIformat\fP, which can be \fBctime\fP, \fBreltime\fP, \fBdelta\fP, \fBiso\fP or \fBraw\fP. The first three formats are aliases of the time\-format\-specific options. The \fBraw\fP format uses the default timestamp format showing seconds since boot. The \fBiso\fP format is a \fBdmesg\fP implementation of the ISO\-8601 timestamp format. The purpose of this format is to make the comparing of timestamps between two systems, and any other parsing, easy. The definition of the \fBiso\fP timestamp is: YYYY\-MM\-DD<T>HH:MM:SS,<microseconds>\(<-+><timezone offset from UTC>.
 .sp
 The \fBiso\fP format has the same issue as \fBctime\fP: the time may be inaccurate when a system is suspended and resumed.
+.sp
+\fB\-\-time\-format\fP may be used multiple times with different values for \fIformat\fP to output each specified format.
+.sp
+The \fBdelta\fP always follows \fBctime\fP or \fBraw\fP if specified together.
 .RE
 .sp
 \fB\-u\fP, \fB\-\-userspace\fP
@@ -219,7 +236,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "COLORS"
 .sp
@@ -241,6 +258,9 @@ for the \fBdmesg\fP command or for all tools by
 .br
 .RE
 .ll
+.sp
+Since version 2.41, the $NO_COLOR environment variable is also supported to
+disable output colorization unless explicitly enabled by a command\-line option.
 .sp
 The user\-specific \fI$XDG_CONFIG_HOME/terminal\-colors.d\fP
 or \fI$HOME/.config/terminal\-colors.d\fP overrides the global setting.
@@ -304,8 +324,8 @@ The text of the message that inform about segmentation fault.
 \fBsyslogd\fP(8)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBdmesg\fP command is part of the util\-linux package which can be downloaded from \c

@@ -224,6 +224,9 @@ static char *evaluate_by_scan(const char *token, const char *value,
  * @value: token data (e.g. "foo")
  * @cache: pointer to cache (or NULL when you don't want to re-use the cache)
  *
+* If the @value is NULL and @token is not in the NAME=value format, then return
+* a copy of the @token.
+ *
  * Returns: allocated string with a device name.
  */
 char *blkid_evaluate_tag(const char *token, const char *value, blkid_cache *cache)
@@ -235,9 +238,6 @@ char *blkid_evaluate_tag(const char *token, const char *value, blkid_cache *cach
 
 	if (!token)
 		return NULL;
-
-	if (!cache || !*cache)
-		blkid_init_debug(0);
 
 	DBG(EVALUATE, ul_debug("evaluating  %s%s%s", token, value ? "=" : "",
 		   value ? value : ""));
@@ -316,8 +316,6 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "usage: %s <tag> | <spec>\n", argv[0]);
 		return EXIT_FAILURE;
 	}
-
-	blkid_init_debug(0);
 
 	res = blkid_evaluate_spec(argv[1], &cache);
 	if (res)

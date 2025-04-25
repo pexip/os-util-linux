@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: more
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-08-04
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "MORE" "1" "2022-08-04" "util\-linux 2.38.1" "User Commands"
+.TH "MORE" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -28,7 +28,7 @@
 .  LINKSTYLE blue R < >
 .\}
 .SH "NAME"
-more \- file perusal filter for crt viewing
+more \- display the contents of a file in a terminal
 .SH "SYNOPSIS"
 .sp
 \fBmore\fP [options] \fIfile\fP ...
@@ -41,7 +41,7 @@ Options are also taken from the environment variable \fBMORE\fP (make sure to pr
 .sp
 \fB\-d\fP, \fB\-\-silent\fP
 .RS 4
-Prompt with "[Press space to continue, \(aqq\(aq to quit.]", and display "[Press \(aqh\(aq for instructions.]" instead of ringing the bell when an illegal key is pressed.
+Prompt with "[Press space to continue, \*(Aqq\*(Aq to quit.]", and display "[Press \*(Aqh\*(Aq for instructions.]" instead of ringing the bell when an illegal key is pressed.
 .RE
 .sp
 \fB\-l\fP, \fB\-\-logical\fP
@@ -51,7 +51,7 @@ Do not pause after any line containing a \fB^L\fP (form feed).
 .sp
 \fB\-e\fP, \fB\-\-exit\-on\-eof\fP
 .RS 4
-Exit on End\-Of\-File, enabled by default if not executed on terminal.
+Exit on End\-Of\-File, enabled by default if POSIXLY_CORRECT environment variable is not set or if not executed on terminal.
 .RE
 .sp
 \fB\-f\fP, \fB\-\-no\-pause\fP
@@ -106,7 +106,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "COMMANDS"
 .sp
@@ -157,7 +157,7 @@ Skip forward k screenfuls of text. Defaults to 1.
 Skip backwards k screenfuls of text. Defaults to 1. Only works with files, not pipes.
 .RE
 .sp
-\fB\(aq\fP
+\fB\*(Aq\fP
 .RS 4
 Go to the place where the last search started.
 .RE
@@ -239,6 +239,11 @@ The editor the user prefers. Invoked when command key \fIv\fP is pressed.
 .RS 4
 The editor of choice when \fBVISUAL\fP is not specified.
 .RE
+.sp
+\fBPOSIXLY_CORRECT\fP
+.RS 4
+Disable exit\-on\-eof (see option \fB\-e\fP for more details).
+.RE
 .SH "HISTORY"
 .sp
 The \fBmore\fP command appeared in 3.0BSD. This man page documents \fBmore\fP version 5.19 (Berkeley 6/29/88), which is currently in use in the Linux community. Documentation was produced using several other versions of the man page, and extensive inspection of the source code.
@@ -255,8 +260,8 @@ Modified by John Foderaro, UCB to add \-c and MORE environment variable.
 \fBvi\fP(1)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBmore\fP command is part of the util\-linux package which can be downloaded from \c

@@ -25,12 +25,14 @@
 #include <linux/securebits.h>
 #include <pwd.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/prctl.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "all-io.h"
 #include "c.h"
 #include "caputils.h"
 #include "closestream.h"
@@ -41,6 +43,8 @@
 #include "pathnames.h"
 #include "signames.h"
 #include "env.h"
+#include "setpriv-landlock.h"
+#include "seccomp.h"
 
 #ifndef PR_SET_NO_NEW_PRIVS
 # define PR_SET_NO_NEW_PRIVS 38
@@ -72,19 +76,19 @@ enum cap_type {
  */
 
 struct privctx {
-	unsigned int
-		nnp:1,			/* no_new_privs */
-		have_ruid:1,		/* real uid */
-		have_euid:1,		/* effective uid */
-		have_rgid:1,		/* real gid */
-		have_egid:1,		/* effective gid */
-		have_passwd:1,		/* passwd entry */
-		have_groups:1,		/* add groups */
-		keep_groups:1,		/* keep groups */
-		clear_groups:1,		/* remove groups */
-		init_groups:1,		/* initialize groups */
-		reset_env:1,		/* reset environment */
-		have_securebits:1;	/* remove groups */
+	bool	nnp,			/* no_new_privs */
+		have_ruid,		/* real uid */
+		have_euid,		/* effective uid */
+		have_rgid,		/* real gid */
+		have_egid,		/* effective gid */
+		have_passwd,		/* passwd entry */
+		have_groups,		/* add groups */
+		keep_groups,		/* keep groups */
+		clear_groups,		/* remove groups */
+		init_groups,		/* initialize groups */
+		reset_env,		/* reset environment */
+		have_securebits,	/* remove groups */
+		have_ptracer;		/* modify ptracer */
 
 	/* uids and gids */
 	uid_t ruid, euid;
@@ -107,9 +111,14 @@ struct privctx {
 	/* parent death signal (<0 clear, 0 nothing, >0 signal) */
 	int pdeathsig;
 
+	/* permitted ptracer under Yama mode 1 */
+	long ptracer;
+
 	/* LSMs */
 	const char *selinux_label;
 	const char *apparmor_profile;
+	struct setpriv_landlock_opts landlock;
+	const char *seccomp_filter;
 };
 
 static void __attribute__((__noreturn__)) usage(void)
@@ -125,32 +134,38 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -d, --dump                  show current state (and do not exec)\n"), out);
 	fputs(_(" --nnp, --no-new-privs       disallow granting new privileges\n"), out);
-	fputs(_(" --ambient-caps <caps,...>   set ambient capabilities\n"), out);
-	fputs(_(" --inh-caps <caps,...>       set inheritable capabilities\n"), out);
+	fputs(_(" --ambient-caps <caps>       set ambient capabilities\n"), out);
+	fputs(_(" --inh-caps <caps>           set inheritable capabilities\n"), out);
 	fputs(_(" --bounding-set <caps>       set capability bounding set\n"), out);
 	fputs(_(" --ruid <uid|user>           set real uid\n"), out);
 	fputs(_(" --euid <uid|user>           set effective uid\n"), out);
-	fputs(_(" --rgid <gid|user>           set real gid\n"), out);
+	fputs(_(" --rgid <gid|group>          set real gid\n"), out);
 	fputs(_(" --egid <gid|group>          set effective gid\n"), out);
 	fputs(_(" --reuid <uid|user>          set real and effective uid\n"), out);
 	fputs(_(" --regid <gid|group>         set real and effective gid\n"), out);
 	fputs(_(" --clear-groups              clear supplementary groups\n"), out);
 	fputs(_(" --keep-groups               keep supplementary groups\n"), out);
 	fputs(_(" --init-groups               initialize supplementary groups\n"), out);
-	fputs(_(" --groups <group,...>        set supplementary groups by UID or name\n"), out);
+	fputs(_(" --groups <group>[,...]      set supplementary group(s) by GID or name\n"), out);
 	fputs(_(" --securebits <bits>         set securebits\n"), out);
 	fputs(_(" --pdeathsig keep|clear|<signame>\n"
 	        "                             set or clear parent death signal\n"), out);
+	fputs(_(" --ptracer <pid>|any|none    allow ptracing from the given process\n"), out);
 	fputs(_(" --selinux-label <label>     set SELinux label\n"), out);
 	fputs(_(" --apparmor-profile <pr>     set AppArmor profile\n"), out);
+	fputs(_(" --landlock-access <access>  add Landlock access\n"), out);
+	fputs(_(" --landlock-rule <rule>      add Landlock rule\n"), out);
+	fputs(_(" --seccomp-filter <file>     load seccomp filter from file\n"), out);
 	fputs(_(" --reset-env                 clear all environment and initialize\n"
 		"                               HOME, SHELL, USER, LOGNAME and PATH\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(29));
+	fprintf(out, USAGE_HELP_OPTIONS(29));
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_(" This tool can be dangerous.  Read the manpage, and be careful.\n"), out);
-	printf(USAGE_MAN_TAIL("setpriv(1)"));
+	fprintf(out, USAGE_MAN_TAIL("setpriv(1)"));
+
+	usage_setpriv(out);
 
 	exit(EXIT_SUCCESS);
 }
@@ -314,7 +329,7 @@ static void dump_pdeathsig(void)
 	int pdeathsig;
 
 	if (prctl(PR_GET_PDEATHSIG, &pdeathsig) != 0) {
-		warn(_("get pdeathsig failed"));
+		warn(_("failed to get parent death signal"));
 		return;
 	}
 
@@ -433,7 +448,7 @@ static void parse_groups(struct privctx *opts, const char *str)
 	while ((c = strsep(&groups, ",")))
 		opts->groups[i++] = get_group(c, _("Invalid supplementary group id"));
 
-	free(groups);
+	free(buf);
 }
 
 static void parse_pdeathsig(struct privctx *opts, const char *str)
@@ -446,6 +461,17 @@ static void parse_pdeathsig(struct privctx *opts, const char *str)
 		opts->pdeathsig = -1;
 	} else if ((opts->pdeathsig = signame_to_signum(str)) < 0) {
 		errx(EXIT_FAILURE, _("unknown signal: %s"), str);
+	}
+}
+
+static void parse_ptracer(struct privctx *opts, const char *str)
+{
+	if (!strcmp(str, "any")) {
+		opts->ptracer = PR_SET_PTRACER_ANY;
+	} else if (!strcmp(str, "none")) {
+		opts->ptracer = 0;
+	} else {
+		opts->ptracer = strtopid_or_err(str, _("failed to parse ptracer pid"));
 	}
 }
 
@@ -516,6 +542,7 @@ static int cap_update(capng_act_t action,
 static void do_caps(enum cap_type type, const char *caps)
 {
 	char *my_caps = xstrdup(caps);
+	char *source_my_caps = my_caps;
 	char *c;
 
 	while ((c = strsep(&my_caps, ","))) {
@@ -546,12 +573,13 @@ static void do_caps(enum cap_type type, const char *caps)
 		}
 	}
 
-	free(my_caps);
+	free(source_my_caps);
 }
 
 static void parse_securebits(struct privctx *opts, const char *arg)
 {
 	char *buf = xstrdup(arg);
+	char *source_buf = buf;
 	char *c;
 
 	opts->have_securebits = 1;
@@ -605,7 +633,7 @@ static void parse_securebits(struct privctx *opts, const char *arg)
 
 	opts->securebits |= SECBIT_KEEP_CAPS;	/* We need it, and it's reset on exec */
 
-	free(buf);
+	free(source_buf);
 }
 
 static void do_selinux_label(const char *label)
@@ -651,6 +679,45 @@ static void do_apparmor_profile(const char *label)
 		    _("write failed: %s"), _PATH_PROC_ATTR_EXEC);
 }
 
+static void do_seccomp_filter(const char *file)
+{
+	int fd;
+	ssize_t s;
+	char *filter;
+	struct sock_fprog prog = {};
+
+	fd = open(file, O_RDONLY);
+	if (fd == -1)
+		err(SETPRIV_EXIT_PRIVERR,
+		    _("cannot open %s"), file);
+
+	s = read_all_alloc(fd, &filter);
+	if (s < 0)
+		err(SETPRIV_EXIT_PRIVERR,
+		    _("cannot read %s"), file);
+
+	if (s % sizeof(*prog.filter))
+		errx(SETPRIV_EXIT_PRIVERR, _("invalid filter"));
+
+	prog.len = s / sizeof(*prog.filter);
+	prog.filter = (void *)filter;
+
+	/* *SET* below will return EINVAL when either the filter is invalid or
+	 * seccomp is not supported. To distinguish those cases do a *GET* here
+	 */
+	if (prctl(PR_GET_SECCOMP) == -1 && errno == EINVAL)
+		err(SETPRIV_EXIT_PRIVERR, _("Seccomp non-functional"));
+
+	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0))
+		err(SETPRIV_EXIT_PRIVERR, _("Could not run prctl(PR_SET_NO_NEW_PRIVS)"));
+
+	if (ul_set_seccomp_filter_spec_allow(&prog))
+		err(SETPRIV_EXIT_PRIVERR, _("Could not load seccomp filter"));
+
+	free(filter);
+	close(fd);
+
+}
 
 static void do_reset_environ(struct passwd *pw)
 {
@@ -752,8 +819,12 @@ int main(int argc, char **argv)
 		CAPBSET,
 		SECUREBITS,
 		PDEATHSIG,
+		PTRACER,
 		SELINUX_LABEL,
 		APPARMOR_PROFILE,
+		LANDLOCK_ACCESS,
+		LANDLOCK_RULE,
+		SECCOMP_FILTER,
 		RESET_ENV
 	};
 
@@ -777,8 +848,12 @@ int main(int argc, char **argv)
 		{ "bounding-set",     required_argument, NULL, CAPBSET          },
 		{ "securebits",       required_argument, NULL, SECUREBITS       },
 		{ "pdeathsig",        required_argument, NULL, PDEATHSIG,       },
+		{ "ptracer",          required_argument, NULL, PTRACER,       },
 		{ "selinux-label",    required_argument, NULL, SELINUX_LABEL    },
 		{ "apparmor-profile", required_argument, NULL, APPARMOR_PROFILE },
+		{ "landlock-access",  required_argument, NULL, LANDLOCK_ACCESS  },
+		{ "landlock-rule",    required_argument, NULL, LANDLOCK_RULE    },
+		{ "seccomp-filter",   required_argument, NULL, SECCOMP_FILTER   },
 		{ "help",             no_argument,       NULL, 'h'              },
 		{ "reset-env",        no_argument,       NULL, RESET_ENV,       },
 		{ "version",          no_argument,       NULL, 'V'              },
@@ -805,6 +880,7 @@ int main(int argc, char **argv)
 	close_stdout_atexit();
 
 	memset(&opts, 0, sizeof(opts));
+	init_landlock_opts(&opts.landlock);
 
 	while ((c = getopt_long(argc, argv, "+dhV", longopts, NULL)) != -1) {
 		err_exclusive_options(c, longopts, excl, excl_st);
@@ -894,6 +970,13 @@ int main(int argc, char **argv)
 				     _("duplicate --keep-pdeathsig option"));
 			parse_pdeathsig(&opts, optarg);
 			break;
+		case PTRACER:
+			if (opts.have_ptracer)
+				errx(EXIT_FAILURE,
+				     _("duplicate --ptracer option"));
+			opts.have_ptracer = 1;
+			parse_ptracer(&opts, optarg);
+			break;
 		case LISTCAPS:
 			list_caps = 1;
 			break;
@@ -932,6 +1015,18 @@ int main(int argc, char **argv)
 				errx(EXIT_FAILURE,
 				     _("duplicate --apparmor-profile option"));
 			opts.apparmor_profile = optarg;
+			break;
+		case LANDLOCK_ACCESS:
+			parse_landlock_access(&opts.landlock, optarg);
+			break;
+		case LANDLOCK_RULE:
+			parse_landlock_rule(&opts.landlock, optarg);
+			break;
+		case SECCOMP_FILTER:
+			if (opts.seccomp_filter)
+				errx(EXIT_FAILURE,
+				     _("duplicate --secccomp-filter option"));
+			opts.seccomp_filter = optarg;
 			break;
 		case RESET_ENV:
 			opts.reset_env = 1;
@@ -998,6 +1093,8 @@ int main(int argc, char **argv)
 		do_selinux_label(opts.selinux_label);
 	if (opts.apparmor_profile)
 		do_apparmor_profile(opts.apparmor_profile);
+	if (opts.seccomp_filter)
+		do_seccomp_filter(opts.seccomp_filter);
 
 	if (prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0) == -1)
 		err(EXIT_FAILURE, _("keep process capabilities failed"));
@@ -1055,6 +1152,14 @@ int main(int argc, char **argv)
 	/* Clear or set parent death signal */
 	if (opts.pdeathsig && prctl(PR_SET_PDEATHSIG, opts.pdeathsig < 0 ? 0 : opts.pdeathsig) != 0)
 		err(SETPRIV_EXIT_PRIVERR, _("set parent death signal failed"));
+
+	if (opts.have_ptracer) {
+		if (prctl(PR_SET_PTRACER, opts.ptracer) < 0) {
+			err(SETPRIV_EXIT_PRIVERR, _("set ptracer"));
+		}
+	}
+
+	do_landlock(&opts.landlock);
 
 	execvp(argv[optind], argv + optind);
 	errexec(argv[optind]);

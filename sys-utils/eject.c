@@ -55,7 +55,7 @@
 #include "monotonic.h"
 
 /*
- * sg_io_hdr_t driver_status -- see kernel include/scsi/scsi.h
+ * sg_io_hdr_t driver_status -- see kernel include/scsi/sg.h
  */
 #ifndef DRIVER_SENSE
 # define DRIVER_SENSE	0x08
@@ -75,27 +75,27 @@ struct eject_control {
 	struct libmnt_table *mtab;
 	char *device;			/* device or mount point to be ejected */
 	int fd;				/* file descriptor for device */
-	unsigned int 			/* command flags and arguments */
-		a_option:1,
-		c_option:1,
-		d_option:1,
-		F_option:1,
-		f_option:1,
-		i_option:1,
-		M_option:1,
-		m_option:1,
-		n_option:1,
-		p_option:1,
-		q_option:1,
-		r_option:1,
-		s_option:1,
-		T_option:1,
-		t_option:1,
-		v_option:1,
-		X_option:1,
-		x_option:1,
-		a_arg:1,
-		i_arg:1;
+	bool	 			/* command flags and arguments */
+		a_option,
+		c_option,
+		d_option,
+		F_option,
+		f_option,
+		i_option,
+		M_option,
+		m_option,
+		n_option,
+		p_option,
+		q_option,
+		r_option,
+		s_option,
+		T_option,
+		t_option,
+		v_option,
+		X_option,
+		x_option,
+		a_arg,
+		i_arg;
 
 	unsigned int force_exclusive;	/* use O_EXCL */
 
@@ -164,10 +164,10 @@ static void __attribute__((__noreturn__)) usage(void)
 		out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(29));
+	fprintf(out, USAGE_HELP_OPTIONS(29));
 
 	fputs(_("\nBy default tries -r, -s, -f, and -q in order until success.\n"), out);
-	printf(USAGE_MAN_TAIL("eject(1)"));
+	fprintf(out, USAGE_MAN_TAIL("eject(1)"));
 
 	exit(EXIT_SUCCESS);
 }
@@ -330,7 +330,7 @@ static void auto_eject(const struct eject_control *ctl)
 /*
  * Stops CDROM from opening on manual eject button press.
  * This can be useful when you carry your laptop
- * in your bag while it's on and no CD inserted in it's drive.
+ * in your bag while it's on and no CD is inserted in its tray.
  * Implemented as found in Documentation/userspace-api/ioctl/cdrom.rst
  */
 static void manual_eject(const struct eject_control *ctl)
@@ -807,7 +807,7 @@ done:
 	return count;
 }
 
-static int is_hotpluggable(const struct eject_control *ctl)
+static int is_ejectable(const struct eject_control *ctl)
 {
 	struct path_cxt *pc = NULL;
 	dev_t devno;
@@ -819,7 +819,7 @@ static int is_hotpluggable(const struct eject_control *ctl)
 	if (!pc)
 		return 0;
 
-	rc = sysfs_blkdev_is_hotpluggable(pc);
+	rc = sysfs_blkdev_is_hotpluggable(pc) || sysfs_blkdev_is_removable(pc);
 	ul_unref_path(pc);
 	return rc;
 }
@@ -911,8 +911,8 @@ int main(int argc, char **argv)
 		verbose(&ctl, _("%s: is whole-disk device"), ctl.device);
 	}
 
-	if (ctl.F_option == 0 && is_hotpluggable(&ctl) == 0)
-		errx(EXIT_FAILURE, _("%s: is not hot-pluggable device"), ctl.device);
+	if (ctl.F_option == 0 && is_ejectable(&ctl) == 0)
+		errx(EXIT_FAILURE, _("%s: is not ejectable device"), ctl.device);
 
 	/* handle -n option */
 	if (ctl.n_option) {

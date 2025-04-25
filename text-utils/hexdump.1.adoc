@@ -46,6 +46,8 @@ SUCH DAMAGE.
 
 hexdump - display file contents in hexadecimal, decimal, octal, or ascii
 
+== SYNOPSIS
+
 *hexdump* _options file_ ...
 
 *hd* _options file_ ...
@@ -60,6 +62,9 @@ Below, the _length_ and _offset_ arguments may be followed by the multiplicative
 
 *-b*, *--one-byte-octal*::
 _One-byte octal display_. Display the input offset in hexadecimal, followed by sixteen space-separated, three-column, zero-filled bytes of input data, in octal, per line.
+
+*-X*, *--one-byte-hex*::
+_One-byte hexadecimal display_. Display the input offset in hexadecimal, followed by sixteen space-separated, two-column, zero-filled bytes of input data, in hexadecimal, per line.
 
 *-c*, *--one-byte-char*::
 _One-byte character display_. Display the input offset in hexadecimal, followed by sixteen space-separated, three-column, space-filled characters of input data per line.
@@ -77,7 +82,7 @@ Specify a format string to be used for displaying data.
 *-f*, *--format-file* _file_::
 Specify a file that contains one or more newline-separated format strings. Empty lines and lines whose first non-blank character is a hash mark (#) are ignored.
 
-*-L*, *--color*[=_when_]::
+*-L*, *--color*[**=**_when_]::
 Accept color units for the output. The optional argument _when_ can be *auto*, *never* or *always*. If the _when_ argument is omitted, it defaults to *auto*. The colors can be disabled; for the current built-in default see the *--help* output. See also the *Colors* subsection and the *COLORS* section below.
 
 *-n*, *--length* _length_::

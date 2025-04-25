@@ -1,8 +1,16 @@
 /*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
  * blockdev.c --- Do various simple block device ioctls from the command line
  * aeb, 991028
+ *
+ * Copyright (C) 2007-2023 Karel Zak <kzak@redhat.com>
  */
-
 #include <stdio.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -10,6 +18,9 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <errno.h>
+#ifdef HAVE_LINUX_BLKZONED_H
+#include <linux/blkzoned.h>
+#endif
 
 #include "c.h"
 #include "nls.h"
@@ -169,6 +180,20 @@ static const struct bdc bdcms[] =
 		.argval = -1,
 		.help = N_("get filesystem readahead")
 	},{
+		IOCTL_ENTRY(BLKGETDISKSEQ),
+		.name = "--getdiskseq",
+		.argtype = ARG_ULLONG,
+		.argval = -1,
+		.help = N_("get disk sequence number")
+	},{
+#ifdef BLKGETZONESZ
+		IOCTL_ENTRY(BLKGETZONESZ),
+		.name = "--getzonesz",
+		.argtype = ARG_UINT,
+		.argval = -1,
+		.help = N_("get zone size")
+	},{
+#endif
 		IOCTL_ENTRY(BLKFLSBUF),
 		.name = "--flushbufs",
 		.help = N_("flush buffers")
@@ -184,36 +209,36 @@ static void __attribute__((__noreturn__)) usage(void)
 	size_t i;
 
 	fputs(USAGE_HEADER, stdout);
-	printf(_(
+	fprintf(stdout, _(
 	         " %1$s [-v|-q] commands devices\n"
 	         " %1$s --report [devices]\n"
 	         " %1$s -h|-V\n"
 		), program_invocation_short_name);
 
 	fputs(USAGE_SEPARATOR, stdout);
-	puts(  _("Call block device ioctls from the command line."));
+	fputsln(  _("Call block device ioctls from the command line."), stdout);
 
 	fputs(USAGE_OPTIONS, stdout);
-	puts(  _(" -q             quiet mode"));
-	puts(  _(" -v             verbose mode"));
-	puts(  _("     --report   print report for specified (or all) devices"));
+	fputsln(  _(" -q             quiet mode"), stdout);
+	fputsln(  _(" -v             verbose mode"), stdout);
+	fputsln(  _("     --report   print report for specified (or all) devices"), stdout);
 	fputs(USAGE_SEPARATOR, stdout);
-	printf(USAGE_HELP_OPTIONS(16));
+	fprintf(stdout, USAGE_HELP_OPTIONS(16));
 
 	fputs(USAGE_SEPARATOR, stdout);
-	puts(  _("Available commands:"));
-	printf(_(" %-25s get size in 512-byte sectors\n"), "--getsz");
+	fputsln(  _("Available commands:"), stdout);
+	fprintf(stdout, _(" %-25s get size in 512-byte sectors\n"), "--getsz");
 	for (i = 0; i < ARRAY_SIZE(bdcms); i++) {
 		if (bdcms[i].argname)
-			printf(" %s %-*s %s\n", bdcms[i].name,
+			fprintf(stdout, " %s %-*s %s\n", bdcms[i].name,
 				(int)(24 - strlen(bdcms[i].name)),
 				bdcms[i].argname, _(bdcms[i].help));
 		else
-			printf(" %-25s %s\n", bdcms[i].name,
+			fprintf(stdout, " %-25s %s\n", bdcms[i].name,
 				_(bdcms[i].help));
 	}
 
-	printf(USAGE_MAN_TAIL("blockdev(8)"));
+	fprintf(stdout, USAGE_MAN_TAIL("blockdev(8)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -229,8 +254,8 @@ static int find_cmd(char *s)
 
 static void do_commands(int fd, char **argv, int d);
 static void report_header(void);
-static void report_device(char *device, int quiet);
-static void report_all_devices(void);
+static int report_device(char *device, int quiet);
+static int report_all_devices(void);
 
 int main(int argc, char **argv)
 {
@@ -254,14 +279,15 @@ int main(int argc, char **argv)
 
 	/* --report not together with other commands */
 	if (!strcmp(argv[1], "--report")) {
+		int rc = 0;
 		report_header();
 		if (argc > 2) {
 			for (d = 2; d < argc; d++)
-				report_device(argv[d], 0);
+				rc += report_device(argv[d], 0);
 		} else {
-			report_all_devices();
+			rc = report_all_devices();
 		}
-		return EXIT_SUCCESS;
+		return rc ? EXIT_FAILURE : EXIT_SUCCESS;
 	}
 
 	/* do each of the commands on each of the devices */
@@ -322,8 +348,11 @@ static void do_commands(int fd, char **argv, int d)
 
 		if (!strcmp(argv[i], "--getsz")) {
 			res = blkdev_get_sectors(fd, &llu);
-			if (res == 0)
+			if (res == 0) {
+				if (verbose)
+					printf(_("get size in 512-byte sectors: "));
 				printf("%lld\n", llu);
+			}
 			else
 				errx(EXIT_FAILURE,
 				     _("could not get device size"));
@@ -425,13 +454,14 @@ static void do_commands(int fd, char **argv, int d)
 	}
 }
 
-static void report_all_devices(void)
+static int report_all_devices(void)
 {
 	FILE *procpt;
 	char line[200];
 	char ptname[200 + 1];
 	char device[210];
 	int ma, mi, sz;
+	int rc = 0;
 
 	procpt = fopen(_PATH_PROC_PARTITIONS, "r");
 	if (!procpt)
@@ -443,16 +473,18 @@ static void report_all_devices(void)
 			continue;
 
 		snprintf(device, sizeof(device), "/dev/%s", ptname);
-		report_device(device, 1);
+		rc += report_device(device, 1);
 	}
 
 	fclose(procpt);
+	return rc;
 }
 
-static void report_device(char *device, int quiet)
+static int report_device(char *device, int quiet)
 {
 	int fd;
 	int ro, ssz, bsz;
+	int rc = 0;
 	long ra;
 	unsigned long long bytes;
 	uint64_t start = 0;
@@ -463,7 +495,7 @@ static void report_device(char *device, int quiet)
 	if (fd < 0) {
 		if (!quiet)
 			warn(_("cannot open %s"), device);
-		return;
+		return 1;
 	}
 
 	ro = ssz = bsz = 0;
@@ -496,9 +528,11 @@ static void report_device(char *device, int quiet)
 	} else {
 		if (!quiet)
 			warnx(_("ioctl error on %s"), device);
+		rc = 1;
 	}
 
 	close(fd);
+	return rc;
 }
 
 static void report_header(void)

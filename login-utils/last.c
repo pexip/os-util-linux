@@ -77,12 +77,12 @@
 #define UCHUNKSIZE	16384	/* How much we read at once. */
 
 struct last_control {
-	unsigned int lastb :1,	  /* Is this command 'lastb' */
-		     extended :1, /* Lots of info */
-		     showhost :1, /* Show hostname */
-		     altlist :1,  /* Hostname at the end */
-		     usedns :1,	  /* Use DNS to lookup the hostname */
-		     useip :1;    /* Print IP address in number format */
+	bool lastb,	/* Is this command 'lastb' */
+	     extended,	/* Lots of info */
+	     showhost,	/* Show hostname */
+	     altlist,	/* Hostname at the end */
+	     usedns,	/* Use DNS to lookup the hostname */
+	     useip;	/* Print IP address in number format */
 
 	unsigned int name_len;	/* Number of login name characters to print */
 	unsigned int domain_len; /* Number of domain name characters to print */
@@ -95,6 +95,9 @@ struct last_control {
 	time_t until;		/* at what time to stop displaying the file */
 	time_t present;		/* who where present at time_t */
 	unsigned int time_fmt;	/* time format */
+	char separator;        /* output separator */
+
+	bool fullnames_mode;
 };
 
 /* Double linked list of struct utmp's */
@@ -111,6 +114,7 @@ enum {
 	R_NORMAL,	/* Normal */
 	R_NOW,		/* Still logged in */
 	R_REBOOT,	/* Reboot record. */
+	R_REBOOT_CRASH,	/* Reboot record without matching shutdown */
 	R_PHANTOM,	/* No logout record but session is stale. */
 	R_TIMECHANGE	/* NEW_TIME or OLD_TIME */
 };
@@ -267,23 +271,11 @@ static int uread(FILE *fp, struct utmpx *u,  int *quit, const char *filename)
 
 #ifndef FUZZ_TARGET
 /*
- *	Print a short date.
- */
-static char *showdate(void)
-{
-	static char s[CTIME_BUFSIZ];
-
-	ctime_r(&lastdate, s);
-	s[16] = 0;
-	return s;
-}
-
-/*
  *	SIGINT handler
  */
 static void int_handler(int sig __attribute__((unused)))
 {
-	errx(EXIT_FAILURE, _("Interrupted %s"), showdate());
+	ul_sig_err(EXIT_FAILURE, "Interrupted");
 }
 
 /*
@@ -291,7 +283,7 @@ static void int_handler(int sig __attribute__((unused)))
  */
 static void quit_handler(int sig __attribute__((unused)))
 {
-	warnx(_("Interrupted %s"), showdate());
+	ul_sig_warn("Interrupted");
 	signal(SIGQUIT, quit_handler);
 }
 #endif
@@ -361,7 +353,10 @@ static int time_formatter(int fmt, char *dst, size_t dlen, time_t *when)
 	{
 		char buf[CTIME_BUFSIZ];
 
-		ctime_r(when, buf);
+		if (!ctime_r(when, buf)) {
+			ret = -1;
+			break;
+		}
 		snprintf(dst, dlen, "%s", buf);
 		ret = rtrim_whitespace((unsigned char *) dst);
 		break;
@@ -404,7 +399,6 @@ static int list(const struct last_control *ctl, struct utmpx *p, time_t logout_t
 	char		final[512];
 	char		utline[sizeof(p->ut_line) + 1];
 	char		domain[256];
-	char		*s;
 	int		mins, hours, days;
 	int		r, len;
 	struct last_timefmt *fmt;
@@ -482,6 +476,7 @@ static int list(const struct last_control *ctl, struct utmpx *p, time_t logout_t
 
 	switch(what) {
 		case R_CRASH:
+		case R_REBOOT_CRASH:
 			snprintf(logouttime, sizeof(logouttime), "- crash");
 			break;
 		case R_DOWN:
@@ -528,27 +523,38 @@ static int list(const struct last_control *ctl, struct utmpx *p, time_t logout_t
 	if (r < 0)
 		mem2strcpy(domain, p->ut_host, sizeof(p->ut_host), sizeof(domain));
 
+	/*
+	 * set last displayed character to an asterisk when
+	 * user/domain/ip fields are to be truncated in non-fullnames mode
+	 */
+	if (!ctl->fullnames_mode && (strnlen(p->ut_user, sizeof(p->ut_user)) > ctl->name_len))
+		p->ut_user[ctl->name_len-1] = '*';
+
 	if (ctl->showhost) {
 		if (!ctl->altlist) {
+
+			if (!ctl->fullnames_mode && (strnlen(domain, sizeof(domain)) > ctl->domain_len))
+				domain[ctl->domain_len-1] = '*';
+
 			len = snprintf(final, sizeof(final),
-				"%-8.*s %-12.12s %-16.*s %-*.*s %-*.*s %s\n",
-				ctl->name_len, p->ut_user, utline,
-				ctl->domain_len, domain,
-				fmt->in_len, fmt->in_len, logintime, fmt->out_len, fmt->out_len,
-				logouttime, length);
+				"%-8.*s%c%-12.12s%c%-16.*s%c%-*.*s%c%-*.*s%c%s\n",
+				ctl->name_len, p->ut_user, ctl->separator, utline, ctl->separator,
+				ctl->domain_len, domain, ctl->separator,
+				fmt->in_len, fmt->in_len, logintime, ctl->separator, fmt->out_len, fmt->out_len,
+				logouttime, ctl->separator, length);
 		} else {
 			len = snprintf(final, sizeof(final),
-				"%-8.*s %-12.12s %-*.*s %-*.*s %-12.12s %s\n",
-				ctl->name_len, p->ut_user, utline,
-				fmt->in_len, fmt->in_len, logintime, fmt->out_len, fmt->out_len,
-				logouttime, length, domain);
+				"%-8.*s%c%-12.12s%c%-*.*s%c%-*.*s%c%-12.12s%c%s\n",
+				ctl->name_len, p->ut_user, ctl->separator, utline, ctl->separator,
+				fmt->in_len, fmt->in_len, logintime, ctl->separator, fmt->out_len, fmt->out_len,
+				logouttime, ctl->separator, length, ctl->separator, domain);
 		}
 	} else
 		len = snprintf(final, sizeof(final),
-			"%-8.*s %-12.12s %-*.*s %-*.*s %s\n",
-			ctl->name_len, p->ut_user, utline,
-			fmt->in_len, fmt->in_len, logintime, fmt->out_len, fmt->out_len,
-			logouttime, length);
+			"%-8.*s%c%-12.12s%c%-*.*s%c%-*.*s%c%s\n",
+			ctl->name_len, p->ut_user, ctl->separator, utline, ctl->separator,
+			fmt->in_len, fmt->in_len, logintime, ctl->separator, fmt->out_len, fmt->out_len,
+			logouttime, ctl->separator, length);
 
 #if defined(__GLIBC__)
 #  if (__GLIBC__ == 2) && (__GLIBC_MINOR__ == 0)
@@ -560,8 +566,7 @@ static int list(const struct last_control *ctl, struct utmpx *p, time_t logout_t
 	/*
 	 *	Print out "final" string safely.
 	 */
-	for (s = final; *s; s++)
-		fputc_careful(*s, stdout, '*');
+	fputs_careful(final, stdout, '*', false, 0);
 
 	if (len < 0 || (size_t)len >= sizeof(final))
 		putchar('\n');
@@ -596,6 +601,7 @@ static void __attribute__((__noreturn__)) usage(const struct last_control *ctl)
 	fputs(_(" -R, --nohostname     don't display the hostname field\n"), out);
 	fputs(_(" -s, --since <time>   display the lines since the specified time\n"), out);
 	fputs(_(" -t, --until <time>   display the lines until the specified time\n"), out);
+	fputs(_(" -T, --tab-separated	use tabs as delimiters\n"), out);
 	fputs(_(" -p, --present <time> display who were present at the specified time\n"), out);
 	fputs(_(" -w, --fullnames      display full user and domain names\n"), out);
 	fputs(_(" -x, --system         display system shutdown entries and run level changes\n"), out);
@@ -603,8 +609,8 @@ static void __attribute__((__noreturn__)) usage(const struct last_control *ctl)
 		"                               notime|short|full|iso\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(22));
-	printf(USAGE_MAN_TAIL("last(1)"));
+	fprintf(out, USAGE_HELP_OPTIONS(22));
+	fprintf(out, USAGE_MAN_TAIL("last(1)"));
 
 	exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
@@ -614,12 +620,14 @@ static int is_phantom(const struct last_control *ctl, struct utmpx *ut)
 {
 	struct passwd *pw;
 	char path[sizeof(ut->ut_line) + 16];
+	char user[sizeof(ut->ut_user) + 1];
 	int ret = 0;
 
 	if (ut->ut_tv.tv_sec < ctl->boot_time.tv_sec)
 		return 1;
-	ut->ut_user[sizeof(ut->ut_user) - 1] = '\0';
-	pw = getpwnam(ut->ut_user);
+
+	mem2strcpy(user, ut->ut_user, sizeof(ut->ut_user), sizeof(user));
+	pw = getpwnam(user);
 	if (!pw)
 		return 1;
 	snprintf(path, sizeof(path), "/proc/%u/loginuid", ut->ut_pid);
@@ -798,7 +806,10 @@ static void process_wtmp_file(const struct last_control *ctl,
 			break;
 		case BOOT_TIME:
 			strcpy(ut.ut_line, "system boot");
-			quit = list(ctl, &ut, lastdown, R_REBOOT);
+			if (lastdown > lastboot && lastdown != currentdate)
+				quit = list(ctl, &ut, lastboot, R_REBOOT_CRASH);
+			else
+				quit = list(ctl, &ut, lastdown, R_REBOOT);
 			lastboot = ut.ut_tv.tv_sec;
 			down = 1;
 			break;
@@ -960,7 +971,8 @@ int main(int argc, char **argv)
 		.showhost = TRUE,
 		.name_len = LAST_LOGIN_LEN,
 		.time_fmt = LAST_TIMEFTM_SHORT,
-		.domain_len = LAST_DOMAIN_LEN
+		.domain_len = LAST_DOMAIN_LEN,
+		.fullnames_mode = false,
 	};
 	char **files = NULL;
 	size_t i, nfiles = 0;
@@ -985,6 +997,7 @@ int main(int argc, char **argv)
 	      { "ip",         no_argument,       NULL, 'i' },
 	      { "fulltimes",  no_argument,       NULL, 'F' },
 	      { "fullnames",  no_argument,       NULL, 'w' },
+	      { "tab-separated",  no_argument,   NULL, 'T' },
 	      { "time-format", required_argument, NULL, OPT_TIME_FORMAT },
 	      { NULL, 0, NULL, 0 }
 	};
@@ -1002,8 +1015,9 @@ int main(int argc, char **argv)
 	 * Which file do we want to read?
 	 */
 	ctl.lastb = strcmp(program_invocation_short_name, "lastb") == 0 ? 1 : 0;
+	ctl.separator = ' ';
 	while ((c = getopt_long(argc, argv,
-			"hVf:n:RxadFit:p:s:0123456789w", long_opts, NULL)) != -1) {
+			 "hVf:n:RxadFit:p:s:T0123456789w", long_opts, NULL)) != -1) {
 
 		err_exclusive_options(c, long_opts, excl, excl_st);
 
@@ -1055,10 +1069,11 @@ int main(int argc, char **argv)
 			ctl.until = (time_t) (p / 1000000);
 			break;
 		case 'w':
-			if (ctl.name_len < sizeof(((struct utmpx *) 0)->ut_user))
-				ctl.name_len = sizeof(((struct utmpx *) 0)->ut_user);
-			if (ctl.domain_len < sizeof(((struct utmpx *) 0)->ut_host))
-				ctl.domain_len = sizeof(((struct utmpx *) 0)->ut_host);
+			ctl.fullnames_mode = true;
+			if (ctl.name_len < sizeof_member(struct utmpx, ut_user))
+				ctl.name_len = sizeof_member(struct utmpx, ut_user);
+			if (ctl.domain_len < sizeof_member(struct utmpx, ut_host))
+				ctl.domain_len = sizeof_member(struct utmpx, ut_host);
 			break;
 		case '0': case '1': case '2': case '3': case '4':
 		case '5': case '6': case '7': case '8': case '9':
@@ -1066,6 +1081,9 @@ int main(int argc, char **argv)
 			break;
 		case OPT_TIME_FORMAT:
 			ctl.time_fmt = which_time_format(optarg);
+			break;
+		case 'T':
+			ctl.separator = '\t';
 			break;
 		default:
 			errtryhelp(EXIT_FAILURE);

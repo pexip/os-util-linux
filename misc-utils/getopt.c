@@ -57,6 +57,7 @@
 #define CLOSE_EXIT_CODE		XALLOC_EXIT_CODE
 #define TEST_EXIT_CODE		4
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -88,11 +89,10 @@ struct getopt_control {
 	struct option *long_options;	/* long options */
 	int long_options_length;	/* length of options array */
 	int long_options_nr;		/* number of used elements in array */
-	unsigned int
-		compatible:1,		/* compatibility mode for 'difficult' programs */
-		quiet_errors:1,		/* print errors */
-		quiet_output:1,		/* print output */
-		quote:1;		/* quote output */
+	bool	compatible,		/* compatibility mode for 'difficult' programs */
+		quiet_errors,		/* print errors */
+		quiet_output,		/* print output */
+		quote;			/* quote output */
 };
 
 enum { REALLOC_INCREMENT = 8 };
@@ -256,9 +256,9 @@ static void add_longopt(struct getopt_control *ctl, const char *name, int has_ar
 
 	if (ctl->long_options_nr == ctl->long_options_length) {
 		ctl->long_options_length += REALLOC_INCREMENT;
-		ctl->long_options = xrealloc(ctl->long_options,
-					     sizeof(struct option) *
-					     ctl->long_options_length);
+		ctl->long_options = xreallocarray(ctl->long_options,
+						  ctl->long_options_length,
+						  sizeof(struct option));
 	}
 	if (name) {
 		/* Not for init! */
@@ -359,8 +359,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -T, --test                    test for getopt(1) version\n"), stdout);
 	fputs(_(" -u, --unquoted                do not quote the output\n"), stdout);
 	fputs(USAGE_SEPARATOR, stdout);
-	printf(USAGE_HELP_OPTIONS(31));
-	printf(USAGE_MAN_TAIL("getopt(1)"));
+	fprintf(stdout, USAGE_HELP_OPTIONS(31));
+	fprintf(stdout, USAGE_MAN_TAIL("getopt(1)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -446,7 +446,6 @@ int main(int argc, char *argv[])
 			ctl.shell = shell_type(optarg);
 			break;
 		case 'T':
-			free(ctl.long_options);
 			return TEST_EXIT_CODE;
 		case 'u':
 			ctl.quote = 0;

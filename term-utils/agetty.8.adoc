@@ -99,7 +99,7 @@ Do not clear the screen before prompting for the login name. By default the scre
 *-l*, *--login-program* _login_program_::
 Invoke the specified _login_program_ instead of /bin/login. This allows the use of a non-standard login program. Such a program could, for example, ask for a dial-up password or use a different password file. See *--login-options*.
 
-*-L*, *--local-line*[=__mode__]::
+*-L*, *--local-line*[**=**__mode__]::
 Control the CLOCAL line flag. The optional _mode_ argument is *auto*, *always* or *never*. If the _mode_ argument is omitted, then the default is *always*. If the *--local-line* option is not given at all, then the default is *auto*.
 
 _always_;;
@@ -157,7 +157,7 @@ Wait for the user or the modem to send a carriage-return or a linefeed character
 Do not print hints about Num, Caps and Scroll Locks.
 
 *--nohostname*::
-By default the hostname will be printed. With this option enabled, no hostname at all will be shown.
+By default the hostname will be printed. With this option enabled, no hostname at all will be shown. This setting is also possible to able by LOGIN_PLAIN_PROMPT option in the _/etc/login.defs_ configuration file (see below for more details).
 
 *--long-hostname*::
 By default the hostname is only printed until the first dot. With this option enabled, the fully qualified hostname by *gethostname*(3P) or (if not found) by *getaddrinfo*(3) is shown.
@@ -181,6 +181,15 @@ Run login with this priority.
 Ask all running *agetty* instances to reload and update their displayed prompts, if the user has not yet commenced logging in. After doing so the command will exit. This feature might be unsupported on systems without Linux *inotify*(7).
 
 include::man-common/help-version.adoc[]
+
+== CONFIG FILE ITEMS
+*agetty* reads the _/etc/login.defs_ configuration file (see *login.defs*(5)).
+Note that the configuration file could be distributed with another package (usually shadow-utils).
+The following configuration items are relevant for *agetty*:
+
+*LOGIN_PLAIN_PROMPT* (boolean)::
+
+Tell *agetty* that printing the hostname should be suppressed in the login: prompt. This is an alternative to the *--nohostname* command line option. The default value is _no_.
 
 == EXAMPLE
 
@@ -220,9 +229,11 @@ Some programs use "--" to indicate that the rest of the command line should not 
 
 The default issue file is _/etc/issue_. If the file exists, then *agetty* also checks for _/etc/issue.d_ directory. The directory is optional extension to the default issue file and content of the directory is printed after _/etc/issue_ content. If the _/etc/issue_ does not exist, then the directory is ignored. All files *with .issue extension* from the directory are printed in version-sort order. The directory can be used to maintain 3rd-party messages independently on the primary system _/etc/issue_ file.
 
-Since version 2.35 additional locations for issue file and directory are supported. If the default _/etc/issue_ does not exist, then *agetty* checks for _/run/issue_ and _/run/issue.d_, thereafter for _/usr/lib/issue_ and _/usr/lib/issue.d_. The directory _/etc_ is expected for host specific configuration, _/run_ is expected for generated stuff and _/usr/lib_ for static distribution maintained configuration.
+Since version 2.35, additional locations for the issue file and directory are supported. *agetty* checks for the files _/run/issue_ and _/run/issue.d_, and then for _/usr/lib/issue_ and _/usr/lib/issue.d_. The directory _/etc_ is expected for host-specific configuration, _/run_ is expected for generated content, and _/usr/lib_ is used for static configuration maintained by the distribution.
 
-The default path maybe overridden by *--issue-file* option. In this case specified path has to be file or directory and all the default issue file and directory locations are ignored.
+Note that in versions 2.35 to 2.40, the additional locations were only read if the default _/etc/issue_ file did not exist. However, since version 2.41, the additional locations are always read, regardless of the existence of the _/etc/issue_ file. This change allows for the generation of issue files by default.
+
+The default paths maybe completely overridden by *--issue-file* option. In this case specified path has to be file or directory and all the default issue file and directory locations are ignored.
 
 The issue file feature can be completely disabled by *--noissue* option.
 
@@ -309,6 +320,14 @@ problem reports (if *syslog*(3) is not used).
 
 _/etc/inittab_::
 *init*(8) configuration file for SysV-style init daemon.
+
+== CREDENTIALS
+
+*agetty* supports configuration via systemd credentials (see https://systemd.io/CREDENTIALS/). *agetty* reads the following systemd credentials:
+
+*agetty.autologin* (string)::
+
+If set, configures *agetty* to automatically log in the specified user without asking for a username or password, similarly to the *--autologin* option.
 
 == BUGS
 

@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: chfn
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "CHFN" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "CHFN" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,7 +31,7 @@
 chfn \- change your finger information
 .SH "SYNOPSIS"
 .sp
-\fBchfn\fP [\fB\-f\fP \fIfull\-name\fP] [\fB\-o\fP \fIoffice\fP] [\fB\-p\fP \fIoffice\-phone\fP] [\fB\-h\fP \fIhome\-phone\fP] [\fB\-u\fP] [\fB\-v\fP] [\fIusername\fP]
+\fBchfn\fP [\fB\-f\fP \fIfull\-name\fP] [\fB\-o\fP \fIoffice\fP] [\fB\-p\fP \fIoffice\-phone\fP] [\fB\-h\fP \fIhome\-phone\fP] [\fB\-u\fP] [\fB\-V\fP] [\fIusername\fP]
 .SH "DESCRIPTION"
 .sp
 \fBchfn\fP is used to change your finger information. This information is stored in the \fI/etc/passwd\fP file, and is displayed by the \fBfinger\fP program. The Linux \fBfinger\fP command will display four pieces of information that can be changed by \fBchfn\fP: your real name, your work room and phone, and your home phone.
@@ -63,14 +63,15 @@ Specify your office phone number.
 Specify your home phone number.
 .RE
 .sp
-\fB\-h\fP, \fB\-\-help\fP
+\fB\-u\fP, \fB\-\-help\fP
 .RS 4
 Display help text and exit.
 .RE
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit. (Short option \fB\-V\fP is used since version 2.39;
+older versions used the now\-deprecated \fB\-v\fP).
 .RE
 .SH "CONFIG FILE ITEMS"
 .sp
@@ -100,8 +101,8 @@ Returns 0 if operation was successful, 1 if operation failed or command syntax w
 \fBpasswd\fP(5)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBchfn\fP command is part of the util\-linux package which can be downloaded from \c

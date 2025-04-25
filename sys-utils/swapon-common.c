@@ -1,4 +1,16 @@
-
+/*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Copyright (C) 2012-2023 Karel Zak <kzak@redhat.com>
+ *
+ * Original implementation from Linux 0.99, without License and copyright in
+ * the code. Karel Zak rewrote the code under GPL-2.0-or-later.
+ */
 #include "c.h"
 #include "nls.h"
 #include "xalloc.h"
@@ -20,7 +32,7 @@ static int table_parser_errcb(struct libmnt_table *tb __attribute__((__unused__)
 	return 1;
 }
 
-struct libmnt_table *get_fstab(void)
+struct libmnt_table *get_fstab(const char *filename)
 {
 	if (!fstab) {
 		fstab = mnt_new_table();
@@ -28,7 +40,7 @@ struct libmnt_table *get_fstab(void)
 			return NULL;
 		mnt_table_set_parser_errcb(fstab, table_parser_errcb);
 		mnt_table_set_cache(fstab, mntcache);
-		if (mnt_table_parse_fstab(fstab, NULL) != 0)
+		if (mnt_table_parse_fstab(fstab, filename) != 0)
 			return NULL;
 	}
 
@@ -85,7 +97,7 @@ static size_t ulct;
 
 void add_label(const char *label)
 {
-	llist = xrealloc(llist, (++llct) * sizeof(char *));
+	llist = xreallocarray(llist, ++llct, sizeof(char *));
 	llist[llct - 1] = label;
 }
 
@@ -101,7 +113,7 @@ size_t numof_labels(void)
 
 void add_uuid(const char *uuid)
 {
-	ulist = xrealloc(ulist, (++ulct) * sizeof(char *));
+	ulist = xreallocarray(ulist, ++ulct, sizeof(char *));
 	ulist[ulct - 1] = uuid;
 }
 

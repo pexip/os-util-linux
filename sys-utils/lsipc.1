@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: lsipc
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-03-04
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "LSIPC" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "LSIPC" "1" "2025-03-04" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -34,12 +34,19 @@ lsipc \- show information on IPC facilities currently employed in the system
 \fBlsipc\fP [options]
 .SH "DESCRIPTION"
 .sp
-\fBlsipc\fP shows information on the System V inter\-process communication facilities for which the calling process has read access.
+\fBlsipc\fP shows information on the POSIX and System V inter\-process communication facilities for which the calling process has read access.
+.sp
+The default output, as well as the default output from options with predefined output columns (like \fB\-\-shmems\fP, etc.), is subject to change. So whenever possible, you should avoid using default outputs in your scripts. Always explicitly define expected columns by using \fB\-\-output\fP \fIcolumns\-list\fP in environments where a stable output is required.
 .SH "OPTIONS"
 .sp
 \fB\-i\fP, \fB\-\-id\fP \fIid\fP
 .RS 4
-Show full details on just the one resource element identified by \fIid\fP. This option needs to be combined with one of the three resource options: \fB\-m\fP, \fB\-q\fP or \fB\-s\fP. It is possible to override the default output format for this option with the \fB\-\-list\fP, \fB\-\-raw\fP, \fB\-\-json\fP or \fB\-\-export\fP option.
+Show full details on just the one resource element (System V) identified by \fIid\fP. This option needs to be combined with one of the three resource options: \fB\-m\fP, \fB\-q\fP or \fB\-s\fP. It is possible to override the default output format for this option with the \fB\-\-list\fP, \fB\-\-raw\fP, \fB\-\-json\fP or \fB\-\-export\fP option.
+.RE
+.sp
+\fB\-N\fP, \fB\-\-name\fP \fIname\fP
+.RS 4
+Show full details on just the one resource element (POSIX) identified by \fIname\fP. This option needs to be combined with one of the three resource options: \fB\-M\fP, \fB\-Q\fP or \fB\-S\fP. It is possible to override the default output format for this option with the \fB\-\-list\fP, \fB\-\-raw\fP, \fB\-\-json\fP or \fB\-\-export\fP option.
 .RE
 .sp
 \fB\-g\fP, \fB\-\-global\fP
@@ -54,23 +61,38 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SS "Resource options"
 .sp
 \fB\-m\fP, \fB\-\-shmems\fP
 .RS 4
-Write information about active shared memory segments.
+Write information about active System V shared memory segments.
+.RE
+.sp
+\fB\-M\fP, \fB\-\-posix\-shmems\fP
+.RS 4
+Write information about active POSIX shared memory segments.
 .RE
 .sp
 \fB\-q\fP, \fB\-\-queues\fP
 .RS 4
-Write information about active message queues.
+Write information about active System V message queues.
+.RE
+.sp
+\fB\-Q\fP, \fB\-\-posix\-mqueues\fP
+.RS 4
+Write information about active POSIX message queues.
 .RE
 .sp
 \fB\-s\fP, \fB\-\-semaphores\fP
 .RS 4
-Write information about active semaphore sets.
+Write information about active System V semaphore sets.
+.RE
+.sp
+\fB\-S\fP, \fB\-\-posix\-semaphores\fP
+.RS 4
+Write information about active POSIX named semaphores.
 .RE
 .SS "Output formatting"
 .sp
@@ -180,8 +202,8 @@ The \fBlsipc\fP utility is inspired by the \fBipcs\fP(1) utility.
 \fBsysvipc\fP(7)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBlsipc\fP command is part of the util\-linux package which can be downloaded from \c

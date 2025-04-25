@@ -19,7 +19,7 @@
 
 enum { COL_LEFT, COL_FOO, COL_RIGHT };
 
-int main(int argc, char *argv[])
+int main(void)
 {
 	struct libscols_table *tb;
 	int rc = -1, nlines = 3;
@@ -42,7 +42,6 @@ int main(int argc, char *argv[])
 
 	while (nlines--) {
 		struct libscols_line *ln = scols_table_new_line(tb, NULL);
-		int rc;
 
 		rc = scols_line_set_data(ln, COL_LEFT, "A");
 		if (!rc)

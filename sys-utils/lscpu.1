@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: lscpu
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-08-04
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "LSCPU" "1" "2022-08-04" "util\-linux 2.38.1" "User Commands"
+.TH "LSCPU" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -68,7 +68,7 @@ then omitting on purpose the mention "iB", which is part of these abbreviations.
 Limit the output to online CPUs (default for \fB\-p\fP). This option may only be specified together with option \fB\-e\fP or \fB\-p\fP.
 .RE
 .sp
-\fB\-C\fP, \fB\-\-caches\fP[=\fIlist\fP]
+\fB\-C\fP, \fB\-\-caches\fP[\fB=\fP\fIlist\fP]
 .RS 4
 Display details about CPU caches. For details about available information see \fB\-\-help\fP output.
 .sp
@@ -84,31 +84,44 @@ The default list of columns may be extended if list is specified in the format +
 Limit the output to offline CPUs. This option may only be specified together with option \fB\-e\fP or \fB\-p\fP.
 .RE
 .sp
-\fB\-e\fP, \fB\-\-extended\fP[=\fIlist\fP]
+\fB\-\-hierarchic\fP[\fB=\fP\fIwhen\fP]
+.RS 4
+Use subsections in summary output. For backward compatibility, the default is to use subsections only when output on a terminal and flattened output on a non\-terminal. The optional argument \fIwhen\fP can be \fBnever\fP, \fBalways\fP or \fBauto\fP. If the \fIwhen\fP argument is omitted, it defaults to "always".
+.RE
+.sp
+\fB\-e\fP, \fB\-\-extended\fP[\fB=\fP\fIlist\fP]
 .RS 4
 Display the CPU information in human\-readable format.
 .sp
 If the \fIlist\fP argument is omitted, the default columns are included in the command output.  The default output is subject to change.
 .sp
-When specifying the \fIlist\fP argument, the string of option, equal sign (=), and \fIlist\fP must not contain any blanks or other whitespace. Examples: \(aq\fB\-e=cpu,node\fP\(aq or \(aq\fB\-\-extended=cpu,node\fP\(aq.
+When specifying the \fIlist\fP argument, the string of option, equal sign (=), and \fIlist\fP must not contain any blanks or other whitespace. Examples: \*(Aq\fB\-e=cpu,node\fP\*(Aq or \*(Aq\fB\-\-extended=cpu,node\fP\*(Aq.
 .sp
 The default list of columns may be extended if list is specified in the format +list (e.g., lscpu \-e=+MHZ).
 .RE
 .sp
 \fB\-J\fP, \fB\-\-json\fP
 .RS 4
-Use JSON output format for the default summary or extended output (see \fB\-\-extended\fP).
+Use JSON output format for the default summary or extended output (see
+\fB\-\-extended\fP).  For backward compatibility, JSON output follows the default
+summary behavior for non\-terminals (e.g., pipes) where subsections are missing. See
+also \fB\-\-hierarchic\fP.
 .RE
 .sp
-\fB\-p\fP, \fB\-\-parse\fP[=\fIlist\fP]
+\fB\-p\fP, \fB\-\-parse\fP[\fB=\fP\fIlist\fP]
 .RS 4
 Optimize the command output for easy parsing.
 .sp
 If the \fIlist\fP argument is omitted, the command output is compatible with earlier versions of \fBlscpu\fP. In this compatible format, two commas are used to separate CPU cache columns. If no CPU caches are identified the cache column is omitted. If the \fIlist\fP argument is used, cache columns are separated with a colon (:).
 .sp
-When specifying the \fIlist\fP argument, the string of option, equal sign (=), and \fIlist\fP must not contain any blanks or other whitespace. Examples: \(aq\fB\-p=cpu,node\fP\(aq or \(aq\fB\-\-parse=cpu,node\fP\(aq.
+When specifying the \fIlist\fP argument, the string of option, equal sign (=), and \fIlist\fP must not contain any blanks or other whitespace. Examples: \*(Aq\fB\-p=cpu,node\fP\*(Aq or \*(Aq\fB\-\-parse=cpu,node\fP\*(Aq.
 .sp
 The default list of columns may be extended if list is specified in the format +list (e.g., lscpu \-p=+MHZ).
+.RE
+.sp
+\fB\-r\fP, \fB\-\-raw\fP
+.RS 4
+Produce output in its raw format. This option is only applicable for the \fB\-\-extended\fP, \fB\-\-parse\fP, and \fB\-\-caches\fP outputs.
 .RE
 .sp
 \fB\-s\fP, \fB\-\-sysroot\fP \fIdirectory\fP
@@ -134,7 +147,9 @@ Output all available columns. This option must be combined with either \fB\-\-ex
 .RE
 .SH "BUGS"
 .sp
-The basic overview of CPU family, model, etc. is always based on the first CPU only.
+The basic overview of CPU models is based on heuristics, taking into account differences such as
+CPU model names and implementer IDs. In some (unusual) cases, CPUs may differentiate in flags or BogoMIPS,
+but these differences are ignored in the lscpu overview.
 .sp
 Sometimes in Xen Dom0 the kernel reports wrong data.
 .sp
@@ -149,8 +164,8 @@ On virtual hardware the number of cores per socket, etc. can be wrong.
 \fBchcpu\fP(8)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBlscpu\fP command is part of the util\-linux package which can be downloaded from \c

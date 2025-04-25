@@ -1,13 +1,15 @@
 /*
+ * SPDX-License-Identifier: GPL-1.0-or-later
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 1 of the License, or
+ * (at your option) any later version.
+ *
  * Copyright (C) 1992  A. V. Le Blanc (LeBlanc@mcc.ac.uk)
  * Copyright (C) 2012  Davidlohr Bueso <dave@gnu.org>
  *
  * Copyright (C) 2007-2013 Karel Zak <kzak@redhat.com>
- *
- * This program is free software.  You can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation: either version 1 or
- * (at your option) any later version.
  */
 #include <unistd.h>
 #include <stdio.h>
@@ -51,6 +53,12 @@
 #endif
 #ifdef HAVE_LINUX_BLKPG_H
 # include <linux/blkpg.h>
+#endif
+
+#ifdef __linux__
+# ifdef HAVE_LINUX_FS_H
+#  include <linux/fs.h>
+# endif
 #endif
 
 int pwipemode = WIPEMODE_AUTO;
@@ -199,8 +207,12 @@ static int ask_menu(struct fdisk_context *cxt, struct fdisk_ask *ask,
 		size_t i = 0;
 
 		/* print menu items */
-		while (fdisk_ask_menu_get_item(ask, i++, &key, &name, &desc) == 0)
-			fprintf(stdout, "   %c   %s (%s)\n", key, name, desc);
+		while (fdisk_ask_menu_get_item(ask, i++, &key, &name, &desc) == 0) {
+			if (desc)
+				fprintf(stdout, "   %c   %s (%s)\n", key, name, desc);
+			else
+				fprintf(stdout, "   %c   %s\n", key, name);
+		}
 
 		/* ask for key */
 		snprintf(prompt, sizeof(prompt), _("Select (default %c): "), dft);
@@ -634,6 +646,101 @@ void toggle_dos_compatibility_flag(struct fdisk_context *cxt)
 		fdisk_reset_alignment(cxt);	/* reset the current label */
 }
 
+static int strtosize_sectors(const char *str, unsigned long sector_size,
+			     uintmax_t *res)
+{
+	size_t len = strlen(str);
+	int insec = 0;
+	int rc;
+
+	if (!len)
+		return 0;
+
+	if (str[len - 1] == 'S' || str[len - 1] == 's') {
+		insec = 1;
+		str = strndup(str, len - 1); /* strip trailing 's' */
+		if (!str)
+			return -errno;
+	}
+
+	rc = strtosize(str, res);
+	if (rc)
+		return rc;
+
+	if (insec) {
+		*res *= sector_size;
+		free((void *)str);
+	}
+
+	return 0;
+}
+
+void resize_partition(struct fdisk_context *cxt)
+{
+	struct fdisk_partition *pa = NULL, *npa = NULL, *next = NULL;
+	char *query = NULL, *response = NULL, *default_size;
+	struct fdisk_table *tb = NULL;
+	uint64_t max_size, size, secs;
+	size_t i;
+	int rc;
+
+	assert(cxt);
+
+	rc = fdisk_ask_partnum(cxt, &i, FALSE);
+	if (rc)
+		goto err;
+
+	rc = fdisk_partition_get_max_size(cxt, i, &max_size);
+	if (rc)
+		goto err;
+
+	max_size *= fdisk_get_sector_size(cxt);
+
+	default_size = size_to_human_string(0, max_size);
+	xasprintf(&query, _("New <size>{K,M,G,T,P} in bytes or <size>S in sectors (default %s)"),
+		  default_size);
+	free(default_size);
+
+	rc = fdisk_ask_string(cxt, query, &response);
+	if (rc)
+		goto err;
+
+	size = max_size;
+	rc = strtosize_sectors(response, fdisk_get_sector_size(cxt), &size);
+	if (rc || size > max_size) {
+		fdisk_warnx(cxt, _("Invalid size"));
+		goto err;
+	}
+
+	npa = fdisk_new_partition();
+	if (!npa)
+		goto err;
+
+	secs = size / fdisk_get_sector_size(cxt);
+	fdisk_partition_size_explicit(npa, 1);
+	fdisk_partition_set_size(npa, secs);
+
+	rc = fdisk_set_partition(cxt, i, npa);
+	if (rc)
+		goto err;
+
+	fdisk_info(cxt, _("Partition %zu has been resized."), i + 1);
+
+out:
+	free(query);
+	free(response);
+	fdisk_unref_partition(next);
+	fdisk_unref_partition(pa);
+	fdisk_unref_partition(npa);
+	fdisk_unref_table(tb);
+	return;
+
+err:
+	fdisk_warnx(cxt, _("Could not resize partition %zu: %s"),
+		    i + 1, strerror(-rc));
+	goto out;
+}
+
 void change_partition_type(struct fdisk_context *cxt)
 {
 	size_t i;
@@ -673,6 +780,131 @@ void change_partition_type(struct fdisk_context *cxt)
 	fdisk_unref_partition(pa);
 	fdisk_unref_parttype(t);
 }
+
+#ifdef BLKDISCARD
+
+static int do_discard(struct fdisk_context *cxt, struct fdisk_partition *pa)
+{
+	char buf[512];
+	unsigned long ss;
+	uint64_t range[2];
+	int yes = 0;
+
+	ss = fdisk_get_sector_size(cxt);
+
+	range[0] = (uint64_t) fdisk_partition_get_start(pa);
+	range[1] = (uint64_t) fdisk_partition_get_size(pa);
+
+	snprintf(buf, sizeof(buf), _("All data in the region (%"PRIu64
+				     "-%"PRIu64") will be lost! Continue?"),
+			range[0], range[0] + range[1] - 1);
+
+	range[0] *= (uint64_t) ss;
+	range[1] *= (uint64_t) ss;
+
+	fdisk_ask_yesno(cxt, buf, &yes);
+	if (!yes)
+		return 1;
+
+	errno = 0;
+	if (ioctl(fdisk_get_devfd(cxt), BLKDISCARD, &range)) {
+		fdisk_warn(cxt, _("BLKDISCARD ioctl failed"));
+		return -errno;
+	}
+	return 0;
+}
+
+static void discard_partition(struct fdisk_context *cxt)
+{
+	struct fdisk_partition *pa = NULL;
+	size_t n = 0;
+
+	fdisk_info(cxt, _("\nThe partition sectors will be immediately discarded.\n"
+			  "You can exit this dialog by pressing CTRL+C.\n"));
+
+	if (fdisk_ask_partnum(cxt, &n, FALSE))
+		goto done;
+	if (fdisk_get_partition(cxt, n, &pa)) {
+		fdisk_warnx(cxt, _("Partition %zu does not exist yet!"), n + 1);
+		goto done;
+	}
+
+	if (!fdisk_partition_has_size(pa) || !fdisk_partition_has_start(pa)) {
+		fdisk_warnx(cxt, _("Partition %zu has an unspecified range."), n + 1);
+		goto done;
+	}
+
+	if (do_discard(cxt, pa) == 0)
+		fdisk_info(cxt, _("Discarded sectors on partition %zu."), n + 1);
+done:
+	fdisk_unref_partition(pa);
+}
+
+static void discard_freespace(struct fdisk_context *cxt)
+{
+	struct fdisk_partition *pa = NULL;
+	struct fdisk_table *tb = NULL;
+	size_t best = 0;
+	uintmax_t n = 0;
+	int ct;
+
+	ct = list_freespace_get_table(cxt, &tb, &best);
+	if (ct <= 0) {
+		fdisk_info(cxt, _("No free space."));
+		goto done;
+	}
+	fdisk_info(cxt, _("\nThe unused sectors will be immediately discarded.\n"
+			  "You can exit this dialog by pressing CTRL+C.\n"));
+
+	if (fdisk_ask_number(cxt, 1, best + 1, (uintmax_t) ct,
+				_("Free space number"), &n) != 0)
+		goto done;
+
+	pa = fdisk_table_get_partition(tb, n - 1);
+	if (!pa)
+		goto done;
+
+	if (!fdisk_partition_has_size(pa) || !fdisk_partition_has_start(pa)) {
+		fdisk_warnx(cxt, _("Free space %"PRIu64 "has an unspecified range"), n);
+		goto done;
+	}
+
+	if (do_discard(cxt, pa) == 0)
+		fdisk_info(cxt, _("Discarded sectors on free space."));
+done:
+	fdisk_unref_table(tb);
+}
+
+void discard_sectors(struct fdisk_context *cxt)
+{
+	int c;
+
+	if (fdisk_is_readonly(cxt)) {
+		fdisk_warnx(cxt, _("Discarding sectors is not possible in read-only mode."));
+		return;
+	}
+
+	if (fdisk_ask_menu(cxt, _("Type of area to be discarded"),
+			&c, 'p', _("partition sectors"), 'p',
+				 _("free space sectros"), 'f', NULL) != 0)
+		return;
+
+	switch (c) {
+	case 'p':
+		discard_partition(cxt);
+		break;
+	case 'f':
+		discard_freespace(cxt);
+		break;
+	}
+}
+
+#else /* !BLKDISCARD */
+void discard_sectors(struct fdisk_context *cxt)
+{
+	fdisk_warnx(cxt, _("Discard unsupported on your system."));
+}
+#endif /* BLKDISCARD */
 
 int print_partition_info(struct fdisk_context *cxt)
 {
@@ -884,11 +1116,11 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -S, --sectors <number>        specify the number of sectors per track\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(31));
+	fprintf(out, USAGE_HELP_OPTIONS(31));
 
 	list_available_columns(out);
 
-	printf(USAGE_MAN_TAIL("fdisk(8)"));
+	fprintf(out, USAGE_MAN_TAIL("fdisk(8)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -928,7 +1160,7 @@ int main(int argc, char **argv)
 		{ "type",           required_argument, NULL, 't' },
 		{ "units",          optional_argument, NULL, 'u' },
 		{ "version",        no_argument,       NULL, 'V' },
-		{ "output",         no_argument,       NULL, 'o' },
+		{ "output",         required_argument, NULL, 'o' },
 		{ "protect-boot",   no_argument,       NULL, 'B' },
 		{ "wipe",           required_argument, NULL, 'w' },
 		{ "wipe-partitions",required_argument, NULL, 'W' },

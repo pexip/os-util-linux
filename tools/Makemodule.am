@@ -1,7 +1,6 @@
 
 EXTRA_DIST += \
 	tools/git-tp-sync \
-	tools/git-tp-sync-man \
 	tools/git-version-gen \
 	tools/ko-release-gen \
 	tools/ko-release-push \
@@ -53,4 +52,13 @@ EXTRA_DIST += \
 	tools/config-gen.d/non-libs.conf \
 	tools/config-gen.d/non-libuuid.conf \
 	tools/config-gen.d/non-widechar.conf \
-	tools/config-gen.d/non-libmount.conf
+	tools/config-gen.d/non-libmount.conf \
+	\
+	tools/asciidoctor-includetracker.rb \
+	tools/asciidoctor-unicodeconverter.rb \
+	\
+	tools/poman-translate.sh \
+	tools/poman-install.sh \
+	\
+	tools/all_errnos \
+	tools/all_syscalls

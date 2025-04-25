@@ -17,7 +17,7 @@
 TS_TOPDIR="${0%/*}/../.."
 TS_DESC="--pid option"
 
-. $TS_TOPDIR/functions.sh
+. "$TS_TOPDIR"/functions.sh
 ts_init "$*"
 ts_skip_nonroot
 
@@ -72,9 +72,9 @@ POUT=
 	[ "${QOUT}" = "${POUT}" ]
 	echo "EQ[-p PID --pid=1]:" $?
 
-	kill -CONT ${PID}
-	wait ${MKFDS_PID}
+	echo DONE >&"${MKFDS[1]}"
     fi
+    wait ${MKFDS_PID}
 } > $TS_OUTPUT 2>&1
 
 ts_finalize

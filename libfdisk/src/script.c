@@ -63,6 +63,8 @@ struct fdisk_script {
 	size_t			nlines;
 	struct fdisk_label	*label;
 
+	unsigned long		sector_size;		/* as defined by script */
+
 	unsigned int		json : 1,		/* JSON output */
 				force_label : 1;	/* label: <name> specified */
 };
@@ -552,7 +554,6 @@ static int write_file_json(struct fdisk_script *dp, FILE *f)
 	struct fdisk_partition *pa;
 	struct fdisk_iter itr;
 	const char *devname = NULL;
-	int ct = 0;
 	struct ul_jsonwrt json;
 
 	assert(dp);
@@ -606,7 +607,6 @@ static int write_file_json(struct fdisk_script *dp, FILE *f)
 	while (fdisk_table_next_partition(dp->table, &itr, &pa) == 0) {
 		char *p = NULL;
 
-		ct++;
 		ul_jsonwrt_object_open(&json, NULL);
 		if (devname)
 			p = fdisk_partname(devname, pa->partno + 1);
@@ -767,7 +767,7 @@ static int parse_line_header(struct fdisk_script *dp, char *s)
 {
 	size_t i;
 	char *name, *value;
-	static const char *supported[] = {
+	static const char *const supported[] = {
 		"label", "unit", "label-id", "device", "grain",
 		"first-lba", "last-lba", "table-length", "sector-size"
 	};
@@ -805,6 +805,19 @@ static int parse_line_header(struct fdisk_script *dp, char *s)
 		if (dp->cxt && !fdisk_get_label(dp->cxt, value))
 			return -EINVAL;			/* unknown label name */
 		dp->force_label = 1;
+
+	} else if (strcmp(name, "sector-size") == 0) {
+		uint64_t x = 0;
+
+		if (ul_strtou64(value, &x, 10) != 0)
+			return -EINVAL;
+		if (x > ULONG_MAX || x % 512)
+			return -ERANGE;
+		dp->sector_size = (unsigned long) x;
+
+		if (dp->cxt && dp->sector_size && dp->cxt->sector_size
+		    && dp->sector_size != dp->cxt->sector_size)
+			fdisk_warnx(dp->cxt, _("The script and device sector size differ; the sizes will be recalculated to match the device."));
 
 	} else if (strcmp(name, "unit") == 0) {
 		if (strcmp(value, "sectors") != 0)
@@ -966,6 +979,27 @@ static int skip_optional_sign(char **str)
 	return 0;
 }
 
+static int recount_script2device_sectors(struct fdisk_script *dp, uint64_t *num)
+{
+	if (!dp->cxt ||
+	    !dp->sector_size ||
+	    !dp->cxt->sector_size)
+		return 0;
+
+	if (dp->sector_size > dp->cxt->sector_size)
+		 *num *= (dp->sector_size / dp->cxt->sector_size);
+
+	else if (dp->sector_size < dp->cxt->sector_size) {
+		uint64_t x = dp->cxt->sector_size / dp->sector_size;
+
+		if (*num % x)
+			return -EINVAL;
+		*num /= x;
+	}
+
+	return 0;
+}
+
 static int parse_start_value(struct fdisk_script *dp, struct fdisk_partition *pa, char **str)
 {
 	char *tk;
@@ -997,7 +1031,14 @@ static int parse_start_value(struct fdisk_script *dp, struct fdisk_partition *pa
 					goto done;
 				}
 				num /= dp->cxt->sector_size;
+			} else {
+				rc = recount_script2device_sectors(dp, &num);
+				if (rc) {
+					fdisk_warnx(dp->cxt, _("Can't recalculate partition start to the device sectors"));
+					goto done;
+				}
 			}
+
 			fdisk_partition_set_start(pa, num);
 
 			pa->movestart = sign == '-' ? FDISK_MOVE_DOWN :
@@ -1046,8 +1087,15 @@ static int parse_size_value(struct fdisk_script *dp, struct fdisk_partition *pa,
 					goto done;
 				}
 				num /= dp->cxt->sector_size;
-			} else	 /* specified as number of sectors */
+			} else {
+				/* specified as number of sectors */
 				fdisk_partition_size_explicit(pa, 1);
+				rc = recount_script2device_sectors(dp, &num);
+				if (rc) {
+					fdisk_warnx(dp->cxt, _("Can't recalculate partition size to the device sectors"));
+					goto done;
+				}
+			}
 
 			fdisk_partition_set_size(pa, num);
 			pa->resize = sign == '-' ? FDISK_RESIZE_REDUCE :
@@ -1060,7 +1108,7 @@ static int parse_size_value(struct fdisk_script *dp, struct fdisk_partition *pa,
 done:
 	DBG(SCRIPT, ul_debugobj(dp, "  size parse result: rc=%d, move=%s, size=%ju, default=%s",
 				rc, pa->resize == FDISK_RESIZE_REDUCE ? "reduce" :
-				    pa->resize == FDISK_RESIZE_ENLARGE ? "enlage" : "none",
+				    pa->resize == FDISK_RESIZE_ENLARGE ? "enlarge" : "none",
 				    pa->size,
 				    pa->end_follow_default ? "on" : "off"));
 	return rc;
@@ -1492,6 +1540,25 @@ int fdisk_apply_script_headers(struct fdisk_context *cxt, struct fdisk_script *d
 	DBG(SCRIPT, ul_debugobj(dp, "applying script headers"));
 	fdisk_set_script(cxt, dp);
 
+	if (dp->sector_size && dp->cxt->sector_size != dp->sector_size) {
+		/*
+		 * Ignore last and first LBA if device sector size mismatch
+		 * with sector size in script.  It would be possible to
+		 * recalculate it, but for GPT it will not work in some cases
+		 * as these offsets are calculated by relative number of
+		 * sectors. It's better to use library defaults than try
+		 * to be smart ...
+		 */
+		if (fdisk_script_get_header(dp, "first-lba")) {
+			fdisk_script_set_header(dp, "first-lba", NULL);
+			fdisk_info(dp->cxt, _("Ignore \"first-lba\" header due to sector size mismatch."));
+		}
+		if (fdisk_script_get_header(dp, "last-lba")) {
+			fdisk_script_set_header(dp, "last-lba", NULL);
+			fdisk_info(dp->cxt, _("Ignore \"last-lba\" header due to sector size mismatch."));
+		}
+	}
+
 	str = fdisk_script_get_header(dp, "grain");
 	if (str) {
 		uintmax_t sz;
@@ -1503,8 +1570,12 @@ int fdisk_apply_script_headers(struct fdisk_context *cxt, struct fdisk_script *d
 			return rc;
 	}
 
-	if (fdisk_has_user_device_properties(cxt))
-		fdisk_apply_user_device_properties(cxt);
+	if (fdisk_has_user_device_properties(cxt)) {
+		rc = fdisk_apply_user_device_properties(cxt);
+		if (rc)
+			return rc;
+	}
+
 
 	/* create empty label */
 	name = fdisk_script_get_header(dp, "label");
@@ -1602,8 +1673,12 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 #endif
 
 #ifdef TEST_PROGRAM
-static int test_dump(struct fdisk_test *ts, int argc, char *argv[])
+static int test_dump(struct fdisk_test *ts __attribute__((unused)),
+		     int argc, char *argv[])
 {
+	if (argc != 2)
+		return -1;
+
 	char *devname = argv[1];
 	struct fdisk_context *cxt;
 	struct fdisk_script *dp;
@@ -1621,8 +1696,12 @@ static int test_dump(struct fdisk_test *ts, int argc, char *argv[])
 	return 0;
 }
 
-static int test_read(struct fdisk_test *ts, int argc, char *argv[])
+static int test_read(struct fdisk_test *ts __attribute__((unused)),
+		     int argc, char *argv[])
 {
+	if (argc != 2)
+		return -1;
+
 	char *filename = argv[1];
 	struct fdisk_script *dp;
 	struct fdisk_context *cxt;
@@ -1644,8 +1723,12 @@ static int test_read(struct fdisk_test *ts, int argc, char *argv[])
 	return 0;
 }
 
-static int test_stdin(struct fdisk_test *ts, int argc, char *argv[])
+static int test_stdin(struct fdisk_test *ts __attribute__((unused)),
+		      int argc, char *argv[] __attribute__((unused)))
 {
+	if (argc != 1)
+		return -1;
+
 	char buf[BUFSIZ] = { '\0' };
 	struct fdisk_script *dp;
 	struct fdisk_context *cxt;
@@ -1679,8 +1762,12 @@ static int test_stdin(struct fdisk_test *ts, int argc, char *argv[])
 	return rc;
 }
 
-static int test_apply(struct fdisk_test *ts, int argc, char *argv[])
+static int test_apply(struct fdisk_test *ts __attribute__((unused)),
+		      int argc, char *argv[])
 {
+	if (argc != 3)
+		return -1;
+
 	char *devname = argv[1], *scriptname = argv[2];
 	struct fdisk_context *cxt;
 	struct fdisk_script *dp;
@@ -1721,8 +1808,12 @@ done:
 	return 0;
 }
 
-static int test_tokens(struct fdisk_test *ts, int argc, char *argv[])
+static int test_tokens(struct fdisk_test *ts __attribute__((unused)),
+		       int argc, char *argv[])
 {
+	if (argc != 2)
+		return -1;
+
 	char *p, *str = argc == 2 ? strdup(argv[1]) : NULL;
 	int i;
 

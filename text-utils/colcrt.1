@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: colcrt
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "COLCRT" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "COLCRT" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -34,7 +34,7 @@ colcrt \- filter nroff output for CRT previewing
 \fBcolcrt\fP [options] [\fIfile\fP ...]
 .SH "DESCRIPTION"
 .sp
-\fBcolcrt\fP provides virtual half\-line and reverse line feed sequences for terminals without such capability, and on which overstriking is destructive. Half\-line characters and underlining (changed to dashing `\-\(aq) are placed on new lines in between the normal output lines.
+\fBcolcrt\fP provides virtual half\-line and reverse line feed sequences for terminals without such capability, and on which overstriking is destructive. Half\-line characters and underlining (changed to dashing `\-\*(Aq) are placed on new lines in between the normal output lines.
 .SH "OPTIONS"
 .sp
 \fB\-\fP, \fB\-\-no\-underlining\fP
@@ -54,7 +54,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "HISTORY"
 .sp
@@ -65,7 +65,7 @@ Should fold underlines onto blanks even with the \fB\-\fP option so that a true 
 .sp
 Can\(cqt back up more than 102 lines.
 .sp
-General overstriking is lost; as a special case \(aq|\(aq overstruck with \(aq\-\(aq or underline becomes \(aq+\(aq.
+General overstriking is lost; as a special case \*(Aq|\*(Aq overstruck with \*(Aq\-\*(Aq or underline becomes \*(Aq+\*(Aq.
 .sp
 Lines are trimmed to 132 characters.
 .sp
@@ -89,8 +89,8 @@ A typical use of \fBcolcrt\fP would be:
 \fBul\fP(1)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBcolcrt\fP command is part of the util\-linux package which can be downloaded from \c

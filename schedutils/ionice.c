@@ -53,7 +53,7 @@ enum {
 #define IOPRIO_PRIO_DATA(mask)	((mask) & IOPRIO_PRIO_MASK)
 #define IOPRIO_PRIO_VALUE(class, data)	(((class) << IOPRIO_CLASS_SHIFT) | data)
 
-static const char *to_prio[] = {
+static const char *const to_prio[] = {
 	[IOPRIO_CLASS_NONE] = "none",
 	[IOPRIO_CLASS_RT]   = "realtime",
 	[IOPRIO_CLASS_BE]   = "best-effort",
@@ -123,9 +123,9 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -u, --uid <uid>...     act on already running processes owned by these users\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(24));
+	fprintf(out, USAGE_HELP_OPTIONS(24));
 
-	printf(USAGE_MAN_TAIL("ionice(1)"));
+	fprintf(out, USAGE_MAN_TAIL("ionice(1)"));
 
 	exit(EXIT_SUCCESS);
 }

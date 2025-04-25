@@ -72,6 +72,8 @@ struct uuidd_cxt_t {
 	const char	*cleanup_pidfile;
 	const char	*cleanup_socket;
 	uint32_t	timeout;
+	uint32_t	cont_clock_offset;
+
 	unsigned int	debug: 1,
 			quiet: 1,
 			no_fork: 1,
@@ -83,9 +85,9 @@ struct uuidd_options_t {
 	const char	 *socket_path;
 	uuidd_prot_num_t num;
 	uuidd_prot_op_t	 do_type;
-	unsigned int	 do_kill:1,
-			 no_pid:1,
-			 s_flag:1;
+	bool		 do_kill,
+			 no_pid,
+			 s_flag;
 };
 
 static void __attribute__((__noreturn__)) usage(void)
@@ -106,11 +108,13 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -P, --no-pid            do not create pid file\n"), out);
 	fputs(_(" -F, --no-fork           do not daemonize using double-fork\n"), out);
 	fputs(_(" -S, --socket-activation do not create listening socket\n"), out);
+	fputs(_(" -C, --cont-clock[=<NUM>[hd]]\n"), out);
+	fputs(_("                         activate continuous clock handling\n"), out);
 	fputs(_(" -d, --debug             run in debugging mode\n"), out);
 	fputs(_(" -q, --quiet             turn on quiet mode\n"), out);
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(25));
-	printf(USAGE_MAN_TAIL("uuidd(8)"));
+	fprintf(out, USAGE_HELP_OPTIONS(25));
+	fprintf(out, USAGE_MAN_TAIL("uuidd(8)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -334,7 +338,7 @@ static void timeout_handler(int sig __attribute__((__unused__)),
 #ifdef HAVE_TIMER_CREATE
 	if (info->si_code == SI_TIMER)
 #endif
-		errx(EXIT_FAILURE, _("timed out"));
+		ul_sig_err(EXIT_FAILURE, "timed out");
 }
 
 static void server_loop(const char *socket_path, const char *pidfile_path,
@@ -494,7 +498,8 @@ static void server_loop(const char *socket_path, const char *pidfile_path,
 			break;
 		case UUIDD_OP_TIME_UUID:
 			num = 1;
-			if (__uuid_generate_time(uu, &num) < 0 && !uuidd_cxt->quiet)
+			ret = __uuid_generate_time_cont(uu, &num, uuidd_cxt->cont_clock_offset);
+			if (ret < 0 && !uuidd_cxt->quiet)
 				warnx(_("failed to open/lock clock counter"));
 			if (uuidd_cxt->debug) {
 				uuid_unparse(uu, str);
@@ -505,8 +510,7 @@ static void server_loop(const char *socket_path, const char *pidfile_path,
 			break;
 		case UUIDD_OP_RANDOM_UUID:
 			num = 1;
-			if (__uuid_generate_time(uu, &num) < 0 && !uuidd_cxt->quiet)
-				warnx(_("failed to open/lock clock counter"));
+			__uuid_generate_random(uu, &num);
 			if (uuidd_cxt->debug) {
 				uuid_unparse(uu, str);
 				fprintf(stderr, _("Generated random UUID: %s\n"), str);
@@ -515,7 +519,8 @@ static void server_loop(const char *socket_path, const char *pidfile_path,
 			reply_len = sizeof(uu);
 			break;
 		case UUIDD_OP_BULK_TIME_UUID:
-			if (__uuid_generate_time(uu, &num) < 0 && !uuidd_cxt->quiet)
+			ret = __uuid_generate_time_cont(uu, &num, uuidd_cxt->cont_clock_offset);
+			if (ret < 0 && !uuidd_cxt->quiet)
 				warnx(_("failed to open/lock clock counter"));
 			if (uuidd_cxt->debug) {
 				uuid_unparse(uu, str);
@@ -567,6 +572,27 @@ static void __attribute__ ((__noreturn__)) unexpected_size(int size)
 	errx(EXIT_FAILURE, _("Unexpected reply length from server %d"), size);
 }
 
+static uint32_t parse_cont_clock(char *arg)
+{
+	uint32_t min_val = 60,
+		 max_val = (3600 * 24 * 365),
+		 factor = 1;
+	char *p = &arg[strlen(arg)-1];
+
+	if ('h' == *p) {
+		*p = '\0';
+		factor = 3600;
+		min_val = 1;
+	}
+	if ('d' == *p) {
+		*p = '\0';
+		factor = 24 * 3600;
+		min_val = 1;
+	}
+	return factor * str2num_or_err(optarg, 10, _("failed to parse --cont-clock/-C"),
+				       min_val, max_val / factor);
+}
+
 static void parse_options(int argc, char **argv, struct uuidd_cxt_t *uuidd_cxt,
 			  struct uuidd_options_t *uuidd_opts)
 {
@@ -581,6 +607,7 @@ static void parse_options(int argc, char **argv, struct uuidd_cxt_t *uuidd_cxt,
 		{"no-pid", no_argument, NULL, 'P'},
 		{"no-fork", no_argument, NULL, 'F'},
 		{"socket-activation", no_argument, NULL, 'S'},
+		{"cont-clock", optional_argument, NULL, 'C'},
 		{"debug", no_argument, NULL, 'd'},
 		{"quiet", no_argument, NULL, 'q'},
 		{"version", no_argument, NULL, 'V'},
@@ -596,9 +623,15 @@ static void parse_options(int argc, char **argv, struct uuidd_cxt_t *uuidd_cxt,
 	int excl_st[ARRAY_SIZE(excl)] = UL_EXCL_STATUS_INIT;
 	int c;
 
-	while ((c = getopt_long(argc, argv, "p:s:T:krtn:PFSdqVh", longopts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "p:s:T:krtn:PFSC::dqVh", longopts, NULL)) != -1) {
 		err_exclusive_options(c, longopts, excl, excl_st);
 		switch (c) {
+		case 'C':
+			if (optarg != NULL)
+				uuidd_cxt->cont_clock_offset = parse_cont_clock(optarg);
+			else
+				uuidd_cxt->cont_clock_offset = 7200; /* default 2h */
+			break;
 		case 'd':
 			uuidd_cxt->debug = 1;
 			break;
@@ -673,7 +706,7 @@ int main(int argc, char **argv)
 	char		*cp;
 	int		ret;
 
-	struct uuidd_cxt_t uuidd_cxt = { .timeout = 0 };
+	struct uuidd_cxt_t uuidd_cxt = { .timeout = 0, .cont_clock_offset = 0 };
 	struct uuidd_options_t uuidd_opts = { .socket_path = UUIDD_SOCKET_PATH };
 
 	setlocale(LC_ALL, "");
@@ -683,7 +716,7 @@ int main(int argc, char **argv)
 
 	parse_options(argc, argv, &uuidd_cxt, &uuidd_opts);
 
-	if (strlen(uuidd_opts.socket_path) >= sizeof(((struct sockaddr_un *)0)->sun_path))
+	if (strlen(uuidd_opts.socket_path) >= sizeof_member(struct sockaddr_un, sun_path))
 		errx(EXIT_FAILURE, _("socket name too long: %s"), uuidd_opts.socket_path);
 
 	if (!uuidd_opts.no_pid && !uuidd_opts.pidfile_path)

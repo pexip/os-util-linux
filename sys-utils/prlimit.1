@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: prlimit
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "PRLIMIT" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "PRLIMIT" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,16 +31,16 @@
 prlimit \- get and set process resource limits
 .SH "SYNOPSIS"
 .sp
-\fBprlimit\fP [options] [\fB\-\-resource\fP[=\fIlimits\fP]] [\fB\-\-pid\fP \fIPID\fP]
+\fBprlimit\fP [options] [\fB\-\-\fP\fIresource\fP[\fB=\fP\fIlimits\fP]] [\fB\-\-pid\fP \fIPID\fP]
 .sp
-\fBprlimit\fP [options] [\fB\-\-resource\fP[=\fIlimits\fP]] \fIcommand\fP [\fIargument\fP...]
+\fBprlimit\fP [options] [\fB\-\-\fP\fIresource\fP[\fB=\fP\fIlimits\fP]] \fIcommand\fP [\fIargument\fP...]
 .SH "DESCRIPTION"
 .sp
 Given a process ID and one or more resources, \fBprlimit\fP tries to retrieve and/or modify the limits.
 .sp
 When \fIcommand\fP is given, \fBprlimit\fP will run this command with the given arguments.
 .sp
-The \fIlimits\fP parameter is composed of a soft and a hard value, separated by a colon (:), in order to modify the existing values. If no \fIlimits\fP are given, \fBprlimit\fP will display the current values. If one of the values is not given, then the existing one will be used. To specify the unlimited or infinity limit (\fBRLIM_INFINITY\fP), the \-1 or \(aqunlimited\(aq string can be passed.
+The \fIlimits\fP parameter is composed of a soft and a hard value, separated by a colon (:), in order to modify the existing values. If no \fIlimits\fP are given, \fBprlimit\fP will display the current values. If one of the values is not given, then the existing one will be used. To specify the unlimited or infinity limit (\fBRLIM_INFINITY\fP), the \-1 or \*(Aqunlimited\*(Aq string can be passed.
 .sp
 Because of the nature of limits, the soft limit must be lower or equal to the high limit (also called the ceiling). To see all available resource limits, refer to the \fBRESOURCE OPTIONS\fP section.
 .sp
@@ -52,7 +52,7 @@ Because of the nature of limits, the soft limit must be lower or equal to the hi
 .  sp -1
 .  IP \(bu 2.3
 .\}
-\fIsoft\fP:_hard_ Specify both limits.
+\fIsoft\fP:\fIhard\fP Specify both limits.
 .RE
 .sp
 .RS 4
@@ -94,14 +94,15 @@ Because of the nature of limits, the soft limit must be lower or equal to the hi
 Do not print a header line.
 .RE
 .sp
-\fB\-o, \-\-output\fP \fIlist\fP
+\fB\-o\fP, \fB\-\-output\fP \fIlist\fP
 .RS 4
 Define the output columns to use. If no output arrangement is specified, then a default set is used. Use \fB\-\-help\fP to get a list of all supported columns.
 .RE
 .sp
-\fB\-p, \-\-pid\fP
+\fB\-p\fP, \fB\-\-pid\fP \fIPID\fP
 .RS 4
-Specify the process id; if none is given, the running process will be used.
+Specify the process ID.  Without this option (and without a \fIcommand\fP),
+the running process will be used.
 .RE
 .sp
 \fB\-\-raw\fP
@@ -121,86 +122,86 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "RESOURCE OPTIONS"
 .sp
-\fB\-c, \-\-core\fP[=\fIlimits\fP]
+\fB\-c\fP, \fB\-\-core\fP[\fB=\fP\fIlimits\fP]
 .RS 4
 Maximum size of a core file.
 .RE
 .sp
-\fB\-d, \-\-data\fP[=\fIlimits\fP]
+\fB\-d\fP, \fB\-\-data\fP[\fB=\fP\fIlimits\fP]
 .RS 4
 Maximum data size.
 .RE
 .sp
-\fB\-e, \-\-nice\fP[=\fIlimits\fP]
+\fB\-e\fP, \fB\-\-nice\fP[\fB=\fP\fIlimits\fP]
 .RS 4
 Maximum nice priority allowed to raise.
 .RE
 .sp
-\fB\-f, \-\-fsize\fP[=\fIlimits\fP]
+\fB\-f\fP, \fB\-\-fsize\fP[\fB=\fP\fIlimits\fP]
 .RS 4
 Maximum file size.
 .RE
 .sp
-\fB\-i, \-\-sigpending\fP[=\fIlimits\fP]
+\fB\-i\fP, \fB\-\-sigpending\fP[\fB=\fP\fIlimits\fP]
 .RS 4
 Maximum number of pending signals.
 .RE
 .sp
-\fB\-l, \-\-memlock\fP[=\fIlimits\fP]
+\fB\-l\fP, \fB\-\-memlock\fP[\fB=\fP\fIlimits\fP]
 .RS 4
 Maximum locked\-in\-memory address space.
 .RE
 .sp
-\fB\-m, \-\-rss\fP[=\fIlimits\fP]
+\fB\-m\fP, \fB\-\-rss\fP[\fB=\fP\fIlimits\fP]
 .RS 4
 Maximum Resident Set Size (RSS).
 .RE
 .sp
-\fB\-n, \-\-nofile\fP[=\fIlimits\fP]
+\fB\-n\fP, \fB\-\-nofile\fP[\fB=\fP\fIlimits\fP]
 .RS 4
 Maximum number of open files.
 .RE
 .sp
-\fB\-q, \-\-msgqueue\fP[=\fIlimits\fP]
+\fB\-q\fP, \fB\-\-msgqueue\fP[\fB=\fP\fIlimits\fP]
 .RS 4
 Maximum number of bytes in POSIX message queues.
 .RE
 .sp
-\fB\-r, \-\-rtprio\fP[=\fIlimits\fP]
+\fB\-r\fP, \fB\-\-rtprio\fP[\fB=\fP\fIlimits\fP]
 .RS 4
 Maximum real\-time priority.
 .RE
 .sp
-\fB\-s, \-\-stack\fP[=\fIlimits\fP]
+\fB\-s\fP, \fB\-\-stack\fP[\fB=\fP\fIlimits\fP]
 .RS 4
 Maximum size of the stack.
 .RE
 .sp
-\fB\-t, \-\-cpu\fP[=\fIlimits\fP]
+\fB\-t\fP, \fB\-\-cpu\fP[\fB=\fP\fIlimits\fP]
 .RS 4
 CPU time, in seconds.
 .RE
 .sp
-\fB\-u, \-\-nproc\fP[=\fIlimits\fP]
+\fB\-u\fP, \fB\-\-nproc\fP[\fB=\fP\fIlimits\fP]
 .RS 4
 Maximum number of processes.
 .RE
 .sp
-\fB\-v, \-\-as\fP[=\fIlimits\fP]
+\fB\-v\fP, \fB\-\-as\fP[\fB=\fP\fIlimits\fP]
 .RS 4
 Address space limit.
 .RE
 .sp
-\fB\-x, \-\-locks\fP[=\fIlimits\fP]
+\fB\-x\fP, \fB\-\-locks\fP[\fB=\fP\fIlimits\fP]
 .RS 4
 Maximum number of file locks held.
 .RE
 .sp
-\fB\-y, \-\-rttime\fP[=\fIlimits\fP]
+\fB\-y\fP, \fB\-\-rttime\fP[\fB=\fP\fIlimits\fP]
 .RS 4
 Timeout for real\-time tasks.
 .RE
@@ -243,8 +244,8 @@ Set both the soft and hard CPU time limit to ten seconds and run \fBsort\fP(1).
 \fBprlimit\fP(2)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBprlimit\fP command is part of the util\-linux package which can be downloaded from \c

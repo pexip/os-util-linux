@@ -57,7 +57,6 @@
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/file.h>
-#include <sys/ttydefaults.h>
 #include <sys/wait.h>
 #include <regex.h>
 #include <assert.h>
@@ -65,6 +64,10 @@
 #include <sys/signalfd.h>
 #include <paths.h>
 #include <getopt.h>
+
+#ifdef HAVE_SYS_TTYDEFAULTS_H
+# include <sys/ttydefaults.h>
+#endif
 
 #if defined(HAVE_NCURSESW_TERM_H)
 # include <ncursesw/term.h>
@@ -83,7 +86,6 @@
 #include "xalloc.h"
 #include "widechar.h"
 #include "closestream.h"
-#include "rpmatch.h"
 #include "env.h"
 
 #ifdef TEST_PROGRAM
@@ -199,37 +201,38 @@ struct more_control {
 	magic_t magic;			/* libmagic database entries */
 #endif
 	unsigned int
-		bad_stdout:1,		/* true if overwriting does not turn off standout */
-		catch_suspend:1,	/* we should catch the SIGTSTP signal */
-		clear_line_ends:1,	/* do not scroll, paint each screen from the top */
-		clear_first:1,		/* is first character in file \f */
-		dumb_tty:1,		/* is terminal type known */
-		eat_newline:1,		/* is newline ignored after 80 cols */
-		erase_input_ok:1,	/* is erase input supported */
-		erase_previous_ok:1,	/* is erase previous supported */
-		exit_on_eof:1,		/* exit on EOF */
-		first_file:1,		/* is the input file the first in list */
-		fold_long_lines:1,	/* fold long lines */
-		hard_tabs:1,		/* print spaces instead of '\t' */
-		hard_tty:1,		/* is this hard copy terminal (a printer or such) */
-		leading_colon:1,	/* key command has leading ':' character */
-		is_eof:1,               /* EOF detected */
-		is_paused:1,		/* is output paused */
-		no_quit_dialog:1,	/* suppress quit dialog */
-		no_scroll:1,		/* do not scroll, clear the screen and then display text */
-		no_tty_in:1,		/* is input in interactive mode */
-		no_tty_out:1,		/* is output in interactive mode */
-		no_tty_err:1,           /* is stderr terminal */
-		print_banner:1,		/* print file name banner */
-		reading_num:1,		/* are we reading leading_number */
-		report_errors:1,	/* is an error reported */
-		search_at_start:1,	/* search pattern defined at start up */
-		search_called:1,	/* previous more command was a search */
-		squeeze_spaces:1,	/* suppress white space */
-		stdout_glitch:1,	/* terminal has standout mode glitch */
-		stop_after_formfeed:1,	/* stop after form feeds */
-		suppress_bell:1,	/* suppress bell */
-		wrap_margin:1;		/* set if automargins */
+		ignore_stdin,  		/* POLLHUP; peer closed pipe */
+		bad_stdout,  		/* true if overwriting does not turn off standout */
+		catch_suspend,  	/* we should catch the SIGTSTP signal */
+		clear_line_ends,  	/* do not scroll, paint each screen from the top */
+		clear_first,  		/* is first character in file \f */
+		dumb_tty,  		/* is terminal type known */
+		eat_newline,  		/* is newline ignored after 80 cols */
+		erase_input_ok,  	/* is erase input supported */
+		erase_previous_ok,  	/* is erase previous supported */
+		exit_on_eof,  		/* exit on EOF */
+		first_file,  		/* is the input file the first in list */
+		fold_long_lines,  	/* fold long lines */
+		hard_tabs,  		/* print spaces instead of '\t' */
+		hard_tty,  		/* is this hard copy terminal (a printer or such) */
+		leading_colon,  	/* key command has leading ':' character */
+		is_eof,                 /* EOF detected */
+		is_paused,  		/* is output paused */
+		no_quit_dialog,  	/* suppress quit dialog */
+		no_scroll,  		/* do not scroll, clear the screen and then display text */
+		no_tty_in,  		/* is input in interactive mode */
+		no_tty_out,  		/* is output in interactive mode */
+		no_tty_err,             /* is stderr terminal */
+		print_banner,  		/* print file name banner */
+		reading_num,  		/* are we reading leading_number */
+		report_errors,  	/* is an error reported */
+		search_at_start,  	/* search pattern defined at start up */
+		search_called,  	/* previous more command was a search */
+		squeeze_spaces,  	/* suppress white space */
+		stdout_glitch,  	/* terminal has standout mode glitch */
+		stop_after_formfeed,  	/* stop after form feeds */
+		suppress_bell,  	/* suppress bell */
+		wrap_margin;		/* set if automargins */
 };
 
 static void __attribute__((__noreturn__)) usage(void)
@@ -238,7 +241,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	printf(_(" %s [options] <file>...\n"), program_invocation_short_name);
 
 	printf("%s", USAGE_SEPARATOR);
-	printf("%s\n", _("A file perusal filter for CRT viewing."));
+	printf("%s\n", _("Display the contents of a file in a terminal."));
 
 	printf("%s", USAGE_OPTIONS);
 	printf("%s\n", _(" -d, --silent          display help instead of ringing bell"));
@@ -299,7 +302,7 @@ static void argscan(struct more_control *ctl, int as_argc, char **as_argv)
 			}
 		}
 		if (move) {
-			as_argc = remote_entry(as_argv, opt, as_argc);
+			as_argc = ul_remove_entry(as_argv, opt, as_argc);
 			opt--;
 		}
 	}
@@ -354,14 +357,14 @@ static void env_argscan(struct more_control *ctl, const char *s)
 	char *str = xstrdup(s);
 	char *key = NULL, *tok;
 
-	env_argv = xmalloc(sizeof(char *) * size);
+	env_argv = xreallocarray(NULL, size, sizeof(char *));
 	env_argv[0] = _("MORE environment variable");	/* program name */
 	for (tok = strtok_r(str, delim, &key); tok; tok = strtok_r(NULL, delim, &key)) {
-		env_argv[env_argc++] = tok;
-		if (size < env_argc) {
+		if (size == env_argc) {
 			size *= 2;
-			env_argv = xrealloc(env_argv, sizeof(char *) * size);
+			env_argv = xreallocarray(env_argv, size, sizeof(char *));
 		}
+		env_argv[env_argc++] = tok;
 	}
 
 	argscan(ctl, env_argc, env_argv);
@@ -379,7 +382,7 @@ static void more_fseek(struct more_control *ctl, off_t pos)
 
 static int more_getc(struct more_control *ctl)
 {
-	int ret = getc(ctl->current_file);
+	int ret = fgetc(ctl->current_file);
 	ctl->file_position = ftello(ctl->current_file);
 	return ret;
 }
@@ -626,9 +629,6 @@ static int get_line(struct more_control *ctl, int *length)
 			*p++ = 'L';
 			column += 2;
 			ctl->is_paused = 1;
-		} else if (c == EOF) {
-			*length = p - ctl->line_buf;
-			return column;
 		} else {
 #ifdef HAVE_WIDECHAR
 			if (ctl->fold_long_lines && MB_CUR_MAX > 1) {
@@ -1254,8 +1254,7 @@ static void __attribute__((__format__ (__printf__, 3, 4)))
 		}
 		va_end(argp);
 
-		args = alloca(sizeof(char *) * (argcount + 1));
-		args[argcount] = NULL;
+		args = xcalloc(argcount + 1, sizeof(char *));
 
 		va_start(argp, cmd);
 		arg = va_arg(argp, char *);
@@ -1353,50 +1352,98 @@ static void read_line(struct more_control *ctl)
 	*p = '\0';
 }
 
-static int more_poll(struct more_control *ctl, int timeout)
+/* returns: 0 timeout or nothing; <0 error, >0 success */
+static int more_poll(struct more_control *ctl, int timeout, int *stderr_active)
 {
-	struct pollfd pfd[2];
+	enum {
+		POLLFD_SIGNAL = 0,
+		POLLFD_STDIN,
+		POLLFD_STDERR,
+	};
+	struct pollfd pfd[] = {
+		[POLLFD_SIGNAL] = { .fd = ctl->sigfd,    .events = POLLIN | POLLERR | POLLHUP },
+		[POLLFD_STDIN]  = { .fd = STDIN_FILENO,  .events = POLLIN | POLLERR | POLLHUP },
+		[POLLFD_STDERR] = { .fd = STDERR_FILENO, .events = POLLIN | POLLERR | POLLHUP }
+	};
+	int has_data = 0;
 
-	pfd[0].fd = ctl->sigfd;
-	pfd[0].events = POLLIN | POLLERR | POLLHUP;
-	pfd[1].fd = STDIN_FILENO;
-	pfd[1].events = POLLIN;
+	if (stderr_active)
+		*stderr_active = 0;
 
-	if (poll(pfd, 2, timeout) < 0) {
-		if (errno == EAGAIN)
-			return 1;
-		more_error(ctl, _("poll failed"));
-		return 1;
-	}
-	if (pfd[0].revents != 0) {
-		struct signalfd_siginfo info;
-		ssize_t sz;
+	while (!has_data) {
+		int rc;
 
-		sz = read(pfd[0].fd, &info, sizeof(info));
-		assert(sz == sizeof(info));
-		switch (info.ssi_signo) {
-		case SIGINT:
-			more_exit(ctl);
-			break;
-		case SIGQUIT:
-			sigquit_handler(ctl);
-			break;
-		case SIGTSTP:
-			sigtstp_handler(ctl);
-			break;
-		case SIGCONT:
-			sigcont_handler(ctl);
-			break;
-		case SIGWINCH:
-			sigwinch_handler(ctl);
-			break;
-		default:
-			abort();
+		if (ctl->ignore_stdin)
+			pfd[POLLFD_STDIN].fd = -1;	/* probably closed, ignore */
+
+		rc = poll(pfd, ARRAY_SIZE(pfd), timeout);
+
+		/* error */
+		if (rc < 0) {
+			if (errno == EAGAIN)
+				continue;
+
+			more_error(ctl, _("poll failed"));
+			return rc;
+		}
+
+		/* timeout */
+		if (rc == 0)
+			return 0;
+
+		/* event on signal FD */
+		if (pfd[POLLFD_SIGNAL].revents) {
+			struct signalfd_siginfo info;
+			ssize_t sz;
+
+			sz = read(pfd[POLLFD_SIGNAL].fd, &info, sizeof(info));
+			assert(sz == sizeof(info));
+			switch (info.ssi_signo) {
+			case SIGINT:
+				more_exit(ctl);
+				break;
+			case SIGQUIT:
+				sigquit_handler(ctl);
+				break;
+			case SIGTSTP:
+				sigtstp_handler(ctl);
+				break;
+			case SIGCONT:
+				sigcont_handler(ctl);
+				break;
+			case SIGWINCH:
+				sigwinch_handler(ctl);
+				break;
+			default:
+				abort();
+			}
+		}
+
+		/* event on stdin */
+		if (pfd[POLLFD_STDIN].revents) {
+			/* Check for POLLERR and POLLHUP in stdin revents */
+			if ((pfd[POLLFD_STDIN].revents & POLLERR) &&
+			    (pfd[POLLFD_STDIN].revents & POLLHUP))
+				more_exit(ctl);
+
+			/* poll() return POLLHUP event after pipe close() and POLLNVAL
+			 * means that fd is already closed. */
+			if ((pfd[POLLFD_STDIN].revents & POLLHUP) ||
+			    (pfd[POLLFD_STDIN].revents & POLLNVAL))
+				ctl->ignore_stdin = 1;
+			else
+				has_data++;
+		}
+
+		/* event on stderr (we reads user commands from stderr!) */
+		if (pfd[POLLFD_STDERR].revents) {
+			has_data++;
+			if (stderr_active)
+				*stderr_active = 1;
 		}
 	}
-	if (pfd[1].revents == 0)
-		return 1;
-	return 0;
+
+	return has_data;
 }
 
 /* Search for nth occurrence of regular expression contained in buf in
@@ -1464,7 +1511,7 @@ static void search(struct more_control *ctl, char buf[], int n)
 			}
 			break;
 		}
-		more_poll(ctl, 1);
+		more_poll(ctl, 0, NULL);
 	}
 	/* Move ctrl+c signal handling back to more_key_command(). */
 	signal(SIGINT, SIG_DFL);
@@ -1618,7 +1665,7 @@ static int skip_forwards(struct more_control *ctl, int nlines, cc_t comchar)
 static int more_key_command(struct more_control *ctl, char *filename)
 {
 	int retval = 0;
-	int done = 0, search_again = 0;
+	int done = 0, search_again = 0, stderr_active = 0;
 	char cmdbuf[INIT_BUF];
 	struct number_command cmd;
 
@@ -1628,13 +1675,18 @@ static int more_key_command(struct more_control *ctl, char *filename)
 		ctl->report_errors = 0;
 	ctl->search_called = 0;
 	for (;;) {
-		if (more_poll(ctl, -1) != 0)
+		if (more_poll(ctl, -1, &stderr_active) <= 0)
+			continue;
+		if (stderr_active == 0)
 			continue;
 		cmd = read_command(ctl);
 		if (cmd.key == more_kc_unknown_command)
 			continue;
 		if (cmd.key == more_kc_repeat_previous)
 			cmd = ctl->previous_command;
+		else
+			ctl->previous_command = cmd;
+
 		switch (cmd.key) {
 		case more_kc_backwards:
 			if (ctl->no_tty_in) {
@@ -1800,7 +1852,6 @@ static int more_key_command(struct more_control *ctl, char *filename)
 			fflush(NULL);
 			break;
 		}
-		ctl->previous_command = cmd;
 		if (done) {
 			cmd.key = more_kc_unknown_command;
 			break;
@@ -2046,14 +2097,16 @@ int main(int argc, char **argv)
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
 	close_stdout_atexit();
-	setlocale(LC_ALL, "");
 
 	/* Auto set no scroll on when binary is called page */
 	if (!(strcmp(program_invocation_short_name, "page")))
 		ctl.no_scroll++;
 
+	ctl.exit_on_eof = getenv("POSIXLY_CORRECT") ? 0 : 1;
+
 	if ((s = getenv("MORE")) != NULL)
 		env_argscan(&ctl, s);
+
 	argscan(&ctl, argc, argv);
 
 	/* clear any inherited settings */
