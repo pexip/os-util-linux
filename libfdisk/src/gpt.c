@@ -152,19 +152,20 @@ struct gpt_legacy_mbr {
 		.name = (_n),    \
 	}
 
-static struct fdisk_parttype gpt_parttypes[] =
+static const struct fdisk_parttype gpt_parttypes[] =
 {
 	#include "pt-gpt-partnames.h"
 };
 
 static const struct fdisk_shortcut gpt_parttype_cuts[] =
 {
-	{ .shortcut = "L", .alias = "linux", .data = "0FC63DAF-8483-4772-8E79-3D69D8477DE4" }, /* Linux */
-	{ .shortcut = "S", .alias = "swap",  .data = "0657FD6D-A4AB-43C4-84E5-0933C84B4F4F" }, /* Swap */
-	{ .shortcut = "H", .alias = "home",  .data = "933AC7E1-2EB4-4F13-B844-0E14E2AEF915" }, /* Home */
-	{ .shortcut = "U", .alias = "uefi",  .data = "C12A7328-F81F-11D2-BA4B-00A0C93EC93B" }, /* UEFI system */
-	{ .shortcut = "R", .alias = "raid",  .data = "A19D880F-05FC-4D3B-A006-743F0F84911E" }, /* Linux RAID */
-	{ .shortcut = "V", .alias = "lvm",   .data = "E6D6D379-F507-44C2-A23C-238F2A3DF928" }  /* LVM */
+	{ .shortcut = "L", .alias = "linux",    .data = "0FC63DAF-8483-4772-8E79-3D69D8477DE4" }, /* Linux */
+	{ .shortcut = "S", .alias = "swap",     .data = "0657FD6D-A4AB-43C4-84E5-0933C84B4F4F" }, /* Swap */
+	{ .shortcut = "H", .alias = "home",     .data = "933AC7E1-2EB4-4F13-B844-0E14E2AEF915" }, /* Home */
+	{ .shortcut = "U", .alias = "uefi",     .data = "C12A7328-F81F-11D2-BA4B-00A0C93EC93B" }, /* UEFI system */
+	{ .shortcut = "R", .alias = "raid",     .data = "A19D880F-05FC-4D3B-A006-743F0F84911E" }, /* Linux RAID */
+	{ .shortcut = "V", .alias = "lvm",      .data = "E6D6D379-F507-44C2-A23C-238F2A3DF928" }, /* LVM */
+	{ .shortcut = "X", .alias = "xbootldr", .data = "BC13C2FF-59E6-4262-A352-B275FD6F7172" }, /* Linux extended boot */
 };
 
 #define alignment_required(_x)  ((_x)->grain != (_x)->sector_size)
@@ -878,9 +879,9 @@ static int gpt_mknew_header(struct fdisk_context *cxt,
 	if (!has_id) {
 		struct gpt_guid guid;
 
-		uuid_generate_random((unsigned char *) &header->disk_guid);
-		guid = header->disk_guid;
+		uuid_generate_random((unsigned char *) &guid);
 		swap_efi_guid(&guid);
+		header->disk_guid = guid;
 	}
 	return 0;
 }
@@ -1017,11 +1018,6 @@ static unsigned char *gpt_read_entries(struct fdisk_context *cxt,
 
 	if (gpt_sizeof_entries(header, &sz))
 		return NULL;
-
-	if (sz > (size_t) SSIZE_MAX) {
-		DBG(GPT, ul_debug("entries array too large to read()"));
-		return NULL;
-	}
 
 	ret = calloc(1, sz);
 	if (!ret)
@@ -2024,6 +2020,19 @@ static int gpt_set_partition(struct fdisk_context *cxt, size_t n,
 	return rc;
 }
 
+static int gpt_read(struct fdisk_context *cxt, off_t offset, void *buf, size_t count)
+{
+	if (offset != lseek(cxt->dev_fd, offset, SEEK_SET))
+		return -errno;
+
+	if (read_all(cxt->dev_fd, buf, count))
+		return -errno;
+
+	DBG(GPT, ul_debug("  read OK [offset=%zu, size=%zu]",
+				(size_t) offset, count));
+	return 0;
+}
+
 static int gpt_write(struct fdisk_context *cxt, off_t offset, void *buf, size_t count)
 {
 	if (offset != lseek(cxt->dev_fd, offset, SEEK_SET))
@@ -2032,7 +2041,8 @@ static int gpt_write(struct fdisk_context *cxt, off_t offset, void *buf, size_t 
 	if (write_all(cxt->dev_fd, buf, count))
 		return -errno;
 
-	fsync(cxt->dev_fd);
+	if (fsync(cxt->dev_fd) != 0)
+		return -errno;
 
 	DBG(GPT, ul_debug("  write OK [offset=%zu, size=%zu]",
 				(size_t) offset, count));
@@ -2079,6 +2089,8 @@ static int gpt_write_header(struct fdisk_context *cxt,
 static int gpt_write_pmbr(struct fdisk_context *cxt)
 {
 	struct gpt_legacy_mbr *pmbr;
+	struct gpt_legacy_mbr *current;
+	int rc;
 
 	assert(cxt);
 	assert(cxt->firstsector);
@@ -2107,6 +2119,25 @@ static int gpt_write_pmbr(struct fdisk_context *cxt)
 		pmbr->partition_record[0].size_in_lba =
 			cpu_to_le32((uint32_t) (cxt->total_sectors - 1ULL));
 
+	/* Read the current PMBR and compare it with the new, don't write if
+	 * the same. */
+	current = malloc(sizeof(*current));
+	if (!current)
+		goto do_write;
+
+	rc = gpt_read(cxt, GPT_PMBR_LBA * cxt->sector_size,
+		      current, sizeof(*current));
+	if (!rc)
+		rc = memcmp(pmbr, current, sizeof(*current));
+
+	free(current);
+
+	if (!rc) {
+		DBG(GPT, ul_debug("Same MBR on disk => don't write it"));
+		return 0;
+	}
+
+ do_write:
 	/* pMBR covers the first sector (LBA) of the disk */
 	return gpt_write(cxt, GPT_PMBR_LBA * cxt->sector_size,
 			 pmbr, cxt->sector_size);
@@ -2591,9 +2622,9 @@ static int gpt_add_partition(
 		 */
 		struct gpt_guid guid;
 
-		uuid_generate_random((unsigned char *) &e->partition_guid);
-		guid = e->partition_guid;
+		uuid_generate_random((unsigned char *) &guid);
 		swap_efi_guid(&guid);
+		e->partition_guid = guid;
 	}
 
 	if (pa && pa->name && *pa->name)
@@ -2796,7 +2827,7 @@ static int gpt_check_table_overlap(struct fdisk_context *cxt,
  * @cxt: context
  * @nents: number of wanted entries
  *
- * Elarge GPT entries array if possible. The function check if an existing
+ * Enlarge GPT entries array if possible. The function check if an existing
  * partition does not overlap the entries array area. If yes, then it report
  * warning and returns -EINVAL.
  *
@@ -3154,8 +3185,11 @@ static int gpt_reset_alignment(struct fdisk_context *cxt)
 	} else {
 		/* estimate ranges for GPT */
 		uint64_t first, last;
+		int rc;
 
-		count_first_last_lba(cxt, &first, &last, NULL);
+		rc = count_first_last_lba(cxt, &first, &last, NULL);
+		if (rc)
+			return rc;
 		if (cxt->first_lba < first)
 			cxt->first_lba = first;
 		if (cxt->last_lba > last)
@@ -3292,8 +3326,12 @@ void fdisk_gpt_enable_minimize(struct fdisk_label *lb, int enable)
 }
 
 #ifdef TEST_PROGRAM
-static int test_getattr(struct fdisk_test *ts, int argc, char *argv[])
+static int test_getattr(struct fdisk_test *ts __attribute__((unused)),
+			int argc, char *argv[])
 {
+	if (argc != 3)
+		return -1;
+
 	const char *disk = argv[1];
 	size_t part = strtoul(argv[2], NULL, 0) - 1;
 	struct fdisk_context *cxt;
@@ -3314,8 +3352,12 @@ static int test_getattr(struct fdisk_test *ts, int argc, char *argv[])
 	return 0;
 }
 
-static int test_setattr(struct fdisk_test *ts, int argc, char *argv[])
+static int test_setattr(struct fdisk_test *ts __attribute__((unused)),
+			int argc, char *argv[])
 {
+	if (argc != 4)
+		return -1;
+
 	const char *disk = argv[1];
 	size_t part = strtoul(argv[2], NULL, 0) - 1;
 	uint64_t atters = strtoull(argv[3], NULL, 0);

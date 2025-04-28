@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: script
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-08-04
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "SCRIPT" "1" "2022-08-04" "util\-linux 2.38.1" "User Commands"
+.TH "SCRIPT" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -61,7 +61,7 @@ This option controls the \fBECHO\fP flag for the slave end of the session\(cqs p
 .sp
 The default is \fIauto\fP \(em in this case, \fBECHO\fP enabled for the pseudoterminal slave; if the current standard input is a terminal, \fBECHO\fP is disabled for it to prevent double echo; if the current standard input is not a terminal (for example pipe: \fBecho date | script\fP) then keeping \fBECHO\fP enabled for the pseudoterminal slave enables the standard input data to be viewed on screen while being recorded to session log simultaneously.
 .sp
-Note that \(aqnever\(aq mode affects content of the session output log, because users input is not repeated on output.
+Note that \*(Aqnever\*(Aq mode affects content of the session output log, because users input is not repeated on output.
 .RE
 .sp
 \fB\-e\fP, \fB\-\-return\fP
@@ -103,16 +103,16 @@ Log timing information to the \fIfile\fP. Two timing file formats are supported 
 .sp
 \fB\-m\fP, \fB\-\-logging\-format\fP \fIformat\fP
 .RS 4
-Force use of \fIadvanced\fP or \fIclassic\fP format. The default is the classic format to log only output and the advanced format when input as well as output logging is requested.
+Force use of \fIadvanced\fP or \fIclassic\fP timing log format. The default is the classic format to log only output and the advanced format when input as well as output logging is requested.
 .sp
 \fBClassic format\fP
 .RS 4
-The log contains two fields, separated by a space. The first field indicates how much time elapsed since the previous output. The second field indicates how many characters were output this time.
+The timing log contains two fields, separated by a space. The first field indicates how much time elapsed since the previous output. The second field indicates how many characters were output this time.
 .RE
 .sp
 \fBAdvanced (multi\-stream) format\fP
 .RS 4
-The first field is an entry type identifier (\(aqI\(cqnput, \(aqO\(cqutput, \(aqH\(cqeader, \(aqS\(cqignal). The second field is how much time elapsed since the previous entry, and the rest of the entry is type\-specific data.
+The first field is an entry type identifier (\*(AqI\(cqnput, \*(AqO\(cqutput, \*(AqH\(cqeader, \*(AqS\(cqignal). The second field is how much time elapsed since the previous entry, and the rest of the entry is type\-specific data.
 .RE
 .RE
 .sp
@@ -126,7 +126,7 @@ Limit the size of the typescript and timing files to \fIsize\fP and stop the chi
 Be quiet (do not write start and done messages to standard output).
 .RE
 .sp
-\fB\-t\fP[\fIfile\fP], \fB\-\-timing\fP[=\fIfile\fP]
+\fB\-t\fP[\fIfile\fP], \fB\-\-timing\fP[\fB=\fP\fIfile\fP]
 .RS 4
 Output timing data to standard error, or to \fIfile\fP when given. This option is deprecated in favour of \fB\-\-log\-timing\fP where the \fIfile\fP argument is not optional.
 .RE
@@ -138,7 +138,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "SIGNALS"
 .sp
@@ -186,8 +186,8 @@ The \fBscript\fP command appeared in 3.0BSD.
 \fBscriptlive\fP(1)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBscript\fP command is part of the util\-linux package which can be downloaded from \c

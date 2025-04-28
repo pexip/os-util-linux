@@ -1,7 +1,7 @@
 //po4a: entry man manual
 ////
 Copyright 1993, 1994, 1995 by Theodore Ts'o.  All Rights Reserved.
-This file may be copied under the terms of the GNU Public License.
+This file may be copied under the terms of the GNU General Public License.
 ////
 = fsck(8)
 :doctype: manpage
@@ -20,7 +20,7 @@ fsck - check and repair a Linux filesystem
 
 == DESCRIPTION
 
-*fsck* is used to check and optionally repair one or more Linux filesystems. _filesystem_ can be a device name (e.g., _/dev/hdc1_, _/dev/sdb2_), a mount point (e.g., _/_, _/usr_, _/home_), or an filesystem label or UUID specifier (e.g., UUID=8868abf6-88c5-4a83-98b8-bfc24057f7bd or LABEL=root). Normally, the *fsck* program will try to handle filesystems on different physical disk drives in parallel to reduce the total amount of time needed to check all of them.
+*fsck* is used to check and optionally repair one or more Linux filesystems. _filesystem_ can be a device name (e.g., _/dev/hdc1_, _/dev/sdb2_), a mount point (e.g., _/_, _/usr_, _/home_), or a filesystem label or UUID specifier (e.g., UUID=8868abf6-88c5-4a83-98b8-bfc24057f7bd or LABEL=root). Normally, the *fsck* program will try to handle filesystems on different physical disk drives in parallel to reduce the total amount of time needed to check all of them.
 
 If no filesystems are specified on the command line, and the *-A* option is not specified, *fsck* will default to checking filesystems in _/etc/fstab_ serially. This is equivalent to the *-As* options.
 
@@ -151,9 +151,14 @@ enables libmount debug output.
 
 _/etc/fstab_
 
+== NOTES
+During boot, *systemd* does not invoke *fsck -A*. Instead, it schedules the activation
+of mounts individually, taking into account dependencies on backing devices, networking,
+and other factors. Consequently, *fsck* is called individually for each device.
+
 == AUTHORS
 
-mailto:tytso@mit.edu>[Theodore Ts'o],
+mailto:tytso@mit.edu[Theodore Ts'o],
 mailto:kzak@redhat.com[Karel Zak]
 
 == SEE ALSO

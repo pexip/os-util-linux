@@ -7,6 +7,7 @@
  * GNU Lesser General Public License.
  */
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -65,7 +66,11 @@
  *
  * @SBMAGIC_OFFSET: offset of SBMAGIC
  *
- * @FSSIZE: size of filesystem [not-implemented yet]
+ * @FSSIZE: size of filesystem (implemented for XFS/BTRFS/Ext only)
+ *
+ * @FSLASTBLOCK: last fsblock/total number of fsblocks
+ *
+ * @FSBLOCKSIZE: file system block size
  *
  * @SYSTEM_ID: ISO9660 system identifier
  *
@@ -89,6 +94,9 @@ static int blkid_probe_set_usage(blkid_probe pr, int usage);
  */
 static const struct blkid_idinfo *idinfos[] =
 {
+	/* First, as access to locked OPAL region triggers IO errors */
+	&luks_opal_idinfo,
+
 	/* RAIDs */
 	&linuxraid_idinfo,
 	&ddfraid_idinfo,
@@ -104,6 +112,7 @@ static const struct blkid_idinfo *idinfos[] =
 	&jmraid_idinfo,
 
 	&bcache_idinfo,
+	&bcachefs_idinfo,
 	&bluestore_idinfo,
 	&drbd_idinfo,
 	&drbdmanage_idinfo,
@@ -119,6 +128,7 @@ static const struct blkid_idinfo *idinfos[] =
 	&vdo_idinfo,
 	&stratis_idinfo,
 	&bitlocker_idinfo,
+	&cs_fvault2_idinfo,
 
 	/* Filesystems */
 	&vfat_idinfo,
@@ -169,7 +179,7 @@ static const struct blkid_idinfo *idinfos[] =
 	&mpool_idinfo,
 	&apfs_idinfo,
 	&zonefs_idinfo,
-	&erofs_idinfo
+	&erofs_idinfo,
 };
 
 /*
@@ -410,7 +420,9 @@ static int superblocks_probe(blkid_probe pr, struct blkid_chain *chn)
 		/* final check by probing function */
 		if (id->probefunc) {
 			DBG(LOWPROBE, ul_debug("\tcall probefunc()"));
+			errno = 0;
 			rc = id->probefunc(pr, mag);
+			blkid_probe_prune_buffers(pr);
 			if (rc != BLKID_PROBE_OK) {
 				blkid_probe_chain_reset_values(pr, chn);
 				if (rc < 0)
@@ -501,7 +513,7 @@ static int superblocks_safeprobe(blkid_probe pr, struct blkid_chain *chn)
 		DBG(LOWPROBE, ul_debug("ERROR: superblocks chain: "
 			       "ambivalent result detected (%d filesystems)!",
 			       count));
-		rc = -2;		/* error, ambivalent result (more FS) */
+		rc = BLKID_PROBE_AMBIGUOUS;	/* error, ambivalent result (more FS) */
 		goto done;
 	}
 	if (!count) {
@@ -565,7 +577,7 @@ int blkid_probe_set_block_size(blkid_probe pr, unsigned block_size)
 static int blkid_probe_set_usage(blkid_probe pr, int usage)
 {
 	struct blkid_chain *chn = blkid_probe_get_chain(pr);
-	char *u = NULL;
+	const char *u = NULL;
 
 	if (!(chn->flags & BLKID_SUBLKS_USAGE))
 		return 0;
@@ -581,7 +593,65 @@ static int blkid_probe_set_usage(blkid_probe pr, int usage)
 	else
 		u = "unknown";
 
-	return blkid_probe_set_value(pr, "USAGE", (unsigned char *) u, strlen(u) + 1);
+	return blkid_probe_set_value(pr, "USAGE",
+			(const unsigned char *) u, strlen(u) + 1);
+}
+
+/* size used by filesystem for data */
+int blkid_probe_set_fssize(blkid_probe pr, uint64_t size)
+{
+	struct blkid_chain *chn = blkid_probe_get_chain(pr);
+
+	if (!(chn->flags & BLKID_SUBLKS_FSINFO))
+		return 0;
+
+	return blkid_probe_sprintf_value(pr, "FSSIZE", "%" PRIu64, size);
+}
+
+int blkid_probe_set_fslastblock(blkid_probe pr, uint64_t lastblock)
+{
+	struct blkid_chain *chn = blkid_probe_get_chain(pr);
+
+	if (!(chn->flags & BLKID_SUBLKS_FSINFO))
+		return 0;
+
+	return blkid_probe_sprintf_value(pr, "FSLASTBLOCK", "%" PRIu64,
+			lastblock);
+}
+
+int blkid_probe_set_fsblocksize(blkid_probe pr, uint32_t block_size)
+{
+	struct blkid_chain *chn = blkid_probe_get_chain(pr);
+
+	if (!(chn->flags & BLKID_SUBLKS_FSINFO))
+		return 0;
+
+	return blkid_probe_sprintf_value(pr, "FSBLOCKSIZE", "%" PRIu32,
+			block_size);
+}
+
+int blkid_probe_set_fsendianness(blkid_probe pr, enum blkid_endianness endianness)
+{
+	struct blkid_chain *chn = blkid_probe_get_chain(pr);
+	const char *value;
+
+	if (!(chn->flags & BLKID_SUBLKS_FSINFO))
+		return 0;
+
+	switch (endianness) {
+		case BLKID_ENDIANNESS_LITTLE:
+			value = "LITTLE";
+			break;
+		case BLKID_ENDIANNESS_BIG:
+			value = "BIG";
+			break;
+		default:
+			return -EINVAL;
+	}
+
+	return blkid_probe_set_value(pr, "ENDIANNESS",
+			(const unsigned char *) value, strlen(value) + 1);
+
 }
 
 int blkid_probe_set_id_label(blkid_probe pr, const char *name,

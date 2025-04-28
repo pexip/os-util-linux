@@ -1,21 +1,12 @@
 /*
- * lscpu-arm.c - ARM CPU identification tables
- *
- * Copyright (C) 2018 Riku Voipio <riku.voipio@iki.fi>
+ * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * This program is distributed in the hope that it would be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Copyright (C) 2018 Riku Voipio <riku.voipio@iki.fi>
  *
  * The information here is gathered from
  *  - ARM manuals
@@ -64,6 +55,7 @@ static const struct id_part arm_part[] = {
     { 0xc27, "Cortex-M7" },
     { 0xc60, "Cortex-M0+" },
     { 0xd01, "Cortex-A32" },
+    { 0xd02, "Cortex-A34" },
     { 0xd03, "Cortex-A53" },
     { 0xd04, "Cortex-A35" },
     { 0xd05, "Cortex-A55" },
@@ -77,24 +69,44 @@ static const struct id_part arm_part[] = {
     { 0xd0d, "Cortex-A77" },
     { 0xd0e, "Cortex-A76AE" },
     { 0xd13, "Cortex-R52" },
+    { 0xd15, "Cortex-R82" },
+    { 0xd16, "Cortex-R52+" },
     { 0xd20, "Cortex-M23" },
     { 0xd21, "Cortex-M33" },
+    { 0xd22, "Cortex-M55" },
+    { 0xd23, "Cortex-M85" },
     { 0xd40, "Neoverse-V1" },
     { 0xd41, "Cortex-A78" },
     { 0xd42, "Cortex-A78AE" },
+    { 0xd43, "Cortex-A65AE" },
     { 0xd44, "Cortex-X1" },
-    { 0xd46, "Cortex-510" },
-    { 0xd47, "Cortex-710" },
+    { 0xd46, "Cortex-A510" },
+    { 0xd47, "Cortex-A710" },
     { 0xd48, "Cortex-X2" },
     { 0xd49, "Neoverse-N2" },
     { 0xd4a, "Neoverse-E1" },
     { 0xd4b, "Cortex-A78C" },
+    { 0xd4c, "Cortex-X1C" },
+    { 0xd4d, "Cortex-A715" },
+    { 0xd4e, "Cortex-X3" },
+    { 0xd4f, "Neoverse-V2" },
+    { 0xd80, "Cortex-A520" },
+    { 0xd81, "Cortex-A720" },
+    { 0xd82, "Cortex-X4" },
+    { 0xd83, "Neoverse-V3AE" },
+    { 0xd84, "Neoverse-V3" },
+    { 0xd85, "Cortex-X925" },
+    { 0xd87, "Cortex-A725" },
+    { 0xd88, "Cortex-A520AE" },
+    { 0xd89, "Cortex-A720AE" },
+    { 0xd8e, "Neoverse-N3" },
+    { 0xd8f, "Cortex-A320" },
     { -1, "unknown" },
 };
 
 static const struct id_part brcm_part[] = {
-    { 0x0f, "Brahma B15" },
-    { 0x100, "Brahma B53" },
+    { 0x0f, "Brahma-B15" },
+    { 0x100, "Brahma-B53" },
     { 0x516, "ThunderX2" },
     { -1, "unknown" },
 };
@@ -107,10 +119,18 @@ static const struct id_part dec_part[] = {
 
 static const struct id_part cavium_part[] = {
     { 0x0a0, "ThunderX" },
-    { 0x0a1, "ThunderX 88XX" },
-    { 0x0a2, "ThunderX 81XX" },
-    { 0x0a3, "ThunderX 83XX" },
-    { 0x0af, "ThunderX2 99xx" },
+    { 0x0a1, "ThunderX-88XX" },
+    { 0x0a2, "ThunderX-81XX" },
+    { 0x0a3, "ThunderX-83XX" },
+    { 0x0af, "ThunderX2-99xx" },
+    { 0x0b0, "OcteonTX2" },
+    { 0x0b1, "OcteonTX2-98XX" },
+    { 0x0b2, "OcteonTX2-96XX" },
+    { 0x0b3, "OcteonTX2-95XX" },
+    { 0x0b4, "OcteonTX2-95XXN" },
+    { 0x0b5, "OcteonTX2-95XXMM" },
+    { 0x0b6, "OcteonTX2-95XXO" },
+    { 0x0b8, "ThunderX3-T110" },
     { -1, "unknown" },
 };
 
@@ -120,6 +140,7 @@ static const struct id_part apm_part[] = {
 };
 
 static const struct id_part qcom_part[] = {
+    { 0x001, "Oryon" },
     { 0x00f, "Scorpion" },
     { 0x02d, "Scorpion" },
     { 0x04d, "Krait" },
@@ -127,8 +148,12 @@ static const struct id_part qcom_part[] = {
     { 0x201, "Kryo" },
     { 0x205, "Kryo" },
     { 0x211, "Kryo" },
-    { 0x800, "Falkor V1/Kryo" },
-    { 0x801, "Kryo V2" },
+    { 0x800, "Falkor-V1/Kryo" },
+    { 0x801, "Kryo-V2" },
+    { 0x802, "Kryo-3XX-Gold" },
+    { 0x803, "Kryo-3XX-Silver" },
+    { 0x804, "Kryo-4XX-Gold" },
+    { 0x805, "Kryo-4XX-Silver" },
     { 0xc00, "Falkor" },
     { 0xc01, "Saphira" },
     { -1, "unknown" },
@@ -136,6 +161,9 @@ static const struct id_part qcom_part[] = {
 
 static const struct id_part samsung_part[] = {
     { 0x001, "exynos-m1" },
+    { 0x002, "exynos-m3" },
+    { 0x003, "exynos-m4" },
+    { 0x004, "exynos-m5" },
     { -1, "unknown" },
 };
 
@@ -147,15 +175,49 @@ static const struct id_part nvidia_part[] = {
 };
 
 static const struct id_part marvell_part[] = {
-    { 0x131, "Feroceon 88FR131" },
+    { 0x131, "Feroceon-88FR131" },
     { 0x581, "PJ4/PJ4b" },
     { 0x584, "PJ4B-MP" },
     { -1, "unknown" },
 };
 
 static const struct id_part apple_part[] = {
-    { 0x022, "Icestorm" },
-    { 0x023, "Firestorm" },
+    { 0x000, "Swift" },
+    { 0x001, "Cyclone" },
+    { 0x002, "Typhoon" },
+    { 0x003, "Typhoon/Capri" },
+    { 0x004, "Twister" },
+    { 0x005, "Twister/Elba/Malta" },
+    { 0x006, "Hurricane" },
+    { 0x007, "Hurricane/Myst" },
+    { 0x008, "Monsoon" },
+    { 0x009, "Mistral" },
+    { 0x00b, "Vortex" },
+    { 0x00c, "Tempest" },
+    { 0x00f, "Tempest-M9" },
+    { 0x010, "Vortex/Aruba" },
+    { 0x011, "Tempest/Aruba" },
+    { 0x012, "Lightning" },
+    { 0x013, "Thunder" },
+    { 0x020, "Icestorm-A14" },
+    { 0x021, "Firestorm-A14" },
+    { 0x022, "Icestorm-M1" },
+    { 0x023, "Firestorm-M1" },
+    { 0x024, "Icestorm-M1-Pro" },
+    { 0x025, "Firestorm-M1-Pro" },
+    { 0x026, "Thunder-M10" },
+    { 0x028, "Icestorm-M1-Max" },
+    { 0x029, "Firestorm-M1-Max" },
+    { 0x030, "Blizzard-A15" },
+    { 0x031, "Avalanche-A15" },
+    { 0x032, "Blizzard-M2" },
+    { 0x033, "Avalanche-M2" },
+    { 0x034, "Blizzard-M2-Pro" },
+    { 0x035, "Avalanche-M2-Pro" },
+    { 0x036, "Sawtooth-A16" },
+    { 0x037, "Everest-A16" },
+    { 0x038, "Blizzard-M2-Max" },
+    { 0x039, "Avalanche-M2-Max" },
     { -1, "unknown" },
 };
 
@@ -192,19 +254,37 @@ static const struct id_part intel_part[] = {
 
 static const struct id_part fujitsu_part[] = {
     { 0x001, "A64FX" },
+    { 0x003, "MONAKA" },
     { -1, "unknown" },
 };
 
 static const struct id_part hisi_part[] = {
-    { 0xd01, "Kunpeng-920" },	/* aka tsv110 */
+    { 0xd01, "TaiShan-v110" },	/* used in Kunpeng-920 SoC */
+    { 0xd02, "TaiShan-v120" },	/* used in Kirin 990A and 9000S SoCs */
+    { 0xd40, "Cortex-A76" },	/* HiSilicon uses this ID though advertises A76 */
+    { 0xd41, "Cortex-A77" },	/* HiSilicon uses this ID though advertises A77 */
+    { -1, "unknown" },
+};
+
+static const struct id_part ampere_part[] = {
+    { 0xac3, "Ampere-1" },
+    { 0xac4, "Ampere-1a" },
     { -1, "unknown" },
 };
 
 static const struct id_part ft_part[] = {
+    { 0x303, "FTC310" },
     { 0x660, "FTC660" },
     { 0x661, "FTC661" },
     { 0x662, "FTC662" },
     { 0x663, "FTC663" },
+    { 0x664, "FTC664" },
+    { 0x862, "FTC862" },
+    { -1, "unknown" },
+};
+
+static const struct id_part ms_part[] = {
+    { 0xd49, "Azure-Cobalt-100" },
     { -1, "unknown" },
 };
 
@@ -235,8 +315,9 @@ static const struct hw_impl hw_implementer[] = {
     { 0x61, apple_part,   "Apple" },
     { 0x66, faraday_part, "Faraday" },
     { 0x69, intel_part,   "Intel" },
+    { 0x6d, ms_part,      "Microsoft" },
     { 0x70, ft_part,      "Phytium" },
-    { 0xc0, unknown_part, "Ampere" },
+    { 0xc0, ampere_part,  "Ampere" },
     { -1,   unknown_part, "unknown" },
 };
 
@@ -258,12 +339,47 @@ static int parse_id(const char *str)
 
 #define parse_model_id(_cxt)		(parse_id((_cxt)->model))
 
-static inline int parse_implementer_id(struct lscpu_cputype *ct)
+static inline int get_implementer_id(struct lscpu_cputype *ct)
 {
 	if (ct->vendor_id)
 		return ct->vendor_id;
-	ct->vendor_id = parse_id(ct->vendor);
+	return parse_id(ct->vendor);
+}
+
+static inline int parse_implementer_id(struct lscpu_cputype *ct)
+{
+	int id;
+
+	if (ct->vendor_id)
+		return ct->vendor_id;
+	id = get_implementer_id(ct);
+	if (id <= 0)
+		return id;
+
+	ct->vendor_id = id;
 	return ct->vendor_id;
+}
+
+int is_arm(struct lscpu_cxt *cxt)
+{
+	size_t i;
+
+	if (is_live(cxt))
+		return strcmp(cxt->arch->name, "aarch64") == 0;
+
+	/* dump; assume ARM if vendor ID is known */
+	for (i = 0; i < cxt->ncputypes; i++) {
+
+		int j, id = get_implementer_id(cxt->cputypes[i]);
+		if (id <= 0)
+			continue;
+		for (j = 0; hw_implementer[j].id != -1; j++) {
+			if (hw_implementer[j].id == id)
+				return 1;
+		}
+	}
+
+	return 0;
 }
 
 /*
@@ -338,13 +454,13 @@ static int arm_rXpY_decode(struct lscpu_cputype *ct)
 
 static void arm_decode(struct lscpu_cxt *cxt, struct lscpu_cputype *ct)
 {
-	if (!cxt->noalive && access(_PATH_SYS_DMI, R_OK) == 0)
+	if (is_live(cxt) && access(_PATH_SYS_DMI, R_OK) == 0)
 		dmi_decode_cputype(ct);
 
 	arm_ids_decode(ct);
 	arm_rXpY_decode(ct);
 
-	if (!cxt->noalive && cxt->is_cluster)
+	if (is_live(cxt) && cxt->is_cluster)
 		ct->nr_socket_on_cluster = get_number_of_physical_sockets_from_dmi();
 }
 
@@ -352,7 +468,7 @@ static int is_cluster_arm(struct lscpu_cxt *cxt)
 {
 	struct stat st;
 
-	if (!cxt->noalive
+	if (is_live(cxt)
 	    && strcmp(cxt->arch->name, "aarch64") == 0
 	    && stat(_PATH_ACPI_PPTT, &st) < 0 && cxt->ncputypes == 1)
 		return 1;

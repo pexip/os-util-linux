@@ -56,6 +56,10 @@ Vertically align the modes and owners.
 *-x*, *--mountpoints*::
 Show mountpoint directories with a 'D' rather than a 'd'.
 
+*-Z*, *--context*::
+Show security context of the file or "?" if not available.
+The support for security contexts is optional and does not have to be compiled to the *namei* binary.
+
 include::man-common/help-version.adoc[]
 
 == BUGS
@@ -66,7 +70,7 @@ To be discovered.
 
 The original *namei* program was written by mailto:rogers@amadeus.wr.tek.com[Roger Southwick].
 
-The program was rewritten by Karel Zak mailto:kzak@redhat.com[Karel Zak].
+The program was rewritten by mailto:kzak@redhat.com[Karel Zak].
 
 == SEE ALSO
 

@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: cfdisk
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-03-17
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "CFDISK" "8" "2022-05-11" "util\-linux 2.38.1" "System Administration"
+.TH "CFDISK" "8" "2025-03-17" "util\-linux 2.41" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -42,27 +42,17 @@ All disk label changes will remain in memory only, and the disk will be unmodifi
 .sp
 Since version 2.25 \fBcfdisk\fP supports MBR (DOS), GPT, SUN and SGI disk labels, but no longer provides any functionality for CHS (Cylinder\-Head\-Sector) addressing. CHS has never been important for Linux, and this addressing concept does not make any sense for new devices.
 .sp
-Since version 2.25 \fBcfdisk\fP also does not provide a \(aqprint\(aq command any more. This functionality is provided by the utilities \fBpartx\fP(8) and \fBlsblk\fP(8) in a very comfortable and rich way.
+Since version 2.25 \fBcfdisk\fP also does not provide a \*(Aqprint\*(Aq command any more. This functionality is provided by the utilities \fBpartx\fP(8) and \fBlsblk\fP(8) in a very comfortable and rich way.
 .sp
 If you want to remove an old partition table from a device, use \fBwipefs\fP(8).
 .SH "OPTIONS"
-.sp
-\fB\-h\fP, \fB\-\-help\fP
-.RS 4
-Display help text and exit.
-.RE
-.sp
-\fB\-V\fP, \fB\-\-version\fP
-.RS 4
-Print version and exit.
-.RE
 .sp
 \fB\-L\fP, \fB\-\-color\fP[\fB=\fP\fIwhen\fP]
 .RS 4
 Colorize the output. The optional argument \fIwhen\fP can be \fBauto\fP, \fBnever\fP or \fBalways\fP. If the \fIwhen\fP argument is omitted, it defaults to \fBauto\fP. The colors can be disabled, for the current built\-in default see \fB\-\-help\fP output. See also the \fBCOLORS\fP section.
 .RE
 .sp
-\fB\-\-lock\fP[=\fImode\fP]
+\fB\-\-lock\fP[\fB=\fP\fImode\fP]
 .RS 4
 Use exclusive BSD lock for device or file it operates. The optional argument \fImode\fP can be \fByes\fP, \fBno\fP (or 1 and 0) or \fBnonblock\fP. If the \fImode\fP argument is omitted, it defaults to \fByes\fP. This option overwrites environment variable \fB$LOCK_BLOCK_DEVICE\fP. The default is not to use any lock at all, but it\(cqs recommended to avoid collisions with \fBsystemd\-udevd\fP(8) or other tools.
 .RE
@@ -72,9 +62,24 @@ Use exclusive BSD lock for device or file it operates. The optional argument \fI
 Forced open in read\-only mode.
 .RE
 .sp
+\fB\-b\fP, \fB\-\-sector\-size\fP \fIsectorsize\fP
+.RS 4
+Specify the sector size of the disk. Valid values are 512, 1024, 2048, and 4096. The kernel is aware of the sector size for regular block devices. Use this option only on very old kernels, when working with disk images, or to override the kernel\(cqs default sector size. Since util\-linux\-2.17, \fBfdisk\fP distinguishes between logical and physical sector size. This option changes both sector sizes to the specified \fIsectorsize\fP.
+.RE
+.sp
 \fB\-z\fP, \fB\-\-zero\fP
 .RS 4
 Start with an in\-memory zeroed partition table. This option does not zero the partition table on the disk; rather, it simply starts the program without reading the existing partition table. This option allows you to create a new partition table from scratch or from an \fBsfdisk\fP(8)\-compatible script.
+.RE
+.sp
+\fB\-h\fP, \fB\-\-help\fP
+.RS 4
+Display help text and exit.
+.RE
+.sp
+\fB\-V\fP, \fB\-\-version\fP
+.RS 4
+Display version and exit.
 .RE
 .SH "COMMANDS"
 .sp
@@ -135,7 +140,7 @@ It is also possible to load an sfdisk\-script into \fBcfdisk\fP if there is no p
 .sp
 \fBW\fP
 .RS 4
-Write the partition table to disk (you must enter an uppercase W). Since this might destroy data on the disk, you must either confirm or deny the write by entering `yes\(aq or `no\(aq. If you enter `yes\(aq, \fBcfdisk\fP will write the partition table to disk and then tell the kernel to re\-read the partition table from the disk.
+Write the partition table to disk (you must enter an uppercase W). Since this might destroy data on the disk, you must either confirm or deny the write by entering `yes\*(Aq or `no\*(Aq. If you enter `yes\*(Aq, \fBcfdisk\fP will write the partition table to disk and then tell the kernel to re\-read the partition table from the disk.
 .sp
 The re\-reading of the partition table does not always work. In such a case you need to inform the kernel about any new partitions by using \fBpartprobe\fP(8) or \fBpartx\fP(8), or by rebooting the system.
 .RE
@@ -176,6 +181,9 @@ for the \fBcfdisk\fP command or for all tools by
 .br
 .RE
 .ll
+.sp
+Since version 2.41, the $NO_COLOR environment variable is also supported to
+disable output colorization unless explicitly enabled by a command\-line option.
 .sp
 The user\-specific \fI$XDG_CONFIG_HOME/terminal\-colors.d\fP
 or \fI$HOME/.config/terminal\-colors.d\fP overrides the global setting.
@@ -230,8 +238,8 @@ The current \fBcfdisk\fP implementation is based on the original \fBcfdisk\fP fr
 \fBsfdisk\fP(8)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBcfdisk\fP command is part of the util\-linux package which can be downloaded from \c

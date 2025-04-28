@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: zramctl
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "ZRAMCTL" "8" "2022-05-11" "util\-linux 2.38.1" "System Administration"
+.TH "ZRAMCTL" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -62,6 +62,8 @@ Note that \fIzramdev\fP node specified on command line has to already exist. The
 \fB\-a\fP, \fB\-\-algorithm lzo\fP|\fBlz4\fP|\fBlz4hc\fP|\fBdeflate\fP|\fB842\fP|\fBzstd\fP
 .RS 4
 Set the compression algorithm to be used for compressing data in the zram device.
+.sp
+The \fBlist of supported algorithms could be inaccurate\fP as it depends on the current kernel configuration. A basic overview can be obtained by using the command "cat /sys/block/zram0/comp_algorithm"; however, please note that this list might also be incomplete. This is due to the fact that ZRAM utilizes the Crypto API, and if certain algorithms were built as modules, it becomes impossible to enumerate all of them.
 .RE
 .sp
 \fB\-f\fP, \fB\-\-find\fP
@@ -77,6 +79,13 @@ Do not print a header line in status output.
 \fB\-o\fP, \fB\-\-output\fP \fIlist\fP
 .RS 4
 Define the status output columns to be used. If no output arrangement is specified, then a default set is used. Use \fB\-\-help\fP to get a list of all supported columns.
+.sp
+The default list of columns may be extended if \fIlist\fP is specified in the format \fI+list\fP (e.g., \fBzramctl \-o+COMP\-RATIO\fP).
+.RE
+.sp
+\fB\-p\fP, \fB\-\-algorithm\-params\fP
+.RS 4
+Set the algorithm parameters, for example, \fBlevel=9 dict=/etc/dictionary\fP to set compression level and pre\-trained dictionary. Parameters are algorithm specific.
 .RE
 .sp
 \fB\-\-output\-all\fP
@@ -113,7 +122,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "EXIT STATUS"
 .sp
@@ -147,11 +156,11 @@ The following commands set up a zram device with a size of one gigabyte and use 
 .MTO "kzak\(atredhat.com" "Karel Zak" ""
 .SH "SEE ALSO"
 .sp
-.URL "http://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/tree/Documentation/admin\-guide/blockdev/zram.rst" "Linux kernel documentation" ""
+.URL "https://docs.kernel.org/admin\-guide/blockdev/zram.html" "Linux kernel documentation" ""
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBzramctl\fP command is part of the util\-linux package which can be downloaded from \c

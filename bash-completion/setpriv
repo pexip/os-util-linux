@@ -87,6 +87,20 @@ _setpriv_module()
 			COMPREPLY=( $(compgen -W "profile" -- $cur) )
 			return 0
 			;;
+		'--landlock-access')
+			# FIXME: how to list landlock accesses?
+			COMPREPLY=( $(compgen -W "access" -- $cur) )
+			return 0
+			;;
+		'--landlock-rule')
+			# FIXME: how to list landlock rules?
+			COMPREPLY=( $(compgen -W "rule" -- $cur) )
+			return 0
+			;;
+		'--seccomp-filter')
+			COMPREPLY=( $(compgen -f -- $cur) )
+			return 0
+			;;
 		'-h'|'--help'|'-V'|'--version')
 			return 0
 			;;
@@ -104,14 +118,17 @@ _setpriv_module()
 				--egid
 				--reuid
 				--regid
-				--clear-groupsclear
-				--keep-groupskeep
+				--clear-groups
+				--keep-groups
 				--groups
 				--securebits
 				--pdeathsig
 				--reset-env
 				--selinux-label
 				--apparmor-profile
+				--landlock-access
+				--landlock-rule
+				--seccomp-filter
 				--help
 				--version"
 			COMPREPLY=( $(compgen -W "${OPTS[*]}" -- $cur) )

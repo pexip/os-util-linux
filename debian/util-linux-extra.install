@@ -1,7 +1,42 @@
-#!/usr/bin/dh-exec --with=install
-debian/hwclock.rules => /usr/lib/udev/rules.d/85-hwclock.rules
-debian/hwclock-set => /usr/lib/udev/hwclock-set
-usr/bin/fincore                                                 [linux-any]
-usr/bin/lsfd                                                    [linux-any]
-usr/bin/lsirq                                                   [linux-any]
-sbin/hwclock
+#!/usr/bin/dh-exec
+[linux-any] bin/pipesz => /usr/bin/pipesz
+[linux-any] sbin/blkpr => /usr/sbin/blkpr
+[linux-any] sbin/ctrlaltdel usr/sbin/
+sbin/fsck.cramfs usr/sbin/
+sbin/fsck.minix usr/sbin/
+sbin/hwclock => /usr/sbin/hwclock
+sbin/mkfs.bfs usr/sbin/
+sbin/mkfs.cramfs usr/sbin/
+sbin/mkfs.minix usr/sbin/
+[linux-any] usr/bin/bits
+[linux-any] usr/bin/coresched
+[linux-any] usr/bin/enosys
+[linux-any] usr/bin/exch
+[linux-any] usr/bin/fadvise
+[linux-any] usr/bin/fincore
+[linux-any] usr/bin/lsfd
+[linux-any] usr/bin/lsirq
+[linux-any] usr/bin/waitpid
+[linux-any] usr/sbin/resizepart usr/bin/
+[linux-any] usr/share/bash-completion/completions/fadvise
+[linux-any] usr/share/bash-completion/completions/pipesz
+[linux-any] usr/share/bash-completion/completions/waitpid
+<!nodoc> usr/share/man/man8/fsck.cramfs.8
+<!nodoc> usr/share/man/man8/fsck.minix.8
+<!nodoc> usr/share/man/man8/hwclock.8
+<!nodoc> usr/share/man/man8/mkfs.bfs.8
+<!nodoc> usr/share/man/man8/mkfs.cramfs.8
+<!nodoc> usr/share/man/man8/mkfs.minix.8
+[linux-any] <!nodoc> usr/share/man/man1/bits.1
+[linux-any] <!nodoc> usr/share/man/man1/coresched.1
+[linux-any] <!nodoc> usr/share/man/man1/enosys.1
+[linux-any] <!nodoc> usr/share/man/man1/exch.1
+[linux-any] <!nodoc> usr/share/man/man1/fadvise.1
+[linux-any] <!nodoc> usr/share/man/man1/fincore.1
+[linux-any] <!nodoc> usr/share/man/man1/lsfd.1
+[linux-any] <!nodoc> usr/share/man/man1/lsirq.1
+[linux-any] <!nodoc> usr/share/man/man1/pipesz.1
+[linux-any] <!nodoc> usr/share/man/man1/waitpid.1
+[linux-any] <!nodoc> usr/share/man/man8/blkpr.8
+[linux-any] <!nodoc> usr/share/man/man8/ctrlaltdel.8
+[linux-any] <!nodoc> usr/share/man/man8/resizepart.8

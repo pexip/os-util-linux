@@ -19,7 +19,7 @@ FILES="$TS_TOPDIR/ts/hexdump/files"
 #for i in range(256):
 #	print(chr(i), end= ' ')
 
-. $TS_TOPDIR/functions.sh
+. "$TS_TOPDIR"/functions.sh
 ts_init "$*"
 
 ts_check_test_command "$TS_CMD_HEXDUMP"
@@ -41,6 +41,10 @@ ts_finalize_subtest
 #basic formats
 ts_init_subtest "1b_octal"
 $TS_CMD_HEXDUMP -b $FILES/ascii.in &> $TS_OUTPUT
+ts_finalize_subtest
+
+ts_init_subtest "1b_hex"
+$TS_CMD_HEXDUMP -X $FILES/ascii.in &> $TS_OUTPUT
 ts_finalize_subtest
 
 ts_init_subtest "1b_char"

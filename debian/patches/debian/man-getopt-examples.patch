@@ -9,10 +9,10 @@ Debian BTS #913049
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/misc-utils/getopt.1 b/misc-utils/getopt.1
-index 54a5d85..9bb66b7 100644
+index 73a407b..0e2f9c4 100644
 --- a/misc-utils/getopt.1
 +++ b/misc-utils/getopt.1
-@@ -155,7 +155,7 @@ In compatibility mode, leading \(aq\fB\-\fP\(aq and \(aq\fB+\fP\(aq characters i
+@@ -155,7 +155,7 @@ In compatibility mode, leading \*(Aq\fB\-\fP\*(Aq and \*(Aq\fB+\fP\*(Aq characte
  \fBgetopt\fP returns error code \fB0\fP for successful parsing, \fB1\fP if \fBgetopt\fP(3) returns errors, \fB2\fP if it does not understand its own parameters, \fB3\fP if an internal error occurs like out\-of\-memory, and \fB4\fP if it is called with \fB\-T\fP.
  .SH "EXAMPLES"
  .sp

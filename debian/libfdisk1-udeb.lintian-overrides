@@ -1,1 +1,2 @@
-libfdisk1-udeb udeb: missing-depends-on-sensible-utils sensible-pager [usr/lib/x86_64-linux-gnu/libfdisk.so.1.1.0]
+libfdisk1-udeb: missing-depends-on-sensible-utils sensible-pager [usr/lib/aarch64-linux-gnu/libfdisk.so.1.1.0]
+libfdisk1-udeb: missing-depends-on-sensible-utils sensible-pager [usr/lib/x86_64-linux-gnu/libfdisk.so.1.1.0]

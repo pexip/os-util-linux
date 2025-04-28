@@ -140,13 +140,12 @@ struct script_control {
 	pid_t child;		/* child pid */
 	int childstatus;	/* child process exit value */
 
-	unsigned int
-	 append:1,		/* append output */
-	 rc_wanted:1,		/* return child exit value */
-	 flush:1,		/* flush after each write */
-	 quiet:1,		/* suppress most output */
-	 force:1,		/* write output to links */
-	 isterm:1;		/* is child process running as terminal */
+	bool	append,		/* append output */
+		rc_wanted,	/* return child exit value */
+		flush,		/* flush after each write */
+		quiet,		/* suppress most output */
+		force,		/* write output to links */
+		isterm;		/* is child process running as terminal */
 };
 
 static ssize_t log_info(struct script_control *ctl, const char *name, const char *msgfmt, ...)
@@ -216,8 +215,12 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -q, --quiet                   be quiet\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(31));
-	printf(USAGE_MAN_TAIL("script(1)"));
+	fprintf(out, USAGE_HELP_OPTIONS(31));
+
+	fputs(USAGE_ARGUMENTS, out);
+	fprintf(out, USAGE_ARG_SIZE(_("<size>")));
+
+	fprintf(out, USAGE_MAN_TAIL("script(1)"));
 
 	exit(EXIT_SUCCESS);
 }
@@ -260,8 +263,8 @@ static struct script_log *log_associate(struct script_control *ctl,
 	}
 
 	/* add log to the stream */
-	stream->logs = xrealloc(stream->logs,
-			(stream->nlogs + 1) * sizeof(log));
+	stream->logs = xreallocarray(stream->logs,
+			stream->nlogs + 1, sizeof(log));
 	stream->logs[stream->nlogs] = log;
 	stream->nlogs++;
 
@@ -830,7 +833,7 @@ int main(int argc, char **argv)
 			else if (strcmp(optarg, "always") == 0)
 				echo = 1;
 			else
-				errx(EXIT_FAILURE, _("unssuported echo mode: '%s'"), optarg);
+				errx(EXIT_FAILURE, _("unsupported echo mode: '%s'"), optarg);
 			break;
 		case 'e':
 			ctl.rc_wanted = 1;
@@ -889,15 +892,24 @@ int main(int argc, char **argv)
 
 	/* default if no --log-* specified */
 	if (!outfile && !infile) {
-		if (argc > 0)
+		if (argc > 0) {
 			outfile = argv[0];
-		else {
+			argc--;
+			argv++;
+		} else {
 			die_if_link(&ctl, DEFAULT_TYPESCRIPT_FILENAME);
 			outfile = DEFAULT_TYPESCRIPT_FILENAME;
 		}
 
 		/* associate stdout with typescript file */
 		log_associate(&ctl, &ctl.out, outfile, SCRIPT_FMT_RAW);
+	}
+
+	if (argc > 0) {
+		/* only one filename is accepted. if --log-out was given,
+		 * freestanding filename is ignored */
+		warnx(_("unexpected number of arguments"));
+		errtryhelp(EXIT_FAILURE);
 	}
 
 	if (timingfile) {
@@ -947,13 +959,16 @@ int main(int argc, char **argv)
 		printf(_(".\n"));
 	}
 
-#ifdef HAVE_LIBUTEMPTER
-	utempter_add_record(ul_pty_get_childfd(ctl.pty), NULL);
-#endif
 
 	if (ul_pty_setup(ctl.pty))
 		err(EXIT_FAILURE, _("failed to create pseudo-terminal"));
 
+#ifdef HAVE_LIBUTEMPTER
+	utempter_add_record(ul_pty_get_childfd(ctl.pty), NULL);
+#endif
+
+	if (ul_pty_signals_setup(ctl.pty))
+		err(EXIT_FAILURE, _("failed to initialize signals handler"));
 	fflush(stdout);
 
 	/*

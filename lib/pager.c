@@ -1,4 +1,9 @@
 /*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * This file may be redistributed under the terms of the GNU Public
+ * License.
+ *
  * Based on linux-perf/git scm
  *
  * Some modifications and simplifications for util-linux
@@ -6,6 +11,7 @@
  */
 
 #include <unistd.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <err.h>
@@ -39,7 +45,7 @@ struct child_process {
 	struct sigaction orig_sigquit;
 	struct sigaction orig_sigpipe;
 
-	unsigned no_stdin:1;
+	bool no_stdin;
 	void (*preexec_cb)(void);
 };
 static struct child_process pager_process;
@@ -109,7 +115,7 @@ static int wait_or_whine(pid_t pid)
 		if (waiting < 0) {
 			if (errno == EINTR)
 				continue;
-			err(EXIT_FAILURE, _("waitpid failed (%s)"), strerror(errno));
+			ul_sig_err(EXIT_FAILURE, "waitpid failed");
 		}
 		if (waiting != pid)
 			return -1;
@@ -158,8 +164,6 @@ static void wait_for_pager(void)
 	if (pager_process.pid == 0)
 		return;
 
-	fflush(stdout);
-	fflush(stderr);
 	/* signal EOF to pager */
 	close(STDOUT_FILENO);
 	close(STDERR_FILENO);
@@ -168,6 +172,7 @@ static void wait_for_pager(void)
 
 static void wait_for_pager_signal(int signo)
 {
+	UL_PROTECT_ERRNO;
 	wait_for_pager();
 	raise(signo);
 }
@@ -175,35 +180,45 @@ static void wait_for_pager_signal(int signo)
 static int has_command(const char *cmd)
 {
 	const char *path;
-	char *p, *s;
+	char *b, *c, *p, *s;
 	int rc = 0;
 
 	if (!cmd)
 		goto done;
-	if (*cmd == '/') {
-		rc = access(cmd, X_OK) == 0;
+
+	c = xstrdup(cmd);
+	if (!c)
 		goto done;
+	b = strtok(c, " ");	/* cmd may contain options */
+	if (!b)
+		goto cleanup;
+
+	if (*b == '/') {
+		rc = access(b, X_OK) == 0;
+		goto cleanup;
 	}
 
 	path = getenv("PATH");
 	if (!path)
-		goto done;
+		goto cleanup;
 	p = xstrdup(path);
 	if (!p)
-		goto done;
+		goto cleanup;
 
-	for(s = strtok(p, ":"); s; s = strtok(NULL, ":")) {
+	for (s = strtok(p, ":"); s; s = strtok(NULL, ":")) {
 		int fd = open(s, O_RDONLY|O_CLOEXEC);
 		if (fd < 0)
 			continue;
-		rc = faccessat(fd, cmd, X_OK, 0) == 0;
+		rc = faccessat(fd, b, X_OK, 0) == 0;
 		close(fd);
 		if (rc)
 			break;
 	}
 	free(p);
+cleanup:
+	free(c);
 done:
-	/*fprintf(stderr, "has PAGER %s rc=%d\n", cmd, rc);*/
+	/*fprintf(stderr, "has PAGER '%s': rc=%d\n", cmd, rc);*/
 	return rc;
 }
 
@@ -234,8 +249,11 @@ static void __setup_pager(void)
 
 	/* original process continues, but writes to the pipe */
 	dup2(pager_process.in, STDOUT_FILENO);
-	if (isatty(STDERR_FILENO))
+	setvbuf(stdout, NULL, _IOLBF, 0);
+	if (isatty(STDERR_FILENO)) {
 		dup2(pager_process.in, STDERR_FILENO);
+		setvbuf(stderr, NULL, _IOLBF, 0);
+	}
 	close(pager_process.in);
 
 	memset(&sa, 0, sizeof(sa));

@@ -50,6 +50,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -99,7 +100,7 @@ enum {
 	DEFAULT
 };
 
-static const char *colornames[] = {
+static const char *const colornames[] = {
 	[BLACK] = "black",
 	[RED]	= "red",
 	[GREEN]	= "green",
@@ -173,22 +174,22 @@ struct setterm_control {
 	int opt_rt_len;		/* regular tab length */
 	int opt_tb_array[TABS_MAX + 1];	/* array for tab list */
 	/* colors */
-	unsigned int opt_fo_color:4, opt_ba_color:4, opt_ul_color:4, opt_hb_color:4;
+	uint8_t opt_fo_color, opt_ba_color, opt_ul_color, opt_hb_color;
 	/* boolean options */
-	unsigned int opt_cu_on:1, opt_li_on:1, opt_bo_on:1, opt_hb_on:1,
-	    opt_bl_on:1, opt_re_on:1, opt_un_on:1, opt_rep_on:1,
-	    opt_appck_on:1, opt_invsc_on:1, opt_msg_on:1, opt_cl_all:1,
-	    vcterm:1;
+	bool opt_cu_on, opt_li_on, opt_bo_on, opt_hb_on,
+	    opt_bl_on, opt_re_on, opt_un_on, opt_rep_on,
+	    opt_appck_on, opt_invsc_on, opt_msg_on, opt_cl_all,
+	    vcterm;
 	/* Option flags.  Set when an option is invoked. */
-	uint64_t opt_term:1, opt_reset:1, opt_resize:1, opt_initialize:1, opt_cursor:1,
-	    opt_linewrap:1, opt_default:1, opt_foreground:1,
-	    opt_background:1, opt_bold:1, opt_blink:1, opt_reverse:1,
-	    opt_underline:1, opt_store:1, opt_clear:1, opt_blank:1,
-	    opt_snap:1, opt_snapfile:1, opt_append:1, opt_ulcolor:1,
-	    opt_hbcolor:1, opt_halfbright:1, opt_repeat:1, opt_tabs:1,
-	    opt_clrtabs:1, opt_regtabs:1, opt_appcursorkeys:1,
-	    opt_inversescreen:1, opt_msg:1, opt_msglevel:1, opt_powersave:1,
-	    opt_powerdown:1, opt_blength:1, opt_bfreq:1;
+	bool opt_term, opt_reset, opt_resize, opt_initialize, opt_cursor,
+	    opt_linewrap, opt_default, opt_foreground,
+	    opt_background, opt_bold, opt_blink, opt_reverse,
+	    opt_underline, opt_store, opt_clear, opt_blank,
+	    opt_snap, opt_snapfile, opt_append, opt_ulcolor,
+	    opt_hbcolor, opt_halfbright, opt_repeat, opt_tabs,
+	    opt_clrtabs, opt_regtabs, opt_appcursorkeys,
+	    opt_inversescreen, opt_msg, opt_msglevel, opt_powersave,
+	    opt_powerdown, opt_blength, opt_bfreq;
 };
 
 static int parse_color(const char *arg)
@@ -234,7 +235,7 @@ static int parse_ulhb_color(char **av, int *oi)
 	if (!is_valid_color(color) || color == DEFAULT)
 		errx(EXIT_FAILURE, "%s: %s", _("argument error"), color_name);
 	if (bright && (color == BLACK || color == GREY))
-		errx(EXIT_FAILURE, _("argument error: bright %s is not supported"), color_name);
+		errx(EXIT_FAILURE, _("argument error: bright color %s is not supported"), color_name);
 
 	if (bright)
 		color |= 8;
@@ -429,8 +430,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" --file <filename>             name of the dump file\n"), out);
 	fputs(USAGE_SEPARATOR, out);
 
-	fputs(_(" --powersave on|vsync|hsync|powerdown|off\n"), out);
-	fputs(_("                               set vesa powersaving features\n"), out);
+	fputs(_(" --powersave on|vsync|hsync|powerdown|off\n"
+	        "                               set vesa powersaving features\n"), out);
 	fputs(_(" --powerdown[=<0-60>]          set vesa powerdown interval in minutes\n"), out);
 	fputs(USAGE_SEPARATOR, out);
 
@@ -438,10 +439,10 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" --bfreq[=<number>]            bell frequency in Hertz\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf( " --help                        %s\n", USAGE_OPTSTR_HELP);
-	printf( " --version                     %s\n", USAGE_OPTSTR_VERSION);
+	fprintf(out, " --help                        %s\n", USAGE_OPTSTR_HELP);
+	fprintf(out, " --version                     %s\n", USAGE_OPTSTR_VERSION);
 
-	printf(USAGE_MAN_TAIL("setterm(1)"));
+	fprintf(out, USAGE_MAN_TAIL("setterm(1)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -846,7 +847,10 @@ static void tty_raw(struct termios *saved_attributes, int *saved_fl)
 {
 	struct termios tattr;
 
-	fcntl(STDIN_FILENO, F_GETFL, saved_fl);
+	*saved_fl = fcntl(STDIN_FILENO, F_GETFL);
+	if (*saved_fl == -1)
+		err(EXIT_FAILURE, _("fcntl failed"));
+
 	tcgetattr(STDIN_FILENO, saved_attributes);
 	fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK);
 	memcpy(&tattr, saved_attributes, sizeof(struct termios));
@@ -898,7 +902,7 @@ static int resizetty(void)
 	ssize_t rc;
 	struct winsize ws;
 	struct termios saved_attributes;
-	int saved_fl;
+	int saved_fl = 0;
 
 	if (!isatty(STDIN_FILENO))
 		errx(EXIT_FAILURE, _("stdin does not refer to a terminal"));

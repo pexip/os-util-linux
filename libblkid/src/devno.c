@@ -35,6 +35,7 @@
 #include "blkidP.h"
 #include "pathnames.h"
 #include "sysfs.h"
+#include "strutils.h"
 
 static char *blkid_strconcat(const char *a, const char *b, const char *c)
 {
@@ -51,18 +52,12 @@ static char *blkid_strconcat(const char *a, const char *b, const char *c)
 	p = res = malloc(len + 1);
 	if (!res)
 		return NULL;
-	if (al) {
-		memcpy(p, a, al);
-		p += al;
-	}
-	if (bl) {
-		memcpy(p, b, bl);
-		p += bl;
-	}
-	if (cl) {
-		memcpy(p, c, cl);
-		p += cl;
-	}
+	if (al)
+		p = mempcpy(p, a, al);
+	if (bl)
+		p = mempcpy(p, b, bl);
+	if (cl)
+		p = mempcpy(p, c, cl);
 	*p = '\0';
 	return res;
 }
@@ -164,7 +159,7 @@ void blkid__scan_dir(char *dirname, dev_t devno, struct dir_list **list,
 }
 
 /* Directories where we will try to search for device numbers */
-static const char *devdirs[] = { "/devices", "/devfs", "/dev", NULL };
+static const char *const devdirs[] = { "/devices", "/devfs", "/dev", NULL };
 
 /**
  * SECTION: misc
@@ -178,7 +173,7 @@ static char *scandev_devno_to_devpath(dev_t devno)
 {
 	struct dir_list *list = NULL, *new_list = NULL;
 	char *devname = NULL;
-	const char **dir;
+	const char *const*dir;
 
 	/*
 	 * Add the starting directories to search in reverse order of

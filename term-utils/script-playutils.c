@@ -8,6 +8,7 @@
 #include <math.h>
 #include <unistd.h>
 #include <sys/time.h>
+#include <stdbool.h>
 
 #include "c.h"
 #include "xalloc.h"
@@ -59,6 +60,7 @@ struct replay_setup {
 	size_t			nlogs;
 
 	struct replay_step	step;	/* current step */
+	bool pause;
 
 	FILE			*timing_fp;
 	const char		*timing_filename;
@@ -102,7 +104,10 @@ static inline void timerinc(struct timeval *a, struct timeval *b)
 
 struct replay_setup *replay_new_setup(void)
 {
-	return  xcalloc(1, sizeof(struct replay_setup));
+	struct replay_setup *ret;
+	ret = xcalloc(1, sizeof(struct replay_setup));
+	ret->pause = false;
+	return  ret;
 }
 
 void replay_free_setup(struct replay_setup *stp)
@@ -165,7 +170,7 @@ static struct replay_log *replay_new_log(struct replay_setup *stp,
 	assert(streams);
 	assert(filename);
 
-	stp->logs = xrealloc(stp->logs, (stp->nlogs + 1) *  sizeof(*log));
+	stp->logs = xreallocarray(stp->logs, stp->nlogs + 1,  sizeof(*log));
 	log = &stp->logs[stp->nlogs];
 	stp->nlogs++;
 
@@ -252,6 +257,8 @@ int replay_associate_log(struct replay_setup *stp,
 
 	if (rc == 0)
 		replay_new_log(stp, streams, filename, f);
+	else if (f)
+		fclose(f);
 
 	DBG(LOG, ul_debug("associate log file '%s', streams '%s' [rc=%d]", filename, streams, rc));
 	return rc;
@@ -295,6 +302,17 @@ int replay_step_is_empty(struct replay_step *step)
 	return step->size == 0 && step->type == 0;
 }
 
+bool replay_get_is_paused(struct replay_setup *setup)
+{
+	assert(setup);
+	return setup->pause;
+}
+
+void replay_toggle_pause(struct replay_setup *setup)
+{
+	assert(setup);
+	setup->pause = !setup->pause;
+}
 
 static int read_multistream_step(struct replay_step *step, FILE *f, char type)
 {

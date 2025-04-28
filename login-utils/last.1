@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: last
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "LAST" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "LAST" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -95,6 +95,11 @@ Display the state of logins since the specified \fItime\fP. This is useful, e.g.
 Display the state of logins until the specified \fItime\fP.
 .RE
 .sp
+\fB\-T\fP, \fB\-\-tab\-separated\fP
+.RS 4
+Use ASCII \fBtab\fP characters to separate the columns in the output instead of spaces.
+.RE
+.sp
 \fB\-\-time\-format\fP \fIformat\fP
 .RS 4
 Define the output timestamp \fIformat\fP to be one of \fInotime\fP, \fIshort\fP, \fIfull\fP, or \fIiso\fP. The \fInotime\fP variant will not print any timestamps at all, \fIshort\fP is the default, and \fIfull\fP is the same as the \fB\-\-fulltimes\fP option. The \fIiso\fP variant will display the timestamp in ISO\-8601 format. The ISO format contains timezone information, making it preferable when printouts are investigated outside of the system.
@@ -102,7 +107,7 @@ Define the output timestamp \fIformat\fP to be one of \fInotime\fP, \fIshort\fP,
 .sp
 \fB\-w\fP, \fB\-\-fullnames\fP
 .RS 4
-Display full user names and domain names in the output.
+Display full user names and domain names / IP addresses in the output.  Domain names and IP addresses are truncated to 16 characters, and user names are truncated to 8 characters when this flag is not specified.  An asterisk is set as the last character of truncated fields.
 .RE
 .sp
 \fB\-x\fP, \fB\-\-system\fP
@@ -117,7 +122,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "TIME FORMATS"
 .sp
@@ -220,6 +225,8 @@ T}
 The files \fIwtmp\fP and \fIbtmp\fP might not be found. The system only logs information in these files if they are present. This is a local configuration issue. If you want the files to be used, they can be created with a simple \fBtouch\fP(1) command (for example, \fBtouch /var/log/wtmp\fP).
 .sp
 An empty entry is a valid type of wtmp entry. It means that an empty file or file with zeros is not interpreted as an error.
+.sp
+The utmp file format uses fixed sizes of strings, which means that very long strings are impossible to store in the file and impossible to display by \fBlast\fP. The usual limits are 32 bytes for a user and line name and 256 bytes for a hostname.
 .SH "AUTHORS"
 .sp
 .MTO "miquels\(atcistron.nl" "Miquel van Smoorenburg" ""
@@ -231,8 +238,8 @@ An empty entry is a valid type of wtmp entry. It means that an empty file or fil
 \fBshutdown\fP(8)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBlast\fP command is part of the util\-linux package which can be downloaded from \c

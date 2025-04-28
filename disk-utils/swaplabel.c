@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * swaplabel.c - Print or change the label / UUID of a swap partition
  *
  * Copyright (C) 2010 Jason Borden <jborden@bluehost.com>
@@ -6,7 +8,7 @@
  *
  * Usage: swaplabel [-L label] [-U UUID] device
  *
- * This file may be redistributed under the terms of the GNU Public License
+ * This file may be redistributed under the terms of the GNU General Public License
  * version 2 or later.
  *
  */
@@ -130,8 +132,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -L, --label <label> specify a new label\n"
 		" -U, --uuid <uuid>   specify a new uuid\n"), out);
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(21));
-	printf(USAGE_MAN_TAIL("swaplabel(8)"));
+	fprintf(out, USAGE_HELP_OPTIONS(21));
+	fprintf(out, USAGE_MAN_TAIL("swaplabel(8)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -191,4 +193,3 @@ int main(int argc, char *argv[])
 	}
 	return rc ? EXIT_FAILURE : EXIT_SUCCESS;
 }
-

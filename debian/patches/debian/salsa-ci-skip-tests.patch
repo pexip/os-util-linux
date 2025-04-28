@@ -1,0 +1,23 @@
+From: Chris Hofstaedtler <zeha@debian.org>
+Date: Sun, 16 Feb 2025 18:44:03 +0100
+Subject: Skip fadvise/drop test in Salsa CI
+
+---
+ tests/ts/fadvise/drop | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/tests/ts/fadvise/drop b/tests/ts/fadvise/drop
+index ac7ce01..00cc53a 100755
+--- a/tests/ts/fadvise/drop
++++ b/tests/ts/fadvise/drop
+@@ -24,6 +24,10 @@ if [[ "$FS" = "tmpfs" || "$FS" = "overlay" || "$FS" = "" ]]; then
+ 	ts_skip "fincore does not work on tmpfs or unknown fs"
+ fi
+ 
++if [[ -n "$GITLAB_CI" ]]; then
++    ts_skip "fadvise test does not work in Debians salsa CI"
++fi
++
+ create_file() {
+     dd if=/dev/zero of="$FILE" bs=$BS count=$COUNT conv=fsync >& /dev/null
+ }

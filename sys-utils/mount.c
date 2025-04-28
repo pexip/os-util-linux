@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * mount(8) -- mount a filesystem
  *
  * Copyright (C) 2011 Red Hat, Inc. All rights reserved.
@@ -8,17 +10,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- *
- * This program is distributed in the hope that it would be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -39,6 +31,7 @@
 #include "closestream.h"
 #include "canonicalize.h"
 #include "pathnames.h"
+#include "strv.h"
 
 #define XALLOC_EXIT_CODE MNT_EX_SYSERR
 #include "xalloc.h"
@@ -66,7 +59,7 @@ static void suid_drop(struct libmnt_context *cxt)
 
 	/* restore "bad" environment variables */
 	if (envs_removed) {
-		env_list_setenv(envs_removed);
+		env_list_setenv(envs_removed, 0);
 		env_list_free(envs_removed);
 		envs_removed = NULL;
 	}
@@ -123,6 +116,8 @@ static void print_all(struct libmnt_context *cxt, char *pattern, int show_label)
 	struct libmnt_iter *itr = NULL;
 	struct libmnt_fs *fs;
 	struct libmnt_cache *cache = NULL;
+
+	mnt_context_enable_noautofs(cxt, 1);
 
 	if (mnt_context_get_mtab(cxt, &tb))
 		err(MNT_EX_SYSERR, _("failed to read mtab"));
@@ -361,6 +356,51 @@ static void systemd_hint(void)
 # define systemd_hint()
 #endif
 
+static size_t libmount_mesgs(struct libmnt_context *cxt, char type)
+{
+	size_t n = mnt_context_get_nmesgs(cxt, type);
+	char **mesgs = mnt_context_get_mesgs(cxt);
+	char **s;
+
+	if (!n)
+		return 0;
+
+	/* Header */
+	switch (type) {
+		case 'e':
+			fputs(P_("mount error:\n", "mount errors:\n", n), stderr);
+			break;
+		case 'w':
+			fputs(P_("mount warning:\n", "mount warnings:\n", n), stdout);
+			break;
+		case 'i':
+			fputs(P_("mount info:\n", "mount infos:\n", n), stdout);
+			break;
+	}
+
+	/* Messages */
+	STRV_FOREACH(s, mesgs) {
+		switch (type) {
+		case 'e':
+			if (!startswith(*s, "e "))
+				break;
+			fprintf(stderr, "      * %s\n", (*s) + 2);
+			break;
+		case 'w':
+			if (!startswith(*s, "w "))
+				break;
+			fprintf(stdout, "      * %s\n", (*s) + 2);
+			break;
+		case 'i':
+			if (!startswith(*s, "i "))
+				break;
+			fprintf(stdout, "      * %s\n", (*s) + 2);
+			break;
+		}
+	}
+
+	return n;
+}
 
 /*
  * Returns exit status (MNT_EX_*) and/or prints error message.
@@ -373,6 +413,12 @@ static int mk_exit_code(struct libmnt_context *cxt, int rc)
 	rc = mnt_context_get_excode(cxt, rc, buf, sizeof(buf));
 	tgt = mnt_context_get_target(cxt);
 
+	/* error messages
+	 *
+	 * Note that mnt_context_get_excode() is used for backward compatibility and
+	 * will fill @buf with error messages from mnt_context_get_mesgs(). Therefore,
+	 * calling libmount_mesgs(cxt, 'e') is currently unnecessary.
+	 */
 	if (*buf) {
 		const char *spec = tgt;
 		if (!spec)
@@ -386,6 +432,14 @@ static int mk_exit_code(struct libmnt_context *cxt, int rc)
 			fprintf(stderr, _("       dmesg(1) may have more information after failed mount system call.\n"));
 	}
 
+	/* warning messages */
+	libmount_mesgs(cxt, 'w');
+
+	/* info messages */
+	if (mnt_context_is_verbose(cxt))
+		libmount_mesgs(cxt, 'i');
+
+	/* extra mount(8) messages */
 	if (rc == MNT_EX_SUCCESS && mnt_context_get_status(cxt) == 1) {
 		selinux_warning(cxt, tgt);
 	}
@@ -453,10 +507,10 @@ static void append_option(struct libmnt_context *cxt, const char *opt, const cha
 {
 	char *o = NULL;
 
-	if (opt && (*opt == '=' || *opt == '\'' || *opt == '\"' || isblank(*opt)))
+	if (opt && !ul_optstr_is_valid(opt))
 		errx(MNT_EX_USAGE, _("unsupported option format: %s"), opt);
 
-	if (arg && *arg)
+	if (opt && arg && *arg)
 		xasprintf(&o, "%s=\"%s\"", opt, arg);
 
 	if (mnt_context_append_options(cxt, o ? : opt))
@@ -478,6 +532,7 @@ static int has_remount_flag(struct libmnt_context *cxt)
 static void __attribute__((__noreturn__)) usage(void)
 {
 	FILE *out = stdout;
+
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(
 		" %1$s [-lhV]\n"
@@ -491,80 +546,71 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("Mount a filesystem.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
-	fprintf(out, _(
-	" -a, --all               mount all filesystems mentioned in fstab\n"
-	" -c, --no-canonicalize   don't canonicalize paths\n"
-	" -f, --fake              dry run; skip the mount(2) syscall\n"
-	" -F, --fork              fork off for each device (use with -a)\n"
-	" -T, --fstab <path>      alternative file to /etc/fstab\n"));
-	fprintf(out, _(
-	" -i, --internal-only     don't call the mount.<type> helpers\n"));
-	fprintf(out, _(
-	" -l, --show-labels       show also filesystem labels\n"));
-	fprintf(out, _(
-	" -m, --mkdir[=<mode>]    alias to '-o X-mount.mkdir[=<mode>]'\n"));
-	fprintf(out, _(
-	" -n, --no-mtab           don't write to /etc/mtab\n"));
-	fprintf(out, _(
-	"     --options-mode <mode>\n"
-	"                         what to do with options loaded from fstab\n"
-	"     --options-source <source>\n"
-	"                         mount options source\n"
-	"     --options-source-force\n"
-	"                         force use of options from fstab/mtab\n"));
-	fprintf(out, _(
-	" -o, --options <list>    comma-separated list of mount options\n"
-	" -O, --test-opts <list>  limit the set of filesystems (use with -a)\n"
-	" -r, --read-only         mount the filesystem read-only (same as -o ro)\n"
-	" -t, --types <list>      limit the set of filesystem types\n"));
-	fprintf(out, _(
-	"     --source <src>      explicitly specifies source (path, label, uuid)\n"
-	"     --target <target>   explicitly specifies mountpoint\n"));
-	fprintf(out, _(
-	"     --target-prefix <path>\n"
-	"                         specifies path used for all mountpoints\n"));
-	fprintf(out, _(
-	" -v, --verbose           say what is being done\n"));
-	fprintf(out, _(
-	" -w, --rw, --read-write  mount the filesystem read-write (default)\n"));
-	fprintf(out, _(
-	" -N, --namespace <ns>    perform mount in another namespace\n"));
+	fputs(_(" -a, --all               mount all filesystems mentioned in fstab\n"), out);
+	fputs(_(" -c, --no-canonicalize   don't canonicalize paths\n"), out);
+	fputs(_(" -f, --fake              dry run; skip the mount(2) syscall\n"), out);
+	fputs(_(" -F, --fork              fork off for each device (use with -a)\n"), out);
+	fputs(_(" -T, --fstab <path>      alternative file to /etc/fstab\n"), out);
+	fputs(_(" -i, --internal-only     don't call the mount.<type> helpers\n"), out);
+	fputs(_(" -l, --show-labels       show also filesystem labels\n"), out);
+	fputs(_("     --map-groups <inner>:<outer>:<count>\n"
+		"                         add the specified GID map to an ID-mapped mount\n"), out);
+	fputs(_("     --map-users <inner>:<outer>:<count>\n"
+		"                         add the specified UID map to an ID-mapped mount\n"), out);
+	fputs(_("     --map-users /proc/<pid>/ns/user\n"
+		"                         specify the user namespace for an ID-mapped mount\n"), out);
+	fputs(_(" -m, --mkdir[=<mode>]    alias to '-o X-mount.mkdir[=<mode>]'\n"), out);
+	fputs(_(" -n, --no-mtab           don't write to /etc/mtab\n"), out);
+	fputs(_("     --options-mode <mode>\n"
+		"                         what to do with options loaded from fstab\n"), out);
+	fputs(_("     --options-source <source>\n"
+		"                         mount options source\n"), out);
+	fputs(_("     --options-source-force\n"
+		"                         force use of options from fstab/mtab\n"), out);
+	fputs(_("     --onlyonce          check if filesystem is already mounted\n"), out);
+	fputs(_(" -o, --options <list>    comma-separated list of mount options\n"), out);
+	fputs(_(" -O, --test-opts <list>  limit the set of filesystems (use with -a)\n"), out);
+	fputs(_(" -r, --read-only         mount the filesystem read-only (same as -o ro)\n"), out);
+	fputs(_(" -t, --types <list>      limit the set of filesystem types\n"), out);
+	fputs(_("     --source <src>      explicitly specifies source (path, label, uuid)\n"), out);
+	fputs(_("     --target <target>   explicitly specifies mountpoint\n"), out);
+	fputs(_("     --target-prefix <path>\n"
+		"                         specifies path used for all mountpoints\n"), out);
+	fputs(_(" -v, --verbose           say what is being done\n"), out);
+	fputs(_(" -w, --rw, --read-write  mount the filesystem read-write (default)\n"), out);
+	fputs(_(" -N, --namespace <ns>    perform mount in another namespace\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(25));
+	fprintf(out, USAGE_HELP_OPTIONS(25));
 
-	fprintf(out, _(
-	"\nSource:\n"
-	" -L, --label <label>     synonym for LABEL=<label>\n"
-	" -U, --uuid <uuid>       synonym for UUID=<uuid>\n"
-	" LABEL=<label>           specifies device by filesystem label\n"
-	" UUID=<uuid>             specifies device by filesystem UUID\n"
-	" PARTLABEL=<label>       specifies device by partition label\n"
-	" PARTUUID=<uuid>         specifies device by partition UUID\n"
-	" ID=<id>                 specifies device by udev hardware ID\n"));
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Source:\n"), out);
+	fputs(_(" -L, --label <label>     synonym for LABEL=<label>\n"), out);
+	fputs(_(" -U, --uuid <uuid>       synonym for UUID=<uuid>\n"), out);
+	fputs(_(" LABEL=<label>           specifies device by filesystem label\n"), out);
+	fputs(_(" UUID=<uuid>             specifies device by filesystem UUID\n"), out);
+	fputs(_(" PARTLABEL=<label>       specifies device by partition label\n"), out);
+	fputs(_(" PARTUUID=<uuid>         specifies device by partition UUID\n"), out);
+	fputs(_(" ID=<id>                 specifies device by udev hardware ID\n"), out);
+	fputs(_(" <device>                specifies device by path\n"), out);
+	fputs(_(" <directory>             mountpoint for bind mounts (see --bind/rbind)\n"), out);
+	fputs(_(" <file>                  regular file for loopdev setup\n"), out);
 
-	fprintf(out, _(
-	" <device>                specifies device by path\n"
-	" <directory>             mountpoint for bind mounts (see --bind/rbind)\n"
-	" <file>                  regular file for loopdev setup\n"));
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Operations:\n"), out);
+	fputs(_(" -B, --bind              mount a subtree somewhere else (same as -o bind)\n"), out);
+	fputs(_(" -M, --move              move a subtree to some other place\n"), out);
+	fputs(_(" -R, --rbind             mount a subtree and all submounts somewhere else\n"), out);
+	fputs(_(" --make-shared           mark a subtree as shared\n"), out);
+	fputs(_(" --make-slave            mark a subtree as slave\n"), out);
+	fputs(_(" --make-private          mark a subtree as private\n"), out);
+	fputs(_(" --make-unbindable       mark a subtree as unbindable\n"), out);
+	fputs(_(" --make-rshared          recursively mark a whole subtree as shared\n"), out);
+	fputs(_(" --make-rslave           recursively mark a whole subtree as slave\n"), out);
+	fputs(_(" --make-rprivate         recursively mark a whole subtree as private\n"), out);
+	fputs(_(" --make-runbindable      recursively mark a whole subtree as unbindable\n"), out);
 
-	fprintf(out, _(
-	"\nOperations:\n"
-	" -B, --bind              mount a subtree somewhere else (same as -o bind)\n"
-	" -M, --move              move a subtree to some other place\n"
-	" -R, --rbind             mount a subtree and all submounts somewhere else\n"));
-	fprintf(out, _(
-	" --make-shared           mark a subtree as shared\n"
-	" --make-slave            mark a subtree as slave\n"
-	" --make-private          mark a subtree as private\n"
-	" --make-unbindable       mark a subtree as unbindable\n"));
-	fprintf(out, _(
-	" --make-rshared          recursively mark a whole subtree as shared\n"
-	" --make-rslave           recursively mark a whole subtree as slave\n"
-	" --make-rprivate         recursively mark a whole subtree as private\n"
-	" --make-runbindable      recursively mark a whole subtree as unbindable\n"));
-
-	printf(USAGE_MAN_TAIL("mount(8)"));
+	fprintf(out, USAGE_MAN_TAIL("mount(8)"));
 
 	exit(MNT_EX_SUCCESS);
 }
@@ -627,6 +673,7 @@ int main(int argc, char **argv)
 	int c, rc = MNT_EX_SUCCESS, all = 0, show_labels = 0;
 	struct libmnt_context *cxt;
 	struct libmnt_table *fstab = NULL;
+	char *idmap = NULL;
 	char *srcbuf = NULL;
 	char *types = NULL;
 	int oper = 0, is_move = 0;
@@ -642,12 +689,15 @@ int main(int argc, char **argv)
 		MOUNT_OPT_RSLAVE,
 		MOUNT_OPT_RPRIVATE,
 		MOUNT_OPT_RUNBINDABLE,
+		MOUNT_OPT_MAP_GROUPS,
+		MOUNT_OPT_MAP_USERS,
 		MOUNT_OPT_TARGET,
 		MOUNT_OPT_TARGET_PREFIX,
 		MOUNT_OPT_SOURCE,
 		MOUNT_OPT_OPTMODE,
 		MOUNT_OPT_OPTSRC,
-		MOUNT_OPT_OPTSRC_FORCE
+		MOUNT_OPT_OPTSRC_FORCE,
+		MOUNT_OPT_ONLYONCE
 	};
 
 	static const struct option longopts[] = {
@@ -679,6 +729,8 @@ int main(int argc, char **argv)
 		{ "make-rslave",      no_argument,       NULL, MOUNT_OPT_RSLAVE      },
 		{ "make-rprivate",    no_argument,       NULL, MOUNT_OPT_RPRIVATE    },
 		{ "make-runbindable", no_argument,       NULL, MOUNT_OPT_RUNBINDABLE },
+		{ "map-groups",       required_argument, NULL, MOUNT_OPT_MAP_GROUPS  },
+		{ "map-users",        required_argument, NULL, MOUNT_OPT_MAP_USERS   },
 		{ "mkdir",            optional_argument, NULL, 'm'                   },
 		{ "no-canonicalize",  no_argument,       NULL, 'c'                   },
 		{ "internal-only",    no_argument,       NULL, 'i'                   },
@@ -686,6 +738,7 @@ int main(int argc, char **argv)
 		{ "target",           required_argument, NULL, MOUNT_OPT_TARGET      },
 		{ "target-prefix",    required_argument, NULL, MOUNT_OPT_TARGET_PREFIX },
 		{ "source",           required_argument, NULL, MOUNT_OPT_SOURCE      },
+		{ "onlyonce",         no_argument,       NULL, MOUNT_OPT_ONLYONCE    },
 		{ "options-mode",     required_argument, NULL, MOUNT_OPT_OPTMODE     },
 		{ "options-source",   required_argument, NULL, MOUNT_OPT_OPTSRC      },
 		{ "options-source-force",   no_argument, NULL, MOUNT_OPT_OPTSRC_FORCE},
@@ -860,6 +913,23 @@ int main(int argc, char **argv)
 			append_option(cxt, "runbindable", NULL);
 			propa = 1;
 			break;
+		case MOUNT_OPT_MAP_GROUPS:
+		case MOUNT_OPT_MAP_USERS:
+			if (*optarg == '=')
+				optarg++;
+			if (idmap && (*idmap == '/' || *optarg == '/')) {
+				warnx(_("bad usage"));
+				errtryhelp(MNT_EX_USAGE);
+			} else if (*optarg == '/') {
+				idmap = xstrdup(optarg);
+			} else {
+				char *tmp;
+				xasprintf(&tmp, "%s%s%s%s", idmap ? idmap : "", idmap ? " " : "",
+					c == MOUNT_OPT_MAP_GROUPS ? "g:" : "u:", optarg);
+				free(idmap);
+				idmap = tmp;
+			}
+			break;
 		case MOUNT_OPT_TARGET:
 			mnt_context_disable_swapmatch(cxt, 1);
 			mnt_context_set_target(cxt, optarg);
@@ -891,7 +961,9 @@ int main(int argc, char **argv)
 		case MOUNT_OPT_OPTSRC_FORCE:
 			optmode |= MNT_OMODE_FORCE;
 			break;
-
+		case MOUNT_OPT_ONLYONCE:
+			mnt_context_enable_onlyonce(cxt, 1);
+			break;
 		case 'h':
 			mnt_free_context(cxt);
 			usage();
@@ -905,6 +977,9 @@ int main(int argc, char **argv)
 
 	argc -= optind;
 	argv += optind;
+
+	if (idmap)
+		append_option(cxt, "X-mount.idmap", idmap);
 
 	optmode |= optmode_mode | optmode_src;
 	if (optmode) {

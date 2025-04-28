@@ -9,23 +9,23 @@ Enable verbose tests and print content of failing tests output file.
  2 files changed, 12 insertions(+), 1 deletion(-)
 
 diff --git a/tests/Makemodule.am b/tests/Makemodule.am
-index 31cf70f..4001672 100644
+index 3a66f27..9843c10 100644
 --- a/tests/Makemodule.am
 +++ b/tests/Makemodule.am
 @@ -13,7 +13,7 @@ clean-local-tests:
  
  CLEAN_LOCALS += clean-local-tests
  
--TESTS_OPTIONS = --nonroot
-+TESTS_OPTIONS = --nonroot --verbose --parallel=1
+-TESTS_OPTIONS = --nonroot --show-diff
++TESTS_OPTIONS = --nonroot --show-diff --verbose --parallel=1
  TESTS_PARALLEL = --parallel
+ TESTS_COMPONENTS =
  TESTS_COMMAND = $(top_srcdir)/tests/run.sh \
- 	--srcdir=$(abs_top_srcdir) \
 diff --git a/tests/functions.sh b/tests/functions.sh
-index 5614122..56b55a2 100644
+index 1d7a425..52ca883 100644
 --- a/tests/functions.sh
 +++ b/tests/functions.sh
-@@ -148,6 +148,17 @@ function ts_failed_subtest {
+@@ -195,6 +195,17 @@ function ts_failed_subtest {
  		ts_report " $msg ($1)"
  	fi
  

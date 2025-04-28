@@ -1,0 +1,24 @@
+#!/usr/bin/expect
+
+expect_before {
+    timeout { puts "timed out, exiting with error"; exit 1 }
+}
+
+spawn login
+# Let `login` start even when things are slow
+sleep 2
+expect "login:"
+send -- "obiwan\r"
+expect "assword:"
+send -- "hellothere\r"
+expect "obiwan@"
+send -- "echo 'Hello there'\r"
+expect "Hello there"
+send -- "groups\r"
+expect "obiwan"
+# Wait for obiwan to be added to the jedi group
+sleep 4
+send -- "newgrp jedi\r"
+send -- "groups\r"
+expect "jedi obiwan"
+send -- "exit\r"

@@ -1,0 +1,8 @@
+#!/usr/bin/dh-exec
+usr/bin/lastlog2
+# begin-remove-after: released:trixie
+[linux-any] usr/lib/systemd/system/lastlog2-import.service
+# end-remove-after
+[linux-any] usr/lib/tmpfiles.d/lastlog2-tmpfiles.conf
+usr/share/bash-completion/completions/lastlog2
+<!nodoc> usr/share/man/man8/lastlog2.8

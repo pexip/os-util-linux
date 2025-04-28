@@ -1,0 +1,12 @@
+#!/bin/sh
+
+set -e
+
+if test "$1" = remove || test "$1" = disappear; then
+  for f in ctrlaltdel fsck.cramfs fsck.minix mkfs.bfs mkfs.cramfs mkfs.minix; do
+    dpkg-divert --no-rename --package util-linux-extra --divert "/sbin/$f.usr-is-merged" --remove "/sbin/$f"
+  done
+fi
+
+#DEBHELPER#
+

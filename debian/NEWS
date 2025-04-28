@@ -1,0 +1,18 @@
+util-linux (2.40.2-11) unstable; urgency=medium
+
+  * The mesg(1) and write(1) programs are no longer provided.
+    It is believed chatting between users is nowadays done using more
+    secure facilities.
+  * Please check your /root/.profile if it executes mesg(1), and if so,
+    remove that (or guard it).
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Wed, 13 Nov 2024 12:58:06 +0100
+
+util-linux (2.40.1-2) unstable; urgency=medium
+
+  * last(1) has been split off to the wtmpdb package.
+    If you find last(1) useful, please install wtmpdb and accept the default
+    PAM configuration changes from libpam-wtmpdb.
+  * lastb(1) is removed. Please see syslog/journal for failed login attempts.
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Wed, 29 May 2024 23:52:19 +0200

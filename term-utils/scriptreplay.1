@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: scriptreplay
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-03-04
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "SCRIPTREPLAY" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "SCRIPTREPLAY" "1" "2025-03-04" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,7 +31,7 @@
 scriptreplay \- play back typescripts, using timing information
 .SH "SYNOPSIS"
 .sp
-\fBscriptreplay\fP [options] [\fB\-t\fP] \fItimingfile\fP [\fItypescript\fP [\fIdivisor\fP]]
+\fBscriptreplay\fP [options] \fItimingfile\fP [\fItypescript\fP [\fIdivisor\fP]]
 .SH "DESCRIPTION"
 .sp
 This program replays a typescript, using timing information to ensure that output happens in the same rhythm as it originally appeared when the script was recorded.
@@ -40,29 +40,35 @@ The replay simply displays the information again; the programs that were run whe
 .sp
 The timing information is what \fBscript\fP(1) outputs to file specified by \fB\-\-log\-timing\fP.
 .sp
-By default, the typescript to display is assumed to be named \fItypescript\fP, but other filenames may be specified, as the second parameter or with option \fB\-\-log\-out\fP.
+By default, the \fItypescript\fP to display is assumed to be named \fBtypescript\fP,
+but other filenames may be specified, as the second parameter or with option
+\fB\-\-log\-out\fP.
 .sp
 If the third parameter or \fB\-\-divisor\fP is specified, it is used as a speed\-up multiplier. For example, a speed\-up of 2 makes \fBscriptreplay\fP go twice as fast, and a speed\-down of 0.1 makes it go ten times slower than the original session.
+.sp
+During the replay, you can interactively speed up, slow down, or pause the
+playback using the Up, Down, and Space keys.
 .SH "OPTIONS"
 .sp
 \fB\-I\fP, \fB\-\-log\-in\fP \fIfile\fP
 .RS 4
-File containing \fBscript\fP\(aqs terminal input.
+File containing \fBscript\fP\*(Aqs terminal input.
 .RE
 .sp
 \fB\-O\fP, \fB\-\-log\-out\fP \fIfile\fP
 .RS 4
-File containing \fBscript\fP\(aqs terminal output.
+File containing \fBscript\fP\*(Aqs terminal output.
 .RE
 .sp
 \fB\-B\fP, \fB\-\-log\-io\fP \fIfile\fP
 .RS 4
-File containing \fBscript\fP\(aqs terminal output and input.
+File containing \fBscript\fP\*(Aqs terminal output and input.
 .RE
 .sp
 \fB\-t\fP, \fB\-\-timing\fP \fIfile\fP
 .RS 4
-File containing \fBscript\fP\(aqs timing output. This option overrides old\-style arguments.
+File containing \fBscript\fP\*(Aqs timing output.
+This option replaces the \fItimingfile\fP positional argument.
 .RE
 .sp
 \fB\-T\fP, \fB\-\-log\-timing\fP \fIfile\fP
@@ -72,12 +78,15 @@ This is an alias for \fB\-t\fP, maintained for compatibility with \fBscript\fP(1
 .sp
 \fB\-s\fP, \fB\-\-typescript\fP \fIfile\fP
 .RS 4
-File containing \fBscript\fP\(aqs terminal output. Deprecated alias to \fB\-\-log\-out\fP. This option overrides old\-style arguments.
+Deprecated alias of \fB\-\-log\-out\fP.
 .RE
 .sp
 \fB\-c\fP, \fB\-\-cr\-mode\fP \fImode\fP
 .RS 4
-Specifies how to use the CR (0x0D, carriage return) character from log files. The default mode is \fIauto\fP, in this case CR is replaced with line break for stdin log, because otherwise \fBscriptreplay\fP would overwrite the same line. The other modes are \fInever\fP and \fIalways\fP.
+Specifies how to handle the CR (carriage return, 0x0D) character from log
+files. The default mode is \fBauto\fP, in which case CR is replaced with a
+line break for the stdin log, because otherwise \fBscriptreplay\fP would
+overwrite the same line. The other modes are \fBnever\fP and \fBalways\fP.
 .RE
 .sp
 \fB\-d\fP, \fB\-\-divisor\fP \fInumber\fP
@@ -92,12 +101,17 @@ Set the maximum delay between updates to \fInumber\fP of seconds. The argument i
 .sp
 \fB\-\-summary\fP
 .RS 4
-Display details about the session recorded in the specified timing file and exit. The session has to be recorded using \fIadvanced\fP format (see \fBscript\fP(1) option \fB\-\-logging\-format\fP for more details).
+Display details about the session recorded in the specified timing file and
+exit. The session must have been recorded using the \fBadvanced\fP format (see
+\fBscript\fP(1) option \fB\-\-logging\-format\fP for more details).
 .RE
 .sp
 \fB\-x\fP, \fB\-\-stream\fP \fItype\fP
 .RS 4
-Forces \fBscriptreplay\fP to print only the specified stream. The supported stream types are \fIin\fP, \fIout\fP, \fIsignal\fP, or \fIinfo\fP. This option is recommended for multi\-stream logs (e.g., \fB\-\-log\-io\fP) in order to print only specified data.
+Forces \fBscriptreplay\fP to print only the specified stream. The supported stream
+types are \fBin\fP, \fBout\fP, \fBsignal\fP, and \fBinfo\fP. This option is recommended for
+multi\-stream logs (created with \fB\-\-log\-io\fP) in order to print only the desired
+data.
 .RE
 .sp
 \fB\-h\fP, \fB\-\-help\fP
@@ -107,7 +121,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "EXAMPLES"
 .sp
@@ -124,6 +138,42 @@ Script done, file is script.out
 .fam
 .fi
 .if n .RE
+.SH "KEY BINDINGS"
+.sp
+The following keys control the playback of the script:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBSpace\fP: Toggles pause and unpause. Press this key to pause the playback, and press it again to resume.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBUp Arrow\fP: Increases the playback speed. Each press of this key will make the script replay faster by x0.1.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBDown Arrow\fP: Decreases the playback speed. Each press of this key will slow down the script replay by x0.1.
+.RE
 .SH "AUTHORS"
 .sp
 The original \fBscriptreplay\fP program was written by \c
@@ -138,6 +188,8 @@ Copyright © 2008 James Youngman
 .sp
 Copyright © 2008\-2019 Karel Zak
 .sp
+Copyright © 2024 Jonathan Ketchker
+.sp
 This is free software; see the source for copying conditions. There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 .sp
 Released under the GNU General Public License version 2 or later.
@@ -147,8 +199,8 @@ Released under the GNU General Public License version 2 or later.
 \fBscriptlive\fP(1)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBscriptreplay\fP command is part of the util\-linux package which can be downloaded from \c

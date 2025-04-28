@@ -1,4 +1,14 @@
 /*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Copyright (C) 2007 Bernhard Walle <bwalle@suse.de>
+ * Copyright (C) 2007-2023 Karel Zak <kzak@redhat.com>
+ *
  * rtcwake -- enter a system sleep state until specified wakeup time.
  *
  * This uses cross-platform Linux interfaces to enter a system sleep state,
@@ -18,7 +28,6 @@
  * RTC uses a local timezone instead (maybe you dual-boot MS-Windows).
  * That flag should not be needed on systems with adjtime support.
  */
-
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
@@ -66,7 +75,7 @@ enum rtc_modes {	/* manual page --mode option explains these. */
 
 };
 
-static const char *rtcwake_mode_string[] = {
+static const char *const rtcwake_mode_string[] = {
 	[OFF_MODE] = "off",
 	[NO_MODE] = "no",
 	[ON_MODE] = "on",
@@ -87,8 +96,8 @@ struct rtcwake_control {
 	enum clock_modes clock_mode;	/* hwclock timezone */
 	time_t sys_time;		/* system time */
 	time_t rtc_time;		/* hardware time */
-	unsigned int verbose:1,		/* verbose messaging */
-		     dryrun:1;		/* do not set alarm, suspend system, etc */
+	bool	verbose,		/* verbose messaging */
+		dryrun;			/* do not set alarm, suspend system, etc */
 };
 
 static void __attribute__((__noreturn__)) usage(void)
@@ -118,8 +127,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -v, --verbose            verbose messages\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(26));
-	printf(USAGE_MAN_TAIL("rtcwake(8)"));
+	fprintf(out, USAGE_HELP_OPTIONS(26));
+	fprintf(out, USAGE_MAN_TAIL("rtcwake(8)"));
 	exit(EXIT_SUCCESS);
 }
 

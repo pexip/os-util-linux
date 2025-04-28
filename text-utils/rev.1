@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: rev
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-03-17
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "REV" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "REV" "1" "2025-03-17" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -39,6 +39,11 @@ The \fBrev\fP utility copies the specified files to standard output, reversing t
 This utility is a line\-oriented tool and it uses in\-memory allocated buffer for a whole wide\-char line. If the input file is huge and without line breaks then allocating the memory for the file may be unsuccessful.
 .SH "OPTIONS"
 .sp
+\fB\-0\fP, \fB\-\-zero\fP
+.RS 4
+\fIZero termination\fP. Use the byte \*(Aq\(rs0\*(Aq as line separator.
+.RE
+.sp
 \fB\-h\fP, \fB\-\-help\fP
 .RS 4
 Display help text and exit.
@@ -46,15 +51,15 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "SEE ALSO"
 .sp
 \fBtac\fP(1)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBrev\fP command is part of the util\-linux package which can be downloaded from \c

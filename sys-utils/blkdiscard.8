@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: blkdiscard
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "BLKDISCARD" "8" "2022-05-11" "util\-linux 2.38.1" "System Administration"
+.TH "BLKDISCARD" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -41,6 +41,8 @@ By default, \fBblkdiscard\fP will discard all blocks on the device. Options may 
 The \fIdevice\fP argument is the pathname of the block device.
 .sp
 \fBWARNING: All data in the discarded region on the device will be lost!\fP
+.sp
+Since util\-linux v2.41, \fBfdisk\fP has the ability to discard sectors on both partitions and unpartitioned areas using the \*(AqT\*(Aq command. Additionally, \fBsfdisk\fP has the option \-\-discard\-free to discard unpartitioned areas.
 .SH "OPTIONS"
 .sp
 The \fIoffset\fP and \fIlength\fP arguments may be followed by the multiplicative suffixes KiB (=1024), MiB (=1024*1024), and so on for GiB, TiB, PiB, EiB, ZiB and YiB (the "iB" is optional, e.g., "K" has the same meaning as "KiB") or the suffixes KB (=1000), MB (=1000*1000), and so on for GB, TB, PB, EB, ZB and YB.
@@ -65,6 +67,11 @@ The number of bytes to discard (counting from the starting point). The provided 
 The number of bytes to discard within one iteration. The default is to discard all by one ioctl call.
 .RE
 .sp
+\fB\-q\fP, \fB\-\-quiet\fP
+.RS 4
+Suppress warning messages.
+.RE
+.sp
 \fB\-s\fP, \fB\-\-secure\fP
 .RS 4
 Perform a secure discard. A secure discard is the same as a regular discard except that all copies of the discarded blocks that were possibly created by garbage collection must also be erased. This requires support from the device.
@@ -87,18 +94,37 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
+.RE
+.SH "EXIT STATUS"
+.sp
+\fBblkdiscard\fP has the following exit status values:
+.sp
+\fB0\fP
+.RS 4
+success
+.RE
+.sp
+\fB1\fP
+.RS 4
+failure; incorrect invocation, permissions or any other generic error
+.RE
+.sp
+\fB2\fP
+.RS 4
+failure; since v2.39, the device does not support discard operation
 .RE
 .SH "AUTHORS"
 .sp
-.MTO "lczerner\(atredhat.com" "Lukas Czerner" ""
+.MTO "lczerner\(atredhat.com" "Lukas Czerner" ","
+.MTO "kzak\(atredhat.com" "Karel Zak" ""
 .SH "SEE ALSO"
 .sp
 \fBfstrim\fP(8)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBblkdiscard\fP command is part of the util\-linux package which can be downloaded from \c

@@ -32,14 +32,14 @@ The environment variable *$TERM* will be preserved, if it exists, else it will b
 
 The environment variables defined by PAM are always preserved.
 
-Then the user's shell is started. If no shell is specified for the user in _/etc/passwd_, then _/bin/sh_ is used. If there is no home directory specified in _/etc/passwd_, then _/_ is used, followed by _.hushlogin_ check as described below.
+Then the user's shell is started. If no shell is specified for the user in _/etc/passwd_, then _/bin/sh_ is used. If the specified shell contains a space, it is treated as a shell script. If there is no home directory specified in _/etc/passwd_, then _/_ is used, followed by _.hushlogin_ check as described below.
 
 If the file _.hushlogin_ exists, then a "quiet" login is performed. This disables the checking of mail and the printing of the last login time and message of the day. Otherwise, if _/var/log/lastlog_ exists, the last login time is printed, and the current login is recorded.
 
 == OPTIONS
 
 *-p*::
-Used by *getty*(8) to tell *login* to preserve the environment.
+Used by *getty*(8) to tell *login* to preserve the environment. See also *LOGIN_ENV_SAFELIST* config file item.
 
 *-f*::
 Used to skip a login authentication. This option is usually used by the *getty*(8) autologin feature.
@@ -71,6 +71,10 @@ Note that *login* does not implement any filenames overriding behavior like pam_
 
 Forces *login* to stop display content specified by *MOTD_FILE* after the first accessible item in the list. Note that a directory is one item in this case. This option allows *login* semantics to be configured to be more compatible with pam_motd. The default value is _no_.
 
+*LOGIN_ENV_SAFELIST* (string)::
+
+Forces *login* to protect the specified environment variables if *-p* is not used. The string value is a comma-separated list of variable names. For example: "LANG,LC_MESSAGES,LC_COLLATE".  The safelist is ignored for the environment variables HOME, SHELL and USER.
+
 *LOGIN_PLAIN_PROMPT* (boolean)::
 
 Tell *login* that printing the hostname should be suppressed in the login: prompt. This is an alternative to the *-H* command line option. The default value is _no_.
@@ -93,13 +97,13 @@ Delay in seconds before being allowed another three tries after a login failure.
 
 *TTYPERM* (string)::
 
-The terminal permissions. The default value is _0600_ or _0620_ if tty group is used.
+The terminal permissions. The default value is _0600_ or _0620_ if tty group is used. See also *mesg*(1).
 
 *TTYGROUP* (string)::
 
 The login tty will be owned by the *TTYGROUP*. The default value is _tty_. If the *TTYGROUP* does not exist, then the ownership of the terminal is set to the user's primary group.
 +
-The *TTYGROUP* can be either the name of a group or a numeric group identifier.
+The *TTYGROUP* can be either the name of a group or a numeric group identifier. See also *mesg*(1).
 
 *HUSHLOGIN_FILE* (string)::
 
@@ -147,6 +151,14 @@ _/etc/pam.d/login_,
 _/etc/pam.d/remote_,
 _/etc/hushlogins_,
 _$HOME/.hushlogin_
+
+== CREDENTIALS
+
+*login* supports configuration via systemd credentials (see https://systemd.io/CREDENTIALS/). *login* reads the following systemd credentials:
+
+*login.noauth* (boolean)::
+
+If set, configures *login* to skip login authentication, similarly to the *-f* option.
 
 == BUGS
 

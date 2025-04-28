@@ -18,10 +18,10 @@
 int get_boot_time(struct timeval *boot_time)
 {
 #ifdef CLOCK_BOOTTIME
-	struct timespec hires_uptime;
-	struct timeval lores_uptime;
+	struct timespec hires_uptime = { 0 };
+	struct timeval lores_uptime = { 0 };
 #endif
-	struct timeval now;
+	struct timeval now = { 0 };
 #ifdef HAVE_SYSINFO
 	struct sysinfo info;
 #endif
@@ -48,14 +48,14 @@ int get_boot_time(struct timeval *boot_time)
 #endif
 }
 
-time_t get_suspended_time(void)
+usec_t get_suspended_time(void)
 {
 #if defined(CLOCK_BOOTTIME) && defined(CLOCK_MONOTONIC)
 	struct timespec boot, mono;
 
 	if (clock_gettime(CLOCK_BOOTTIME, &boot) == 0 &&
 	    clock_gettime(CLOCK_MONOTONIC, &mono) == 0)
-		return boot.tv_sec - mono.tv_sec;
+		return timespec_to_usec(&boot) - timespec_to_usec(&mono);
 #endif
 	return 0;
 }

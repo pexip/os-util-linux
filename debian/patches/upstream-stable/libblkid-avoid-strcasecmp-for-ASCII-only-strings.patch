@@ -1,0 +1,56 @@
+From: Karel Zak <kzak@redhat.com>
+Date: Tue, 1 Apr 2025 17:45:01 +0200
+Subject: libblkid: avoid strcasecmp() for ASCII-only strings
+
+Use cctype.h for locale-independent string comparison and to avoid
+tricky string conversions like in tr_TR locales.
+
+Signed-off-by: Karel Zak <kzak@redhat.com>
+(cherry picked from commit 7eb663503c77d739f2cc80d78ee9d380b11b6eb9)
+---
+ libblkid/src/config.c                | 3 ++-
+ libblkid/src/partitions/partitions.c | 3 ++-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/libblkid/src/config.c b/libblkid/src/config.c
+index dcc18f2..934d28d 100644
+--- a/libblkid/src/config.c
++++ b/libblkid/src/config.c
+@@ -29,6 +29,7 @@
+ 
+ #include "blkidP.h"
+ #include "env.h"
++#include "cctype.h"
+ 
+ static int parse_evaluate(struct blkid_config *conf, char *s)
+ {
+@@ -94,7 +95,7 @@ static int parse_next(FILE *fd, struct blkid_config *conf)
+ 
+ 	if (!strncmp(s, "SEND_UEVENT=", 12)) {
+ 		s += 12;
+-		if (*s && !strcasecmp(s, "yes"))
++		if (*s && !c_strcasecmp(s, "yes"))
+ 			conf->uevent = TRUE;
+ 		else if (*s)
+ 			conf->uevent = FALSE;
+diff --git a/libblkid/src/partitions/partitions.c b/libblkid/src/partitions/partitions.c
+index 07a5d1a..9df813c 100644
+--- a/libblkid/src/partitions/partitions.c
++++ b/libblkid/src/partitions/partitions.c
+@@ -23,6 +23,7 @@
+ #include "partitions.h"
+ #include "sysfs.h"
+ #include "strutils.h"
++#include "cctype.h"
+ 
+ /**
+  * SECTION: partitions
+@@ -1044,7 +1045,7 @@ blkid_partition blkid_partlist_devno_to_partition(blkid_partlist ls, dev_t devno
+ 			tmp = uuid;
+ 			prefix = uuid ? strsep(&tmp, "-") : NULL;
+ 
+-			if (prefix && strncasecmp(prefix, "part", 4) == 0) {
++			if (prefix && c_strncasecmp(prefix, "part", 4) == 0) {
+ 				char *end = NULL;
+ 
+ 				errno = 0;

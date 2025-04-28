@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: ipcrm
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "IPCRM" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "IPCRM" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -36,18 +36,18 @@ ipcrm \- remove certain IPC resources
 \fBipcrm\fP [\fBshm\fP|\fBmsg\fP|\fBsem\fP] \fIID\fP ...
 .SH "DESCRIPTION"
 .sp
-\fBipcrm\fP removes System V inter\-process communication (IPC) objects and associated data structures from the system. In order to delete such objects, you must be superuser, or the creator or owner of the object.
+\fBipcrm\fP removes POSIX and System V inter\-process communication (IPC) objects and associated data structures from the system. In order to delete such objects, you must be superuser, or the creator or owner of the object.
 .sp
-System V IPC objects are of three types: shared memory, message queues, and semaphores. Deletion of a message queue or semaphore object is immediate (regardless of whether any process still holds an IPC identifier for the object). A shared memory object is only removed after all currently attached processes have detached (\fBshmdt\fP(2)) the object from their virtual address space.
+POSIX and System V IPC objects are of three types: shared memory, message queues, and semaphores. Deletion of a message queue or semaphore object is immediate (regardless of whether any process still holds an IPC identifier for the object). A shared memory object is only removed after all currently attached processes have detached (\fBshmdt\fP(2)) the object from their virtual address space.
 .sp
 Two syntax styles are supported. The old Linux historical syntax specifies a three\-letter keyword indicating which class of object is to be deleted, followed by one or more IPC identifiers for objects of this type.
 .sp
-The SUS\-compliant syntax allows the specification of zero or more objects of all three types in a single command line, with objects specified either by key or by identifier (see below). Both keys and identifiers may be specified in decimal, hexadecimal (specified with an initial \(aq0x\(aq or \(aq0X\(aq), or octal (specified with an initial \(aq0\(aq).
+The SUS\-compliant syntax allows the specification of zero or more objects of all three types in a single command line, with objects specified either by key or by identifier (see below). Both keys and identifiers may be specified in decimal, hexadecimal (specified with an initial \*(Aq0x\*(Aq or \*(Aq0X\*(Aq), or octal (specified with an initial \*(Aq0\*(Aq).
 .sp
-The details of the removes are described in \fBshmctl\fP(2), \fBmsgctl\fP(2), and \fBsemctl\fP(2). The identifiers and keys can be found by using \fBipcs\fP(1).
+The details of the removes are described in \fBshmctl\fP(2), \fBshm_unlink\fP(3), \fBmsgctl\fP(2), \fBmq_unlink\fP(3), \fBsemctl\fP(2), and \fBsem_unlink\fP(3). The identifiers and keys can be found by using \fBlsipc\fP(1) or \fBipcs\fP(1).
 .SH "OPTIONS"
 .sp
-\fB\-a\fP, \fB\-\-all\fP [\fBshm\fP] [\fBmsg\fP] [\fBsem\fP]
+\fB\-a\fP, \fB\-\-all\fP [\fBshm\fP] [\fBpshm\fP] [\fBmsg\fP] [\fBpmsg\fP] [\fBsem\fP] [\fBpsem\fP]
 .RS 4
 Remove all resources. When an option argument is provided, the removal is performed only for the specified resource types.
 .sp
@@ -64,6 +64,11 @@ Remove the shared memory segment created with \fIshmkey\fP after the last detach
 Remove the shared memory segment identified by \fIshmid\fP after the last detach is performed.
 .RE
 .sp
+\fB\-x\fP, \fB\-\-posix\-shmem\fP \fIname\fP
+.RS 4
+Remove the POSIX shared memory segment created with \fIname\fP.
+.RE
+.sp
 \fB\-Q\fP, \fB\-\-queue\-key\fP \fImsgkey\fP
 .RS 4
 Remove the message queue created with \fImsgkey\fP.
@@ -72,6 +77,11 @@ Remove the message queue created with \fImsgkey\fP.
 \fB\-q\fP, \fB\-\-queue\-id\fP \fImsgid\fP
 .RS 4
 Remove the message queue identified by \fImsgid\fP.
+.RE
+.sp
+\fB\-y\fP, \fB\-\-posix\-mqueue\fP \fIname\fP
+.RS 4
+Remove the POSIX message queue created with \fIname\fP.
 .RE
 .sp
 \fB\-S\fP, \fB\-\-semaphore\-key\fP \fIsemkey\fP
@@ -84,6 +94,11 @@ Remove the semaphore created with \fIsemkey\fP.
 Remove the semaphore identified by \fIsemid\fP.
 .RE
 .sp
+\fB\-z\fP, \fB\-\-posix\-semaphore\fP \fIname\fP
+.RS 4
+Remove the POSIX named semaphore created with \fIname\fP.
+.RE
+.sp
 \fB\-h\fP, \fB\-\-help\fP
 .RS 4
 Display help text and exit.
@@ -91,7 +106,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "NOTES"
 .sp
@@ -100,19 +115,23 @@ In its first Linux implementation, \fBipcrm\fP used the deprecated syntax shown 
 .sp
 \fBipcmk\fP(1),
 \fBipcs\fP(1),
+\fBlsipc\fP(1),
 \fBmsgctl\fP(2),
+\fBmq_unlink\fP(3),
 \fBmsgget\fP(2),
 \fBsemctl\fP(2),
 \fBsemget\fP(2),
+\fBsem_unlink\fP(3),
 \fBshmctl\fP(2),
 \fBshmdt\fP(2),
 \fBshmget\fP(2),
+\fBshm_unlink\fP(3),
 \fBftok\fP(3),
 \fBsysvipc\fP(7)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBipcrm\fP command is part of the util\-linux package which can be downloaded from \c

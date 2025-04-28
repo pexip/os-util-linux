@@ -1,3 +1,7 @@
+/*
+ * No copyright is claimed.  This code is in the public domain; do with
+ * it what you wish.
+ */
 #ifndef UTIL_LINUX_PATH_H
 #define UTIL_LINUX_PATH_H
 
@@ -49,6 +53,9 @@ char *ul_path_get_abspath(struct path_cxt *pc, char *buf, size_t bufsz, const ch
 				__attribute__ ((__format__ (__printf__, 4, 5)));
 
 int ul_path_stat(struct path_cxt *pc, struct stat *sb, int flags, const char *path);
+int ul_path_vstatf(struct path_cxt *pc, struct stat *sb, int flags, const char *path, va_list ap);
+int ul_path_statf(struct path_cxt *pc, struct stat *sb, int flags, const char *path, ...);
+
 int ul_path_access(struct path_cxt *pc, int mode, const char *path);
 int ul_path_accessf(struct path_cxt *pc, int mode, const char *path, ...)
 				__attribute__ ((__format__ (__printf__, 3, 4)));
@@ -88,6 +95,8 @@ int ul_path_readf_string(struct path_cxt *pc, char **str, const char *path, ...)
 int ul_path_read_buffer(struct path_cxt *pc, char *buf, size_t bufsz, const char *path);
 int ul_path_readf_buffer(struct path_cxt *pc, char *buf, size_t bufsz, const char *path, ...)
 				__attribute__ ((__format__ (__printf__, 4, 5)));
+int ul_path_vreadf_buffer(struct path_cxt *pc, char *buf, size_t bufsz, const char *path, va_list ap)
+				__attribute__ ((__format__ (__printf__, 4, 0)));
 
 int ul_path_scanf(struct path_cxt *pc, const char *path, const char *fmt, ...)
 				__attribute__ ((__format__ (__scanf__, 3, 4)));
@@ -129,8 +138,6 @@ int ul_path_countf_dirents(struct path_cxt *pc, const char *path, ...)
 				__attribute__ ((__format__ (__printf__, 2, 3)));
 
 int ul_path_next_dirent(struct path_cxt *pc, DIR **sub, const char *dirname, struct dirent **d);
-
-FILE *ul_prefix_fopen(const char *prefix, const char *path, const char *mode);
 
 
 #ifdef HAVE_CPU_SET_T

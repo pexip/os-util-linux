@@ -341,6 +341,10 @@ int append_console(struct list_head *consoles, const char * const name)
 	tail->id = last ? last->id + 1 : 0;
 	tail->pid = -1;
 	memset(&tail->tio, 0, sizeof(tail->tio));
+#ifdef HAVE_LIBSELINUX
+	tail->reset_tty_context = NULL;
+	tail->user_tty_context = NULL;
+#endif
 
 	return 0;
 }
@@ -476,7 +480,7 @@ static int detect_consoles_from_cmdline(struct list_head *consoles)
 		goto done;
 	}
 
-	words= cmdline;
+	words = cmdline;
 	dir = opendir("/dev");
 	if (!dir)
 		goto done;

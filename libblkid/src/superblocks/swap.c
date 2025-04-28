@@ -36,7 +36,27 @@ struct swap_header_v1_2 {
 #define TOI_MAGIC_STRING	"\xed\xc3\x02\xe9\x98\x56\xe5\x0c"
 #define TOI_MAGIC_STRLEN	(sizeof(TOI_MAGIC_STRING) - 1)
 
-static int swap_set_info(blkid_probe pr, const char *version)
+static void swap_set_info_swap1(blkid_probe pr,
+		const struct blkid_idmag *mag,
+		const struct swap_header_v1_2 *hdr)
+{
+	enum blkid_endianness endianness = le32_to_cpu(hdr->version) == 1 ?
+		BLKID_ENDIANNESS_LITTLE : BLKID_ENDIANNESS_BIG;
+	blkid_probe_set_fsendianness(pr, endianness);
+
+	uint32_t pagesize = mag->sboff + mag->len;
+	blkid_probe_set_fsblocksize(pr, pagesize);
+
+	/* note that "lastpage" in swap header means number of pages used by
+	 * swap, see mkswap */
+	uint32_t lastpage = endianness == BLKID_ENDIANNESS_LITTLE ?
+		le32_to_cpu(hdr->lastpage) : be32_to_cpu(hdr->lastpage);
+	blkid_probe_set_fssize(pr, (uint64_t) pagesize * lastpage);
+	blkid_probe_set_fslastblock(pr, lastpage + 1);
+}
+
+static int swap_set_info(blkid_probe pr, const struct blkid_idmag *mag,
+		const char *version)
 {
 	struct swap_header_v1_2 *hdr;
 
@@ -56,6 +76,7 @@ static int swap_set_info(blkid_probe pr, const char *version)
 			DBG(LOWPROBE, ul_debug("not set last swap page"));
 			return 1;
 		}
+		swap_set_info_swap1(pr, mag, hdr);
 	}
 
 	/* arbitrary sanity check.. is there any garbage down there? */
@@ -73,7 +94,7 @@ static int swap_set_info(blkid_probe pr, const char *version)
 
 static int probe_swap(blkid_probe pr, const struct blkid_idmag *mag)
 {
-	unsigned char *buf;
+	const unsigned char *buf;
 
 	if (!mag)
 		return 1;
@@ -94,7 +115,7 @@ static int probe_swap(blkid_probe pr, const struct blkid_idmag *mag)
 	}
 
 	if (!memcmp(mag->magic, "SWAPSPACE2", mag->len))
-		return swap_set_info(pr, "1");
+		return swap_set_info(pr, mag, "1");
 
 	return 1;
 }
@@ -104,15 +125,15 @@ static int probe_swsuspend(blkid_probe pr, const struct blkid_idmag *mag)
 	if (!mag)
 		return 1;
 	if (!memcmp(mag->magic, "S1SUSPEND", mag->len))
-		return swap_set_info(pr, "s1suspend");
+		return swap_set_info(pr, mag, "s1suspend");
 	if (!memcmp(mag->magic, "S2SUSPEND", mag->len))
-		return swap_set_info(pr, "s2suspend");
+		return swap_set_info(pr, mag, "s2suspend");
 	if (!memcmp(mag->magic, "ULSUSPEND", mag->len))
-		return swap_set_info(pr, "ulsuspend");
+		return swap_set_info(pr, mag, "ulsuspend");
 	if (!memcmp(mag->magic, TOI_MAGIC_STRING, TOI_MAGIC_STRLEN))
-		return swap_set_info(pr, "tuxonice");
+		return swap_set_info(pr, mag, "tuxonice");
 	if (!memcmp(mag->magic, "LINHIB0001", mag->len))
-		return swap_set_info(pr, "linhib0001");
+		return swap_set_info(pr, mag, "linhib0001");
 
 	return 1;	/* no signature detected */
 }

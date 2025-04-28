@@ -1,0 +1,10 @@
+#!/usr/bin/dh-exec
+[linux-any] bin/login usr/bin
+[linux-any] sbin/nologin usr/sbin
+[linux-any] usr/bin/newgrp
+[linux-any] <!nodoc> usr/share/man/*/man1/login.1
+[linux-any] <!nodoc> usr/share/man/*/man1/newgrp.1
+[linux-any] <!nodoc> usr/share/man/*/man8/nologin.8
+[linux-any] <!nodoc> usr/share/man/man1/login.1
+[linux-any] <!nodoc> usr/share/man/man1/newgrp.1
+[linux-any] <!nodoc> usr/share/man/man8/nologin.8

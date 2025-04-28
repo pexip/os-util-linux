@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: uuidgen
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-03-17
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "UUIDGEN" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "UUIDGEN" "1" "2025-03-17" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -51,16 +51,6 @@ Generate a random\-based UUID. This method creates a UUID consisting mostly of r
 Generate a time\-based UUID. This method creates a UUID based on the system clock plus the system\(cqs ethernet hardware address, if present.
 .RE
 .sp
-\fB\-h\fP, \fB\-\-help\fP
-.RS 4
-Display help text and exit.
-.RE
-.sp
-\fB\-V\fP, \fB\-\-version\fP
-.RS 4
-Print version and exit.
-.RE
-.sp
 \fB\-m\fP, \fB\-\-md5\fP
 .RS 4
 Use MD5 as the hash algorithm.
@@ -71,9 +61,19 @@ Use MD5 as the hash algorithm.
 Use SHA1 as the hash algorithm.
 .RE
 .sp
+\fB\-6\fP, \fB\-\-time\-v6\fP
+.RS 4
+Generate a time\-based UUID. This method creates a UUID based on the system clock plus and is lexicographically sortable according to the contained timestamp.
+.RE
+.sp
+\fB\-7\fP, \fB\-\-time\-v7\fP
+.RS 4
+Generate a time\-based UUID. This method creates a UUID based on the system clock plus and is lexicographically sortable according to the contained timestamp.
+.RE
+.sp
 \fB\-n\fP, \fB\-\-namespace\fP \fInamespace\fP
 .RS 4
-Generate the hash with the \fInamespace\fP prefix. The \fInamespace\fP is UUID, or \(aq@ns\(aq where "ns" is well\-known predefined UUID addressed by namespace name (see above).
+Generate the hash with the \fInamespace\fP prefix. The \fInamespace\fP is UUID, or \*(Aq@ns\*(Aq where "ns" is well\-known predefined UUID addressed by namespace name (see above).
 .RE
 .sp
 \fB\-N\fP, \fB\-\-name\fP \fIname\fP
@@ -81,9 +81,24 @@ Generate the hash with the \fInamespace\fP prefix. The \fInamespace\fP is UUID, 
 Generate the hash of the \fIname\fP.
 .RE
 .sp
+\fB\-C\fP, \fB\-\-count\fP \fInum\fP
+.RS 4
+Generate multiple UUIDs using the enhanced capability of the libuuid to cache time\-based UUIDs, thus resulting in improved performance. However, this holds no significance for other UUID types.
+.RE
+.sp
 \fB\-x\fP, \fB\-\-hex\fP
 .RS 4
 Interpret name \fIname\fP as a hexadecimal string.
+.RE
+.sp
+\fB\-h\fP, \fB\-\-help\fP
+.RS 4
+Display help text and exit.
+.RE
+.sp
+\fB\-V\fP, \fB\-\-version\fP
+.RS 4
+Display version and exit.
 .RE
 .SH "CONFORMING TO"
 .sp
@@ -98,11 +113,13 @@ uuidgen \-\-sha1 \-\-namespace @dns \-\-name "www.example.com"
 .sp
 \fBuuidparse\fP(1),
 \fBlibuuid\fP(3),
-.URL "https://tools.ietf.org/html/rfc4122" "RFC 4122" ""
+\c
+.URL "https://tools.ietf.org/html/rfc4122" "RFC 4122"
+.URL "https://tools.ietf.org/html/rfcXXXX" "RFC XXXX" ""
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBuuidgen\fP command is part of the util\-linux package which can be downloaded from \c

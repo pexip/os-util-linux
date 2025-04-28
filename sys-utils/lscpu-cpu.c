@@ -1,3 +1,13 @@
+/*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Copyright (C) 2020 Karel Zak <kzak@redhat.com>
+ */
 #include "lscpu.h"
 
 struct lscpu_cpu *lscpu_new_cpu(int id)
@@ -10,7 +20,7 @@ struct lscpu_cpu *lscpu_new_cpu(int id)
 	cpu->coreid = -1;
 	cpu->socketid = -1;
 	cpu->bookid = -1;
-	cpu->bookid = -1;
+	cpu->drawerid = -1;
 	cpu->address = -1;
 	cpu->configured = -1;
 
@@ -66,11 +76,11 @@ int lscpu_cpu_set_type(struct lscpu_cpu *cpu, struct lscpu_cputype *type)
 	if (cpu->type == type)
 		return 0;
 
+	DBG(CPU, ul_debugobj(cpu, " type %p -> %p", cpu->type, type));
 	lscpu_unref_cputype(cpu->type);
 	cpu->type = type;
 	lscpu_ref_cputype(type);
 
-	DBG(CPU, ul_debugobj(cpu, "cputype set to %s", type ? type->vendor : NULL));
 	return 0;
 }
 

@@ -1,4 +1,12 @@
 /*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ *
  * partx: tell the kernel about your disk's partitions
  * [This is not an fdisk - adding and removing partitions
  * is not a change of the disk, but just telling the kernel
@@ -10,7 +18,6 @@
  *      Rewritten to use libblkid for util-linux
  *      based on ideas from Karel Zak <kzak@redhat.com>
  */
-
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -75,14 +82,14 @@ enum {
 
 /* column names */
 struct colinfo {
-	const char	*name;	/* header */
-	double		whint;	/* width hint (N < 1 is in percent of termwidth) */
-	int		flags;	/* SCOLS_FL_* */
-	const char      *help;
+	const char * const	name;	/* header */
+	double			whint;	/* width hint (N < 1 is in percent of termwidth) */
+	int			flags;	/* SCOLS_FL_* */
+	const char		*help;
 };
 
 /* columns descriptions */
-static struct colinfo infos[] = {
+static const struct colinfo infos[] = {
 	[COL_PARTNO]   = { "NR",    0.25, SCOLS_FL_RIGHT, N_("partition number") },
 	[COL_START]    = { "START",   0.30, SCOLS_FL_RIGHT, N_("start of the partition in sectors") },
 	[COL_END]      = { "END",     0.30, SCOLS_FL_RIGHT, N_("end of the partition in sectors") },
@@ -141,7 +148,7 @@ static inline int get_column_id(int num)
 	return columns[num];
 }
 
-static inline struct colinfo *get_column_info(int num)
+static inline const struct colinfo *get_column_info(int num)
 {
 	return &infos[ get_column_id(num) ];
 }
@@ -674,7 +681,7 @@ static int show_parts(blkid_partlist ls, int scols_flags, int lower, int upper)
 	scols_table_enable_noheadings(table, !!(scols_flags & PARTX_NOHEADINGS));
 
 	for (i = 0; (size_t)i < ncolumns; i++) {
-		struct colinfo *col = get_column_info(i);
+		const struct colinfo *col = get_column_info(i);
 
 		if (!scols_table_new_column(table, col->name, col->whint, col->flags)) {
 			warnx(_("failed to allocate output column"));
@@ -776,13 +783,13 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -v, --verbose        verbose mode\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(22));
+	fprintf(out, USAGE_HELP_OPTIONS(22));
 
 	fputs(USAGE_COLUMNS, out);
 	for (i = 0; i < NCOLS; i++)
 		fprintf(out, " %10s  %s\n", infos[i].name, _(infos[i].help));
 
-	printf(USAGE_MAN_TAIL("partx(8)"));
+	fprintf(out, USAGE_MAN_TAIL("partx(8)"));
 
 	exit(EXIT_SUCCESS);
 }

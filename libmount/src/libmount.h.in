@@ -31,6 +31,7 @@ extern "C" {
 #include <stdio.h>
 #include <mntent.h>
 #include <sys/types.h>
+#include <stdint.h>
 
 /* Make sure libc MS_* definitions are used by default. Note that MS_* flags
  * may be already defined by linux/fs.h or another file -- in this case we
@@ -55,7 +56,7 @@ struct libmnt_cache;
 /**
  * libmnt_lock:
  *
- * Stores information about the locked file (e.g. /etc/mtab)
+ * Stores information about the locked file
  */
 struct libmnt_lock;
 
@@ -88,25 +89,27 @@ struct libmnt_optmap
 #define MNT_NOMTAB	(1 << 2) /* skip in the mtab option string */
 #define MNT_PREFIX	(1 << 3) /* prefix used for some options (e.g. "x-foo") */
 #define MNT_NOHLPS	(1 << 4) /* don't add the option to mount.<type> helpers command line */
+#define MNT_NOFSTAB	(1 << 5) /* not expected in fstab */
+#define MNT_SUPERBLOCK	(1 << 6) /* MS_* for mount(2), otherwise requires fsconfig() */
 
 /**
  * libmnt_fs:
  *
- * Parsed fstab/mtab/mountinfo entry
+ * Parsed fstab or mountinfo entry
  */
 struct libmnt_fs;
 
 /**
  * libmnt_table:
  *
- * List of struct libmnt_fs entries (parsed fstab/mtab/mountinfo)
+ * List of struct libmnt_fs entries (parsed fstab or mountinfo)
  */
 struct libmnt_table;
 
 /**
  * libmnt_update
  *
- * /etc/mtab or utab update description
+ * utab update description
  */
 struct libmnt_update;
 
@@ -137,6 +140,13 @@ struct libmnt_tabdiff;
  * Describes mount namespace
  */
 struct libmnt_ns;
+
+/**
+ * libmnt_statmnt
+ *
+ * Setting for statmount()
+ */
+struct libmnt_statmnt;
 
 /*
  * Actions
@@ -187,7 +197,8 @@ enum {
 /**
  * MNT_ERR_APPLYFLAGS:
  *
- * failed to apply MS_PROPAGATION flags
+ * failed to apply MS_PROPAGATION flags, and MOUNT_ATTR_* attributes for
+ * mount_setattr(2)
  */
 #define MNT_ERR_APPLYFLAGS   5005
 /**
@@ -205,7 +216,7 @@ enum {
 /**
  * MNT_ERR_LOCK:
  *
- * failed to lock mtab/utab or so.
+ * failed to lock utab or so.
  */
 #define MNT_ERR_LOCK         5008
 /**
@@ -214,6 +225,37 @@ enum {
  * failed to switch namespace
  */
 #define MNT_ERR_NAMESPACE    5009
+/**
+ * MNT_ERR_ONLYONCE:
+ *
+ * filesystem mounted, but --onlyonce specified
+ */
+#define MNT_ERR_ONLYONCE    5010
+/**
+ * MNT_ERR_CHOWN:
+ *
+ * filesystem mounted, but subsequent X-mount.owner=/X-mount.group= lchown(2) failed
+ */
+#define MNT_ERR_CHOWN    5011
+/**
+ * MNT_ERR_CHMOD:
+ *
+ * filesystem mounted, but subsequent X-mount.mode= chmod(2) failed
+ */
+#define MNT_ERR_CHMOD    5012
+/**
+ * MNT_ERR_IDMAP:
+ *
+ * filesystem mounted, but subsequent X-mount.idmap= failed
+ */
+#define MNT_ERR_IDMAP    5013
+/**
+ * MNT_ERR_EXEC:
+ *
+ * failed to execute external program
+ */
+#define MNT_ERR_EXEC	5014
+
 
 
 /*
@@ -240,7 +282,6 @@ enum {
  *
  * [u]mount(8) exit code: out of memory, cannot fork, ...
  */
-
 #define MNT_EX_SYSERR	2
 
 /**
@@ -260,7 +301,7 @@ enum {
 /**
  * MNT_EX_FILEIO:
  *
- * [u]mount(8) exit code: problems writing, locking, ... mtab/utab
+ * [u]mount(8) exit code: problems writing, locking, ... utab
  */
 #define MNT_EX_FILEIO	16
 
@@ -279,6 +320,12 @@ enum {
  */
 #define MNT_EX_SOMEOK	64
 
+/**
+ * MNT_EX_EXEC:
+ *
+ * [u]mount(8) exit code: external program execution failed
+ */
+#define MNT_EX_EXEC	126
 
 
 #ifndef __GNUC_PREREQ
@@ -329,6 +376,8 @@ extern char *mnt_get_mountpoint(const char *path)
 extern int mnt_guess_system_root(dev_t devno, struct libmnt_cache *cache, char **path)
 			__ul_attribute__((nonnull(3)));
 
+extern int mnt_id_from_path(const char *path, uint64_t *uniq_id, int *id);
+
 /* cache.c */
 extern struct libmnt_cache *mnt_new_cache(void)
 			__ul_attribute__((warn_unused_result));
@@ -338,7 +387,8 @@ extern void mnt_ref_cache(struct libmnt_cache *cache);
 extern void mnt_unref_cache(struct libmnt_cache *cache);
 
 extern int mnt_cache_set_targets(struct libmnt_cache *cache,
-				struct libmnt_table *mtab);
+				struct libmnt_table *mountinfo);
+extern int mnt_cache_set_sbprobe(struct libmnt_cache *cache, int flags);
 extern int mnt_cache_read_tags(struct libmnt_cache *cache, const char *devname);
 
 extern int mnt_cache_device_has_tag(struct libmnt_cache *cache,
@@ -417,6 +467,8 @@ extern const struct libmnt_optmap *mnt_get_builtin_optmap(int id);
 /* lock.c */
 extern struct libmnt_lock *mnt_new_lock(const char *datafile, pid_t id)
 			__ul_attribute__((warn_unused_result));
+extern void mnt_ref_lock(struct libmnt_lock *ml);
+extern void mnt_unref_lock(struct libmnt_lock *ml);
 extern void mnt_free_lock(struct libmnt_lock *ml);
 
 extern void mnt_unlock_file(struct libmnt_lock *ml);
@@ -488,8 +540,17 @@ extern const char *mnt_fs_get_root(struct libmnt_fs *fs);
 extern int mnt_fs_set_root(struct libmnt_fs *fs, const char *path);
 extern const char *mnt_fs_get_bindsrc(struct libmnt_fs *fs);
 extern int mnt_fs_set_bindsrc(struct libmnt_fs *fs, const char *src);
+
 extern int mnt_fs_get_id(struct libmnt_fs *fs);
+extern uint64_t mnt_fs_get_uniq_id(struct libmnt_fs *fs);
+extern int mnt_fs_set_uniq_id(struct libmnt_fs *fs, uint64_t id);
+
 extern int mnt_fs_get_parent_id(struct libmnt_fs *fs);
+extern uint64_t mnt_fs_get_parent_uniq_id(struct libmnt_fs *fs);
+
+extern uint64_t mnt_fs_get_ns(struct libmnt_fs *fs);
+extern int mnt_fs_set_ns(struct libmnt_fs *fs, uint64_t id);
+
 extern dev_t mnt_fs_get_devno(struct libmnt_fs *fs);
 extern pid_t mnt_fs_get_tid(struct libmnt_fs *fs);
 
@@ -520,7 +581,18 @@ extern int mnt_fs_is_regularfs(struct libmnt_fs *fs);
 extern void mnt_free_mntent(struct mntent *mnt);
 extern int mnt_fs_to_mntent(struct libmnt_fs *fs, struct mntent **mnt);
 
-/* tab-parse.c */
+/* fs_statmount.c */
+extern struct libmnt_statmnt *mnt_new_statmnt(void);
+extern void mnt_ref_statmnt(struct libmnt_statmnt *sm);
+extern void mnt_unref_statmnt(struct libmnt_statmnt *sm);
+extern int mnt_statmnt_set_mask(struct libmnt_statmnt *sm, uint64_t mask);
+extern int mnt_statmnt_disable_fetching(struct libmnt_statmnt *sm, int disable);
+
+extern int mnt_fs_refer_statmnt(struct libmnt_fs *fs, struct libmnt_statmnt *sm);
+extern struct libmnt_statmnt *mnt_fs_get_statmnt(struct libmnt_fs *fs);
+extern int mnt_fs_fetch_statmount(struct libmnt_fs *fs, uint64_t mask);
+
+/* tab_parse.c */
 extern struct libmnt_table *mnt_new_table_from_file(const char *filename)
 			__ul_attribute__((warn_unused_result));
 extern struct libmnt_table *mnt_new_table_from_dir(const char *dirname)
@@ -547,6 +619,8 @@ extern void mnt_unref_table(struct libmnt_table *tb);
 extern int mnt_reset_table(struct libmnt_table *tb);
 extern int mnt_table_get_nents(struct libmnt_table *tb);
 extern int mnt_table_is_empty(struct libmnt_table *tb);
+
+extern int mnt_table_refer_statmnt(struct libmnt_table *tb, struct libmnt_statmnt *sm);
 
 extern int mnt_table_set_userdata(struct libmnt_table *tb, void *data);
 extern void *mnt_table_get_userdata(struct libmnt_table *tb);
@@ -607,6 +681,8 @@ extern struct libmnt_fs *mnt_table_find_pair(struct libmnt_table *tb,
 				const char *target, int direction);
 extern struct libmnt_fs *mnt_table_find_devno(struct libmnt_table *tb,
 				dev_t devno, int direction);
+extern struct libmnt_fs *mnt_table_find_uniq_id(struct libmnt_table *tb, uint64_t id);
+extern struct libmnt_fs *mnt_table_find_id(struct libmnt_table *tb, int id);
 
 extern int mnt_table_find_next_fs(struct libmnt_table *tb,
 			struct libmnt_iter *itr,
@@ -615,6 +691,14 @@ extern int mnt_table_find_next_fs(struct libmnt_table *tb,
 		        struct libmnt_fs **fs);
 
 extern int mnt_table_is_fs_mounted(struct libmnt_table *tb, struct libmnt_fs *fstab_fs);
+
+/* tab_listmount.c */
+extern int mnt_table_listmount_set_id(struct libmnt_table *tb, uint64_t id);
+extern int mnt_table_listmount_set_ns(struct libmnt_table *tb, uint64_t ns);
+extern int mnt_table_listmount_set_stepsiz(struct libmnt_table *tb, size_t sz);
+
+extern int mnt_table_enable_listmount(struct libmnt_table *tb, int enable);
+extern int mnt_table_fetch_listmount(struct libmnt_table *tb);
 
 /* tab_update.c */
 extern struct libmnt_update *mnt_new_update(void)
@@ -670,6 +754,8 @@ extern int mnt_monitor_enable_kernel(struct libmnt_monitor *mn, int enable);
 extern int mnt_monitor_enable_userspace(struct libmnt_monitor *mn,
 				int enable, const char *filename);
 
+extern int mnt_monitor_veil_kernel(struct libmnt_monitor *mn, int enable);
+
 extern int mnt_monitor_get_fd(struct libmnt_monitor *mn);
 extern int mnt_monitor_close_fd(struct libmnt_monitor *mn);
 extern int mnt_monitor_wait(struct libmnt_monitor *mn, int timeout);
@@ -682,19 +768,19 @@ extern int mnt_monitor_event_cleanup(struct libmnt_monitor *mn);
 /* context.c */
 
 /*
- * Mode for mount options from fstab (or mtab), see mnt_context_set_optsmode().
+ * Mode for mount options from fstab), see mnt_context_set_optsmode().
  */
 enum {
-	MNT_OMODE_IGNORE  = (1 << 1),	/* ignore mtab/fstab options */
-	MNT_OMODE_APPEND  = (1 << 2),	/* append mtab/fstab options to existing options */
-	MNT_OMODE_PREPEND = (1 << 3),	/* prepend mtab/fstab options to existing options */
+	MNT_OMODE_IGNORE  = (1 << 1),	/* ignore fstab options */
+	MNT_OMODE_APPEND  = (1 << 2),	/* append fstab options to existing options */
+	MNT_OMODE_PREPEND = (1 << 3),	/* prepend fstab options to existing options */
 	MNT_OMODE_REPLACE = (1 << 4),	/* replace existing options with options from mtab/fstab */
 
-	MNT_OMODE_FORCE   = (1 << 5),   /* always read mtab/fstab options */
+	MNT_OMODE_FORCE   = (1 << 5),   /* always read fstab options */
 
 	MNT_OMODE_FSTAB   = (1 << 10),	/* read from fstab */
-	MNT_OMODE_MTAB    = (1 << 11),	/* read from mtab if fstab not enabled or failed */
-	MNT_OMODE_NOTAB   = (1 << 12),	/* do not read fstab/mtab at all */
+	MNT_OMODE_MTAB    = (1 << 11),	/* read from mountinfo if fstab not enabled or failed */
+	MNT_OMODE_NOTAB   = (1 << 12),	/* do not read fstab at all */
 
 	/* default */
 	MNT_OMODE_AUTO   = (MNT_OMODE_PREPEND | MNT_OMODE_FSTAB | MNT_OMODE_MTAB),
@@ -717,6 +803,7 @@ extern int mnt_context_helper_setopt(struct libmnt_context *cxt, int c, char *ar
 
 extern int mnt_context_set_optsmode(struct libmnt_context *cxt, int mode);
 extern int mnt_context_disable_canonicalize(struct libmnt_context *cxt, int disable);
+extern int mnt_context_enable_onlyonce(struct libmnt_context *cxt, int enable);
 extern int mnt_context_enable_lazy(struct libmnt_context *cxt, int enable);
 extern int mnt_context_enable_rdonly_umount(struct libmnt_context *cxt, int enable);
 extern int mnt_context_enable_rwonly_mount(struct libmnt_context *cxt, int enable);
@@ -732,6 +819,8 @@ extern int mnt_context_disable_swapmatch(struct libmnt_context *cxt, int disable
 
 extern int mnt_context_get_optsmode(struct libmnt_context *cxt);
 
+extern int mnt_context_is_onlyonce(struct libmnt_context *cxt)
+			__ul_attribute__((nonnull));
 extern int mnt_context_is_lazy(struct libmnt_context *cxt)
 			__ul_attribute__((nonnull));
 extern int mnt_context_is_rdonly_umount(struct libmnt_context *cxt)
@@ -839,9 +928,14 @@ extern int mnt_context_syscall_called(struct libmnt_context *cxt);
 
 extern int mnt_context_get_syscall_errno(struct libmnt_context *cxt);
 
+extern size_t mnt_context_get_nmesgs(struct libmnt_context *cxt, char type);
+extern char **mnt_context_get_mesgs(struct libmnt_context *cxt);
+
 extern int mnt_context_strerror(struct libmnt_context *cxt, char *buf,
 				size_t bufsiz)
 				__ul_attribute__((deprecated));
+
+extern int mnt_context_enable_noautofs(struct libmnt_context *cxt, int ignore);
 
 extern int mnt_context_get_excode(struct libmnt_context *cxt,
                         int rc, char *buf, size_t bufsz);

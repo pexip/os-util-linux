@@ -59,7 +59,7 @@ struct gfs2_sb {
 
 static int probe_gfs(blkid_probe pr, const struct blkid_idmag *mag)
 {
-	struct gfs2_sb *sbd;
+	const struct gfs2_sb *sbd;
 
 	sbd = blkid_probe_get_sb(pr, mag, struct gfs2_sb);
 	if (!sbd)
@@ -91,7 +91,7 @@ static inline int gfs2_multiformat_is_valid(uint32_t multi)
 
 static int probe_gfs2(blkid_probe pr, const struct blkid_idmag *mag)
 {
-	struct gfs2_sb *sbd;
+	const struct gfs2_sb *sbd;
 
 	sbd = blkid_probe_get_sb(pr, mag, struct gfs2_sb);
 	if (!sbd)
@@ -106,6 +106,7 @@ static int probe_gfs2(blkid_probe pr, const struct blkid_idmag *mag)
 				sizeof(sbd->sb_locktable));
 		blkid_probe_set_uuid(pr, sbd->sb_uuid);
 		blkid_probe_set_version(pr, "1");
+		blkid_probe_set_fsblocksize(pr, be32_to_cpu(sbd->sb_bsize));
 		blkid_probe_set_block_size(pr, be32_to_cpu(sbd->sb_bsize));
 		return 0;
 	}

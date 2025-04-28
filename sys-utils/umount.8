@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: umount
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-08-04
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "UMOUNT" "8" "2022-08-04" "util\-linux 2.38.1" "System Administration"
+.TH "UMOUNT" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -40,7 +40,7 @@ umount \- unmount filesystems
 .sp
 The \fBumount\fP command detaches the mentioned filesystem(s) from the file hierarchy. A filesystem is specified by giving the directory where it has been mounted. Giving the special device on which the filesystem lives may also work, but is obsolete, mainly because it will fail in case this device was mounted on more than one directory.
 .sp
-Note that a filesystem cannot be unmounted when it is \(aqbusy\(aq \- for example, when there are open files on it, or when some process has its working directory there, or when a swap file on it is in use. The offending process could even be \fBumount\fP itself \- it opens libc, and libc in its turn may open for example locale files. A lazy unmount avoids this problem, but it may introduce other issues. See \fB\-\-lazy\fP description below.
+Note that a filesystem cannot be unmounted when it is \*(Aqbusy\*(Aq \- for example, when there are open files on it, or when some process has its working directory there, or when a swap file on it is in use. The offending process could even be \fBumount\fP itself \- it opens libc, and libc in its turn may open for example locale files. A lazy unmount avoids this problem, but it may introduce other issues. See \fB\-\-lazy\fP description below.
 .SH "OPTIONS"
 .sp
 \fB\-a\fP, \fB\-\-all\fP
@@ -69,7 +69,7 @@ When the unmounted device was a loop device, also free this loop device. This op
 .sp
 \fB\-\-fake\fP
 .RS 4
-Causes everything to be done except for the actual system call or umount helper execution; this \(aqfakes\(aq unmounting the filesystem. It can be used to remove entries from the deprecated \fI/etc/mtab\fP that were unmounted earlier with the \fB\-n\fP option.
+Causes everything to be done except for the actual system call or umount helper execution; this \*(Aqfakes\*(Aq unmounting the filesystem. It can be used to remove entries from the deprecated \fI/etc/mtab\fP that were unmounted earlier with the \fB\-n\fP option.
 .RE
 .sp
 \fB\-f\fP, \fB\-\-force\fP
@@ -142,7 +142,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "NON\-SUPERUSER UMOUNTS"
 .sp
@@ -156,6 +156,58 @@ Since version 2.35 \fBumount\fP command does not exit when user permissions are 
 The \fBumount\fP command will automatically detach loop device previously initialized by \fBmount\fP(8) command independently of \fI/etc/mtab\fP.
 .sp
 In this case the device is initialized with "autoclear" flag (see \fBlosetup\fP(8) output for more details), otherwise it\(cqs necessary to use the option \fB\-\-detach\-loop\fP or call \fBlosetup \-d\fP \fIdevice\fP. The autoclear feature is supported since Linux 2.6.25.
+.sp
+Note that since Linux v3.7 kernel uses "lazy device destruction". The system just marks the loop device by autoclear flag and destroys it later. If you need to wait for a complete removal of the loop device, call \fBudevadm settle\fP after \fBumount\fP.
+.SH "EXIT STATUS"
+.sp
+\fBumount\fP has the following exit status values (the bits can be ORed):
+.sp
+\fB0\fP
+.RS 4
+success
+.RE
+.sp
+\fB1\fP
+.RS 4
+incorrect invocation or permissions
+.RE
+.sp
+\fB2\fP
+.RS 4
+system error (out of memory, cannot fork, no more loop devices)
+.RE
+.sp
+\fB4\fP
+.RS 4
+internal \fBmount\fP bug
+.RE
+.sp
+\fB8\fP
+.RS 4
+user interrupt
+.RE
+.sp
+\fB16\fP
+.RS 4
+problems writing or locking \fI/etc/mtab\fP
+.RE
+.sp
+\fB32\fP
+.RS 4
+mount failure
+.RE
+.sp
+\fB64\fP
+.RS 4
+some umount succeeded
+.sp
+The command \fBumount \-a\fP returns 0 (all succeeded), 32 (all failed), or 64 (some failed, some succeeded).
+.RE
+.sp
+\fB126\fP
+.RS 4
+failed to execute external /sbin/umount.<type> mount helper (since util\-linux v2.41)
+.RE
 .SH "EXTERNAL HELPERS"
 .sp
 The syntax of external unmount helpers is:
@@ -181,16 +233,13 @@ A \fBuhelper=\fP\fIsomething\fP marker (unprivileged helper) can appear in the \
 A \fBhelper=\fP\fItype\fP marker in the \fImtab\fP file will redirect all unmount requests to the \fB/sbin/umount.\fP\fItype\fP helper independently of UID.
 .sp
 Note that \fI/etc/mtab\fP is currently deprecated and \fBhelper=\fP and other userspace mount options are maintained by \fBlibmount\fP.
+.sp
+The exit status value of the helper is returned as the exit status of \fBumount\fP(8). The value 126 is used if the mount helper program is found, but the execl() failed.
 .SH "ENVIRONMENT"
 .sp
 \fBLIBMOUNT_FSTAB\fP=<path>
 .RS 4
 overrides the default location of the \fIfstab\fP file (ignored for \fBsuid\fP)
-.RE
-.sp
-\fBLIBMOUNT_MTAB\fP=<path>
-.RS 4
-overrides the default location of the \fImtab\fP file (ignored for \fBsuid\fP)
 .RE
 .sp
 \fBLIBMOUNT_DEBUG\fP=all
@@ -224,8 +273,8 @@ A \fBumount\fP command appeared in Version 6 AT&T UNIX.
 \fBmount\fP(8)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBumount\fP command is part of the util\-linux package which can be downloaded from \c

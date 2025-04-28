@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: uuidd
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-08-04
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "UUIDD" "8" "2022-08-04" "util\-linux 2.38.1" "System Administration"
+.TH "UUIDD" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -36,6 +36,15 @@ uuidd \- UUID generation daemon
 .sp
 The \fBuuidd\fP daemon is used by the UUID library to generate universally unique identifiers (UUIDs), especially time\-based UUIDs, in a secure and guaranteed\-unique fashion, even in the face of large numbers of threads running on different CPUs trying to grab UUIDs.
 .SH "OPTIONS"
+.sp
+\fB\-C\fP, \fB\-\-cont\-clock\fP[\fB=\fP\fItime\fP]
+.RS 4
+Activate continuous clock handling for time based UUIDs. \fBuuidd\fP could use all possible clock values, beginning with the daemon\(cqs start time. The optional argument can be used to set a value for the max_clock_offset. This guarantees, that a clock value of a UUID will always be within the range of the max_clock_offset.
+.sp
+The option \fB\-C\fP or \fB\-\-cont\-clock\fP enables the feature with a default max_clock_offset of 2 hours.
+.sp
+The option \fB\-C<NUM>[hd]\fP or \fB\-\-cont\-clock=<NUM>[hd]\fP enables the feature with a max_clock_offset of NUM seconds. In case of an appended h or d, the NUM value is read in hours or days. The minimum value is 60 seconds, the maximum value is 365 days.
+.RE
 .sp
 \fB\-d\fP, \fB\-\-debug\fP
 .RS 4
@@ -104,7 +113,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "EXAMPLE"
 .sp
@@ -129,8 +138,8 @@ The \fBuuidd\fP daemon was written by \c
 \fBuuidgen\fP(1)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBuuidd\fP command is part of the util\-linux package which can be downloaded from \c

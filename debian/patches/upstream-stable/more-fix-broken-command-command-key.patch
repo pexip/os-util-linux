@@ -1,0 +1,25 @@
+From: cgoesche <cgoesc2@wgu.edu>
+Date: Sat, 5 Apr 2025 01:43:04 -0400
+Subject: more: fix broken ':!command' command key
+
+Addresses: #3509
+Signed-off-by: Christian Goeschel Ndjomouo <cgoesc2@wgu.edu>
+(cherry picked from commit 3f3bb6f9103daaf7a8f47ebe57cbe90bac852e6e)
+---
+ text-utils/more.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/text-utils/more.c b/text-utils/more.c
+index f80aeff..64168d7 100644
+--- a/text-utils/more.c
++++ b/text-utils/more.c
+@@ -862,6 +862,9 @@ static struct number_command read_command(struct more_control *ctl)
+ 			case 'p':
+ 				cmd.key = more_kc_previous_file;
+ 				return cmd;
++			case '!':
++				cmd.key = more_kc_run_shell;
++				return cmd;
+ 			default:
+ 				cmd.key = more_kc_unknown_command;
+ 				return cmd;

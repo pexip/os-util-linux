@@ -8,10 +8,10 @@ Closes: #1014368
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/lib/pager.c b/lib/pager.c
-index 747521e..5f53cd0 100644
+index 20002ac..cecd3be 100644
 --- a/lib/pager.c
 +++ b/lib/pager.c
-@@ -216,7 +216,7 @@ static void __setup_pager(void)
+@@ -231,7 +231,7 @@ static void __setup_pager(void)
  		return;
  
  	if (!pager)

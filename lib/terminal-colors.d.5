@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: terminal-colors.d
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-03-18
 .\"    Manual: File formats
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "TERMINAL\-COLORS.D" "5" "2022-05-11" "util\-linux 2.38.1" "File formats"
+.TH "TERMINAL\-COLORS.D" "5" "2025-03-18" "util\-linux 2.41" "File formats"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -44,7 +44,7 @@ The \fItype\fP is a file type. Supported file types are:
 .sp
 \fBdisable\fP
 .RS 4
-Turns off output colorization for all compatible utilities.
+Turns off output colorization for all compatible utilities. See also the NO_COLOR environment variable below.
 .RE
 .sp
 \fBenable\fP
@@ -341,7 +341,7 @@ For example, to use a red background for alert messages in the output of \fBdmes
 .RS 3
 .ll -.6i
 .sp
-\fBecho \(aqalert 37;41\(aq >> /etc/terminal\-colors.d/dmesg.scheme\fP
+\fBecho \*(Aqalert 37;41\*(Aq >> /etc/terminal\-colors.d/dmesg.scheme\fP
 .br
 .RE
 .ll
@@ -353,6 +353,15 @@ Lines where the first non\-blank character is a # (hash) are ignored. Any other 
 \fBTERMINAL_COLORS_DEBUG\fP=all
 .RS 4
 enables debug output.
+.RE
+.sp
+\fBNO_COLOR\fP
+.RS 4
+if defined, this disables output colorization unless explicitly enabled by a
+command\-line option. See \c
+.URL "https://no\-color.org/" "" ""
+for more details. Supported
+since util\-linux version 2.41.
 .RE
 .SH "FILES"
 .sp
@@ -396,8 +405,8 @@ Disable colors for all compatible utils except \fBdmesg\fP(1):
 The \fBterminal\-colors.d\fP functionality is currently supported by all util\-linux utilities which provides colorized output. For more details always see the \fBCOLORS\fP section in the man page for the utility.
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 \fBterminal\-colors.d\fP is part of the util\-linux package which can be downloaded from \c

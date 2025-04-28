@@ -40,7 +40,7 @@
 #include "monotonic.h"
 
 
-#define SCRIPT_MIN_DELAY 0.0001		/* from original sripreplay.pl */
+#define SCRIPT_MIN_DELAY 0.0001		/* from original scriptreplay.pl */
 
 struct scriptlive {
 	struct ul_pty *pty;
@@ -54,10 +54,7 @@ usage(void)
 	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
-	      _(" %s [options]\n"),
-	      program_invocation_short_name);
-	fprintf(out,
-	      _(" %s [-t] timingfile [-I|-B] typescript\n"),
+	      _(" %s [options] <timingfile> <typescript>\n"),
 	      program_invocation_short_name);
 
 	fputs(USAGE_SEPARATOR, out);
@@ -72,10 +69,13 @@ usage(void)
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_(" -c, --command <command> run command rather than interactive shell\n"), out);
 	fputs(_(" -d, --divisor <num>     speed up or slow down execution with time divisor\n"), out);
+	fputs(_(" -E, --echo <when>       echo input in session (auto, always or never)\n"), out);
 	fputs(_(" -m, --maxdelay <num>    wait at most this many seconds between updates\n"), out);
-	printf(USAGE_HELP_OPTIONS(25));
 
-	printf(USAGE_MAN_TAIL("scriptlive(1)"));
+	fputs(USAGE_SEPARATOR, out);
+	fprintf(out, USAGE_HELP_OPTIONS(25));
+
+	fprintf(out, USAGE_MAN_TAIL("scriptlive(1)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -164,13 +164,14 @@ main(int argc, char *argv[])
 		   *shell = NULL, *command = NULL;
 	double divi = 1;
 	int diviopt = FALSE, idx;
-	int ch, caught_signal = 0;
+	int ch, caught_signal = 0, echo = 1;
 	struct ul_pty_callbacks *cb;
 	struct scriptlive ss = { .pty = NULL };
 	pid_t child;
 
 	static const struct option longopts[] = {
 		{ "command",    required_argument,      0, 'c' },
+		{ "echo",	required_argument,	0, 'E' },
 		{ "timing",	required_argument,	0, 't' },
 		{ "log-timing",	required_argument,	0, 'T' },
 		{ "log-in",     required_argument,      0, 'I'},
@@ -200,13 +201,23 @@ main(int argc, char *argv[])
 	replay_init_debug();
 	timerclear(&maxdelay);
 
-	while ((ch = getopt_long(argc, argv, "c:B:I:T:t:d:m:Vh", longopts, NULL)) != -1) {
+	while ((ch = getopt_long(argc, argv, "c:B:E:I:T:t:d:m:Vh", longopts, NULL)) != -1) {
 
 		err_exclusive_options(ch, longopts, excl, excl_st);
 
 		switch(ch) {
 		case 'c':
 			command = optarg;
+			break;
+		case 'E':
+			if (strcmp(optarg, "auto") == 0)
+				; /* keep default */
+			else if (strcmp(optarg, "never") == 0)
+				echo = 0;
+			else if (strcmp(optarg, "always") == 0)
+				echo = 1;
+			else
+				errx(EXIT_FAILURE, _("unsupported echo mode: '%s'"), optarg);
 			break;
 		case 't':
 		case 'T':
@@ -288,12 +299,13 @@ main(int argc, char *argv[])
 	cb->child_sigstop = callback_child_sigstop;
 	cb->mainloop = mainloop_cb;
 
-	if (!isatty(STDIN_FILENO))
-		/* We keep ECHO flag for compatibility with script(1) */
-		ul_pty_slave_echo(ss.pty, 1);
+	/* We keep ECHO flag for compatibility with script(1) */
+	ul_pty_slave_echo(ss.pty, echo);
 
 	if (ul_pty_setup(ss.pty))
 		err(EXIT_FAILURE, _("failed to create pseudo-terminal"));
+	if (ul_pty_signals_setup(ss.pty))
+		err(EXIT_FAILURE, _("failed to initialize signals handler"));
 
 	fflush(stdout);			/* ??? */
 

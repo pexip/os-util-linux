@@ -1,0 +1,39 @@
+From: Chris Hofstaedtler <zeha@debian.org>
+Date: Mon, 5 Aug 2024 16:03:11 +0200
+Subject: login: turn off btmp, utmp, lastlog writing
+
+Should be done by PAM instead. login from src:shadow had turned it off, especially with --enable-logind.
+---
+ login-utils/login.c | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/login-utils/login.c b/login-utils/login.c
+index 23b8a89..bba82a5 100644
+--- a/login-utils/login.c
++++ b/login-utils/login.c
+@@ -975,7 +975,6 @@ static void loginpam_auth(struct login_context *cxt)
+ 		       cxt->username ? cxt->username : "(unknown)",
+ 		       pam_strerror(pamh, rc));
+ 
+-		log_btmp(cxt);
+ 		log_audit(cxt, 0);
+ 
+ 		if (!keep_username || rc == PAM_USER_UNKNOWN) {
+@@ -1007,7 +1006,6 @@ static void loginpam_auth(struct login_context *cxt)
+ 			       cxt->username ? cxt->username : "(unknown)",
+ 			       pam_strerror(pamh, rc));
+ 
+-		log_btmp(cxt);
+ 		log_audit(cxt, 0);
+ 
+ 		fprintf(stderr, _("\nLogin incorrect\n"));
+@@ -1505,9 +1503,7 @@ int main(int argc, char **argv)
+ 
+ 	endpwent();
+ 
+-	log_utmp(&cxt);
+ 	log_audit(&cxt, 1);
+-	log_lastlog(&cxt);
+ 
+ 	chown_tty(&cxt);
+ 

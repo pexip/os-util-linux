@@ -8,9 +8,9 @@ Install “git-buildpackage” and “devscripts” then run the following:
   git checkout master
   gbp buildpackage
 
-We recommend you use pbuilder to make sure you build in a clean environment:
+We recommend you use sbuild to make sure you build in a clean environment:
 
-  gbp buildpackage --git-pbuilder
+  gbp buildpackage --git-builder=sbuild -s --no-clean-source
 
 Patch handling
 --------------

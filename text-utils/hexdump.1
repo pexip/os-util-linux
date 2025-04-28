@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: hexdump
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "HEXDUMP" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "HEXDUMP" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -29,6 +29,7 @@
 .\}
 .SH "NAME"
 hexdump \- display file contents in hexadecimal, decimal, octal, or ascii
+.SH "SYNOPSIS"
 .sp
 \fBhexdump\fP \fIoptions file\fP ...
 .sp
@@ -43,6 +44,11 @@ Below, the \fIlength\fP and \fIoffset\fP arguments may be followed by the multip
 \fB\-b\fP, \fB\-\-one\-byte\-octal\fP
 .RS 4
 \fIOne\-byte octal display\fP. Display the input offset in hexadecimal, followed by sixteen space\-separated, three\-column, zero\-filled bytes of input data, in octal, per line.
+.RE
+.sp
+\fB\-X\fP, \fB\-\-one\-byte\-hex\fP
+.RS 4
+\fIOne\-byte hexadecimal display\fP. Display the input offset in hexadecimal, followed by sixteen space\-separated, two\-column, zero\-filled bytes of input data, in hexadecimal, per line.
 .RE
 .sp
 \fB\-c\fP, \fB\-\-one\-byte\-char\fP
@@ -70,7 +76,7 @@ Specify a format string to be used for displaying data.
 Specify a file that contains one or more newline\-separated format strings. Empty lines and lines whose first non\-blank character is a hash mark (#) are ignored.
 .RE
 .sp
-\fB\-L\fP, \fB\-\-color\fP[=\fIwhen\fP]
+\fB\-L\fP, \fB\-\-color\fP[\fB=\fP\fIwhen\fP]
 .RS 4
 Accept color units for the output. The optional argument \fIwhen\fP can be \fBauto\fP, \fBnever\fP or \fBalways\fP. If the \fIwhen\fP argument is omitted, it defaults to \fBauto\fP. The colors can be disabled; for the current built\-in default see the \fB\-\-help\fP output. See also the \fBColors\fP subsection and the \fBCOLORS\fP section below.
 .RE
@@ -107,7 +113,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .sp
 For each input file, \fBhexdump\fP sequentially copies the input to standard output, transforming the data according to the format strings specified by the \fB\-e\fP and \fB\-f\fP options, in the order that they were specified.
@@ -229,7 +235,7 @@ Output characters in the default character set. Non\-printing characters are dis
 .sp
 \fB_p\fP
 .RS 4
-Output characters in the default character set. Non\-printing characters are displayed as a single \(aq\fB.\fP\(aq.
+Output characters in the default character set. Non\-printing characters are displayed as a single \*(Aq\fB.\fP\*(Aq.
 .RE
 .sp
 \fB_u\fP
@@ -418,7 +424,7 @@ It is an error to specify a byte count as well as multiple conversion characters
 .sp
 If, as a result of the specification of the \fB\-n\fP option or end\-of\-file being reached, input data only partially satisfies a format string, the input block is zero\-padded sufficiently to display all available data (i.e., any format units overlapping the end of data will display some number of the zero bytes).
 .sp
-Further output by such format strings is replaced by an equivalent number of spaces. An equivalent number of spaces is defined as the number of spaces output by an \fBs\fP conversion character with the same field width and precision as the original conversion character or conversion string but with any \(aq\fB+\fP\(aq, \(aq \(aq, \(aq\fB#\fP\(aq conversion flag characters removed, and referencing a NULL string.
+Further output by such format strings is replaced by an equivalent number of spaces. An equivalent number of spaces is defined as the number of spaces output by an \fBs\fP conversion character with the same field width and precision as the original conversion character or conversion string but with any \*(Aq\fB+\fP\*(Aq, \*(Aq \*(Aq, \*(Aq\fB#\fP\*(Aq conversion flag characters removed, and referencing a NULL string.
 .sp
 If no format strings are specified, the default display is very similar to the \fB\-x\fP output format (the \fB\-x\fP option causes more space to be used between format units than in the default output).
 .SH "EXIT STATUS"
@@ -483,6 +489,9 @@ for the \fBhexdump\fP command or for all tools by
 .RE
 .ll
 .sp
+Since version 2.41, the $NO_COLOR environment variable is also supported to
+disable output colorization unless explicitly enabled by a command\-line option.
+.sp
 The user\-specific \fI$XDG_CONFIG_HOME/terminal\-colors.d\fP
 or \fI$HOME/.config/terminal\-colors.d\fP overrides the global setting.
 .sp
@@ -490,8 +499,8 @@ Note that the output colorization may be enabled by default, and in this case
 \fIterminal\-colors.d\fP directories do not have to exist yet.
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBhexdump\fP command is part of the util\-linux package which can be downloaded from \c

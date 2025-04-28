@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: uuid_time
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: Programmer's Manual
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "UUID_TIME" "3" "2022-05-11" "util\-linux 2.38.1" "Programmer\(aqs Manual"
+.TH "UUID_TIME" "3" "2025-02-26" "util\-linux 2.41" "Programmer\*(Aqs Manual"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -33,7 +33,7 @@ uuid_time \- extract the time at which the UUID was created
 .sp
 \fB#include <uuid.h>\fP
 .sp
-\fBtime_t uuid_time(uuid_t \fIuu\fP, struct timeval *\fIret_tv\fP)\fP
+\fBtime_t uuid_time(const uuid_t \fIuu\fP, struct timeval *\fIret_tv\fP)\fP
 .SH "DESCRIPTION"
 .sp
 The \fBuuid_time\fP() function extracts the time at which the supplied time\-based UUID \fIuu\fP was created. Note that the UUID creation time is only encoded within certain types of UUIDs. This function can only reasonably expect to extract the creation time for UUIDs created with the \fBuuid_generate_time\fP(3) and \fBuuid_generate_time_safe\fP(3) functions. It may or may not work with UUIDs created by other mechanisms.
@@ -55,8 +55,8 @@ Theodore Y. Ts\(cqo
 \fBuuid_unparse\fP(3)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBlibuuid\fP library is part of the util\-linux package since version 2.15.1. It can be downloaded from \c

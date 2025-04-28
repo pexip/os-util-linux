@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <getopt.h>
 #include <sched.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -31,19 +32,19 @@
 #include "sched_attr.h"
 #include "strutils.h"
 
-#define NOT_SET		-2U
+#define NOT_SET		0xdeadbeef
 
 struct uclampset {
 	unsigned int util_min;
 	unsigned int util_max;
 
 	pid_t pid;
-	unsigned int	all_tasks:1,		/* all threads of the PID */
-			system:1,
-			util_min_set:1,		/* indicates -m option was passed */
-			util_max_set:1,		/* indicates -M option was passed */
-			reset_on_fork:1,
-			verbose:1;
+	bool	all_tasks,		/* all threads of the PID */
+		system,
+		util_min_set,		/* indicates -m option was passed */
+		util_max_set,		/* indicates -M option was passed */
+		reset_on_fork,
+		verbose;
 	char *cmd;
 };
 
@@ -69,13 +70,13 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -R, --reset-on-fork  set reset-on-fork flag\n"), out);
 	fputs(_(" -v, --verbose        display status information\n"), out);
 
-	printf(USAGE_HELP_OPTIONS(22));
+	fprintf(out, USAGE_HELP_OPTIONS(22));
 
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_("Utilization value range is [0:1024]. Use special -1 value to "
 		"reset to system's default.\n"), out);
 
-	printf(USAGE_MAN_TAIL("uclampset(1)"));
+	fprintf(out, USAGE_MAN_TAIL("uclampset(1)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -211,14 +212,6 @@ static void set_uclamp_system(struct uclampset *ctl)
 	write_uclamp_sysfs(_PATH_PROC_UCLAMP_MAX, ctl->util_max);
 }
 
-static void validate_util(int val)
-{
-	if (val > 1024 || val < -1) {
-		errno = EINVAL;
-		err(EXIT_FAILURE, _("%d out of range"), val);
-	}
-}
-
 int main(int argc, char **argv)
 {
 	struct uclampset _ctl = {
@@ -268,12 +261,10 @@ int main(int argc, char **argv)
 		case 'm':
 			ctl->util_min = strtos32_or_err(optarg, _("invalid util_min argument"));
 			ctl->util_min_set = 1;
-			validate_util(ctl->util_min);
 			break;
 		case 'M':
 			ctl->util_max = strtos32_or_err(optarg, _("invalid util_max argument"));
 			ctl->util_max_set = 1;
-			validate_util(ctl->util_max);
 			break;
 		case 'V':
 			print_version(EXIT_SUCCESS);

@@ -1,0 +1,38 @@
+# Not packaged (yet?)
+usr/bin/lsclocks
+usr/share/bash-completion/completions/lsclocks
+usr/share/man/man1/lsclocks.1
+usr/share/man/*/man1/lsclocks.1
+
+# irqtop: #1009668
+usr/bin/irqtop
+usr/share/bash-completion/completions/irqtop
+usr/share/man/man1/irqtop.1
+usr/share/man/*/man1/irqtop.1
+
+# setpgid: #1082704
+usr/bin/setpgid
+usr/share/bash-completion/completions/setpgid
+usr/share/man/man1/setpgid.1
+usr/share/man/*/man1/setpgid.1
+
+# addpart, delpart: Removed
+usr/sbin/addpart
+usr/sbin/delpart
+usr/share/bash-completion/completions/addpart
+usr/share/bash-completion/completions/delpart
+usr/share/man/*/addpart.8
+usr/share/man/*/delpart.8
+usr/share/man/*/*/addpart.8
+usr/share/man/*/*/delpart.8
+
+# setarch can be used directly
+usr/bin/uname26
+usr/share/man/man8/uname26.8
+
+# la files shall not be installed
+usr/lib/*/*.la
+usr/lib/*/security/pam_lastlog2.la
+
+# no tcsh support in debian
+usr/share/doc/util-linux/getopt-example.tcsh

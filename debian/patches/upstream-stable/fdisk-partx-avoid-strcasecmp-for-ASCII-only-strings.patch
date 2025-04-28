@@ -1,0 +1,71 @@
+From: Karel Zak <kzak@redhat.com>
+Date: Tue, 1 Apr 2025 17:45:01 +0200
+Subject: fdisk,partx: avoid strcasecmp() for ASCII-only strings
+
+Use cctype.h for locale-independent string comparison and to avoid
+tricky string conversions like in tr_TR locales.
+
+Signed-off-by: Karel Zak <kzak@redhat.com>
+(cherry picked from commit 7efdcd75f041fa1cb9a7c05e22dea3567d48bf9e)
+---
+ disk-utils/cfdisk.c     | 3 ++-
+ disk-utils/fdisk-list.h | 4 +++-
+ disk-utils/partx.c      | 2 +-
+ 3 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/disk-utils/cfdisk.c b/disk-utils/cfdisk.c
+index d4057ee..d0bb57a 100644
+--- a/disk-utils/cfdisk.c
++++ b/disk-utils/cfdisk.c
+@@ -53,6 +53,7 @@
+ #endif
+ 
+ #include "c.h"
++#include "cctype.h"
+ #include "closestream.h"
+ #include "nls.h"
+ #include "widechar.h"
+@@ -2507,7 +2508,7 @@ static int main_menu_action(struct cfdisk *cf, int key)
+ 			  buf, sizeof(buf));
+ 
+ 		ref = 1;
+-		if (rc <= 0 || (strcasecmp(buf, "yes") != 0 &&
++		if (rc <= 0 || (c_strcasecmp(buf, "yes") != 0 &&
+ 				strcasecmp(buf, _("yes")) != 0)) {
+ 			info = _("Did not write partition table to disk.");
+ 			break;
+diff --git a/disk-utils/fdisk-list.h b/disk-utils/fdisk-list.h
+index 1839301..8e5ea58 100644
+--- a/disk-utils/fdisk-list.h
++++ b/disk-utils/fdisk-list.h
+@@ -11,6 +11,8 @@
+ #ifndef UTIL_LINUX_FDISK_LIST_H
+ #define UTIL_LINUX_FDISK_LIST_H
+ 
++#include "cctype.h"
++
+ extern void list_disklabel(struct fdisk_context *cxt);
+ extern void list_disk_identifier(struct fdisk_context *cxt);
+ extern void list_disk_geometry(struct fdisk_context *cxt);
+@@ -51,7 +53,7 @@ static inline int wipemode_from_string(const char *str)
+ 		return -EINVAL;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(modes); i++) {
+-		if (strcasecmp(str, modes[i]) == 0)
++		if (c_strcasecmp(str, modes[i]) == 0)
+ 			return i;
+ 	}
+ 
+diff --git a/disk-utils/partx.c b/disk-utils/partx.c
+index b0d552c..49d5061 100644
+--- a/disk-utils/partx.c
++++ b/disk-utils/partx.c
+@@ -162,7 +162,7 @@ static int column_name_to_id(const char *name, size_t namesz)
+ 	for (i = 0; i < NCOLS; i++) {
+ 		const char *cn = infos[i].name;
+ 
+-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
++		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
+ 			return i;
+ 	}
+ 	warnx(_("unknown column: %s"), name);

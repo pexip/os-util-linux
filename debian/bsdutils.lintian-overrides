@@ -1,1 +1,1 @@
-bsdutils: setgid-binary usr/bin/wall 2755 root/tty
+bsdutils: elevated-privileges 2755 root/tty [usr/bin/wall]

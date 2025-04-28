@@ -1,0 +1,3 @@
+# Taken over from src:shadow.
+rm_conffile /etc/securetty 1:4.7-1~
+rm_conffile /etc/login.defs 1:4.16.0-1~

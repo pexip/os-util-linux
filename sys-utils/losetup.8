@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: losetup
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-07-20
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "LOSETUP" "8" "2022-07-20" "util\-linux 2.38.1" "System Administration"
+.TH "LOSETUP" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -49,7 +49,7 @@ Detach all associated loop devices:
 .sp
 Set up a loop device:
 .sp
-\fBlosetup\fP [\fB\-o\fP \fIoffset\fP] [\fB\-\-sizelimit\fP \fIsize\fP] [\fB\-\-sector\-size\fP \fIsize\fP] [\fB\-Pr\fP] [\fB\-\-show\fP] \fB\-f\fP|\fIloopdev file\fP
+\fBlosetup\fP [\fB\-o\fP \fIoffset\fP] [\fB\-\-sizelimit\fP \fIsize\fP] [\fB\-\-sector\-size\fP \fIsize\fP] [\fB\-\-loop\-ref\fP \fIname\fP] [\fB\-Pr\fP] [\fB\-\-show\fP] \fB\-f\fP|\fIloopdev file\fP
 .sp
 Resize a loop device:
 .sp
@@ -74,7 +74,7 @@ Show the status of all loop devices. Note that not all information is accessible
 .sp
 \fB\-d\fP, \fB\-\-detach\fP \fIloopdev\fP...
 .RS 4
-Detach the file or device associated with the specified loop device(s). Note that since Linux v3.7 kernel uses "lazy device destruction". The detach operation does not return \fBEBUSY\fP error anymore if device is actively used by system, but it is marked by autoclear flag and destroyed later.
+Detach the file or device associated with the specified loop device(s). Note that since Linux v3.7 kernel uses "lazy device destruction". The detach operation does not return \fBEBUSY\fP error anymore if device is actively used by system, but it is marked by autoclear flag and destroyed later. Even if the device is not used, the loop device can be destroyed later. If you need to wait for a complete removal of the loop device, call \fBudevadm settle\fP after \fBlosetup\fP.
 .RE
 .sp
 \fB\-D\fP, \fB\-\-detach\-all\fP
@@ -107,6 +107,11 @@ Show the status of all loop devices associated with the given \fIfile\fP.
 The data start is moved \fIoffset\fP bytes into the specified file or device. The \fIoffset\fP may be followed by the multiplicative suffixes; see above.
 .RE
 .sp
+\fB\-\-loop\-ref\fP \fIstring\fP
+.RS 4
+Set reference string. The backwardly compatible default is to use the backing filename as a reference in loop setup ioctl (aka lo_file_name). This option can overwrite this default behavior and set the reference to the \fIstring\fP. The reference may be used by udevd in /dev/loop/by\-ref. Linux kernel does not use the reference at all, but it could be used by some old utils that cannot read the backing file from sysfs. The reference is readable only for the root user (see \fB\-\-output\fP +REF) and it is restricted to 64 bytes.
+.RE
+.sp
 \fB\-\-sizelimit\fP \fIsize\fP
 .RS 4
 The data end is set to no more than \fIsize\fP bytes after the data start. The \fIsize\fP may be followed by the multiplicative suffixes; see above.
@@ -134,7 +139,7 @@ Set up a read\-only loop device.
 .sp
 \fB\-\-direct\-io\fP[\fB=on\fP|\fBoff\fP]
 .RS 4
-Enable or disable direct I/O for the backing file. The optional argument can be either \fBon\fP or \fBoff\fP. If the optional argument is omitted, it defaults to \fBon\fP.
+Enable or disable direct I/O for the backing file. The default is \fBoff\fP. Specifying either \fB\-\-direct\-io\fP or \fB\-\-direct\-io=on\fP will enable it. But, \fB\-\-direct\-io=off\fP can be provided to explicitly turn it off.
 .RE
 .sp
 \fB\-v\fP, \fB\-\-verbose\fP
@@ -222,8 +227,8 @@ based on the original version from
 .MTO "tytso\(atathena.mit.edu" "Theodore Ts\(cqo" "."
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBlosetup\fP command is part of the util\-linux package which can be downloaded from \c

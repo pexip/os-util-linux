@@ -1,0 +1,6 @@
+#!/usr/bin/dh-exec
+usr/include/liblastlog2
+usr/lib/*/liblastlog2.so
+usr/lib/*/pkgconfig/lastlog2.pc
+<!nodoc> usr/share/man/man3/lastlog2.3
+<!nodoc> usr/share/man/man3/ll2_*.3

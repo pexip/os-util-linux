@@ -1,0 +1,25 @@
+manifest-version: '0.1'
+packages:
+  util-linux:
+    transformations:
+    - path-metadata:
+       path: usr/bin/su
+       mode: "u=rwxs,go=rx"
+  bsdutils:
+    binary-version: 1:{{DEB_VERSION_UPSTREAM_REVISION}}
+  login:
+    binary-version: 1:4.16.0-2+really{{DEB_VERSION_UPSTREAM_REVISION}}
+    transformations:
+    - path-metadata:
+        path: usr/bin/newgrp
+        mode: "u=rwxs,go=rx"
+        when:
+          arch-matches: linux-any
+  mount:
+    transformations:
+    - path-metadata:
+        path: usr/bin/mount
+        mode: "u=rwxs,go=rx"
+    - path-metadata:
+        path: usr/bin/umount
+        mode: "u=rwxs,go=rx"

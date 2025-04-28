@@ -1,0 +1,37 @@
+From: Masatake YAMATO <yamato@redhat.com>
+Date: Mon, 6 Jan 2025 02:55:19 +0900
+Subject: lsfd: fix the description for PACKET.PROTOCOL column
+
+Signed-off-by: Masatake YAMATO <yamato@redhat.com>
+(cherry picked from commit df3b38fab56001537364302479b33cb104ef7411)
+---
+ lsfd-cmd/lsfd.1.adoc | 2 +-
+ lsfd-cmd/lsfd.c      | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/lsfd-cmd/lsfd.1.adoc b/lsfd-cmd/lsfd.1.adoc
+index e9a01d2..bd6885f 100644
+--- a/lsfd-cmd/lsfd.1.adoc
++++ b/lsfd-cmd/lsfd.1.adoc
+@@ -386,7 +386,7 @@ PACKET.IFACE <``string``>::
+ Interface name associated with the packet socket.
+ 
+ PACKET.PROTOCOL <``string``>::
+-L3 protocol associated with the packet socket.
++L2 protocol associated with the packet socket.
+ 
+ PARTITION <``string``>::
+ Block device name resolved by `/proc/partition`.
+diff --git a/lsfd-cmd/lsfd.c b/lsfd-cmd/lsfd.c
+index 66c60a4..714083e 100644
+--- a/lsfd-cmd/lsfd.c
++++ b/lsfd-cmd/lsfd.c
+@@ -311,7 +311,7 @@ static const struct colinfo infos[] = {
+ 				   N_("net interface associated with the packet socket") },
+ 	[COL_PACKET_PROTOCOL]  = { "PACKET.PROTOCOL",
+ 				   0,   SCOLS_FL_RIGHT,SCOLS_JSON_STRING,
+-				   N_("L3 protocol associated with the packet socket") },
++				   N_("L2 protocol associated with the packet socket") },
+ 	[COL_PARTITION]        = { "PARTITION",
+ 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
+ 				   N_("block device name resolved by /proc/partition") },

@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: setpriv
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "SETPRIV" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "SETPRIV" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -143,7 +143,12 @@ Set or clear securebits. The argument is a comma\-separated list. The valid secu
 .sp
 \fB\-\-pdeathsig keep\fP|\fBclear\fP|\fB<signal>\fP
 .RS 4
-Keep, clear or set the parent death signal. Some LSMs, most notably SELinux and AppArmor, clear the signal when the process\(aq credentials change. Using \fB\-\-pdeathsig keep\fP will restore the parent death signal after changing credentials to remedy that situation.
+Keep, clear or set the parent death signal. Some LSMs, most notably SELinux and AppArmor, clear the signal when the process\*(Aq credentials change. Using \fB\-\-pdeathsig keep\fP will restore the parent death signal after changing credentials to remedy that situation.
+.RE
+.sp
+\fB\-\-ptracer\fP \fIpid\fP|\fBany\fP|\fBnone\fP
+.RS 4
+When Yama\(cqs restricted ptrace mode is in effect (that is, when \fI/proc/sys/kernel/yama/ptrace_scope\fP is set to 1), allow being traced via \fBptrace\fP(2) by the process with the specified PID, or any process, or no process. See \fBPR_SET_PTRACER\fP(2const). (Note that this is not inherited by child processes, though it is preserved across \fBexecve\fP(2).) This option has no effect when Yama is not enabled or is in a mode other than restricted ptrace.
 .RE
 .sp
 \fB\-\-selinux\-label\fP \fIlabel\fP
@@ -154,6 +159,42 @@ Request a particular SELinux transition (using a transition on exec, not dyntran
 \fB\-\-apparmor\-profile\fP \fIprofile\fP
 .RS 4
 Request a particular AppArmor profile (using a transition on exec). This will fail and cause \fBsetpriv\fP to abort if AppArmor is not in use, and the transition may be ignored or cause \fBexecve\fP(2) to fail at AppArmor\(cqs whim.
+.RE
+.sp
+\fB\-\-landlock\-access\fP \fIaccess\fP
+.RS 4
+Enable landlock restrictions for a specific set of system accesses.
+To allow specific subgroups of accesses use \fB\-\-landlock\-rule\fP.
+.sp
+Block all filesystem access:
+.sp
+\fBsetpriv \-\-landlock\-access fs\fP
+.sp
+Block all file deletions and directory creations:
+.sp
+\fBsetpriv \-\-landlock\-access fs:remove\-file,make\-dir\fP
+.sp
+For a complete set of supported access categories use \fBsetpriv \-\-help\fP.
+.RE
+.sp
+\fB\-\-landlock\-rule\fP \fIrule\fP
+.RS 4
+Allow one specific access from the categories blocked by \fB\-\-landlock\-access\fP.
+.sp
+The syntax is as follows:
+.sp
+\fB\-\-landlock\-rule $ruletype:$access:$rulearg\fP
+.sp
+For example grant file read access to everything under \fB/boot\fP:
+.sp
+\fB\-\-landlock\-rule path\-beneath:read\-file:/boot\fP
+.RE
+.sp
+\fB\-\-seccomp\-filter\fP \fIfile\fP
+.RS 4
+Load raw BPF seccomp filter code from a file.
+.sp
+Filters can for example be created with \fBenosys\fP.
 .RE
 .sp
 \fB\-\-reset\-env\fP
@@ -170,7 +211,7 @@ Display help text and exit.
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit.
 .RE
 .SH "NOTES"
 .sp
@@ -183,7 +224,7 @@ If you\(cqre looking for behavior similar to \fBsu\fP(1)/\fBrunuser\fP(1), or \f
 .sp
 \fBsetpriv \-\-reuid=1000 \-\-regid=1000 \-\-init\-groups\fP
 .sp
-If you want to mimic daemontools\(aq \fBsetuid\fP(8), try:
+If you want to mimic daemontools\*(Aq \fBsetuid\fP(8), try:
 .sp
 \fBsetpriv \-\-reuid=1000 \-\-regid=1000 \-\-clear\-groups\fP
 .SH "AUTHORS"
@@ -195,10 +236,11 @@ If you want to mimic daemontools\(aq \fBsetuid\fP(8), try:
 \fBsu\fP(1),
 \fBprctl\fP(2),
 \fBcapabilities\fP(7)
+\fBlandlock\fP(7)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBsetpriv\fP command is part of the util\-linux package which can be downloaded from \c

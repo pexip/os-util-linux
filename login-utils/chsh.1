@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: chsh
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.15
-.\"      Date: 2022-05-11
+.\" Generator: Asciidoctor 2.0.20
+.\"      Date: 2025-02-26
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.38.1
+.\"    Source: util-linux 2.41
 .\"  Language: English
 .\"
-.TH "CHSH" "1" "2022-05-11" "util\-linux 2.38.1" "User Commands"
+.TH "CHSH" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,7 +31,7 @@
 chsh \- change your login shell
 .SH "SYNOPSIS"
 .sp
-\fBchsh\fP [\fB\-s\fP \fIshell\fP] [\fB\-l\fP] [\fB\-h\fP] [\fB\-v\fP] [\fIusername\fP]
+\fBchsh\fP [\fB\-s\fP \fIshell\fP] [\fB\-l\fP] [\fB\-h\fP] [\fB\-V\fP] [\fIusername\fP]
 .SH "DESCRIPTION"
 .sp
 \fBchsh\fP is used to change your login shell. If a shell is not given on the command line, \fBchsh\fP prompts for one.
@@ -51,12 +51,14 @@ Print the list of shells listed in \fI/etc/shells\fP and exit.
 .sp
 \fB\-h\fP, \fB\-\-help\fP
 .RS 4
-Display help text and exit.
+Display help text and exit. (Short option \fB\-h\fP is used since version 2.30;
+older versions used the now\-deprecated \fB\-u\fP).
 .RE
 .sp
 \fB\-V\fP, \fB\-\-version\fP
 .RS 4
-Print version and exit.
+Display version and exit. (Short option \fB\-V\fP is used since version 2.39;
+older versions used the now\-deprecated \fB\-v\fP).
 .RE
 .SH "VALID SHELLS"
 .sp
@@ -77,8 +79,8 @@ Returns 0 if operation was successful, 1 if operation failed or command syntax w
 \fBshells\fP(5)
 .SH "REPORTING BUGS"
 .sp
-For bug reports, use the issue tracker at \c
-.URL "https://github.com/util\-linux/util\-linux/issues" "" "."
+For bug reports, use the \c
+.URL "https://github.com/util\-linux/util\-linux/issues" "issue tracker" "."
 .SH "AVAILABILITY"
 .sp
 The \fBchsh\fP command is part of the util\-linux package which can be downloaded from \c

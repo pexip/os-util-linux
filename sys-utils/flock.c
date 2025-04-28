@@ -1,4 +1,6 @@
-/*   Copyright 2003-2005 H. Peter Anvin - All Rights Reserved
+/*   SPDX-License-Identifier: MIT
+ *
+ *   Copyright 2003-2005 H. Peter Anvin - All Rights Reserved
  *
  *   Permission is hereby granted, free of charge, to any person
  *   obtaining a copy of this software and associated documentation
@@ -46,10 +48,21 @@
 #include "monotonic.h"
 #include "timer.h"
 
+#ifndef F_OFD_GETLK
+#define F_OFD_GETLK	36
+#define F_OFD_SETLK	37
+#define F_OFD_SETLKW	38
+#endif
+
+enum {
+	API_FLOCK,
+	API_FCNTL_OFD,
+};
+
 static void __attribute__((__noreturn__)) usage(void)
 {
 	fputs(USAGE_HEADER, stdout);
-	printf(
+	fprintf(stdout,
 		_(" %1$s [options] <file>|<directory> <command> [<argument>...]\n"
 		  " %1$s [options] <file>|<directory> -c <command>\n"
 		  " %1$s [options] <file descriptor number>\n"),
@@ -68,14 +81,15 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(  " -o, --close              close file descriptor before running command\n"), stdout);
 	fputs(_(  " -c, --command <command>  run a single command string through the shell\n"), stdout);
 	fputs(_(  " -F, --no-fork            execute command without forking\n"), stdout);
+	fputs(_(  "     --fcntl              use fcntl(F_OFD_SETLK) rather than flock()\n"), stdout);
 	fputs(_(  "     --verbose            increase verbosity\n"), stdout);
 	fputs(USAGE_SEPARATOR, stdout);
-	printf(USAGE_HELP_OPTIONS(26));
-	printf(USAGE_MAN_TAIL("flock(1)"));
+	fprintf(stdout, USAGE_HELP_OPTIONS(26));
+	fprintf(stdout, USAGE_MAN_TAIL("flock(1)"));
 	exit(EXIT_SUCCESS);
 }
 
-static sig_atomic_t timeout_expired = 0;
+static volatile sig_atomic_t timeout_expired = 0;
 
 static void timeout_handler(int sig __attribute__((__unused__)),
 			    siginfo_t *info,
@@ -124,6 +138,49 @@ static void __attribute__((__noreturn__)) run_program(char **cmd_argv)
 	_exit((errno == ENOMEM) ? EX_OSERR : EX_UNAVAILABLE);
 }
 
+static int flock_to_fcntl_type(int op)
+{
+	switch (op) {
+	case LOCK_EX:
+		return F_WRLCK;
+	case LOCK_SH:
+		return F_RDLCK;
+	case LOCK_UN:
+		return F_UNLCK;
+	default:
+		errx(EX_SOFTWARE, _("internal error, unknown operation %d"), op);
+	}
+}
+
+static int fcntl_lock(int fd, int op, int block)
+{
+	struct flock arg = {
+		.l_type = flock_to_fcntl_type(op),
+		.l_whence = SEEK_SET,
+		.l_start = 0,
+		.l_len = 0,
+	};
+	int cmd = (block & LOCK_NB) ? F_OFD_SETLK : F_OFD_SETLKW;
+	return fcntl(fd, cmd, &arg);
+}
+
+static int do_lock(int api, int fd, int op, int block)
+{
+	switch (api) {
+	case API_FLOCK:
+		return flock(fd, op | block);
+	case API_FCNTL_OFD:
+		return fcntl_lock(fd, op, block);
+	/*
+	 * Should never happen, api can never have values other than
+	 * API_*.
+	 */
+	default:
+		errx(EX_SOFTWARE, _("internal error, unknown api %d"), api);
+	}
+}
+
+
 int main(int argc, char *argv[])
 {
 	struct ul_timer timer;
@@ -138,7 +195,8 @@ int main(int argc, char *argv[])
 	int no_fork = 0;
 	int status;
 	int verbose = 0;
-	struct timeval time_start, time_done;
+	int api = API_FLOCK;
+	struct timeval time_start = { 0 }, time_done = { 0 };
 	/*
 	 * The default exit code for lock conflict or timeout
 	 * is specified in man flock.1
@@ -147,7 +205,8 @@ int main(int argc, char *argv[])
 	char **cmd_argv = NULL, *sh_c_argv[4];
 	const char *filename = NULL;
 	enum {
-		OPT_VERBOSE = CHAR_MAX + 1
+		OPT_VERBOSE = CHAR_MAX + 1,
+		OPT_FCNTL,
 	};
 	static const struct option long_options[] = {
 		{"shared", no_argument, NULL, 's'},
@@ -161,6 +220,7 @@ int main(int argc, char *argv[])
 		{"close", no_argument, NULL, 'o'},
 		{"no-fork", no_argument, NULL, 'F'},
 		{"verbose", no_argument, NULL, OPT_VERBOSE},
+		{"fcntl", no_argument, NULL, OPT_FCNTL},
 		{"help", no_argument, NULL, 'h'},
 		{"version", no_argument, NULL, 'V'},
 		{NULL, 0, NULL, 0}
@@ -215,6 +275,9 @@ int main(int argc, char *argv[])
 			if (conflict_exit_code < 0 || conflict_exit_code > 255)
 				errx(EX_USAGE, _("exit code out of range (expected 0 to 255)"));
 			break;
+		case OPT_FCNTL:
+			api = API_FCNTL_OFD;
+			break;
 		case OPT_VERBOSE:
 			verbose = 1;
 			break;
@@ -231,6 +294,13 @@ int main(int argc, char *argv[])
 	if (no_fork && do_close)
 		errx(EX_USAGE,
 			_("the --no-fork and --close options are incompatible"));
+
+	/*
+	 * For fcntl(F_OFD_SETLK), an exclusive lock requires that the
+	 * file is open for write.
+	 */
+	if (api != API_FLOCK && type == LOCK_EX)
+		open_flags = O_WRONLY;
 
 	if (argc > optind + 1) {
 		/* Run command */
@@ -278,9 +348,15 @@ int main(int argc, char *argv[])
 
 	if (verbose)
 		gettime_monotonic(&time_start);
-	while (flock(fd, type | block)) {
+	while (do_lock(api, fd, type, block)) {
 		switch (errno) {
 		case EWOULDBLOCK:
+			/*
+			 * Per the man page, for fcntl(), EACCES may
+			 * be returned and means the same as
+			 * EAGAIN/EWOULDBLOCK.
+			 */
+		case EACCES:
 			/* -n option set and failed to lock. */
 			if (verbose)
 				warnx(_("failed to get lock"));
@@ -327,7 +403,7 @@ int main(int argc, char *argv[])
 	if (have_timeout)
 		cancel_timer(&timer);
 	if (verbose) {
-		struct timeval delta;
+		struct timeval delta = { 0 };
 
 		gettime_monotonic(&time_done);
 		timersub(&time_done, &time_start, &delta);

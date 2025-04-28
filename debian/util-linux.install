@@ -1,95 +1,162 @@
-#!/usr/bin/dh-exec --with=install
+#!/usr/bin/dh-exec
 debian/logcheck/ignore.d.server/util-linux => /usr/share/util-linux/logcheck/ignore.d.server/util-linux
 # perl gets to do rename, not us.
-debian/tmp/usr/bin/rename => /usr/bin/rename.ul
+usr/bin/rename => /usr/bin/rename.ul
+usr/share/bash-completion/completions/rename => /usr/share/bash-completion/completions/rename.ul
 # Rename mkswap to mkswap.linux on non-linux.
-[linux-any] sbin/mkswap
-[!linux-any] debian/tmp/sbin/mkswap => /sbin/mkswap.linux
+[linux-any] sbin/mkswap usr/sbin/
+[!linux-any] debian/tmp/sbin/mkswap => /usr/sbin/mkswap.linux
 # weekly fstrim only available on linux
-[linux-any] lib/systemd/system/fstrim.timer
-[linux-any] lib/systemd/system/fstrim.service
-bin/findmnt
-bin/more                                                        [linux-any]
-bin/mountpoint
-bin/su
-sbin/agetty
-sbin/blkid
-sbin/findfs
-sbin/fsck
-sbin/fsck.cramfs
-sbin/fsck.minix
-sbin/mkfs
-sbin/mkfs.bfs
-sbin/mkfs.cramfs
-sbin/mkfs.minix
-sbin/runuser
-sbin/sulogin
-sbin/swaplabel
-sbin/wipefs
-sbin/zramctl                                                    [linux-any]
-usr/bin/choom                                                   [linux-any]
-usr/bin/chrt                                                    [!hurd-any]
+[linux-any] ${deb_systemdsystemunitdir}/fstrim.timer
+[linux-any] ${deb_systemdsystemunitdir}/fstrim.service
+bin/findmnt usr/bin
+[linux-any] bin/more usr/bin
+bin/mountpoint usr/bin
+bin/su usr/bin
+sbin/agetty usr/sbin
+sbin/blkid usr/sbin
+sbin/findfs usr/sbin
+sbin/fsck usr/sbin
+sbin/mkfs usr/sbin
+sbin/runuser usr/sbin
+sbin/sulogin usr/sbin
+sbin/swaplabel usr/sbin
+sbin/wipefs usr/sbin
+[linux-any] sbin/zramctl usr/sbin
+[linux-any] usr/bin/choom
+[!hurd-any] usr/bin/chrt
 usr/bin/flock
 usr/bin/getopt
 usr/bin/hardlink
-usr/bin/i386                                                    [amd64 i386]
+[amd64 i386] usr/bin/i386
 usr/bin/ipcmk
 usr/bin/ipcrm
 usr/bin/ipcs
-usr/bin/isosize sbin/
-usr/bin/last
-usr/bin/lastb
-usr/bin/lsns                                                    [linux-any]
+usr/bin/isosize usr/sbin/
+[linux-any] usr/bin/lsns
 usr/bin/mcookie
-usr/bin/mesg
-usr/bin/mips                                                    [mips mipsel]
-usr/bin/mips32                                                  [mips mipsel]
-usr/bin/mips64                                                  [mips mipsel]
+[mips mipsel] usr/bin/mips
+[mips mipsel] usr/bin/mips32
+[mips mipsel] usr/bin/mips64
 usr/bin/namei
-usr/bin/ppc                                                     [powerpc ppc64 ppc64el]
-usr/bin/ppc32                                                   [powerpc ppc64 ppc64el]
-usr/bin/ppc64                                                   [powerpc ppc64 ppc64el]
+[powerpc ppc64 ppc64el] usr/bin/ppc
+[powerpc ppc64 ppc64el] usr/bin/ppc32
+[powerpc ppc64 ppc64el] usr/bin/ppc64
 usr/bin/rev
-usr/bin/s390                                                    [s390x]
-usr/bin/s390x                                                   [s390x]
-usr/bin/setpriv                                                 [linux-any]
+[s390x] usr/bin/s390
+[s390x] usr/bin/s390x
+[linux-any] usr/bin/setpriv
 usr/bin/setsid
-usr/bin/utmpdump
 usr/bin/whereis
-usr/bin/x86_64                                                  [amd64]
-bin/dmesg                                                       [linux-any]
-bin/lsblk                                                       [linux-any]
-bin/wdctl                                                       [linux-any]
-sbin/blkdiscard                                                 [linux-any]
-sbin/blockdev                                                   [linux-any]
-sbin/chcpu                                                      [linux-any]
-sbin/ctrlaltdel                                                 [linux-any]
-sbin/fsfreeze                                                   [linux-any]
-sbin/fstrim                                                     [linux-any]
-sbin/pivot_root                                                 [linux-any]
-sbin/switch_root                                                [linux-any]
-usr/sbin/addpart usr/bin/                                       [linux-any]
-usr/sbin/delpart usr/bin/                                       [linux-any]
-usr/bin/fallocate                                               [linux-any]
-usr/bin/ionice                                                  [linux-any]
-usr/bin/linux32                                                 [linux-any]
-usr/bin/linux64                                                 [linux-any]
-usr/bin/lscpu                                                   [linux-any]
-usr/bin/lsipc                                                   [linux-any]
-usr/bin/lslocks                                                 [linux-any]
+[amd64] usr/bin/x86_64
+[linux-any] bin/dmesg usr/bin/
+[linux-any] bin/lsblk usr/bin/
+[linux-any] bin/wdctl usr/bin/
+[linux-any] sbin/blkdiscard usr/sbin/
+[linux-any] sbin/blockdev usr/sbin/
+[linux-any] sbin/chcpu usr/sbin/
+[linux-any] sbin/fsfreeze usr/sbin/
+[linux-any] sbin/fstrim usr/sbin/
+[linux-any] sbin/pivot_root usr/sbin/
+[linux-any] sbin/switch_root usr/sbin/
+[linux-any] usr/bin/fallocate
+[linux-any] usr/bin/ionice
+[linux-any] usr/bin/linux32
+[linux-any] usr/bin/linux64
+[linux-any] usr/bin/lscpu
+[linux-any] usr/bin/lsipc
+[linux-any] usr/bin/lslocks
 usr/bin/lslogins
-usr/bin/nsenter                                                 [linux-any]
-usr/sbin/partx usr/bin/                                         [linux-any]
-usr/bin/prlimit                                                 [linux-any]
-usr/sbin/resizepart usr/bin/                                    [linux-any]
-usr/bin/setarch                                                 [linux-any]
-usr/bin/setterm                                                 [linux-any]
-usr/bin/taskset                                                 [linux-any]
-usr/bin/uclampset                                               [linux-any]
-usr/bin/unshare                                                 [linux-any]
-usr/sbin/ldattach                                               [linux-any]
-usr/sbin/readprofile                                            [linux-any]
-usr/sbin/rtcwake                                                [linux-any]
-usr/bin/lsmem                                                   [linux-any]
-usr/bin/chmem usr/sbin/                                         [linux-any]
-sbin/blkzone                                                    [linux-any]
+[linux-any] usr/bin/nsenter
+[linux-any] usr/sbin/partx usr/bin/
+[linux-any] usr/bin/prlimit
+[linux-any] usr/bin/setarch
+[linux-any] usr/bin/setterm
+[linux-any] usr/bin/taskset
+[linux-any] usr/bin/uclampset
+[linux-any] usr/bin/unshare
+[linux-any] usr/sbin/ldattach
+[linux-any] usr/sbin/readprofile
+[linux-any] usr/sbin/rtcwake
+[linux-any] usr/bin/lsmem
+[linux-any] usr/bin/chmem usr/sbin/
+[linux-any] sbin/blkzone usr/sbin/
+[linux-any] <!nodoc> usr/share/man/man1/choom.1
+[!hurd-any] <!nodoc> usr/share/man/man1/chrt.1
+[linux-any] <!nodoc> usr/share/man/man1/dmesg.1
+[linux-any] <!nodoc> usr/share/man/man1/fallocate.1
+<!nodoc> usr/share/man/man1/flock.1
+<!nodoc> usr/share/man/man1/getopt.1
+<!nodoc> usr/share/man/man1/hardlink.1
+[linux-any] <!nodoc> usr/share/man/man1/ionice.1
+<!nodoc> usr/share/man/man1/ipcmk.1
+<!nodoc> usr/share/man/man1/ipcrm.1
+<!nodoc> usr/share/man/man1/ipcs.1
+[linux-any] <!nodoc> usr/share/man/man1/lscpu.1
+[linux-any] <!nodoc> usr/share/man/man1/lsipc.1
+<!nodoc> usr/share/man/man1/lslogins.1
+[linux-any] <!nodoc> usr/share/man/man1/lsmem.1
+<!nodoc> usr/share/man/man1/mcookie.1
+[linux-any] <!nodoc> usr/share/man/man1/more.1
+<!nodoc> usr/share/man/man1/mountpoint.1
+<!nodoc> usr/share/man/man1/namei.1
+[linux-any] <!nodoc> usr/share/man/man1/nsenter.1
+[linux-any] <!nodoc> usr/share/man/man1/prlimit.1
+<!nodoc> usr/share/man/man1/rename.1 => /usr/share/man/man1/rename.ul.1
+<!nodoc> usr/share/man/man1/rev.1
+<!nodoc> usr/share/man/man1/runuser.1
+[linux-any] <!nodoc> usr/share/man/man1/setpriv.1
+<!nodoc> usr/share/man/man1/setsid.1
+[linux-any] <!nodoc> usr/share/man/man1/setterm.1
+<!nodoc> usr/share/man/man1/su.1
+[linux-any] <!nodoc> usr/share/man/man1/taskset.1
+[linux-any] <!nodoc> usr/share/man/man1/uclampset.1
+[linux-any] <!nodoc> usr/share/man/man1/unshare.1
+<!nodoc> usr/share/man/man1/whereis.1
+<!nodoc> usr/share/man/man5/adjtime_config.5
+<!nodoc> usr/share/man/man5/scols-filter.5
+<!nodoc> usr/share/man/man5/terminal-colors.d.5
+<!nodoc> usr/share/man/man8/agetty.8
+[linux-any] <!nodoc> usr/share/man/man8/blkdiscard.8
+<!nodoc> usr/share/man/man8/blkid.8
+[linux-any] <!nodoc> usr/share/man/man8/blkzone.8
+[linux-any] <!nodoc> usr/share/man/man8/blockdev.8
+[linux-any] <!nodoc> usr/share/man/man8/chcpu.8
+[linux-any] <!nodoc> usr/share/man/man8/chmem.8
+<!nodoc> usr/share/man/man8/findfs.8
+<!nodoc> usr/share/man/man8/findmnt.8
+<!nodoc> usr/share/man/man8/fsck.8
+[linux-any] <!nodoc> usr/share/man/man8/fsfreeze.8
+[linux-any] <!nodoc> usr/share/man/man8/fstrim.8
+[amd64 i386] <!nodoc> usr/share/man/man8/i386.8
+<!nodoc> usr/share/man/man8/isosize.8
+[linux-any] <!nodoc> usr/share/man/man8/ldattach.8
+[linux-any] <!nodoc> usr/share/man/man8/linux32.8
+[linux-any] <!nodoc> usr/share/man/man8/linux64.8
+[linux-any] <!nodoc> usr/share/man/man8/lsblk.8
+[linux-any] <!nodoc> usr/share/man/man8/lslocks.8
+[linux-any] <!nodoc> usr/share/man/man8/lsns.8
+[mips mipsel] <!nodoc> usr/share/man/man8/mips.8
+[mips mipsel] <!nodoc> usr/share/man/man8/mips32.8
+[mips mipsel] <!nodoc> usr/share/man/man8/mips64.8
+<!nodoc> usr/share/man/man8/mkfs.8
+# Rename mkswap to mkswap.linux on non-linux.
+[linux-any] <!nodoc> usr/share/man/man8/mkswap.8
+[!linux-any] <!nodoc> usr/share/man/man8/mkswap.8 => /usr/share/man/man8/mkswap.linux.8
+[linux-any] <!nodoc> usr/share/man/man8/partx.8
+[linux-any] <!nodoc> usr/share/man/man8/pivot_root.8
+[powerpc ppc64 ppc64el] <!nodoc> usr/share/man/man8/ppc.8
+[powerpc ppc64 ppc64el] <!nodoc> usr/share/man/man8/ppc32.8
+[powerpc ppc64 ppc64el] <!nodoc> usr/share/man/man8/ppc64.8
+[linux-any] <!nodoc> usr/share/man/man8/readprofile.8
+[linux-any] <!nodoc> usr/share/man/man8/rtcwake.8
+[s390x] <!nodoc> usr/share/man/man8/s390.8
+[s390x] <!nodoc> usr/share/man/man8/s390x.8
+[linux-any] <!nodoc> usr/share/man/man8/setarch.8
+<!nodoc> usr/share/man/man8/sulogin.8
+<!nodoc> usr/share/man/man8/swaplabel.8
+[linux-any] <!nodoc> usr/share/man/man8/switch_root.8
+[linux-any] <!nodoc> usr/share/man/man8/wdctl.8
+<!nodoc> usr/share/man/man8/wipefs.8
+[amd64] <!nodoc> usr/share/man/man8/x86_64.8
+[linux-any] <!nodoc> usr/share/man/man8/zramctl.8
