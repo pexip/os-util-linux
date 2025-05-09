@@ -1,3 +1,10 @@
+util-linux (2.41-5) unstable; urgency=medium
+
+  [ Helmut Grohne ]
+  * Mark uuid_time64 symbol as glibc-only (Closes: #1105006)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Sat, 10 May 2025 00:54:07 +0200
+
 util-linux (2.41-4) unstable; urgency=medium
 
   * Pick patches from upstream v2.41-stable branch.

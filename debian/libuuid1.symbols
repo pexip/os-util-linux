@@ -26,7 +26,7 @@ libuuid.so.1 libuuid1 #MINVER#
  uuid_parse@UUID_1.0 2.16
  uuid_parse_range@UUID_2.36 2.36
  uuid_time@UUID_1.0 2.16
- uuid_time64@UUID_2.40 2.40
+ (arch=gnu-any-any)uuid_time64@UUID_2.40 2.40
  uuid_type@UUID_1.0 2.16
  uuid_unparse@UUID_1.0 2.16
  uuid_unparse_lower@UUID_1.0 2.16
