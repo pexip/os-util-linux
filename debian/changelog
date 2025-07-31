@@ -1,3 +1,9 @@
+util-linux (2.41-5+pexip25u1) pexip-trixie; urgency=medium
+
+  * New upstream release
+
+ -- Mark Hymers <mark.hymers@pexip.com>  Thu, 31 Jul 2025 15:06:02 +0100
+
 util-linux (2.41-5) unstable; urgency=medium
 
   [ Helmut Grohne ]
