@@ -1,3 +1,9 @@
+util-linux (2.41-5+pexip25u3) pexip-trixie; urgency=medium
+
+  * Rebuild to move liblastlog2-2 to main
+
+ -- Mark Hymers <mark.hymers@pexip.com>  Fri, 05 Dec 2025 18:25:17 +0000
+
 util-linux (2.41-5+pexip25u2) pexip-trixie; urgency=medium
 
   * Trixie build for product distribution
