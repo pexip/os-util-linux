@@ -1,3 +1,9 @@
+util-linux (2.41-5+pexip25u4) pexip-trixie; urgency=medium
+
+  * debian/util-linux-extra.maintscript: remove obsolete hwclock config on upgrade
+
+ -- Huw Jones <huw@pexip.com>  Thu, 02 Apr 2026 17:36:54 +0100
+
 util-linux (2.41-5+pexip25u3) pexip-trixie; urgency=medium
 
   * Rebuild to move liblastlog2-2 to main

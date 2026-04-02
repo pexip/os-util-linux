@@ -1,0 +1,2 @@
+rm_conffile /etc/default/hwclock 2.41-5+pexip25u4~
+rm_conffile /etc/init.d/hwclock.sh 2.41-5+pexip25u4~
