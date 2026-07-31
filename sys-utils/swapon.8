@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: swapon
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "SWAPON" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
+.TH "SWAPON" "8" "2026-06-16" "util\-linux 2.41.5" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,9 +31,9 @@
 swapon, swapoff \- enable/disable devices and files for paging and swapping
 .SH "SYNOPSIS"
 .sp
-\fBswapon\fP [options] [\fIspecialfile\fP...]
+\fBswapon\fP [options] [\fIspecialfile\fP.\|.\|.]
 .sp
-\fBswapoff\fP [\fB\-va\fP] [\fIspecialfile\fP...]
+\fBswapoff\fP [\fB\-va\fP] [\fIspecialfile\fP.\|.\|.]
 .SH "DESCRIPTION"
 .sp
 \fBswapon\fP is used to specify devices on which paging and swapping are to take place.
@@ -106,7 +106,7 @@ Specify the priority of the swap device. \fIpriority\fP is a value between 0 and
 Display swap usage summary by device. Equivalent to \fBcat /proc/swaps\fP. This output format is DEPRECATED in favour of \fB\-\-show\fP that provides better control on output data.
 .RE
 .sp
-\fB\-\-show\fP[\fB=\fP\fIcolumn\fP...]
+\fB\-\-show\fP[\fB=\fP\fIcolumn\fP.\|.\|.]
 .RS 4
 Display a definable table of swap areas. See the \fB\-\-help\fP output for a list of available columns.
 .RE
@@ -171,7 +171,7 @@ system has insufficient memory to stop swapping (OOM)
 .sp
 \fB8\fP
 .RS 4
-non\-\fBswapoff\fP(2) syscall system error (out of memory, ...)
+non\-\fBswapoff\fP(2) syscall system error (out of memory, .\|.\|.)
 .RE
 .sp
 \fB16\fP
@@ -235,7 +235,7 @@ Since version 2.41, the command \fBmkswap \-\-file\fP can create a new swap file
 Swap over \fBNFS\fP may not work.
 .SS "Suspend"
 .sp
-\fBswapon\fP automatically detects and rewrites a swap space signature with old software suspend data (e.g., \fBS1SUSPEND\fP, \fBS2SUSPEND\fP, ...). The problem is that if we don\(cqt do it, then we get data corruption the next time an attempt at unsuspending is made.
+\fBswapon\fP automatically detects and rewrites a swap space signature with old software suspend data (e.g., \fBS1SUSPEND\fP, \fBS2SUSPEND\fP, .\|.\|.). The problem is that if we don\(cqt do it, then we get data corruption the next time an attempt at unsuspending is made.
 .SH "HISTORY"
 .sp
 The \fBswapon\fP command appeared in 4.0BSD.

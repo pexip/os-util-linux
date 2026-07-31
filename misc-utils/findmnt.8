@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: findmnt
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "FINDMNT" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
+.TH "FINDMNT" "8" "2026-06-16" "util\-linux 2.41.5" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -144,7 +144,7 @@ Use JSON output format.
 .RS 4
 Reads information about filesystems from the kernel. This is the default output. The format is tree\-like and only includes mount options managed by the kernel (see also \fB\-\-mtab\fP).
 .sp
-The optional argument \fImethod\fP can be either:
+The optional argument \fImethod\fP is supported only for the long variant (\-\-kernel). The short variant (\-k) defaults to the mountinfo method for backward compatibility. The supported methods can be either:
 .sp
 .RS 4
 .ie n \{\

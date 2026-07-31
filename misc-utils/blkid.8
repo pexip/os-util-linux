@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: blkid
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "BLKID" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
+.TH "BLKID" "8" "2026-06-16" "util\-linux 2.41.5" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -33,11 +33,11 @@ blkid \- locate/print block device attributes
 .sp
 \fBblkid\fP \fB\-\-label\fP \fIlabel\fP | \fB\-\-uuid\fP \fIuuid\fP
 .sp
-\fBblkid\fP [\fB\-\-no\-encoding\fP \fB\-\-garbage\-collect\fP \fB\-\-list\-one\fP \fB\-\-cache\-file\fP \fIfile\fP] [\fB\-\-output\fP \fIformat\fP] [\fB\-\-match\-tag\fP \fItag\fP] [\fB\-\-match\-token\fP \fINAME=value\fP] [\fIdevice\fP...]
+\fBblkid\fP [\fB\-\-no\-encoding\fP \fB\-\-garbage\-collect\fP \fB\-\-list\-one\fP \fB\-\-cache\-file\fP \fIfile\fP] [\fB\-\-output\fP \fIformat\fP] [\fB\-\-match\-tag\fP \fItag\fP] [\fB\-\-match\-token\fP \fINAME=value\fP] [\fIdevice\fP.\|.\|.]
 .sp
-\fBblkid\fP \fB\-\-probe\fP [\fB\-\-offset\fP \fIoffset\fP] [\fB\-\-output\fP \fIformat\fP] [\fB\-\-size\fP \fIsize\fP] [\fB\-\-match\-tag\fP \fItag\fP] [\fB\-\-match\-types\fP \fIlist\fP] [\fB\-\-usages\fP \fIlist\fP] [\fB\-\-no\-part\-details\fP] \fIdevice\fP...
+\fBblkid\fP \fB\-\-probe\fP [\fB\-\-offset\fP \fIoffset\fP] [\fB\-\-output\fP \fIformat\fP] [\fB\-\-size\fP \fIsize\fP] [\fB\-\-match\-tag\fP \fItag\fP] [\fB\-\-match\-types\fP \fIlist\fP] [\fB\-\-usages\fP \fIlist\fP] [\fB\-\-no\-part\-details\fP] \fIdevice\fP.\|.\|.
 .sp
-\fBblkid\fP \fB\-\-info\fP [\fB\-\-output format\fP] [\fB\-\-match\-tag\fP \fItag\fP] \fIdevice\fP...
+\fBblkid\fP \fB\-\-info\fP [\fB\-\-output format\fP] [\fB\-\-match\-tag\fP \fItag\fP] \fIdevice\fP.\|.\|.
 .SH "DESCRIPTION"
 .sp
 The \fBblkid\fP program is the command\-line interface to working with the \fBlibblkid\fP(3) library. It can determine the type of content (e.g., filesystem or swap) that a block device holds, and also the attributes (tokens, NAME=value pairs) from the content metadata (e.g., LABEL or UUID fields).

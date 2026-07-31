@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: fsck
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "FSCK" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
+.TH "FSCK" "8" "2026-06-16" "util\-linux 2.41.5" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,7 +31,7 @@
 fsck \- check and repair a Linux filesystem
 .SH "SYNOPSIS"
 .sp
-\fBfsck\fP [\fB\-lsAVRTMNP\fP] [\fB\-r\fP [\fIfd\fP]] [\fB\-C\fP [\fIfd\fP]] [\fB\-t\fP \fIfstype\fP] [\fIfilesystem\fP...] [\fB\-\-\fP] [\fIfs\-specific\-options\fP]
+\fBfsck\fP [\fB\-lsAVRTMNP\fP] [\fB\-r\fP [\fIfd\fP]] [\fB\-C\fP [\fIfd\fP]] [\fB\-t\fP \fIfstype\fP] [\fIfilesystem\fP.\|.\|.] [\fB\-\-\fP] [\fIfs\-specific\-options\fP]
 .SH "DESCRIPTION"
 .sp
 \fBfsck\fP is used to check and optionally repair one or more Linux filesystems. \fIfilesystem\fP can be a device name (e.g., \fI/dev/hdc1\fP, \fI/dev/sdb2\fP), a mount point (e.g., \fI/\fP, \fI/usr\fP, \fI/home\fP), or a filesystem label or UUID specifier (e.g., UUID=8868abf6\-88c5\-4a83\-98b8\-bfc24057f7bd or LABEL=root). Normally, the \fBfsck\fP program will try to handle filesystems on different physical disk drives in parallel to reduce the total amount of time needed to check all of them.
@@ -127,7 +127,7 @@ Walk through the \fI/etc/fstab\fP file and try to check all filesystems in one r
 .sp
 The root filesystem will be checked first unless the \fB\-P\fP option is specified (see below). After that, filesystems will be checked in the order specified by the \fIfs_passno\fP (the sixth) field in the \fI/etc/fstab\fP file. Filesystems with a \fIfs_passno\fP value of 0 are skipped and are not checked at all. Filesystems with a \fIfs_passno\fP value of greater than zero will be checked in order, with filesystems with the lowest \fIfs_passno\fP number being checked first. If there are multiple filesystems with the same pass number, \fBfsck\fP will attempt to check them in parallel, although it will avoid running multiple filesystem checks on the same physical disk.
 .sp
-\fBfsck\fP does not check stacked devices (RAIDs, dm\-crypt, ...) in parallel with any other device. See below for \fBFSCK_FORCE_ALL_PARALLEL\fP setting. The \fI/sys\fP filesystem is used to determine dependencies between devices.
+\fBfsck\fP does not check stacked devices (RAIDs, dm\-crypt, .\|.\|.) in parallel with any other device. See below for \fBFSCK_FORCE_ALL_PARALLEL\fP setting. The \fI/sys\fP filesystem is used to determine dependencies between devices.
 .sp
 Hence, a very common configuration in \fI/etc/fstab\fP files is to set the root filesystem to have a \fIfs_passno\fP value of 1 and to set all other filesystems to have a \fIfs_passno\fP value of 2. This will allow \fBfsck\fP to automatically run filesystem checkers in parallel if it is advantageous to do so. System administrators might choose not to use this configuration if they need to avoid multiple filesystem checks running in parallel for some reason \- for example, if the machine in question is short on memory so that excessive paging is a concern.
 .sp

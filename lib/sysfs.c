@@ -2,7 +2,7 @@
  * No copyright is claimed.  This code is in the public domain; do with
  * it what you wish.
  *
- * Copyright (C) 2011 Karel Zak <kzak@redhat.com>
+ * Written by Karel Zak <kzak@redhat.com> [2011]
  */
 #include <ctype.h>
 #include <libgen.h>
@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #include "c.h"
+#include "cctype.h"
 #include "pathnames.h"
 #include "sysfs.h"
 #include "fileutils.h"
@@ -576,7 +577,7 @@ int sysfs_blkdev_get_wholedisk(	struct path_cxt *pc,
 	tmp = uuid;
 	prefix = uuid ? strsep(&tmp, "-") : NULL;
 
-        if (prefix && strncasecmp(prefix, "part", 4) == 0)
+        if (prefix && c_strncasecmp(prefix, "part", 4) == 0)
             is_part = 1;
         free(uuid);
 
@@ -977,7 +978,7 @@ dev_t __sysfs_devname_to_devno(const char *prefix, const char *name, const char 
 	/*
 	 * Read from /sys/block/<parent>/<partition>/dev
 	 */
-	if (!dev && parent && startswith(name, parent)) {
+	if (!dev && parent && ul_startswith(name, parent)) {
 		len = snprintf(buf, sizeof(buf),
 				"%s" _PATH_SYS_BLOCK "/%s/%s/dev",
 				prefix, _parent, _name);

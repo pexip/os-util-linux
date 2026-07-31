@@ -240,14 +240,6 @@ identical_file(struct entry *e1, struct entry *e2){
 	return equal;
 }
 
-/*
- * The longest file name component to allow for in the input directory tree.
- * Ext2fs (and many others) allow up to 255 bytes.  A couple of filesystems
- * allow longer (e.g. smbfs 1024), but there isn't much use in supporting
- * >255-byte names in the input directory tree given that such names get
- * truncated to 255 bytes when written to cramfs.
- */
-#define MAX_INPUT_NAMELEN 255
 
 static int find_identical_file(struct entry *orig, struct entry *new, loff_t *fslen_ub)
 {
@@ -294,7 +286,7 @@ static int cramsort (const struct dirent **a, const struct dirent **b)
 
 static unsigned int parse_directory(struct entry *root_entry, const char *name, struct entry **prev, loff_t *fslen_ub)
 {
-	struct dirent **dirlist;
+	struct dirent **dirlist = NULL;
 	int totalsize = 0, dircount, dirindex;
 	char *path, *endpath;
 	size_t len = strlen(name);

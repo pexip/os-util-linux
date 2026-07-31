@@ -375,6 +375,9 @@
 /* Define to 1 if you have the <linux/nsfs.h> header file. */
 #undef HAVE_LINUX_NSFS_H
 
+/* Define to 1 if you have the <linux/openat2.h> header file. */
+#undef HAVE_LINUX_OPENAT2_H
+
 /* Define to 1 if you have the <linux/pr.h> header file. */
 #undef HAVE_LINUX_PR_H
 

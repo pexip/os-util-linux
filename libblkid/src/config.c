@@ -29,6 +29,7 @@
 
 #include "blkidP.h"
 #include "env.h"
+#include "cctype.h"
 
 static int parse_evaluate(struct blkid_config *conf, char *s)
 {
@@ -94,7 +95,7 @@ static int parse_next(FILE *fd, struct blkid_config *conf)
 
 	if (!strncmp(s, "SEND_UEVENT=", 12)) {
 		s += 12;
-		if (*s && !strcasecmp(s, "yes"))
+		if (*s && !c_strcasecmp(s, "yes"))
 			conf->uevent = TRUE;
 		else if (*s)
 			conf->uevent = FALSE;
@@ -153,7 +154,7 @@ struct blkid_config *blkid_read_config(const char *filename)
 
 #else /* !HAVE_LIBECONF */
 
-	static econf_file *file = NULL;
+	econf_file *file = NULL;
 	char *line = NULL;
 	bool uevent = false;
 	econf_err error;

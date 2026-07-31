@@ -44,6 +44,7 @@
 #include "nls.h"
 #include "closestream.h"
 #include "c.h"
+#include "cctype.h"
 #include "strutils.h"
 #include "xalloc.h"
 #include "optutils.h"
@@ -344,13 +345,13 @@ static int poll_action_name_to_id(const char *name, size_t namesz)
 {
 	int id = -1;
 
-	if (strncasecmp(name, "move", namesz) == 0 && namesz == 4)
+	if (c_strncasecmp(name, "move", namesz) == 0 && namesz == 4)
 		id = MNT_TABDIFF_MOVE;
-	else if (strncasecmp(name, "mount", namesz) == 0 && namesz == 5)
+	else if (c_strncasecmp(name, "mount", namesz) == 0 && namesz == 5)
 		id = MNT_TABDIFF_MOUNT;
-	else if (strncasecmp(name, "umount", namesz) == 0 && namesz == 6)
+	else if (c_strncasecmp(name, "umount", namesz) == 0 && namesz == 6)
 		id = MNT_TABDIFF_UMOUNT;
-	else if (strncasecmp(name, "remount", namesz) == 0 && namesz == 7)
+	else if (c_strncasecmp(name, "remount", namesz) == 0 && namesz == 7)
 		id = MNT_TABDIFF_REMOUNT;
 	else
 		warnx(_("unknown action: %s"), name);
@@ -396,7 +397,7 @@ static int column_name_to_id(const char *name, size_t namesz)
 	for (i = 0; i < ARRAY_SIZE(infos); i++) {
 		const char *cn = column_id_to_name(i);
 
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
@@ -1445,6 +1446,8 @@ static int poll_table(struct libmnt_table *tb, const char *tabfile,
 
 		if (count) {
 			rc = scols_table_print_range(table, NULL, NULL);
+			if (rc == 0 && !(findmnt->flags & FL_JSON))
+				fputc('\n', scols_table_get_stream(table));
 			fflush(scols_table_get_stream(table));
 			if (rc)
 				goto done;
@@ -1530,7 +1533,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -F, --tab-file <path>  alternative file for -s, -m or -k options\n"), out);
 	fputs(_(" -m, --mtab             search in table of mounted filesystems\n"
 		"                          (includes user space mount options)\n"), out);
-	fputs(_(" -k, --kernel[=<method>] search in kernel mount table (default)\n"
+	fputs(_(" -k                     an alias for '--kernel=mountinfo'\n"), out);
+	fputs(_(" --kernel[=<method>]    search in kernel mount table (default behavior);\n"
 		"                          <method> is mountinfo or listmount\n"), out);
 	fputs(_(" -N, --task <tid>       use alternative namespace (/proc/<tid>/mountinfo file)\n"), out);
 	fputs(_(" -p, --poll[=<list>]    monitor changes in table of mounted filesystems\n"), out);
@@ -1763,7 +1767,8 @@ int main(int argc, char *argv[])
 		FINDMNT_OPT_SHADOWED,
 		FINDMNT_OPT_HYPERLINK,
 		FINDMNT_OPT_ID,
-		FINDMNT_OPT_UNIQ_ID
+		FINDMNT_OPT_UNIQ_ID,
+		FINDMNT_OPT_KERNEL
 	};
 
 	static const struct option longopts[] = {
@@ -1780,7 +1785,7 @@ int main(int argc, char *argv[])
 		{ "help",	    no_argument,       NULL, 'h'		 },
 		{ "invert",	    no_argument,       NULL, 'i'		 },
 		{ "json",	    no_argument,       NULL, 'J'		 },
-		{ "kernel",	    optional_argument, NULL, 'k'		 },
+		{ "kernel",	    optional_argument, NULL, FINDMNT_OPT_KERNEL	 },
 		{ "list",	    no_argument,       NULL, 'l'		 },
 		{ "mountpoint",	    required_argument, NULL, 'M'		 },
 		{ "mtab",	    no_argument,       NULL, 'm'		 },
@@ -1843,7 +1848,7 @@ int main(int argc, char *argv[])
 	findmnt.flags |= FL_TREE;
 
 	while ((c = getopt_long(argc, argv,
-				"AabCcDd:ehIiJfF:o:O:p::PQ:k::lmM:nN:rst:uvRS:T:Uw:VxyH",
+				"AabCcDd:ehIiJfF:o:O:p::PQ:klmM:nN:rst:uvRS:T:Uw:VxyH",
 				longopts, NULL)) != -1) {
 
 		err_exclusive_options(c, longopts, excl, excl_st);
@@ -1940,6 +1945,9 @@ int main(int argc, char *argv[])
 			findmnt.flags &= ~FL_TREE;
 			break;
 		case 'k':
+			tabtype = TABTYPE_KERNEL_MOUNTINFO;
+			break;
+		case FINDMNT_OPT_KERNEL:
 			if (optarg) {
 				if (strcmp(optarg, "mountinfo") == 0)
 					tabtype = TABTYPE_KERNEL_MOUNTINFO;

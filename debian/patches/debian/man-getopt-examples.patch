@@ -9,7 +9,7 @@ Debian BTS #913049
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/misc-utils/getopt.1 b/misc-utils/getopt.1
-index 73a407b..0e2f9c4 100644
+index 5844d8f..775cf94 100644
 --- a/misc-utils/getopt.1
 +++ b/misc-utils/getopt.1
 @@ -155,7 +155,7 @@ In compatibility mode, leading \*(Aq\fB\-\fP\*(Aq and \*(Aq\fB+\fP\*(Aq characte

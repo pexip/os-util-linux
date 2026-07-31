@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: lslocks
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "LSLOCKS" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
+.TH "LSLOCKS" "8" "2026-06-16" "util\-linux 2.41.5" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -158,7 +158,7 @@ Ending offset of the lock.
 .sp
 PATH
 .RS 4
-Full path of the lock. If none is found, or there are no permissions to read the path, it will fall back to the device\(cqs mountpoint and "..." is appended to the path. The path might be truncated; use \fB\-\-notruncate\fP to get the full path.
+Full path of the lock. If none is found, or there are no permissions to read the path, it will fall back to the device\(cqs mountpoint and ".\|.\|." is appended to the path. The path might be truncated; use \fB\-\-notruncate\fP to get the full path.
 .RE
 .sp
 BLOCKER

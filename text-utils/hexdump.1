@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: hexdump
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "HEXDUMP" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
+.TH "HEXDUMP" "1" "2026-06-16" "util\-linux 2.41.5" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,9 +31,9 @@
 hexdump \- display file contents in hexadecimal, decimal, octal, or ascii
 .SH "SYNOPSIS"
 .sp
-\fBhexdump\fP \fIoptions file\fP ...
+\fBhexdump\fP \fIoptions file\fP .\|.\|.
 .sp
-\fBhd\fP \fIoptions file\fP ...
+\fBhd\fP \fIoptions file\fP .\|.\|.
 .SH "DESCRIPTION"
 .sp
 The \fBhexdump\fP utility is a filter which displays the specified files, or standard input if no files are specified, in a user\-specified format.
@@ -370,7 +370,7 @@ T}
 .sp
 When put at the end of a format specifier, \fBhexdump\fP highlights the respective string with the color specified. Conditions, if present, are evaluated prior to highlighting.
 .sp
-\fB_L[color_unit_1,color_unit_2,...,color_unit_n]\fP
+\fB_L[color_unit_1,color_unit_2,.\|.\|.,color_unit_n]\fP
 .sp
 The full syntax of a color unit is as follows:
 .sp
@@ -440,7 +440,7 @@ Display the input in perusal format:
 .if n .RS 4
 .nf
 .fam C
-   "%06.6_ao "  12/1 "%3_u "
+   "%06.6_ao "\&  12/1 "%3_u "
    "\(rst" "%_p "
    "\(rsn"
 .fam
@@ -453,7 +453,7 @@ Implement the \fB\-x\fP option:
 .nf
 .fam C
    "%07.7_Ax\(rsn"
-   "%07.7_ax  " 8/2 "%04x " "\(rsn"
+   "%07.7_ax\&  " 8/2 "%04x " "\(rsn"
 .fam
 .fi
 .if n .RE
@@ -464,7 +464,7 @@ MBR Boot Signature example: Highlight the addresses cyan and the bytes at offset
 .nf
 .fam C
    "%07.7_Ax_L[cyan]\(rsn"
-   "%07.7_ax_L[cyan]  " 8/2 "   %04x_L[green:0xAA55@510\-511,!red:0xAA55@510\-511] " "\(rsn"
+   "%07.7_ax_L[cyan]\&  " 8/2 "\&   %04x_L[green:0xAA55@510\-511,!red:0xAA55@510\-511] " "\(rsn"
 .fam
 .fi
 .if n .RE

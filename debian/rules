@@ -117,6 +117,12 @@ endif
 		-Nlibfdisk1-udeb -Nlibsmartcols1-udeb -Nlibuuid1-udeb \
 		-Nutil-linux-udeb
 	dh_install --remaining-packages
+	# Skip new bash-completions introduced in stable update
+	rm debian/tmp/usr/share/bash-completion/completions/bits
+	rm debian/tmp/usr/share/bash-completion/completions/blkpr
+	rm debian/tmp/usr/share/bash-completion/completions/choom
+	rm debian/tmp/usr/share/bash-completion/completions/coresched
+	rm debian/tmp/usr/share/bash-completion/completions/lsfd
 	#
 	# Install bash-completions only for binaries we ship
 	for PACKAGE in $(BINARYPACKAGES) ; do \

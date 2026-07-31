@@ -56,6 +56,7 @@
 
 #include "all-io.h"
 #include "c.h"
+#include "cctype.h"
 #include "closestream.h"
 #include "nls.h"
 #include "pathnames.h"
@@ -220,7 +221,7 @@ static int decode(const char *name, const CODE *codetab)
 		return -1;
 	}
 	for (c = codetab; c->c_name; c++)
-		if (!strcasecmp(name, c->c_name))
+		if (!c_strcasecmp(name, c->c_name))
 			return (c->c_val);
 
 	return -1;
@@ -621,7 +622,7 @@ static void add_structured_data_param(struct list_head *ls, const char *param)
 
 	sd = list_last_entry(ls, struct structured_data, sds);
 
-	if (strv_extend(&sd->params,  param))
+	if (ul_strv_extend(&sd->params,  param))
 		err_oom();
 }
 
@@ -637,7 +638,7 @@ static void __attribute__ ((__format__ (__printf__, 2, 3)))
 
 	sd = list_last_entry(ls, struct structured_data, sds);
 	va_start(ap, fmt);
-	x = strv_extendv(&sd->params, fmt, ap);
+	x = ul_strv_extendv(&sd->params, fmt, ap);
 	va_end(ap);
 
 	if (x)
@@ -648,11 +649,11 @@ static char *strdup_structured_data(struct structured_data *sd)
 {
 	char *res, *tmp;
 
-	if (strv_isempty(sd->params))
+	if (ul_strv_isempty(sd->params))
 		return NULL;
 
 	xasprintf(&res, "[%s %s]", sd->id,
-			(tmp = strv_join(sd->params, " ")));
+			(tmp = ul_strv_join(sd->params, " ")));
 	free(tmp);
 	return res;
 }
@@ -669,7 +670,7 @@ static char *strdup_structured_data_list(struct list_head *ls)
 
 		if (!one)
 			continue;
-		res = strconcat(tmp, one);
+		res = ul_strconcat(tmp, one);
 		free(tmp);
 		free(one);
 	}
@@ -687,7 +688,7 @@ static char *get_structured_data_string(struct logger_ctl *ctl)
 		usr = strdup_structured_data_list(&ctl->user_sds);
 
 	if (sys && usr) {
-		res = strconcat(sys, usr);
+		res = ul_strconcat(sys, usr);
 		free(sys);
 		free(usr);
 	} else
@@ -698,10 +699,10 @@ static char *get_structured_data_string(struct logger_ctl *ctl)
 
 static int valid_structured_data_param(const char *str)
 {
-	char *s;
-	char *eq  = strchr(str, '='),
-	     *qm1 = strchr(str, '"'),
-	     *qm2 = qm1 ? ul_strchr_escaped(qm1 + 1, '"') : NULL;
+	const char *s;
+	const char *eq  = strchr(str, '='),
+	           *qm1 = strchr(str, '"'),
+	           *qm2 = qm1 ? ul_strchr_escaped(qm1 + 1, '"') : NULL;
 
 	/* something is missing */
 	if (!eq || !qm1 || !qm2)
@@ -709,7 +710,7 @@ static int valid_structured_data_param(const char *str)
 
 	/* ']' need to be escaped */
 	for (s = qm1 + 1; s && *s; ) {
-		char *p = strchr(s, ']');
+		const char *p = strchr(s, ']');
 		if (!p)
 			break;
 		if (p > qm2 || p == ul_strchr_escaped(s, ']'))
@@ -719,7 +720,7 @@ static int valid_structured_data_param(const char *str)
 
 	/* '\' is allowed only before '[]"\' chars */
 	for (s = qm1 + 1; s && *s; ) {
-		char *p = strchr(s, '\\');
+		const char *p = strchr(s, '\\');
 		if (!p)
 			break;
 		if (!strchr("[]\"\\", *(p + 1)))
@@ -738,7 +739,7 @@ static int valid_structured_data_param(const char *str)
  */
 static int valid_structured_data_id(const char *str)
 {
-	char *at = strchr(str, '@');
+	const char *at = strchr(str, '@');
 	const char *p;
 
 	/* standardized IDs without @<digits> */
@@ -1024,7 +1025,9 @@ static void logger_stdin(struct logger_ctl *ctl)
 		if (ctl->prio_prefix && c == '<') {
 			pri = 0;
 			buf[i++] = c;
-			while (isdigit(c = getchar()) && pri <= 191) {
+			while (i < ctl->max_message_size
+			       && isdigit(c = getchar()) && pri <= 191) {
+
 				buf[i++] = c;
 				pri = pri * 10 + c - '0';
 			}
@@ -1295,7 +1298,7 @@ int main(int argc, char **argv)
 	argc -= optind;
 	argv += optind;
 	if (stdout_reopened && argc)
-		warnx(_("--file <file> and <message> are mutually exclusive, message is ignored"));
+		warnx(_("--file <file> and <message> are mutually exclusive; file is ignored"));
 #ifdef HAVE_LIBSYSTEMD
 	if (jfd) {
 		int ret = journald_entry(&ctl, jfd);

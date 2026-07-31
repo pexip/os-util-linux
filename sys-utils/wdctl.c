@@ -32,6 +32,7 @@
 
 #include "nls.h"
 #include "c.h"
+#include "cctype.h"
 #include "xalloc.h"
 #include "closestream.h"
 #include "optutils.h"
@@ -165,7 +166,7 @@ static long name2bit(const char *name, size_t namesz)
 
 	for (i = 0; i < ARRAY_SIZE(wdflags); i++) {
 		const char *cn = wdflags[i].name;
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return wdflags[i].flag;
 	}
 	warnx(_("unknown flag: %s"), name);
@@ -178,7 +179,7 @@ static int column2id(const char *name, size_t namesz)
 
 	for (i = 0; i < ARRAY_SIZE(infos); i++) {
 		const char *cn = infos[i].name;
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
@@ -594,7 +595,7 @@ static int read_governors(struct wd_device *wd)
 		while ((sz = getline(&line, &dummy, f)) >= 0) {
 			if (rtrim_whitespace((unsigned char *) line) == 0)
 				continue;
-			strv_consume(&wd->available_governors, line);
+			ul_strv_consume(&wd->available_governors, line);
 			dummy = 0;
 			line = NULL;
 		}
@@ -663,7 +664,7 @@ static void show_governors(struct wd_device *wd)
 	if (wd->governor)
 		printf(_("%-14s %s\n"), _("Pre-timeout governor:"), wd->governor);
 	if (wd->available_governors) {
-		char *tmp = strv_join(wd->available_governors, " ");
+		char *tmp = ul_strv_join(wd->available_governors, " ");
 
 		if (tmp)
 			printf(_("%-14s %s\n"),
@@ -779,7 +780,7 @@ int main(int argc, char *argv[])
 	close_stdout_atexit();
 
 	while ((c = getopt_long(argc, argv,
-				"d:f:g:hFnITp:o:s:OrVx", long_opts, NULL)) != -1) {
+				"f:g:hFnITp:o:s:OrVx", long_opts, NULL)) != -1) {
 
 		err_exclusive_options(c, long_opts, excl, excl_st);
 

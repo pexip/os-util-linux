@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: whereis
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "WHEREIS" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
+.TH "WHEREIS" "1" "2026-06-16" "util\-linux 2.41.5" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,7 +31,7 @@
 whereis \- locate the binary, source, and manual page files for a command
 .SH "SYNOPSIS"
 .sp
-\fBwhereis\fP [options] [\fB\-BMS\fP \fIdirectory\fP... \fB\-f\fP] \fIname\fP...
+\fBwhereis\fP [options] [\fB\-BMS\fP \fIdirectory\fP.\|.\|. \fB\-f\fP] \fIname\fP.\|.\|.
 .SH "DESCRIPTION"
 .sp
 \fBwhereis\fP locates the binary, source and manual files for the specified command names. The supplied names are \fBfirst stripped of leading pathname components\fP. Prefixes of \fBs.\fP resulting from use of source code control are also dealt with. \fBwhereis\fP then attempts to locate the desired program in the standard Linux places, and in the places specified by \fB$PATH\fP and \fB$MANPATH\fP.

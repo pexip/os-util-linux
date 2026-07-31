@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: ipcrm
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "IPCRM" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
+.TH "IPCRM" "1" "2026-06-16" "util\-linux 2.41.5" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -33,7 +33,7 @@ ipcrm \- remove certain IPC resources
 .sp
 \fBipcrm\fP [options]
 .sp
-\fBipcrm\fP [\fBshm\fP|\fBmsg\fP|\fBsem\fP] \fIID\fP ...
+\fBipcrm\fP [\fBshm\fP|\fBmsg\fP|\fBsem\fP] \fIID\fP .\|.\|.
 .SH "DESCRIPTION"
 .sp
 \fBipcrm\fP removes POSIX and System V inter\-process communication (IPC) objects and associated data structures from the system. In order to delete such objects, you must be superuser, or the creator or owner of the object.
@@ -64,7 +64,7 @@ Remove the shared memory segment created with \fIshmkey\fP after the last detach
 Remove the shared memory segment identified by \fIshmid\fP after the last detach is performed.
 .RE
 .sp
-\fB\-x\fP, \fB\-\-posix\-shmem\fP \fIname\fP
+\fB\-\-posix\-shmem\fP \fIname\fP
 .RS 4
 Remove the POSIX shared memory segment created with \fIname\fP.
 .RE
@@ -79,7 +79,7 @@ Remove the message queue created with \fImsgkey\fP.
 Remove the message queue identified by \fImsgid\fP.
 .RE
 .sp
-\fB\-y\fP, \fB\-\-posix\-mqueue\fP \fIname\fP
+\fB\-\-posix\-mqueue\fP \fIname\fP
 .RS 4
 Remove the POSIX message queue created with \fIname\fP.
 .RE
@@ -94,7 +94,7 @@ Remove the semaphore created with \fIsemkey\fP.
 Remove the semaphore identified by \fIsemid\fP.
 .RE
 .sp
-\fB\-z\fP, \fB\-\-posix\-semaphore\fP \fIname\fP
+\fB\-\-posix\-semaphore\fP \fIname\fP
 .RS 4
 Remove the POSIX named semaphore created with \fIname\fP.
 .RE

@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: namei
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "NAMEI" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
+.TH "NAMEI" "1" "2026-06-16" "util\-linux 2.41.5" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,7 +31,7 @@
 namei \- follow a pathname until a terminal point is found
 .SH "SYNOPSIS"
 .sp
-\fBnamei\fP [options] \fIpathname\fP...
+\fBnamei\fP [options] \fIpathname\fP.\|.\|.
 .SH "DESCRIPTION"
 .sp
 \fBnamei\fP interprets its arguments as pathnames to any type of Unix file (symlinks, files, directories, and so forth). \fBnamei\fP then follows each pathname until an endpoint is found (a file, a directory, a device node, etc). If it finds a symbolic link, it shows the link, and starts following it, indenting the output to show the context.

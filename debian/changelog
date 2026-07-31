@@ -1,3 +1,18 @@
+util-linux (2.41.5-0+deb13u1) trixie-security; urgency=medium
+
+  * New upstream version 2.41.5, fixing CVE-2026-53612, CVE-2026-53613,
+    CVE-2026-53614. (Closes: #1140194, #1140195, #1140196)
+  * Drop patches from upstream which came from the stable release branch.
+  * Pick upstream patch from stable release branch:
+    loopdev: use openat2(RESOLVE_NO_SYMLINKS) for backing file
+    Fixes CVE-2026-27456.
+  * Pick upstream patch:
+    libmount: restrict source path canonicalization for non-root users
+  * Avoid installing new bash-completions.
+  * d/gbp.conf: setup for trixie.
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Fri, 31 Jul 2026 17:34:36 +0200
+
 util-linux (2.41-5) unstable; urgency=medium
 
   [ Helmut Grohne ]

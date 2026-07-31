@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: agetty
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "AGETTY" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
+.TH "AGETTY" "8" "2026-06-16" "util\-linux 2.41.5" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,7 +31,7 @@
 agetty \- alternative Linux getty
 .SH "SYNOPSIS"
 .sp
-\fBagetty\fP [options] \fIport\fP [\fIbaud_rate\fP...] [\fIterm\fP]
+\fBagetty\fP [options] \fIport\fP [\fIbaud_rate\fP.\|.\|.] [\fIterm\fP]
 .SH "DESCRIPTION"
 .sp
 \fBagetty\fP opens a tty port, prompts for a login name and invokes the /bin/login command. It is normally invoked by \fBinit\fP(8).
@@ -147,7 +147,7 @@ A path name relative to the \fI/dev\fP directory. If a "\-" is specified, \fBage
 Under System V, a "\-" \fIport\fP argument should be preceded by a "\-\-".
 .RE
 .sp
-\fIbaud_rate\fP,...
+\fIbaud_rate\fP,.\|.\|.
 .RS 4
 A comma\-separated list of one or more baud rates. Each time \fBagetty\fP receives a BREAK character it advances through the list, which is treated as if it were circular.
 .sp

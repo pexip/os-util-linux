@@ -198,7 +198,7 @@ static int evaluate_permissions(struct libmnt_context *cxt)
 		/*
 		 * superuser mount
 		 *
-		 * Let's convert user, users, owenr and groups to MS_* flags
+		 * Let's convert user, users, owner and groups to MS_* flags
 		 * to be compatible with non-root execution.
 		 *
 		 * The old deprecated way is to use mnt_optstr_get_flags().
@@ -447,7 +447,7 @@ static int exec_helper(struct libmnt_context *cxt)
 		}
 		if (type
 		    && strchr(type, '.')
-		    && !endswith(cxt->helper, type)) {
+		    && !ul_endswith(cxt->helper, type)) {
 			args[i++] = "-t";		/* 10 */
 			args[i++] = type;		/* 11 */
 		}
@@ -739,6 +739,13 @@ static int prepare_target(struct libmnt_context *cxt)
 
 	if (rc == 0)
 		rc = mnt_context_call_hooks(cxt, MNT_STAGE_PREP_TARGET);
+
+	if (rc == 0
+	    && mnt_context_target_fd_required(cxt)
+	    && mnt_context_get_target_fd(cxt) < 0) {
+		DBG(CXT, ul_debugobj(cxt, "failed to pin target"));
+		rc = -errno;
+	}
 
 	if (!mnt_context_switch_ns(cxt, ns_old))
 		return -MNT_ERR_NAMESPACE;
@@ -1449,15 +1456,15 @@ static void join_err_mesgs(struct libmnt_context *cxt, char *buf, size_t bufsz)
 	char **s;
 	int n = 0;
 
-	if (!cxt || !buf || strv_isempty(cxt->mesgs))
+	if (!cxt || !buf || ul_strv_isempty(cxt->mesgs))
 		return;
 
-	STRV_FOREACH(s, cxt->mesgs) {
+	UL_STRV_FOREACH(s, cxt->mesgs) {
 		size_t len;
 
 		if (!bufsz)
 			break;
-		if (!startswith(*s, "e "))
+		if (!ul_startswith(*s, "e "))
 			continue;
 		if (n) {
 			len = xstrncpy(buf, "; ", bufsz);
@@ -1662,6 +1669,12 @@ int mnt_context_get_mount_excode(
 
 	/* Error with already generated messages (by kernel or libmount) */
 	if (buf && mnt_context_get_nmesgs(cxt, 'e')) {
+		if (syserr == ENOENT
+		    && uflags & MNT_MS_NOFAIL
+		    && cxt->syscall_name && strcmp(cxt->syscall_name, "fsconfig") == 0
+		    && src && !mnt_is_path(src))
+			return MNT_EX_SUCCESS;
+
 		if (cxt->syscall_name) {
 			size_t len = snprintf(buf, bufsz,
 					_("%s() failed: "),

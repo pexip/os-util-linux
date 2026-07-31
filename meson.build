@@ -13,7 +13,7 @@ pkgconfig = import('pkgconfig')
 # soname versions; This never change because we use symbol versioning. There is also
 # API version (LIB*_VERSION macros) and it follow package version.
 libblkid_version = '1.1.0'
-libblkid_date = '18-Mar-2025'
+libblkid_date = '16-Jun-2026'
 libuuid_version = '1.3.0'
 liblastlog2_version = '2.0.0'
 libmount_version = '1.1.0'
@@ -224,6 +224,7 @@ headers = '''
         linux/kcmp.h
         linux/net_namespace.h
         linux/nsfs.h
+        linux/openat2.h
         linux/mount.h
         linux/pr.h
         linux/securebits.h
@@ -1248,7 +1249,7 @@ endif
 
 ############################################################
 
-opt = not get_option('build-bits').disabled()
+opt = not get_option('build-bits').require(have_cpu_set_t).disabled()
 exe = executable(
   'bits',
   bits_sources,
@@ -1387,8 +1388,7 @@ exe = executable(
   more_sources,
   link_with : [lib_common],
   include_directories : includes,
-  dependencies : [lib_tinfo,
-                  curses_libs,
+  dependencies : [curses_libs,
 		  lib_magic],
   install : opt,
   build_by_default : opt)
@@ -1398,8 +1398,7 @@ exe2 = executable(
   link_with : [lib_common],
   include_directories : includes,
   c_args : '-DTEST_PROGRAM',
-  dependencies : [lib_tinfo,
-                  curses_libs,
+  dependencies : [curses_libs,
 		  lib_magic],
   build_by_default : opt and program_tests)
 exes += exe
@@ -1475,7 +1474,7 @@ has_seminfo_type = cc.has_type('struct seminfo', args : '-D_GNU_SOURCE', prefix 
 
 posixipc_libs = []
 if not cc.has_function('shm_open') and conf.get('HAVE_SYS_MMAN_H').to_string() == '1'
-  posixipc_libs = cc.find_library('rt', required : true)
+  posixipc_libs += cc.find_library('rt', required : true)
 endif
 
 if not cc.has_function('sem_close') and conf.get('HAVE_SEMAPHORE_H').to_string() == '1'
@@ -1736,6 +1735,7 @@ exe = executable(
 if opt and not is_disabler(exe)
   exes += exe
   manadocs += blkpr_manadocs
+  bashcompletions += ['blkpr']
 endif
 
 opt = get_option('build-ldattach').require(cc.has_header('linux/if.h')).allowed()
@@ -2993,6 +2993,7 @@ exe = executable(
 if opt and not is_disabler(exe)
   exes += exe
   manadocs += lsfd_manadocs
+  bashcompletions += ['lsfd']
 endif
 
 exe = executable(
@@ -4028,7 +4029,11 @@ run_target(
 
 manadocs += lib_tcolors_manadocs
 if build_libblkid
-  manadocs += lib_blkid_manadocs + lib_smartcols_manadocs
+  manadocs += lib_blkid_manadocs
+endif
+
+if build_libsmartcols
+  manadocs += lib_smartcols_manadocs
 endif
 
 if build_libuuid

@@ -1025,13 +1025,14 @@ static int command_delete(struct sfdisk *sf, int argc, char **argv)
  */
 static int command_reorder(struct sfdisk *sf, int argc, char **argv)
 {
-	const char *devname = NULL;
+	const char *devname;
 	int rc;
 
-	if (argc)
-		devname = argv[0];
-	if (!devname)
+	if (!argc)
 		errx(EXIT_FAILURE, _("no disk device specified"));
+	devname = argv[0];
+	if (argc > 1)
+		errx(EXIT_FAILURE, _("unexpected arguments"));
 
 	assign_device(sf, devname, 0);	/* read-write */
 
@@ -1049,14 +1050,15 @@ static int command_reorder(struct sfdisk *sf, int argc, char **argv)
  */
 static int command_dump(struct sfdisk *sf, int argc, char **argv)
 {
-	const char *devname = NULL;
 	struct fdisk_script *dp;
+	const char *devname;
 	int rc;
 
-	if (argc)
-		devname = argv[0];
-	if (!devname)
+	if (!argc)
 		errx(EXIT_FAILURE, _("no disk device specified"));
+	devname = argv[0];
+	if (argc > 1)
+		errx(EXIT_FAILURE, _("unexpected arguments"));
 
 	assign_device(sf, devname, 1);	/* read-only */
 
@@ -1085,12 +1087,13 @@ static int command_dump(struct sfdisk *sf, int argc, char **argv)
  */
 static int command_backup_sectors(struct sfdisk *sf, int argc, char **argv)
 {
-	const char *devname = NULL;
+	const char *devname;
 
-	if (argc)
-		devname = argv[0];
-	if (!devname)
+	if (!argc)
 		errx(EXIT_FAILURE, _("no disk device specified"));
+	devname = argv[0];
+	if (argc > 1)
+		errx(EXIT_FAILURE, _("unexpected arguments"));
 
 	assign_device(sf, devname, 1);	/* read-only */
 
@@ -1794,12 +1797,12 @@ static void refresh_prompt_buffer(struct sfdisk *sf, const char *devname,
 		if (!partname)
 			err(EXIT_FAILURE, _("failed to allocate partition name"));
 
-		if (!sf->prompt || !startswith(sf->prompt, partname)) {
+		if (!sf->prompt || !ul_startswith(sf->prompt, partname)) {
 			free(sf->prompt);
 			xasprintf(&sf->prompt,"%s: ", partname);
 		}
 		free(partname);
-	} else if (!sf->prompt || !startswith(sf->prompt, SFDISK_PROMPT)) {
+	} else if (!sf->prompt || !ul_startswith(sf->prompt, SFDISK_PROMPT)) {
 		free(sf->prompt);
 		sf->prompt = xstrdup(SFDISK_PROMPT);
 	}
@@ -2024,7 +2027,7 @@ static int command_fdisk(struct sfdisk *sf, int argc, char **argv)
 
 			if (!rc) {		/* add partition */
 				if (!sf->interactive && !sf->quiet &&
-				    (!sf->prompt || startswith(sf->prompt, SFDISK_PROMPT))) {
+				    (!sf->prompt || ul_startswith(sf->prompt, SFDISK_PROMPT))) {
 					refresh_prompt_buffer(sf, devname, next_partno, created);
 					fputs(sf->prompt, stdout);
 				}

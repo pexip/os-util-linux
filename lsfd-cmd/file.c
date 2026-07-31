@@ -322,10 +322,16 @@ const struct file_class readlink_error_class = {
 	.fill_column = readlink_error_fill_column,
 };
 
+static void stat_error_file_free_content(struct file *file)
+{
+	free(file->name);
+}
+
 const struct file_class stat_error_class = {
 	.super = &error_class,
 	.size = sizeof(struct file),
 	.initialize_content = init_error_content,
+	.free_content = stat_error_file_free_content,
 };
 
 /*
@@ -387,7 +393,7 @@ void decode_source(char *buf, size_t bufsize,
 			 dev_minor);
 }
 
-static char *strnrstr(const char *haystack, const char *needle, size_t needle_len)
+static char *strnrstr(char *haystack, const char *needle, size_t needle_len)
 {
 	char *last = strstr(haystack, needle);
 	if (last == NULL)

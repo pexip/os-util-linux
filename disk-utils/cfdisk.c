@@ -52,14 +52,11 @@
 # include <ncurses/ncurses.h>
 #endif
 
-#ifdef HAVE_WIDECHAR
-# include <wctype.h>
-# include <wchar.h>
-#endif
-
 #include "c.h"
+#include "cctype.h"
 #include "closestream.h"
 #include "nls.h"
+#include "widechar.h"
 #include "strutils.h"
 #include "xalloc.h"
 #include "mbsalign.h"
@@ -950,6 +947,7 @@ static void menu_set_title(struct cfdisk_menu *m, const char *title)
 			m->width = len + MENU_TITLE_PADDING;
 		str = xstrdup(title);
 	}
+	free(m->title);
 	m->title = str;
 }
 
@@ -1957,7 +1955,7 @@ static int ui_get_size(struct cfdisk *cf,	/* context */
 				insec = 1;
 				buf[len - 1] = '\0';
 			}
-			rc = parse_size(buf, (uintmax_t *)&user, &pwr);	/* parse */
+			rc = ul_parse_size(buf, (uintmax_t *)&user, &pwr);	/* parse */
 		}
 
 		if (rc == 0) {
@@ -2176,7 +2174,8 @@ static int ui_create_label(struct cfdisk *cf)
 	nitems = fdisk_get_nlabels(cf->cxt);
 	cm = xcalloc(nitems + 1, sizeof(struct cfdisk_menuitem));
 
-	while (fdisk_next_label(cf->cxt, &lb) == 0) {
+	while (fdisk_next_label(cf->cxt, &lb) == 0 && i < nitems) {
+
 		if (fdisk_label_is_disabled(lb) ||
 		    fdisk_label_get_type(lb) == FDISK_DISKLABEL_BSD)
 			continue;
@@ -2511,7 +2510,7 @@ static int main_menu_action(struct cfdisk *cf, int key)
 			  buf, sizeof(buf));
 
 		ref = 1;
-		if (rc <= 0 || (strcasecmp(buf, "yes") != 0 &&
+		if (rc <= 0 || (c_strcasecmp(buf, "yes") != 0 &&
 				strcasecmp(buf, _("yes")) != 0)) {
 			info = _("Did not write partition table to disk.");
 			break;

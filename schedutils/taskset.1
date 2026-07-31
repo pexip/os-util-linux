@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: taskset
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "TASKSET" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
+.TH "TASKSET" "1" "2026-06-16" "util\-linux 2.41.5" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,7 +31,7 @@
 taskset \- set or retrieve a process\*(Aqs CPU affinity
 .SH "SYNOPSIS"
 .sp
-\fBtaskset\fP [options] \fImask command\fP [\fIargument\fP...]
+\fBtaskset\fP [options] \fImask command\fP [\fIargument\fP.\|.\|.]
 .sp
 \fBtaskset\fP [options] \fB\-p\fP [\fImask\fP] \fIpid\fP
 .SH "DESCRIPTION"
@@ -126,7 +126,7 @@ The \fB\-\-cpu\-list\fP form is applicable only for launching new commands:
 .SH "PERMISSIONS"
 .sp
 A user can change the CPU affinity of a process belonging to the same user. A user must possess \fBCAP_SYS_NICE\fP to change the CPU affinity of a process belonging to another user. A user can retrieve the affinity mask of any process.
-.SH "RETURN VALUE"
+.SH "EXIT STATUS"
 .sp
 \fBtaskset\fP returns 0 in its affinity\-getting mode as long as the provided PID exists.
 .sp

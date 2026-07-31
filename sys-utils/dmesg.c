@@ -29,6 +29,7 @@
 #include <fcntl.h>
 
 #include "c.h"
+#include "cctype.h"
 #include "colors.h"
 #include "nls.h"
 #include "strutils.h"
@@ -460,7 +461,7 @@ static int parse_level(const char *str, size_t len)
 		for (i = 0; i < ARRAY_SIZE(level_names); i++) {
 			const char *n = level_names[i].name;
 
-			if (strncasecmp(str, n, len) == 0 && *(n + len) == '\0')
+			if (c_strncasecmp(str, n, len) == 0 && *(n + len) == '\0')
 				return i + offset;
 		}
 	}
@@ -498,7 +499,7 @@ static int parse_facility(const char *str, size_t len)
 		for (i = 0; i < ARRAY_SIZE(facility_names); i++) {
 			const char *n = facility_names[i].name;
 
-			if (strncasecmp(str, n, len) == 0 && *(n + len) == '\0')
+			if (c_strncasecmp(str, n, len) == 0 && *(n + len) == '\0')
 				return i;
 		}
 	}
@@ -843,8 +844,7 @@ static const char *parse_callerid(const char *p_str, const char *end,
 	const char *p_after;
 	const char *p_next;
 	size_t cid_size;
-	char *p_scn;
-	char *p_cid;
+	const char *p_scn, *p_cid;
 
 	/* Check for PRINTK_CALLER prefix, must be before msg text */
 	p_cid = strstr(p_str, DMESG_CALLER_PREFIX);
@@ -1817,13 +1817,13 @@ int main(int argc, char *argv[])
 			break;
 		case OPT_SINCE:
 		{
-			if (parse_timestamp(optarg, &ctl.since) < 0)
+			if (ul_parse_timestamp(optarg, &ctl.since) < 0)
 				errx(EXIT_FAILURE, _("invalid time value \"%s\""), optarg);
 			break;
 		}
 		case OPT_UNTIL:
 		{
-			if (parse_timestamp(optarg, &ctl.until) < 0)
+			if (ul_parse_timestamp(optarg, &ctl.until) < 0)
 				errx(EXIT_FAILURE, _("invalid time value \"%s\""), optarg);
 			break;
 		}
