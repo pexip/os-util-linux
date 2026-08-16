@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: setpriv
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "SETPRIV" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
+.TH "SETPRIV" "1" "2026-06-16" "util\-linux 2.41.5" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -49,12 +49,12 @@ Clear supplementary groups.
 Dump the current privilege state. This option can be specified more than once to show extra, mostly useless, information. Incompatible with all other options.
 .RE
 .sp
-\fB\-\-groups\fP \fIgroup\fP...
+\fB\-\-groups\fP \fIgroup\fP.\|.\|.
 .RS 4
 Set supplementary groups. The argument is a comma\-separated list of GIDs or names.
 .RE
 .sp
-\fB\-\-inh\-caps\fP (\fB+\fP|\fB\-\fP)\fIcap\fP..., \fB\-\-ambient\-caps\fP (\fB+\fP|\fB\-\fP)\fIcap\fP..., \fB\-\-bounding\-set\fP (\fB+\fP|\fB\-\fP)\fIcap\fP...
+\fB\-\-inh\-caps\fP (\fB+\fP|\fB\-\fP)\fIcap\fP.\|.\|., \fB\-\-ambient\-caps\fP (\fB+\fP|\fB\-\fP)\fIcap\fP.\|.\|., \fB\-\-bounding\-set\fP (\fB+\fP|\fB\-\fP)\fIcap\fP.\|.\|.
 .RS 4
 Set the inheritable capabilities, ambient capabilities or the capability bounding set. See \fBcapabilities\fP(7). The argument is a comma\-separated list of \fB+\fP\fIcap\fP and \fB\-\fP\fIcap\fP entries, which add or remove an entry respectively. \fIcap\fP can either be a human\-readable name as seen in \fBcapabilities\fP(7) without the \fIcap_\fP prefix or of the format \fBcap_N\fP, where \fIN\fP is the internal capability index used by Linux. \fB+all\fP and \fB\-all\fP can be used to add or remove all caps.
 .sp
@@ -136,7 +136,7 @@ Setting a \fIuid\fP or \fIgid\fP does not change capabilities, although the exec
 \fBsetpriv \-\-reuid=1000 \-\-regid=1000 \-\-inh\-caps=\-all\fP
 .RE
 .sp
-\fB\-\-securebits\fP (\fB+\fP|\fB\-\fP)\fIsecurebit\fP...
+\fB\-\-securebits\fP (\fB+\fP|\fB\-\fP)\fIsecurebit\fP.\|.\|.
 .RS 4
 Set or clear securebits. The argument is a comma\-separated list. The valid securebits are \fInoroot\fP, \fInoroot_locked\fP, \fIno_setuid_fixup\fP, \fIno_setuid_fixup_locked\fP, and \fIkeep_caps_locked\fP. \fIkeep_caps\fP is cleared by \fBexecve\fP(2) and is therefore not allowed.
 .RE

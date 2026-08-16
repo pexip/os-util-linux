@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: coresched
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "CORESCHED" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
+.TH "CORESCHED" "1" "2026-06-16" "util\-linux 2.41.5" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -35,11 +35,11 @@ coresched \- manage core scheduling cookies for tasks
 .sp
 \fBcoresched\fP \fBnew\fP [\fB\-t\fP \fItype\fP] \fB\-d\fP \fIpid\fP
 .sp
-\fBcoresched\fP \fBnew\fP [\fB\-t\fP \fItype\fP] \-\- \fIcommand\fP [\fIargument\fP...]
+\fBcoresched\fP \fBnew\fP [\fB\-t\fP \fItype\fP] \-\- \fIcommand\fP [\fIargument\fP.\|.\|.]
 .sp
 \fBcoresched\fP \fBcopy\fP [\fB\-s\fP \fIpid\fP] [\fB\-t\fP \fItype\fP] \fB\-d\fP \fIpid\fP
 .sp
-\fBcoresched\fP \fBcopy\fP [\fB\-s\fP \fIpid\fP] [\fB\-t\fP \fItype\fP] \-\- \fIcommand\fP [\fIargument\fP...]
+\fBcoresched\fP \fBcopy\fP [\fB\-s\fP \fIpid\fP] [\fB\-t\fP \fItype\fP] \-\- \fIcommand\fP [\fIargument\fP.\|.\|.]
 .SH "DESCRIPTION"
 .sp
 The \fBcoresched\fP command is used to retrieve or modify the core scheduling cookies of a running process given its \fIpid\fP, or to spawn a new \fIcommand\fP with core scheduling cookies.
@@ -153,7 +153,7 @@ Give a task with PID \fI123\fP a new core scheduling cookie:
 .sp
 Spawn a new task with a new core scheduling cookie:
 .RS 4
-\fBcoresched new\fP \-\- \fIcommand\fP [\fIargument\fP...]
+\fBcoresched new\fP \-\- \fIcommand\fP [\fIargument\fP.\|.\|.]
 .RE
 .sp
 Copy the cookie from the current coresched process another task with pid \fI456\fP:
@@ -168,7 +168,7 @@ Copy the cookie from a task with pid \fI123\fP to another task with pid \fI456\f
 .sp
 Copy the cookie from a task with pid \fI123\fP to a new task \fIcommand\fP:
 .RS 4
-\fBcoresched copy \-s\fP \fI123\fP \-\- \fIcommand\fP [\fIargument\fP...]
+\fBcoresched copy \-s\fP \fI123\fP \-\- \fIcommand\fP [\fIargument\fP.\|.\|.]
 .RE
 .sp
 Copy the cookie from a task with pid \fI123\fP to the process group ID \fI456\fP:
@@ -179,7 +179,7 @@ Copy the cookie from a task with pid \fI123\fP to the process group ID \fI456\fP
 .sp
 Retrieving or modifying the core scheduling cookie of a process requires \fBPTRACE_MODE_READ_REALCREDS\fP ptrace access to that process.
 See the section "Ptrace access mode checking" in \fBptrace\fP(2) for more information.
-.SH "RETURN VALUE"
+.SH "EXIT STATUS"
 .sp
 On success, \fBcoresched\fP returns 0.
 If \fBcoresched\fP fails, it will print an error and return 1.

@@ -807,7 +807,7 @@ int mnt_optstr_apply_flags(char **optstr, unsigned long flags,
 		const struct libmnt_optmap *ent;
 		struct ul_buffer buf = UL_INIT_BUFFER;
 		size_t sz;
-		char *p;
+		const char *p;
 
 		ul_buffer_refer_string(&buf, *optstr);
 
@@ -914,7 +914,7 @@ int mnt_match_options(const char *optstr, const char *pattern)
 
 		if (*name == '+')
 			name++, namesz--;
-		else if ((no = (startswith(name, "no") != NULL))) {
+		else if ((no = (ul_startswith(name, "no") != NULL))) {
 			name += 2, namesz -= 2;
 			if (!*name || *name == ',') {
 				match = 0;

@@ -22,6 +22,7 @@
 #include <unistd.h>
 
 #include "c.h"
+#include "cctype.h"
 #include "all-io.h"
 #include "nls.h"
 #include "strutils.h"
@@ -152,7 +153,7 @@ static int lookup_table(const struct ld_table *tab, const char *str)
 	const struct ld_table *t;
 
 	for (t = tab; t && t->name; t++)
-		if (!strcasecmp(t->name, str))
+		if (!c_strcasecmp(t->name, str))
 			return t->value;
 	return -1;
 }
@@ -240,7 +241,9 @@ static int my_cfsetspeed(struct termios *ts, int speed)
 	 *    checks for speed and supports Bxxx bit rates only)...
 	 */
 #if _HAVE_STRUCT_TERMIOS_C_ISPEED
-# define BOTHER 0010000		/* non standard rate */
+# ifndef BOTHER
+#  define BOTHER 0010000		/* non standard rate */
+# endif
 	dbg("using non-standard speeds");
 	ts->c_ospeed = ts->c_ispeed = speed;
 	ts->c_cflag &= ~CBAUD;

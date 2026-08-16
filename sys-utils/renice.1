@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: renice
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "RENICE" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
+.TH "RENICE" "1" "2026-06-16" "util\-linux 2.41.5" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,7 +31,7 @@
 renice \- alter priority of running processes
 .SH "SYNOPSIS"
 .sp
-\fBrenice\fP [\fB\-\-priority|\-\-relative\fP] \fIpriority\fP [\fB\-g\fP|\fB\-p\fP|\fB\-u\fP] \fIidentifier\fP...
+\fBrenice\fP [\fB\-\-priority|\-\-relative\fP] \fIpriority\fP [\fB\-g\fP|\fB\-p\fP|\fB\-u\fP] \fIidentifier\fP.\|.\|.
 .SH "DESCRIPTION"
 .sp
 \fBrenice\fP alters the scheduling priority of one or more running processes. The first argument is the \fIpriority\fP value to be used. The other arguments are interpreted as process IDs (by default), process group IDs, user IDs, or user names. \fBrenice\fP\*(Aqing a process group causes all processes in the process group to have their scheduling priority altered. \fBrenice\fP\*(Aqing a user causes all processes owned by the user to have their scheduling priority altered.

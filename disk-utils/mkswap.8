@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: mkswap
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "MKSWAP" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
+.TH "MKSWAP" "8" "2026-06-16" "util\-linux 2.41.5" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -49,7 +49,7 @@ The swap header does not touch the first block. A boot loader or disk label can 
 .sp
 \fBmkswap\fP, like many others mkfs\-like utils, \fBerases the first partition block to make any previous filesystem invisible.\fP
 .sp
-However, \fBmkswap\fP refuses to erase the first block on a device with a disk label (SUN, BSD, ...).
+However, \fBmkswap\fP refuses to erase the first block on a device with a disk label (SUN, BSD, .\|.\|.).
 .SH "OPTIONS"
 .sp
 \fB\-c\fP, \fB\-\-check\fP

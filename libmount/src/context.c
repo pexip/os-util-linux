@@ -37,6 +37,7 @@
  */
 
 #include "mountP.h"
+#include "fileutils.h"
 #include "strutils.h"
 #include "namespace.h"
 #include "match.h"
@@ -69,6 +70,7 @@ struct libmnt_context *mnt_new_context(void)
 	cxt->ns_orig.fd = -1;
 	cxt->ns_tgt.fd = -1;
 	cxt->ns_cur = &cxt->ns_orig;
+	cxt->fd_target = -1;
 
 	cxt->map_linux = mnt_get_builtin_optmap(MNT_LINUX_MAP);
 	cxt->map_userspace = mnt_get_builtin_optmap(MNT_USERSPACE_MAP);
@@ -175,6 +177,7 @@ int mnt_reset_context(struct libmnt_context *cxt)
 	cxt->map_userspace = mnt_get_builtin_optmap(MNT_USERSPACE_MAP);
 
 	mnt_context_reset_status(cxt);
+	mnt_context_close_target_fd(cxt);
 	mnt_context_deinit_hooksets(cxt);
 
 	if (cxt->table_fltrcb)
@@ -400,6 +403,73 @@ int mnt_context_is_restricted(struct libmnt_context *cxt)
 	return cxt->restricted;
 }
 
+int mnt_context_target_fd_required(struct libmnt_context *cxt)
+{
+	return mnt_context_is_restricted(cxt);
+}
+
+int mnt_context_reopen_target_fd(struct libmnt_context *cxt)
+{
+	assert(cxt);
+
+	if (!mnt_context_target_fd_required(cxt))
+		return 0;
+
+	DBG(CXT, ul_debugobj(cxt,"reopen target fd"));
+
+	mnt_context_close_target_fd(cxt);
+	if (mnt_context_get_target_fd(cxt) < 0)
+		return -errno;
+
+	/* verify the mount landed on the expected target;
+	 * cxt->fs->id is set from fd_tree in hook_create_mount() */
+	if (cxt->fs && cxt->fs->id > 0) {
+		int id = 0;
+
+		if (mnt_id_from_fd(cxt->fd_target, NULL, &id) == 0
+		    && id != cxt->fs->id) {
+			const char *tgt = mnt_fs_get_target(cxt->fs);
+
+			DBG(CXT, ul_debugobj(cxt,
+				"target mount ID mismatch (expected %d, got %d), umounting",
+				cxt->fs->id, id));
+			if (tgt)
+				umount2(tgt, MNT_DETACH);
+			mnt_context_close_target_fd(cxt);
+			return -EPERM;
+		}
+		DBG(CXT, ul_debugobj(cxt,"target mount ID verified (%d)", id));
+	}
+
+	return 0;
+}
+
+int mnt_context_get_target_fd(struct libmnt_context *cxt)
+{
+	assert(cxt);
+
+	if (cxt->fd_target < 0) {
+		const char *target = mnt_fs_get_target(cxt->fs);
+
+		if (target) {
+			cxt->fd_target = ul_open_no_symlinks(target,
+						O_PATH | O_CLOEXEC, 0);
+			DBG(CXT, ul_debugobj(cxt,"open target fd=%d [%s]",
+						cxt->fd_target, target));
+		}
+	}
+	return cxt->fd_target;
+}
+
+void mnt_context_close_target_fd(struct libmnt_context *cxt)
+{
+	assert(cxt);
+
+	if (cxt->fd_target >= 0)
+		close(cxt->fd_target);
+	cxt->fd_target = -1;
+}
+
 /**
  * mnt_context_force_unrestricted:
  * @cxt: mount context
@@ -530,8 +600,8 @@ int mnt_context_is_xnocanonicalize(
 	assert(cxt);
 	assert(type);
 
-	if (mnt_context_is_nocanonicalize(cxt))
-		return 1;
+	if (mnt_context_is_restricted(cxt))
+		return 0;
 
 	ol = mnt_context_get_optlist(cxt);
 	if (!ol)
@@ -2726,7 +2796,7 @@ void mnt_context_syscall_reset_status(struct libmnt_context *cxt)
 void mnt_context_reset_mesgs(struct libmnt_context *cxt)
 {
 	DBG(CXT, ul_debug("reset messages"));
-	strv_free(cxt->mesgs);
+	ul_strv_free(cxt->mesgs);
 	cxt->mesgs = NULL;
 }
 
@@ -2735,7 +2805,7 @@ int mnt_context_append_mesg(struct libmnt_context *cxt, const char *msg)
 	if (msg) {
 		DBG(CXT, ul_debug("mesg: '%s'", msg));
 	}
-	return strv_extend(&cxt->mesgs, msg);
+	return ul_strv_extend(&cxt->mesgs, msg);
 }
 
 int mnt_context_sprintf_mesg(struct libmnt_context *cxt, const char *msg, ...)
@@ -2744,7 +2814,7 @@ int mnt_context_sprintf_mesg(struct libmnt_context *cxt, const char *msg, ...)
 	va_list ap;
 
 	va_start(ap, msg);
-	rc = strv_extendv(&cxt->mesgs, msg, ap);
+	rc = ul_strv_extendv(&cxt->mesgs, msg, ap);
 	va_end(ap);
 
 	return rc;
@@ -2797,10 +2867,10 @@ size_t mnt_context_get_nmesgs(struct libmnt_context *cxt, char type)
 	if (!cxt || !cxt->mesgs)
 		return 0;
 
-	n = strv_length(cxt->mesgs);
+	n = ul_strv_length(cxt->mesgs);
 	if (n && type) {
 		n = 0;
-		STRV_FOREACH(s, cxt->mesgs) {
+		UL_STRV_FOREACH(s, cxt->mesgs) {
 			if (*s && **s == type)
 				n++;
 		}

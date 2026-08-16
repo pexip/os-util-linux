@@ -1,9 +1,9 @@
 /*
- * Copyright (C) 2010 Karel Zak <kzak@redhat.com>
- * Copyright (C) 2010 Davidlohr Bueso <dave@gnu.org>
- *
  * No copyright is claimed.  This code is in the public domain; do with
  * it what you wish.
+ *
+ * Authors: Karel Zak <kzak@redhat.com> [2010]
+ *          Davidlohr Bueso <dave@gnu.org> [2010]
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -64,7 +64,7 @@ static int do_scale_by_power (uintmax_t *x, int base, int power)
  * Note that the function does not accept numbers with '-' (negative sign)
  * prefix.
  */
-int parse_size(const char *str, uintmax_t *res, int *power)
+int ul_parse_size(const char *str, uintmax_t *res, int *power)
 {
 	const char *p;
 	char *end;
@@ -220,7 +220,7 @@ err:
 
 int strtosize(const char *str, uintmax_t *res)
 {
-	return parse_size(str, res, NULL);
+	return ul_parse_size(str, res, NULL);
 }
 
 int isdigit_strend(const char *str, const char **end)
@@ -247,9 +247,9 @@ int isxdigit_strend(const char *str, const char **end)
 }
 
 /*
- *  parse_switch(argv[i], "on", "off",  "yes", "no",  NULL);
+ *  ul_parse_switch(argv[i], "on", "off",  "yes", "no",  NULL);
  */
-int parse_switch(const char *arg, const char *errmesg, ...)
+int ul_parse_switch(const char *arg, const char *errmesg, ...)
 {
 	const char *a, *b;
 	va_list ap;
@@ -863,7 +863,7 @@ int string_to_bitmask(const char *list,
  *
  * Returns: 0 on success, <0 on error.
  */
-int parse_range(const char *str, int *lower, int *upper, int def)
+int ul_parse_range(const char *str, int *lower, int *upper, int def)
 {
 	char *end = NULL;
 
@@ -951,7 +951,7 @@ int streq_paths(const char *a, const char *b)
 }
 
 /* concatenate two strings to a new string, the size of the second string is limited by @b */
-char *strnconcat(const char *s, const char *suffix, size_t b)
+char *ul_strnconcat(const char *s, const char *suffix, size_t b)
 {
         size_t a;
         char *r;
@@ -982,13 +982,13 @@ char *strnconcat(const char *s, const char *suffix, size_t b)
 }
 
 /* concatenate two strings to a new string */
-char *strconcat(const char *s, const char *suffix)
+char *ul_strconcat(const char *s, const char *suffix)
 {
-        return strnconcat(s, suffix, suffix ? strlen(suffix) : 0);
+        return ul_strnconcat(s, suffix, suffix ? strlen(suffix) : 0);
 }
 
 /* concatenate @s and string defined by @format to a new string */
-char *strfconcat(const char *s, const char *format, ...)
+char *ul_strfconcat(const char *s, const char *format, ...)
 {
 	va_list ap;
 	char *val, *res;
@@ -1001,12 +1001,12 @@ char *strfconcat(const char *s, const char *format, ...)
 	if (sz < 0)
 		return NULL;
 
-	res = strnconcat(s, val, sz);
+	res = ul_strnconcat(s, val, sz);
 	free(val);
 	return res;
 }
 
-int strappend(char **a, const char *b)
+int ul_strappend(char **a, const char *b)
 {
 	size_t al, bl;
 	char *tmp;
@@ -1038,13 +1038,13 @@ int strfappend(char **a, const char *format, ...)
 	int res;
 
 	va_start(ap, format);
-	res = strvfappend(a, format, ap);
+	res = ul_strvfappend(a, format, ap);
 	va_end(ap);
 
 	return res;
 }
 
-extern int strvfappend(char **a, const char *format, va_list ap)
+extern int ul_strvfappend(char **a, const char *format, va_list ap)
 {
 	char *val;
 	int sz;
@@ -1054,7 +1054,7 @@ extern int strvfappend(char **a, const char *format, va_list ap)
 	if (sz < 0)
 		return -errno;
 
-	res = strappend(a, val);
+	res = ul_strappend(a, val);
 	free(val);
 	return res;
 }
@@ -1109,7 +1109,7 @@ char *ul_strchr_escaped(const char *s, int c)
 }
 
 /* Split a string into words. */
-const char *split(const char **state, size_t *l, const char *separator, int quoted)
+const char *ul_split(const char **state, size_t *l, const char *separator, int quoted)
 {
         const char *current;
 

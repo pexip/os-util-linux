@@ -29,7 +29,7 @@ PACKAGE_VERSION_RELEASE=$(echo $PACKAGE_VERSION | awk -F. '{
 
 dnl libblkid version
 LIBBLKID_VERSION="$PACKAGE_VERSION_MAJOR.$PACKAGE_VERSION_MINOR.$PACKAGE_VERSION_RELEASE"
-LIBBLKID_DATE="18-Mar-2025"
+LIBBLKID_DATE="16-Jun-2026"
 LIBBLKID_LT_MAJOR=1
 LIBBLKID_LT_MINOR=1
 LIBBLKID_LT_MICRO=0
@@ -347,6 +347,7 @@ AC_CHECK_HEADERS([ \
 	linux/kcmp.h \
 	linux/net_namespace.h \
 	linux/nsfs.h \
+	linux/openat2.h \
 	linux/pr.h \
 	linux/raw.h \
 	linux/seccomp.h \
@@ -1105,6 +1106,16 @@ AC_ARG_WITH([ncursesw],
 )
 have_ncursesw=no
 have_ncursesw_header=no
+
+AS_CASE([$with_ncursesw:$build_widechar],
+  [yes:no],
+    [AC_MSG_ERROR([wide-char support disabled, but wide-char ncurses required])],
+  [auto:no],
+    [
+      AC_MSG_WARN([wide-char support disabled, disabling wide-char ncurses])
+      with_ncursesw=no
+    ]
+)
 AS_IF([test "x$with_ncursesw" != xno], [
   UL_NCURSES_CHECK([ncursesw])
   AS_IF([test "x$have_ncursesw" = xyes], [
@@ -2309,7 +2320,11 @@ UL_REQUIRES_HAVE([scriptlive], [pty], [openpty function (libutil)])
 AM_CONDITIONAL([BUILD_SCRIPTLIVE], [test "x$build_scriptlive" = xyes])
 
 
-UL_BUILD_INIT([bits], [yes])
+AC_ARG_ENABLE([bits],
+  AS_HELP_STRING([--disable-bits], [do not build bits]),
+  [], [UL_DEFAULT_ENABLE([bits], [check])])
+UL_BUILD_INIT([bits])
+UL_REQUIRES_HAVE([bits], [cpu_set_t], [cpu_set_t type])
 AM_CONDITIONAL([BUILD_BITS], [test "x$build_bits" = xyes])
 
 UL_BUILD_INIT([col], [check])

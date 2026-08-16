@@ -74,7 +74,7 @@ static int probe_dm_tp(blkid_probe pr,
 			dup2(dmpipe[1], STDOUT_FILENO);
 
 		if (drop_permissions() != 0)
-			 exit(1);
+			 _exit(1);
 
 		snprintf(maj, sizeof(maj), "%d", major(devno));
 		snprintf(min, sizeof(min), "%d", minor(devno));
@@ -108,7 +108,7 @@ static int probe_dm_tp(blkid_probe pr,
 	}
 
 	if (fscanf(stream, "%lld %lld striped %d %d ",
-			&offset, &size, &stripes, &stripesize) != 0)
+			&offset, &size, &stripes, &stripesize) != 4)
 		goto nothing;
 
 	blkid_topology_set_minimum_io_size(pr, stripesize << 9);

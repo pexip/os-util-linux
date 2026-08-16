@@ -4,9 +4,6 @@
  *
  * Authors: 2012 Ondrej Oprala <ooprala@redhat.com>
  *          2012-2025 Karel Zak <kzak@redhat.com>
- *
- * This file may be distributed under the terms of the
- * GNU Lesser General Public License.
  */
 #include <assert.h>
 #include <sys/stat.h>
@@ -32,6 +29,7 @@
 #endif
 
 #include "c.h"
+#include "cctype.h"
 #include "colors.h"
 #include "pathnames.h"
 #include "strutils.h"
@@ -744,7 +742,7 @@ int colormode_from_string(const char *str)
 	assert(ARRAY_SIZE(modes) == __UL_NCOLORMODES);
 
 	for (i = 0; i < ARRAY_SIZE(modes); i++) {
-		if (strcasecmp(str, modes[i]) == 0)
+		if (c_strcasecmp(str, modes[i]) == 0)
 			return i;
 	}
 

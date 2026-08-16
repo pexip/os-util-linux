@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: last
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "LAST" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
+.TH "LAST" "1" "2026-06-16" "util\-linux 2.41.5" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,9 +31,9 @@
 last, lastb \- show a listing of last logged in users
 .SH "SYNOPSIS"
 .sp
-\fBlast\fP [options] [\fIusername\fP...] [\fItty\fP...]
+\fBlast\fP [options] [\fIusername\fP.\|.\|.] [\fItty\fP.\|.\|.]
 .sp
-\fBlastb\fP [options] [\fIusername\fP...] [\fItty\fP...]
+\fBlastb\fP [options] [\fIusername\fP.\|.\|.] [\fItty\fP.\|.\|.]
 .SH "DESCRIPTION"
 .sp
 \fBlast\fP searches back through the \fI/var/log/wtmp\fP file (or the file designated by the \fB\-f\fP option) and displays a list of all users logged in (and out) since that file was created. One or more \fIusernames\fP and/or \fIttys\fP can be given, in which case \fBlast\fP will show only the entries matching those arguments. Names of \fIttys\fP can be abbreviated, thus \fBlast 0\fP is the same as \fBlast tty0\fP.

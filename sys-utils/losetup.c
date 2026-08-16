@@ -26,6 +26,7 @@
 #include <libsmartcols.h>
 
 #include "c.h"
+#include "cctype.h"
 #include "nls.h"
 #include "strutils.h"
 #include "loopdev.h"
@@ -124,7 +125,7 @@ static int column_name_to_id(const char *name, size_t namesz)
 	for (i = 0; i < ARRAY_SIZE(infos); i++) {
 		const char *cn = infos[i].name;
 
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
@@ -725,7 +726,7 @@ int main(int argc, char **argv)
 	static const ul_excl_t excl[] = {	/* rows and cols in ASCII order */
 		{ 'D','a','c','d','f','j' },
 		{ 'D','c','d','f','l' },
-		{ 'D','c','d','f','O' },
+		{ 'D','O','c','d','f' },
 		{ 'J',OPT_RAW },
 		{ 0 }
 	};
@@ -817,7 +818,7 @@ int main(int argc, char **argv)
 		case OPT_DIO:
 			use_dio = set_dio = 1;
 			if (optarg)
-				use_dio = parse_switch(optarg, _("argument error"), "on", "off", NULL);
+				use_dio = ul_parse_switch(optarg, _("argument error"), "on", "off", NULL);
 			if (use_dio)
 				lo_flags |= LO_FLAGS_DIRECT_IO;
 			break;

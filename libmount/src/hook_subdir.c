@@ -288,6 +288,12 @@ static int hook_mount_pre(
 	if (!hsd)
 		return 0;
 
+	if (mnt_context_target_fd_required(cxt)) {
+		DBG(HOOK, ul_debugobj(hs,
+			"subdir mount refused for non-root user"));
+		return -ENOTSUP;
+	}
+
 	/* create unhared temporary target */
 	hsd->org_target = strdup(mnt_fs_get_target(cxt->fs));
 	if (!hsd->org_target)
@@ -313,6 +319,7 @@ static int is_subdir_required(struct libmnt_context *cxt, int *rc, char **subdir
 	struct libmnt_optlist *ol;
 	struct libmnt_opt *opt;
 	const char *dir = NULL;
+	unsigned long flags = 0;
 
 	assert(cxt);
 	assert(rc);
@@ -328,18 +335,25 @@ static int is_subdir_required(struct libmnt_context *cxt, int *rc, char **subdir
 		return 0;
 
 	dir = mnt_opt_get_value(opt);
-
-	if (dir && *dir == '"')
-		dir++;
-
 	if (!dir || !*dir) {
 		DBG(HOOK, ul_debug("failed to parse X-mount.subdir '%s'", dir));
 		*rc = -MNT_ERR_MOUNTOPT;
-	} else {
-		*subdir = strdup(dir);
-		if (!*subdir)
-			*rc = -ENOMEM;
+		return 0;
 	}
+
+	*rc = mnt_optlist_get_flags(ol, &flags, cxt->map_linux, 0);
+	if (*rc)
+		return 0;
+
+	if (flags & MS_REMOUNT || flags & MS_BIND || flags & MS_MOVE
+	    || mnt_context_propagation_only(cxt)) {
+		DBG(HOOK, ul_debug("ignore subdir= (bind/move/remount/..)"));
+		return 0;
+	}
+
+	*subdir = strdup(dir);
+	if (!*subdir)
+		*rc = -ENOMEM;
 
 	return *rc == 0;
 }

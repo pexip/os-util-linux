@@ -6,6 +6,7 @@
 #endif
 
 #include "c.h"
+#include "cctype.h"
 #include "xalloc.h"
 #include "mangle.h"
 #include "path.h"
@@ -102,10 +103,12 @@ static struct lsblk_devprop *get_properties_by_udev(struct lsblk_device *ld)
 		prop->partlabel = xstrdup(data);
 		unhexmangle_string(prop->partlabel);
 	}
+
 	if ((data = udev_device_get_property_value(dev, "ID_FS_TYPE")))
 		prop->fstype = xstrdup(data);
 	if ((data = udev_device_get_property_value(dev, "ID_FS_VERSION")))
 		prop->fsversion = xstrdup(data);
+
 	if ((data = udev_device_get_property_value(dev, "ID_PART_ENTRY_TYPE")))
 		prop->parttype = xstrdup(data);
 	if ((data = udev_device_get_property_value(dev, "ID_PART_ENTRY_UUID")))
@@ -114,6 +117,9 @@ static struct lsblk_devprop *get_properties_by_udev(struct lsblk_device *ld)
 		prop->partn = xstrdup(data);
 	if ((data = udev_device_get_property_value(dev, "ID_PART_ENTRY_FLAGS")))
 		prop->partflags = xstrdup(data);
+	if (!prop->pttype &&
+	    (data = udev_device_get_property_value(dev, "ID_PART_ENTRY_SCHEME")))
+		prop->pttype = xstrdup(data);
 
 	data = udev_device_get_property_value(dev, "ID_WWN_WITH_EXTENSION");
 	if (!data)
@@ -151,7 +157,7 @@ static struct lsblk_devprop *get_properties_by_udev(struct lsblk_device *ld)
 		const char *name = udev_list_entry_get_name(le);
 		size_t sz;
 
-		if (!name || !startswith(name,  LSBLK_UDEV_BYID_PREFIX))
+		if (!name || !ul_startswith(name,  LSBLK_UDEV_BYID_PREFIX))
 			continue;
 		name += LSBLK_UDEV_BYID_PREFIXSZ;
 		if (!*name)
@@ -255,6 +261,7 @@ static struct lsblk_devprop *get_properties_by_file(struct lsblk_device *ld)
 		else if (lookup(buf, "ID_PART_ENTRY_UUID", &prop->partuuid)) ;
 		else if (lookup(buf, "ID_PART_ENTRY_FLAGS", &prop->partflags)) ;
 		else if (lookup(buf, "ID_PART_ENTRY_NUMBER", &prop->partn)) ;
+		else if (lookup(buf, "ID_PART_ENTRY_SCHEME", &prop->pttype)) ;
 		else if (lookup(buf, "ID_MODEL", &prop->model)) ;
 		else if (lookup(buf, "ID_WWN_WITH_EXTENSION", &prop->wwn)) ;
 		else if (lookup(buf, "ID_WWN", &prop->wwn)) ;
@@ -338,6 +345,9 @@ static struct lsblk_devprop *get_properties_by_blkid(struct lsblk_device *dev)
 			prop->partflags = xstrdup(data);
 		if (!blkid_probe_lookup_value(pr, "PART_ENTRY_NUMBER", &data, NULL))
 			prop->partn = xstrdup(data);
+		if (!prop->pttype &&
+		    !blkid_probe_lookup_value(pr, "PART_ENTRY_SCHEME", &data, NULL))
+			prop->pttype = xstrdup(data);
 
 		DBG(DEV, ul_debugobj(dev, "%s: found blkid properties", dev->name));
 	}
@@ -352,13 +362,13 @@ done:
 
 static int name2method(const char *name, size_t namesz)
 {
-	if (namesz == 4 && strncasecmp(name, "none", namesz) == 0)
+	if (namesz == 4 && c_strncasecmp(name, "none", namesz) == 0)
 		return LSBLK_METHOD_NONE;
-	if (namesz == 4 && strncasecmp(name, "udev", namesz) == 0)
+	if (namesz == 4 && c_strncasecmp(name, "udev", namesz) == 0)
 		return LSBLK_METHOD_UDEV;
-	if (namesz == 5 && strncasecmp(name, "blkid", namesz) == 0)
+	if (namesz == 5 && c_strncasecmp(name, "blkid", namesz) == 0)
 		return LSBLK_METHOD_BLKID;
-	if (namesz == 4 && strncasecmp(name, "file", namesz) == 0)
+	if (namesz == 4 && c_strncasecmp(name, "file", namesz) == 0)
 		return LSBLK_METHOD_FILE;
 
 	warnx(_("unknown properties probing method: %s"), name);
@@ -472,7 +482,7 @@ const char *lsblk_parttype_code_to_string(const char *code, const char *pttype)
 			const struct lsblk_parttype *t = &gpt_types[i];
 
 			if (t->name && t->typestr &&
-			    strcasecmp(code, t->typestr) == 0)
+			    c_strcasecmp(code, t->typestr) == 0)
 				return t->name;
 		}
 	}

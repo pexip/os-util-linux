@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: sfdisk
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "SFDISK" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
+.TH "SFDISK" "8" "2026-06-16" "util\-linux 2.41.5" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -64,7 +64,7 @@ If the option \fB\-N\fP is specified, then the changes are applied to the partit
 Note that it\(cqs possible to address an unused partition with \fB\-N\fP. For example, an MBR always contains 4 partitions, but the number of used partitions may be smaller. In this case \fBsfdisk\fP follows the default values from the partition table and does not use built\-in defaults for the unused partition given with \fB\-N\fP. See also \fB\-\-append\fP.
 .RE
 .sp
-\fB\-A\fP, \fB\-\-activate\fP \fIdevice\fP [\fIpartition\-number\fP...]
+\fB\-A\fP, \fB\-\-activate\fP \fIdevice\fP [\fIpartition\-number\fP.\|.\|.]
 .RS 4
 Switch on the bootable flag for the specified partitions and switch off the bootable flag on all unspecified partitions. The special placeholder \*(Aq\-\*(Aq may be used instead of the partition numbers to switch off the bootable flag on all partitions.
 .sp
@@ -78,7 +78,7 @@ If no \fIpartition\-number\fP is specified, then list the partitions with an ena
 Back up the current partition table sectors in binary format and exit. See the \fBBACKING UP THE PARTITION TABLE\fP section.
 .RE
 .sp
-\fB\-\-delete\fP \fIdevice\fP [\fIpartition\-number\fP...]
+\fB\-\-delete\fP \fIdevice\fP [\fIpartition\-number\fP.\|.\|.]
 .RS 4
 Delete all or the specified partitions.
 .RE
@@ -88,7 +88,7 @@ Delete all or the specified partitions.
 Dump the partitions of a device in a format that is usable as input to \fBsfdisk\fP. See the \fBBACKING UP THE PARTITION TABLE\fP section.
 .RE
 .sp
-\fB\-g\fP, \fB\-\-show\-geometry\fP [\fIdevice\fP...]
+\fB\-g\fP, \fB\-\-show\-geometry\fP [\fIdevice\fP.\|.\|.]
 .RS 4
 List the geometry of all or the specified devices. For backward compatibility the deprecated option \fB\-\-show\-pt\-geometry\fP have the same meaning as this one.
 .RE
@@ -98,12 +98,12 @@ List the geometry of all or the specified devices. For backward compatibility th
 Dump the partitions of a device in JSON format. Note that \fBsfdisk\fP is not able to use JSON as input format.
 .RE
 .sp
-\fB\-l\fP, \fB\-\-list\fP [\fIdevice\fP...]
+\fB\-l\fP, \fB\-\-list\fP [\fIdevice\fP.\|.\|.]
 .RS 4
 List the partitions of all or the specified devices. This command can be used together with \fB\-\-verify\fP.
 .RE
 .sp
-\fB\-F\fP, \fB\-\-list\-free\fP [\fIdevice\fP...]
+\fB\-F\fP, \fB\-\-list\-free\fP [\fIdevice\fP.\|.\|.]
 .RS 4
 List the free unpartitioned areas on all or the specified devices.
 .RE
@@ -186,7 +186,7 @@ Note that the \*(AqT\*(Aq command in \fBfdisk\fP provides a dialog to specify wh
 Renumber the partitions, ordering them by their start offset.
 .RE
 .sp
-\fB\-s\fP, \fB\-\-show\-size\fP [\fIdevice\fP...]
+\fB\-s\fP, \fB\-\-show\-size\fP [\fIdevice\fP.\|.\|.]
 .RS 4
 List the sizes of all or the specified devices in units of 1024 byte size. This command is DEPRECATED in favour of \fBblockdev\fP(8).
 .RE
@@ -196,7 +196,7 @@ List the sizes of all or the specified devices in units of 1024 byte size. This 
 Print all supported types for the current disk label or the label specified by \fB\-\-label\fP.
 .RE
 .sp
-\fB\-V\fP, \fB\-\-verify\fP [\fIdevice\fP...]
+\fB\-V\fP, \fB\-\-verify\fP [\fIdevice\fP.\|.\|.]
 .RS 4
 Test whether the partition table and partitions seem correct.
 .RE
@@ -322,7 +322,7 @@ Deprecated option. Only the sector unit is supported. This option is not support
 .sp
 \fB\-X\fP, \fB\-\-label\fP \fItype\fP
 .RS 4
-Specify the disk label type (e.g., \fBdos\fP, \fBgpt\fP, ...). If this option is not given, then \fBsfdisk\fP defaults to the existing label, but if there is no label on the device yet, then the type defaults to \fBdos\fP. The default or the current label may be overwritten by the "label: <name>" script header line. The option \fB\-\-label\fP does not force \fBsfdisk\fP to create empty disk label (see the \fBEMPTY DISK LABEL\fP section below).
+Specify the disk label type (e.g., \fBdos\fP, \fBgpt\fP, .\|.\|.). If this option is not given, then \fBsfdisk\fP defaults to the existing label, but if there is no label on the device yet, then the type defaults to \fBdos\fP. The default or the current label may be overwritten by the "label: <name>" script header line. The option \fB\-\-label\fP does not force \fBsfdisk\fP to create empty disk label (see the \fBEMPTY DISK LABEL\fP section below).
 .RE
 .sp
 \fB\-Y\fP, \fB\-\-label\-nested\fP \fItype\fP
@@ -472,7 +472,7 @@ This format is more readable, robust, extensible and allows specifying additiona
 .RS 3
 .ll -.6i
 .sp
-[\fIdevice\fP \fB:\fP] \fIname\fP[\fB=\fP\fIvalue\fP], ...
+[\fIdevice\fP \fB:\fP] \fIname\fP[\fB=\fP\fIvalue\fP], .\|.\|.
 .br
 .RE
 .ll

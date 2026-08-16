@@ -46,6 +46,7 @@
 #define PF_KTHREAD		0x00200000	/* I am a kernel thread */
 
 #include "c.h"
+#include "cctype.h"
 #include "list.h"
 #include "closestream.h"
 #include "column-list-table.h"
@@ -311,7 +312,7 @@ static const struct colinfo infos[] = {
 				   N_("net interface associated with the packet socket") },
 	[COL_PACKET_PROTOCOL]  = { "PACKET.PROTOCOL",
 				   0,   SCOLS_FL_RIGHT,SCOLS_JSON_STRING,
-				   N_("L3 protocol associated with the packet socket") },
+				   N_("L2 protocol associated with the packet socket") },
 	[COL_PARTITION]        = { "PARTITION",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
 				   N_("block device name resolved by /proc/partition") },
@@ -611,7 +612,7 @@ static int column_name_to_id(const char *name, size_t namesz)
 	for (i = 0; i < ARRAY_SIZE(infos); i++) {
 		const char *cn = infos[i].name;
 
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
@@ -1835,7 +1836,7 @@ static void mark_poll_fds_as_multiplexed(char *buf,
 		struct file *file = list_entry(f, struct file, files);
 		if (is_opened_file(file) && !file->multiplexed) {
 			int fd = file->association;
-			if (bsearch(&(struct pollfd){.fd = fd,}, local.iov_base,
+			if (bsearch((&(struct pollfd){.fd = fd,}), local.iov_base,
 				    nfds, sizeof(struct pollfd), pollfdcmp))
 				file->multiplexed = 1;
 		}
@@ -2277,7 +2278,7 @@ static struct libscols_filter *new_filter(const char *expr, bool debug, struct l
 	return f;
 }
 
-static struct counter_spec *new_counter_spec(const char *spec_str)
+static struct counter_spec *new_counter_spec(char *spec_str)
 {
 	char *sep;
 	struct counter_spec *spec;
@@ -2596,6 +2597,8 @@ int main(int argc, char *argv[])
 			const char *subexpr = NULL;
 
 			ctl.sockets_only = 1;
+			if (optarg && *optarg == '=')
+				optarg++;
 			if (optarg == NULL)
 				subexpr = inet46_subexpr;
 			else if (strcmp(optarg, "4") == 0)

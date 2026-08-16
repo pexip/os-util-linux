@@ -202,6 +202,10 @@ static int generate_output(struct getopt_control *ctl, char *argv[], int argc)
 		 (argc, argv, ctl->optstr,
 		  (const struct option *)ctl->long_options, &longindex)))
 	       != EOF) {
+		/* Given that these two characters are returned by the getopt(3) routines 
+		 * to distinguish between two distinct internal error states, they should
+		 * not be used as option characters.
+		*/
 		if (opt == '?' || opt == ':')
 			exit_code = GETOPT_EXIT_CODE;
 		else if (!ctl->quiet_output) {
@@ -280,7 +284,7 @@ static void add_short_options(struct getopt_control *ctl, char *options)
 {
 	free(ctl->optstr);
 	if (*options != '+' && getenv("POSIXLY_CORRECT"))
-		ctl->optstr = strconcat("+", options);
+		ctl->optstr = ul_strconcat("+", options);
 	else
 		ctl->optstr = xstrdup(options);
 	if (!ctl->optstr)

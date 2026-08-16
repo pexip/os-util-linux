@@ -23,6 +23,9 @@ struct id_part {
 };
 
 static const struct id_part arm_part[] = {
+    { 0xb36, "ARM1136j-s" },
+    { 0xb56, "ARM1156t2-s" },
+    { 0xb76, "ARM1176jz-s" },
     { 0x810, "ARM810" },
     { 0x920, "ARM920" },
     { 0x922, "ARM922" },
@@ -69,10 +72,12 @@ static const struct id_part arm_part[] = {
     { 0xd0d, "Cortex-A77" },
     { 0xd0e, "Cortex-A76AE" },
     { 0xd13, "Cortex-R52" },
+    { 0xd14, "Cortex-R82AE" },
     { 0xd15, "Cortex-R82" },
     { 0xd16, "Cortex-R52+" },
     { 0xd20, "Cortex-M23" },
     { 0xd21, "Cortex-M33" },
+    { 0xd24, "Cortex-M52" },
     { 0xd22, "Cortex-M55" },
     { 0xd23, "Cortex-M85" },
     { 0xd40, "Neoverse-V1" },
@@ -99,8 +104,12 @@ static const struct id_part arm_part[] = {
     { 0xd87, "Cortex-A725" },
     { 0xd88, "Cortex-A520AE" },
     { 0xd89, "Cortex-A720AE" },
+    { 0xd8a, "C1-Nano" },
+    { 0xd8b, "C1-Pro" },
+    { 0xd8c, "C1-Ultra" },
     { 0xd8e, "Neoverse-N3" },
     { 0xd8f, "Cortex-A320" },
+    { 0xd90, "C1-Premium" },
     { -1, "unknown" },
 };
 
@@ -171,6 +180,7 @@ static const struct id_part nvidia_part[] = {
     { 0x000, "Denver" },
     { 0x003, "Denver 2" },
     { 0x004, "Carmel" },
+    { 0x010, "Olympus" },
     { -1, "unknown" },
 };
 

@@ -2,7 +2,7 @@
  * No copyright is claimed.  This code is in the public domain; do with
  * it what you wish.
  *
- * Copyright (C) 2012-2015 Karel Zak <kzak@redhat.com>
+ * Written by Karel Zak <kzak@redhat.com> [2012]
  */
 #include "c.h"
 #include "color-names.h"
@@ -43,7 +43,7 @@ const char *color_sequence_from_colorname(const char *str)
 		{ "halfbright", UL_COLOR_HALFBRIGHT	 },
 		{ "lightblue",	UL_COLOR_BOLD_BLUE       },
 		{ "lightcyan",	UL_COLOR_BOLD_CYAN       },
-		{ "lightgray,",	UL_COLOR_GRAY            },
+		{ "lightgray",	UL_COLOR_GRAY            },
 		{ "lightgreen", UL_COLOR_BOLD_GREEN      },
 		{ "lightmagenta", UL_COLOR_BOLD_MAGENTA  },
 		{ "lightred",	UL_COLOR_BOLD_RED        },
@@ -51,10 +51,11 @@ const char *color_sequence_from_colorname(const char *str)
 		{ "red",	UL_COLOR_RED             },
 		{ "reset",      UL_COLOR_RESET,          },
 		{ "reverse",    UL_COLOR_REVERSE         },
-		{ "yellow",	UL_COLOR_BOLD_YELLOW     },
-		{ "white",      UL_COLOR_WHITE           }
+		{ "white",      UL_COLOR_WHITE           },
+		{ "yellow",	UL_COLOR_BOLD_YELLOW     }
 	};
-	struct ul_color_name key = { .name = str }, *res;
+	struct ul_color_name key = { .name = str };
+	const struct ul_color_name *res;
 
 	if (!str)
 		return NULL;
@@ -93,11 +94,14 @@ static int __color_canonicalize(const char *str, char **seq)
 	*seq = NULL;
 
 	/* convert color names like "red" to the real sequence */
-	if (*str != '\\' && isalpha(*str)) {
+	if (*str != '\\' && !strchr(str, ';') && isalpha(*str)) {
 		const char *s = color_sequence_from_colorname(str);
-		*seq = strdup(s ? s : str);
 
-		return *seq ? 0 : -ENOMEM;
+		if (s) {
+			*seq = strdup(s);
+			return *seq ? 0 : -ENOMEM;
+		}
+		return 1;
 	}
 
 	/* convert xx;yy sequences to "\033[xx;yy" */

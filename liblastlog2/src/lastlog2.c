@@ -39,6 +39,23 @@
 #include "lastlog2P.h"
 #include "strutils.h"
 
+#define LASTLOG2_BUSY_TIMEOUT 3000
+
+static int
+set_busy_timeout(sqlite3 *db, const char *path, char **error)
+{
+	int ret = 0;
+
+	if (sqlite3_busy_timeout(db, LASTLOG2_BUSY_TIMEOUT) != SQLITE_OK) {
+		ret = -1;
+		if (error && asprintf(error, "Cannot set busy timeout (%s): %s",
+				     path, sqlite3_errmsg(db)) < 0)
+			ret = -ENOMEM;
+	}
+
+	return ret;
+}
+
 /* Sets the ll2 context/environment. */
 /* Returns the context or NULL if an error has happened. */
 extern struct ll2_context * ll2_new_context(const char *db_path)
@@ -87,6 +104,13 @@ open_database_ro(struct ll2_context *context, sqlite3 **db, char **error)
 				ret = -ENOMEM;
 
 		sqlite3_close(*db);
+		return ret;
+	}
+
+	ret = set_busy_timeout(*db, path, error);
+	if (ret != 0) {
+		sqlite3_close(*db);
+		return ret;
 	}
 
 	return ret;
@@ -110,6 +134,13 @@ open_database_rw(struct ll2_context *context,  sqlite3 **db, char **error)
 				ret = -ENOMEM;
 
 		sqlite3_close(*db);
+		return ret;
+	}
+
+	ret = set_busy_timeout(*db, path, error);
+	if (ret != 0) {
+		sqlite3_close(*db);
+		return ret;
 	}
 
 	return ret;
@@ -519,12 +550,12 @@ ll2_rename_user(struct ll2_context *context, const char *user,
 	if ((retval = open_database_rw(context, &db, error)) != 0)
 		return retval;
 
-	if ((retval = read_entry(db, user, &ll_time, &tty, &rhost, &pam_service, error) != 0)) {
+	if ((retval = read_entry(db, user, &ll_time, &tty, &rhost, &pam_service, error)) != 0) {
 		sqlite3_close(db);
 		return retval;
 	}
 
-	if ((retval = write_entry(db, newname, ll_time, tty, rhost, pam_service, error) != 0)) {
+	if ((retval = write_entry(db, newname, ll_time, tty, rhost, pam_service, error)) != 0) {
 		sqlite3_close(db);
 		free(tty);
 		free(rhost);
@@ -559,8 +590,8 @@ ll2_import_lastlog(struct ll2_context *context, const char *lastlog_file,
 
 	ll_fp = fopen(lastlog_file, "r");
 	if (ll_fp == NULL) {
-		if (error && asprintf(error, "Failed to open '%s': %s",
-				     lastlog_file, strerror(errno)) < 0)
+		if (error && asprintf(error, "Failed to open '%s': %m",
+				     lastlog_file) < 0)
 			return -ENOMEM;
 
 		return -1;
@@ -569,8 +600,8 @@ ll2_import_lastlog(struct ll2_context *context, const char *lastlog_file,
 
 	if (fstat(fileno(ll_fp), &statll) != 0) {
 		retval = -1;
-		if (error && asprintf(error, "Cannot get size of '%s': %s",
-					lastlog_file, strerror(errno)) < 0)
+		if (error && asprintf(error, "Cannot get size of '%s': %m",
+					lastlog_file) < 0)
 			retval = -ENOMEM;
 
 		goto done;

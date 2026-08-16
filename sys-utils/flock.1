@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: flock
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-03-18
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "FLOCK" "1" "2025-03-18" "util\-linux 2.41" "User Commands"
+.TH "FLOCK" "1" "2026-06-16" "util\-linux 2.41.5" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -140,7 +140,7 @@ shell> flock \-x local\-lock\-file echo \*(Aqa b c\*(Aq
 Grab the exclusive lock "local\-lock\-file" before running echo with \*(Aqa b c\*(Aq.
 .RE
 .sp
-(; flock \-n 9 || exit 1; # ... commands executed under lock ...; ) 9>/var/lock/mylockfile
+(; flock \-n 9 || exit 1; # .\|.\|. commands executed under lock .\|.\|.; ) 9>/var/lock/mylockfile
 .RS 4
 The form is convenient inside shell scripts. The mode used to open the file doesn\(cqt matter to \fBflock\fP; using \fI>\fP or \fI>>\fP allows the lockfile to be created if it does not already exist, however, write permission is required. Using \fI<\fP requires that the file already exists but only read permission is required.
 .RE

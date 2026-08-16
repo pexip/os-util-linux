@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: umount
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "UMOUNT" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
+.TH "UMOUNT" "8" "2026-06-16" "util\-linux 2.41.5" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,7 +31,7 @@
 umount \- unmount filesystems
 .SH "SYNOPSIS"
 .sp
-\fBumount\fP \fB\-a\fP [\fB\-dflnrv\fP] [\fB\-t\fP \fIfstype\fP] [\fB\-O\fP \fIoption\fP...]
+\fBumount\fP \fB\-a\fP [\fB\-dflnrv\fP] [\fB\-t\fP \fIfstype\fP] [\fB\-O\fP \fIoption\fP.\|.\|.]
 .sp
 \fBumount\fP [\fB\-dflnrv\fP] {\fIdirectory\fP|\fIdevice\fP}
 .sp
@@ -105,7 +105,7 @@ See \fBmount_namespaces\fP(7) for more information.
 Unmount without writing in \fI/etc/mtab\fP.
 .RE
 .sp
-\fB\-O\fP, \fB\-\-test\-opts\fP \fIoption\fP...
+\fB\-O\fP, \fB\-\-test\-opts\fP \fIoption\fP.\|.\|.
 .RS 4
 Unmount only the filesystems that have the specified option set in \fI/etc/fstab\fP. More than one option may be specified in a comma\-separated list. Each option can be prefixed with \fBno\fP to indicate that no action should be taken for this option.
 .RE
@@ -125,7 +125,7 @@ Recursively unmount each specified directory. Recursion for each directory will 
 When an unmount fails, try to remount the filesystem read\-only.
 .RE
 .sp
-\fB\-t\fP, \fB\-\-types\fP \fItype\fP...
+\fB\-t\fP, \fB\-\-types\fP \fItype\fP.\|.\|.
 .RS 4
 Indicate that the actions should only be taken on filesystems of the specified \fItype\fP. More than one type may be specified in a comma\-separated list. The list of filesystem types can be prefixed with \fBno\fP to indicate that no action should be taken for all of the mentioned types. Note that \fBumount\fP reads information about mounted filesystems from kernel (\fI/proc/mounts\fP) and filesystem names may be different than filesystem names used in the \fI/etc/fstab\fP (e.g., "nfs4" vs. "nfs").
 .RE

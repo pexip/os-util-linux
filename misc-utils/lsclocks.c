@@ -31,6 +31,7 @@
 #include <linux/rtc.h>
 
 #include "c.h"
+#include "cctype.h"
 #include "nls.h"
 #include "strutils.h"
 #include "timeutils.h"
@@ -172,7 +173,7 @@ static int column_name_to_id(const char *name, size_t namesz)
 	for (i = 0; i < ARRAY_SIZE(infos); i++) {
 		const char *cn = infos[i].name;
 
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
@@ -258,7 +259,7 @@ static int64_t get_namespace_offset(const char *name)
 		line = strtok_r(tokstr, "\n", &saveptr);
 		if (!line)
 			continue;
-		line = (char *) startswith(line, name);
+		line = (char *) ul_startswith(line, name);
 		if (!line || line[0] != ' ')
 			continue;
 

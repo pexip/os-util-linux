@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: mount
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-03-04
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "MOUNT" "8" "2025-03-04" "util\-linux 2.41" "System Administration"
+.TH "MOUNT" "8" "2026-06-16" "util\-linux 2.41.5" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -205,6 +205,20 @@ Since util\-linux 2.35, \fBmount\fP does not exit when user permissions are inad
 For more details, see \fBfstab\fP(5). Only the user that mounted a filesystem can unmount it again. If any user should be able to unmount it, then use \fBusers\fP instead of \fBuser\fP in the \fIfstab\fP line. The \fBowner\fP option is similar to the \fBuser\fP option, with the restriction that the user must be the owner of the special file. This may be useful e.g. for \fI/dev/fd\fP if a login script makes the console user owner of this device. The \fBgroup\fP option is similar, with the restriction that the user must be a member of the group of the special file.
 .sp
 The \fBuser\fP mount option is accepted if no username is specified. If used in the format \fBuser=someone\fP, the option is silently ignored and visible only for external mount helpers (/sbin/mount.<type>) for compatibility with some network filesystems.
+.if n .sp
+.RS 4
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+.B Warning
+.ps -1
+.br
+.sp
+When using the legacy \fBmount\fP(2) syscall (on older kernels without the new mount API), the mount target path is resolved by the kernel at syscall time. This means there is an inherent time\-of\-check\-to\-time\-of\-use (TOCTOU) window between the permission verification and the actual mount operation. If an ancestor directory of the mount target is writable by the unprivileged user, a path component could be swapped to redirect the mount to an unintended location. The new mount API (available since Linux 5.2) eliminates this issue by using file\-descriptor\-based target resolution. Administrators should ensure that mount target paths for \fBuser\fP mounts do not traverse directories writable by unprivileged users.
+.sp .5v
+.RE
 .SS "Bind mount operation"
 .sp
 Remount part of the file hierarchy somewhere else. The call is:
@@ -989,7 +1003,7 @@ All options prefixed with "X\-" are interpreted as comments or as userspace appl
 .sp
 \fBx\-\fP*
 .RS 4
-The same as \fBX\-\fP* options, but stored permanently in user space. This means the options are also available for \fBumount\fP(8) or other operations. Note that maintaining mount options in user space is tricky, because it\(cqs necessary use libmount\-based tools and there is no guarantee that the options will be always available (for example after a move mount operation or in unshared namespace).
+The same as \fBX\-\fP* options, but stored permanently in user space. This means the options are also available for \fBumount\fP(8) or other operations. Note that maintaining mount options in user space is tricky, because it\(cqs necessary to use libmount\-based tools and there is no guarantee that the options will be always available (for example after a move mount operation or in unshared namespace).
 .sp
 Note that before util\-linux v2.30 the x\-* options have not been maintained by libmount and stored in user space (functionality was the same as for X\-* now), but due to the growing number of use\-cases (in initrd, systemd etc.) the functionality has been extended to keep existing \fIfstab\fP configurations usable without a change.
 .RE
@@ -1033,9 +1047,9 @@ Allow to make a target directory (mountpoint) if it does not exist yet. The opti
 .RS 4
 Allows disabling of canonicalization for mount source and target paths. By default, the \f(CRmount\fP command resolves all paths to their absolute paths without symlinks. However, this behavior may not be desired in certain situations, such as when binding a mount over a symlink, or a symlink over a directory or another symlink. The optional argument \fItype\fP can be either "source" or "target" (mountpoint). If no \fItype\fP is specified, then canonicalization is disabled for both types. This mount option does not affect the conversion of source tags (e.g. LABEL= or UUID=) and fstab processing.
 .sp
-The command line option \fB\-\-no\-canonicalize\fP overrides this mount option and affects all path and tag conversions in all situations, but it does not modify flags for open_tree syscalls.
+The command\-line option \fB\-\-no\-canonicalize\fP overrides this mount option and affects all path and tag conversions in all situations, but for backward compatibility, it does not modify open_tree syscall flags and does not allow the bind\-mount over a symlink use case.
 .sp
-Note that \fBmount\fP(8) still sanitizes and canonicalizes the source and target paths specified on the command line by non\-root users, regardless of the X\-mount.nocanonicalize setting.
+Note that \fBmount\fP(8) ignores this option for unprivileged (non\-root) users. Paths are always canonicalized in restricted mode to ensure safe target resolution.
 .RE
 .sp
 \fBX\-mount.noloop\fP
@@ -1043,11 +1057,15 @@ Note that \fBmount\fP(8) still sanitizes and canonicalizes the source and target
 Do not create and mount a loop device, even if the source of the mount is a regular file.
 .RE
 .sp
-*X\-mount.subdir=*\fIdirectory\fP
+\fBX\-mount.subdir=\fP\fIdirectory\fP
 .RS 4
-Allow mounting sub\-directory from a filesystem instead of the root directory. For now, this feature is implemented by temporary filesystem root directory mount in unshared namespace and then bind the sub\-directory to the final mount point and umount the root of the filesystem. The sub\-directory mount shows up atomically for the rest of the system although it is implemented by multiple \fBmount\fP(2) syscalls.
+Allow mounting a subdirectory of a filesystem instead of the root directory. This is effective only when a new instance of a filesystem is attached to the system. The option is silently ignored for operations like remount, bind mount, or move.
+.sp
+For now, this feature is implemented by a temporary filesystem root\-directory mount in an unshared namespace and then binding the sub\-directory to the final mount point and unmounting the root of the filesystem. The sub\-directory mount shows up atomically for the rest of the system although it is implemented by multiple \fBmount\fP(2) syscalls.
 .sp
 Note that this feature will not work in session with an unshared private mount namespace (after \fBunshare \-\-mount\fP) on old kernels or with \fBmount\fP(8) without support for file\-descriptors\-based mount kernel API. In this case, you need \fBunshare \-\-mount \-\-propagation shared\fP.
+.sp
+For unprivileged (non\-root) users, this feature requires Linux >= 6.15 where the subdirectory is opened directly on the detached mount tree.
 .sp
 This feature is EXPERIMENTAL.
 .RE
@@ -1120,7 +1138,7 @@ Do not follow symlinks when resolving paths. Symlinks can still be created, and 
 This section lists options that are specific to particular filesystems. Where possible, you should first consult filesystem\-specific manual pages for details. Some of those pages are listed in the following table.
 .TS
 allbox tab(:);
-lt lt.
+ltB ltB.
 T{
 .sp
 \fBFilesystem(s)\fP
@@ -1128,6 +1146,8 @@ T}:T{
 .sp
 \fBManual page\fP
 T}
+.T&
+lt lt.
 T{
 .sp
 btrfs
@@ -1220,7 +1240,7 @@ Do not allow any changes to the protection bits on the filesystem.
 .sp
 \fBusemp\fP
 .RS 4
-Set UID and GID of the root of the filesystem to the UID and GID of the mount point upon the first sync or umount, and then clear this option. Strange...
+Set UID and GID of the root of the filesystem to the UID and GID of the mount point upon the first sync or umount, and then clear this option. Strange.\|.\|.
 .RE
 .sp
 \fBverbose\fP
@@ -1699,8 +1719,8 @@ A read\-only overlay of two read\-only filesystems may use any filesystem type. 
 .if n .RS 4
 .nf
 .fam C
-mount \-t overlay  overlay  \(rs
-  \-olowerdir=/lower,upperdir=/upper,workdir=/work  /merged
+mount \-t overlay\&  overlay\&  \(rs
+  \-olowerdir=/lower,upperdir=/upper,workdir=/work\&  /merged
 .fam
 .fi
 .if n .RE
