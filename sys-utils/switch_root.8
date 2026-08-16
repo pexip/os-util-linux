@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: switch_root
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-03-31
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "SWITCH_ROOT" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
+.TH "SWITCH_ROOT" "8" "2026-03-31" "util\-linux 2.41.5" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -33,7 +33,7 @@ switch_root \- switch to another filesystem as the root of the mount tree
 .sp
 \fBswitch_root\fP [\fB\-hV\fP]
 .sp
-\fBswitch_root\fP \fInewroot init\fP [\fIarg\fP...]
+\fBswitch_root\fP \fInewroot init\fP [\fIarg\fP.\|.\|.]
 .SH "DESCRIPTION"
 .sp
 \fBswitch_root\fP moves already mounted \fI/proc\fP, \fI/dev\fP, \fI/sys\fP and \fI/run\fP to \fInewroot\fP and makes \fInewroot\fP the new root filesystem and starts \fIinit\fP process.

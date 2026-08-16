@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: rename
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "RENAME" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
+.TH "RENAME" "1" "2026-06-16" "util\-linux 2.41.5" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,7 +31,7 @@
 rename \- rename files
 .SH "SYNOPSIS"
 .sp
-\fBrename\fP [options] \fIexpression replacement file\fP...
+\fBrename\fP [options] \fIexpression replacement file\fP.\|.\|.
 .SH "DESCRIPTION"
 .sp
 \fBrename\fP will rename the specified files by replacing the first occurrence of \fIexpression\fP in their name by \fIreplacement\fP.
@@ -128,7 +128,7 @@ unanticipated error occurred
 .RE
 .SH "EXAMPLES"
 .sp
-Given the files \fIfoo1\fP, ..., \fIfoo9\fP, \fIfoo10\fP, ..., \fIfoo278\fP, the commands
+Given the files \fIfoo1\fP, .\|.\|., \fIfoo9\fP, \fIfoo10\fP, .\|.\|., \fIfoo278\fP, the commands
 .sp
 .if n .RS 4
 .nf
@@ -139,7 +139,7 @@ rename foo foo0 foo??
 .fi
 .if n .RE
 .sp
-will turn them into \fIfoo001\fP, ..., \fIfoo009\fP, \fIfoo010\fP, ..., \fIfoo278\fP. And
+will turn them into \fIfoo001\fP, .\|.\|., \fIfoo009\fP, \fIfoo010\fP, .\|.\|., \fIfoo278\fP. And
 .sp
 .if n .RS 4
 .nf

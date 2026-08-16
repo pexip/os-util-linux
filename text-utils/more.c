@@ -202,6 +202,7 @@ struct more_control {
 #endif
 	unsigned int
 		ignore_stdin,  		/* POLLHUP; peer closed pipe */
+		pending_stdin,		/* data on stdin temporary ignored when waiting for stderr */
 		bad_stdout,  		/* true if overwriting does not turn off standout */
 		catch_suspend,  	/* we should catch the SIGTSTP signal */
 		clear_line_ends,  	/* do not scroll, paint each screen from the top */
@@ -226,6 +227,7 @@ struct more_control {
 		print_banner,  		/* print file name banner */
 		reading_num,  		/* are we reading leading_number */
 		report_errors,  	/* is an error reported */
+		prev_command_called,	/* previous more command is called */
 		search_at_start,  	/* search pattern defined at start up */
 		search_called,  	/* previous more command was a search */
 		squeeze_spaces,  	/* suppress white space */
@@ -861,6 +863,9 @@ static struct number_command read_command(struct more_control *ctl)
 			case 'p':
 				cmd.key = more_kc_previous_file;
 				return cmd;
+			case '!':
+				cmd.key = more_kc_run_shell;
+				return cmd;
 			default:
 				cmd.key = more_kc_unknown_command;
 				return cmd;
@@ -1295,8 +1300,11 @@ static void run_shell(struct more_control *ctl, char *filename)
 	erase_to_col(ctl, 0);
 	putchar('!');
 	fflush(NULL);
-	if (ctl->previous_command.key == more_kc_run_shell && ctl->shell_line)
+	if (ctl->previous_command.key == more_kc_run_shell && ctl->shell_line
+	    && ctl->prev_command_called == 1) {
 		fputs(ctl->shell_line, stderr);
+		ctl->prev_command_called = 0;
+	}
 	else {
 		ttyin(ctl, cmdbuf, sizeof(cmdbuf) - 2, '!');
 		if (strpbrk(cmdbuf, "%!\\"))
@@ -1369,11 +1377,14 @@ static int more_poll(struct more_control *ctl, int timeout, int *stderr_active)
 
 	if (stderr_active)
 		*stderr_active = 0;
+	else
+		/* always check stdin if not care about stderr */
+		ctl->pending_stdin = 0;
 
 	while (!has_data) {
 		int rc;
 
-		if (ctl->ignore_stdin)
+		if (ctl->ignore_stdin || ctl->pending_stdin)
 			pfd[POLLFD_STDIN].fd = -1;	/* probably closed, ignore */
 
 		rc = poll(pfd, ARRAY_SIZE(pfd), timeout);
@@ -1431,8 +1442,11 @@ static int more_poll(struct more_control *ctl, int timeout, int *stderr_active)
 			if ((pfd[POLLFD_STDIN].revents & POLLHUP) ||
 			    (pfd[POLLFD_STDIN].revents & POLLNVAL))
 				ctl->ignore_stdin = 1;
-			else
+			else {
 				has_data++;
+				if (ctl->current_file == stdin)
+					ctl->pending_stdin = 1;
+			}
 		}
 
 		/* event on stderr (we reads user commands from stderr!) */
@@ -1674,18 +1688,29 @@ static int more_key_command(struct more_control *ctl, char *filename)
 	else
 		ctl->report_errors = 0;
 	ctl->search_called = 0;
+	ctl->prev_command_called = 0;
 	for (;;) {
 		if (more_poll(ctl, -1, &stderr_active) <= 0)
 			continue;
 		if (stderr_active == 0)
 			continue;
+
+		/* There could be new data on stdin (e.g. prog | more) while
+		 * we are waiting for user's activity on stderr. These stdin
+		 * events are temporarily ignored to avoid a busy loop. Let's
+		 * reset this to ensure stdin is checked next time. */
+		ctl->pending_stdin = 0;
+
 		cmd = read_command(ctl);
 		if (cmd.key == more_kc_unknown_command)
 			continue;
-		if (cmd.key == more_kc_repeat_previous)
+		if (cmd.key == more_kc_repeat_previous) {
 			cmd = ctl->previous_command;
-		else
+			ctl->prev_command_called = 1;
+		}
+		else {
 			ctl->previous_command = cmd;
+		}
 
 		switch (cmd.key) {
 		case more_kc_backwards:

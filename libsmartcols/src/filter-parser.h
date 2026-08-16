@@ -45,7 +45,7 @@
 extern int yydebug;
 #endif
 /* "%code requires" blocks.  */
-#line 27 "libsmartcols/src/filter-parser.y"
+#line 30 "libsmartcols/src/filter-parser.y"
 
 
 #line 52 "libsmartcols/src/filter-parser.h"
@@ -85,7 +85,7 @@ extern int yydebug;
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 40 "libsmartcols/src/filter-parser.y"
+#line 43 "libsmartcols/src/filter-parser.y"
 
 	unsigned long long	param_number;
 	const char*		param_string;

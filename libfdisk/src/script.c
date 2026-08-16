@@ -1,4 +1,5 @@
 
+#include "cctype.h"
 #include "fdiskP.h"
 #include "strutils.h"
 #include "carefulputc.h"
@@ -239,7 +240,7 @@ static struct fdisk_scriptheader *script_get_header(struct fdisk_script *dp,
 	list_for_each(p, &dp->headers) {
 		struct fdisk_scriptheader *fi = list_entry(p, struct fdisk_scriptheader, headers);
 
-		if (strcasecmp(fi->name, name) == 0)
+		if (c_strcasecmp(fi->name, name) == 0)
 			return fi;
 	}
 
@@ -690,30 +691,36 @@ static int write_file_sfdisk(struct fdisk_script *dp, FILE *f)
 	fdisk_reset_iter(&itr, FDISK_ITER_FORWARD);
 	while (fdisk_table_next_partition(dp->table, &itr, &pa) == 0) {
 		char *p = NULL;
+		int sep = 0;
 
 		if (devname)
 			p = fdisk_partname(devname, pa->partno + 1);
 		if (p) {
 			DBG(SCRIPT, ul_debugobj(dp, "write %s entry", p));
-			fprintf(f, "%s :", p);
+			fprintf(f, "%s : ", p);
 			free(p);
 		} else
-			fprintf(f, "%zu :", pa->partno + 1);
+			fprintf(f, "%zu : ", pa->partno + 1);
 
 		if (fdisk_partition_has_start(pa))
-			fprintf(f, " start=%12ju", (uintmax_t)pa->start);
+			sep = fprintf(f, "start=%12ju", (uintmax_t)pa->start);
 		if (fdisk_partition_has_size(pa))
-			fprintf(f, ", size=%12ju", (uintmax_t)pa->size);
+			sep = fprintf(f, "%ssize=%12ju",
+					sep ? ", " : " ", (uintmax_t)pa->size);
 
 		if (pa->type && fdisk_parttype_get_string(pa->type))
-			fprintf(f, ", type=%s", fdisk_parttype_get_string(pa->type));
+			sep = fprintf(f, "%stype=%s",
+					sep ? ", " : " ",
+					fdisk_parttype_get_string(pa->type));
 		else if (pa->type)
-			fprintf(f, ", type=%x", fdisk_parttype_get_code(pa->type));
+			sep = fprintf(f, "%stype=%x",
+					sep ? ", " : " ",
+					fdisk_parttype_get_code(pa->type));
 
 		if (pa->uuid)
-			fprintf(f, ", uuid=%s", pa->uuid);
+			sep = fprintf(f, "%suuid=%s", sep ? ", " : " ", pa->uuid);
 		if (pa->name && *pa->name) {
-			fputs(", name=", f);
+			sep = fprintf(f, "%sname=", sep ? ", " : " ");
 			fputs_quoted(pa->name, f);
 		}
 
@@ -722,10 +729,12 @@ static int write_file_sfdisk(struct fdisk_script *dp, FILE *f)
 			struct fdisk_label *lb = script_get_label(dp);
 
 			if (!lb || fdisk_label_get_type(lb) != FDISK_DISKLABEL_DOS)
-				fprintf(f, ", attrs=\"%s\"", pa->attrs);
+				sep = fprintf(f, "%sattrs=\"%s\"",
+						sep ? ", " : " ",
+						pa->attrs);
 		}
 		if (fdisk_partition_is_bootable(pa))
-			fprintf(f, ", bootable");
+			sep = fprintf(f, "%sbootable", sep ? ", " : " ");
 		fputc('\n', f);
 	}
 
@@ -1023,7 +1032,7 @@ static int parse_start_value(struct fdisk_script *dp, struct fdisk_partition *pa
 		int pow = 0, sign = skip_optional_sign(&tk);
 		uint64_t num;
 
-		rc = parse_size(tk, (uintmax_t *) &num, &pow);
+		rc = ul_parse_size(tk, (uintmax_t *) &num, &pow);
 		if (!rc) {
 			if (pow) {	/* specified as <num><suffix> */
 				if (!dp->cxt->sector_size) {
@@ -1079,7 +1088,7 @@ static int parse_size_value(struct fdisk_script *dp, struct fdisk_partition *pa,
 		int pow = 0, sign = skip_optional_sign(&tk);
 		uint64_t num;
 
-		rc = parse_size(tk, (uintmax_t *) &num, &pow);
+		rc = ul_parse_size(tk, (uintmax_t *) &num, &pow);
 		if (!rc) {
 			if (pow) { /* specified as <size><suffix> */
 				if (!dp->cxt->sector_size) {
@@ -1146,7 +1155,14 @@ static int parse_line_nameval(struct fdisk_script *dp, char *s)
 	fdisk_partition_partno_follow_default(pa, 1);
 
 	/* set partno */
-	p = strchr(s, ':');
+	p = strstr(s, " : ");			/* device : start=  */
+	if (!p)
+		p = strstr(s, " :");		/* device :start=  */
+	if (!p)
+		p = strstr(s, ": ");		/* device: start=  */
+	if (!p)
+		p = strchr(s, ':');
+
 	x = strchr(s, '=');
 	if (p && (!x || p < x)) {
 		*p = '\0';
@@ -1157,6 +1173,8 @@ static int parse_line_nameval(struct fdisk_script *dp, char *s)
 			fdisk_partition_partno_follow_default(pa, 0);
 			fdisk_partition_set_partno(pa, pno);
 		}
+		if (*p == ':')
+			p++;
 	} else
 		p = s;
 
@@ -1165,41 +1183,41 @@ static int parse_line_nameval(struct fdisk_script *dp, char *s)
 		DBG(SCRIPT, ul_debugobj(dp, " parsing '%s'", p));
 		p = (char *) skip_blank(p);
 
-		if (!strncasecmp(p, "start=", 6)) {
+		if (!c_strncasecmp(p, "start=", 6)) {
 			p += 6;
 			rc = parse_start_value(dp, pa, &p);
 
-		} else if (!strncasecmp(p, "size=", 5)) {
+		} else if (!c_strncasecmp(p, "size=", 5)) {
 			p += 5;
 			rc = parse_size_value(dp, pa, &p);
 
-		} else if (!strncasecmp(p, "bootable", 8)) {
+		} else if (!c_strncasecmp(p, "bootable", 8)) {
 			/* we use next_token() to skip possible extra space */
 			char *tk = next_token(&p);
-			if (tk && strcasecmp(tk, "bootable") == 0)
+			if (tk && c_strcasecmp(tk, "bootable") == 0)
 				pa->boot = 1;
 			else
 				rc = -EINVAL;
 
-		} else if (!strncasecmp(p, "attrs=", 6)) {
+		} else if (!c_strncasecmp(p, "attrs=", 6)) {
 			p += 6;
 			free(pa->attrs);
 			rc = next_string(&p, &pa->attrs);
 
-		} else if (!strncasecmp(p, "uuid=", 5)) {
+		} else if (!c_strncasecmp(p, "uuid=", 5)) {
 			p += 5;
 			free(pa->uuid);
 			rc = next_string(&p, &pa->uuid);
 
-		} else if (!strncasecmp(p, "name=", 5)) {
+		} else if (!c_strncasecmp(p, "name=", 5)) {
 			p += 5;
 			free(pa->name);
 			rc = next_string(&p, &pa->name);
 			if (!rc)
 				unhexmangle_string(pa->name);
 
-		} else if (!strncasecmp(p, "type=", 5) ||
-			   !strncasecmp(p, "Id=", 3)) {		/* backward compatibility */
+		} else if (!c_strncasecmp(p, "type=", 5) ||
+			   !c_strncasecmp(p, "Id=", 3)) {		/* backward compatibility */
 			char *type = NULL;
 
 			fdisk_unref_parttype(pa->type);
@@ -1563,7 +1581,7 @@ int fdisk_apply_script_headers(struct fdisk_context *cxt, struct fdisk_script *d
 	if (str) {
 		uintmax_t sz;
 
-		rc = parse_size(str, &sz, NULL);
+		rc = ul_parse_size(str, &sz, NULL);
 		if (rc == 0)
 			rc = fdisk_save_user_grain(cxt, sz);
 		if (rc)
@@ -1590,7 +1608,7 @@ int fdisk_apply_script_headers(struct fdisk_context *cxt, struct fdisk_script *d
 	if (str) {
 		uintmax_t sz;
 
-		rc = parse_size(str, &sz, NULL);
+		rc = ul_parse_size(str, &sz, NULL);
 		if (rc == 0)
 			rc = fdisk_gpt_set_npartitions(cxt, sz);
 	}

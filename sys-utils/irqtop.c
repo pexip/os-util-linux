@@ -43,13 +43,10 @@
 # include <ncurses/ncurses.h>
 #endif
 
-#ifdef HAVE_WIDECHAR
-# include <wctype.h>
-# include <wchar.h>
-#endif
-
 #include <libsmartcols.h>
 
+#include "c.h"
+#include "widechar.h"
 #include "closestream.h"
 #include "cpuset.h"
 #include "monotonic.h"
@@ -407,6 +404,8 @@ int main(int argc, char **argv)
 	resizeterm(ctl.rows, ctl.cols);
 #endif
 	curs_set(0);
+
+	scols_init_debug(0);
 
 	ctl.hostname = xgethostname();
 	event_loop(&ctl, &out);

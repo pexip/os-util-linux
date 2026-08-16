@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: setterm
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "SETTERM" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
+.TH "SETTERM" "1" "2026-06-16" "util\-linux 2.41.5" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -102,7 +102,7 @@ Turns bold (extra bright) mode on or off. Except on a virtual console, \fB\-\-bo
 Without an argument or with the argument \fBall\fP, the entire screen is cleared and the cursor is set to the home position, just like \fBclear\fP(1) does. With the argument \fBrest\fP, the screen is cleared from the current cursor position to the end.
 .RE
 .sp
-\fB\-\-clrtabs\fP[\fB=\fP\fItab1 tab2 tab3\fP ...]
+\fB\-\-clrtabs\fP[\fB=\fP\fItab1 tab2 tab3\fP .\|.\|.]
 .RS 4
 Clears tab stops from the given horizontal cursor positions, in the range \fB1\fP\-\fB160\fP. Without arguments, it clears all tab stops. Virtual consoles only.
 .RE
@@ -229,7 +229,7 @@ Turns reverse video mode on or off. Except on a virtual console, \fB\-\-reverse 
 Stores the terminal\(cqs current rendering options (foreground and background colors) as the values to be used at reset\-to\-default. Virtual consoles only.
 .RE
 .sp
-\fB\-\-tabs\fP[\fB=\fP\fItab1 tab2 tab3\fP ...]
+\fB\-\-tabs\fP[\fB=\fP\fItab1 tab2 tab3\fP .\|.\|.]
 .RS 4
 Sets tab stops at the given horizontal cursor positions, in the range \fB1\fP\-\fB160\fP. Without arguments, it shows the current tab stop settings.
 .RE

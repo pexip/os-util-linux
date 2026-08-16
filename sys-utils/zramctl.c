@@ -29,6 +29,7 @@
 #include <libsmartcols.h>
 
 #include "c.h"
+#include "cctype.h"
 #include "nls.h"
 #include "closestream.h"
 #include "strutils.h"
@@ -82,7 +83,7 @@ static const struct colinfo infos[] = {
 	[COL_ZEROPAGES] = { "ZERO-PAGES",   3, SCOLS_FL_RIGHT, N_("empty pages with no allocated memory") },
 	[COL_MEMTOTAL]  = { "TOTAL",        5, SCOLS_FL_RIGHT, N_("all memory including allocator fragmentation and metadata overhead") },
 	[COL_MEMLIMIT]  = { "MEM-LIMIT",    5, SCOLS_FL_RIGHT, N_("memory limit used to store compressed data") },
-	[COL_MEMUSED]   = { "MEM-USED",     5, SCOLS_FL_RIGHT, N_("memory zram have been consumed to store compressed data") },
+	[COL_MEMUSED]   = { "MEM-USED",     5, SCOLS_FL_RIGHT, N_("peak memory usage to store compressed data") },
 	[COL_MIGRATED]  = { "MIGRATED",     5, SCOLS_FL_RIGHT, N_("number of objects migrated by compaction") },
 	[COL_COMPRATIO] = { "COMP-RATIO",   5, SCOLS_FL_RIGHT, N_("compression ratio: DATA/TOTAL") },
 	[COL_MOUNTPOINT]= { "MOUNTPOINT",0.10, SCOLS_FL_TRUNC, N_("where the device is mounted") },
@@ -143,7 +144,7 @@ static int column_name_to_id(const char *name, size_t namesz)
 	for (i = 0; i < ARRAY_SIZE(infos); i++) {
 		const char *cn = infos[i].name;
 
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
@@ -153,7 +154,7 @@ static int column_name_to_id(const char *name, size_t namesz)
 static void zram_reset_stat(struct zram *z)
 {
 	if (z) {
-		strv_free(z->mm_stat);
+		ul_strv_free(z->mm_stat);
 		z->mm_stat = NULL;
 		z->mm_stat_probed = 0;
 	}
@@ -362,11 +363,11 @@ static int get_mm_stat(struct zram *z,
 	if (!z->mm_stat && !z->mm_stat_probed) {
 		char *str = NULL;
 		if (ul_path_read_string(sysfs, &str, "mm_stat") > 0 && str) {
-			z->mm_stat = strv_split(str, " ");
+			z->mm_stat = ul_strv_split(str, " ");
 
 			/* make sure kernel provides mm_stat as expected */
-			if (strv_length(z->mm_stat) < ARRAY_SIZE(mm_stat_names)) {
-				strv_free(z->mm_stat);
+			if (ul_strv_length(z->mm_stat) < ARRAY_SIZE(mm_stat_names)) {
+				ul_strv_free(z->mm_stat);
 				z->mm_stat = NULL;
 			}
 		}
@@ -794,7 +795,8 @@ int main(int argc, char **argv)
 			err(EXIT_FAILURE, _("%s: failed to reset"), zram->devname);
 
 		if (nstreams &&
-		    zram_set_u64parm(zram, "max_comp_streams", nstreams))
+		    zram_set_u64parm(zram, "max_comp_streams", nstreams) &&
+		    errno != ENOENT)
 			err(EXIT_FAILURE, _("%s: failed to set number of streams"), zram->devname);
 
 		if (algorithm &&

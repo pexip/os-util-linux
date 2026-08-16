@@ -162,7 +162,7 @@ static int column_name_to_id(const char *name, size_t namesz)
 	for (i = 0; i < NCOLS; i++) {
 		const char *cn = infos[i].name;
 
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
@@ -218,7 +218,8 @@ err:
 
 static int get_max_partno(const char *disk, dev_t devno)
 {
-	char path[PATH_MAX], *parent, *dirname = NULL;
+	char path[PATH_MAX], *dirname = NULL;
+	const char *parent;
 	struct stat st;
 	DIR *dir;
 	struct dirent *d;
@@ -864,7 +865,7 @@ int main(int argc, char **argv)
 			what = ACT_LIST;
 			break;
 		case 'n':
-			if (parse_range(optarg, &lower, &upper, 0))
+			if (ul_parse_range(optarg, &lower, &upper, 0))
 				errx(EXIT_FAILURE, _("failed to parse --nr <M-N> range"));
 			break;
 		case 'o':
@@ -953,7 +954,7 @@ int main(int argc, char **argv)
 			device = argv[optind];
 			wholedisk = xstrdup(argv[optind + 1]);
 
-			if (device && wholedisk && !startswith(device, wholedisk))
+			if (device && wholedisk && !ul_startswith(device, wholedisk))
 				errx(EXIT_FAILURE, _("partition and disk name do not match"));
 		}
 	} else if (optind == argc - 1) {

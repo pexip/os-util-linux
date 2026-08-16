@@ -118,7 +118,7 @@ static int parse_sec(const char *t, usec_t *usec)
 		e += strspn(e, WHITESPACE);
 
 		for (i = 0; i < ARRAY_SIZE(table); i++)
-			if (startswith(e, table[i].suffix)) {
+			if (ul_startswith(e, table[i].suffix)) {
 				usec_t k = (usec_t) z * table[i].usec;
 
 				for (; n > 0; n--)
@@ -278,7 +278,7 @@ static int parse_timestamp_reference(time_t x, const char *t, usec_t *usec)
 			goto finish;
 
 		return -EINVAL;
-	} else if (endswith(t, " ago")) {
+	} else if (ul_endswith(t, " ago")) {
 		char *z;
 
 		z = strndup(t, strlen(t) - 4);
@@ -403,7 +403,7 @@ static int parse_timestamp_reference(time_t x, const char *t, usec_t *usec)
 	return 0;
 }
 
-int parse_timestamp(const char *t, usec_t *usec)
+int ul_parse_timestamp(const char *t, usec_t *usec)
 {
 	return parse_timestamp_reference(time(NULL), t, usec);
 }
@@ -872,7 +872,7 @@ int main(int argc, char *argv[])
 	if (strcmp(argv[1], "--timestamp") == 0) {
 		usec_t usec = 0;
 
-		r = parse_timestamp(argv[2], &usec);
+		r = ul_parse_timestamp(argv[2], &usec);
 		if (r)
 			errx(EXIT_FAILURE, "Can not parse '%s': %s", argv[2], strerror(-r));
 		ts.tv_sec = (time_t) (usec / USEC_PER_SEC);

@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: hardlink
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-03-17
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "HARDLINK" "1" "2025-03-17" "util\-linux 2.41" "User Commands"
+.TH "HARDLINK" "1" "2026-06-16" "util\-linux 2.41.5" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,7 +31,7 @@
 hardlink \- link multiple copies of a file
 .SH "SYNOPSIS"
 .sp
-\fBhardlink\fP [options] \fIdirectory\fP|\fIfile\fP...
+\fBhardlink\fP [options] \fIdirectory\fP|\fIfile\fP.\|.\|.
 .SH "DESCRIPTION"
 .sp
 \fBhardlink\fP is a tool that replaces copies of a file with either hardlinks
@@ -221,6 +221,12 @@ Display version and exit.
 .SH "ARGUMENTS"
 .sp
 \fBhardlink\fP takes one or more directories which will be searched for files to be linked.
+.SH "ENVIRONMENT"
+.sp
+\fBULFILEEQ_DEBUG\fP=all
+.RS 4
+Enables debug output for file comparisons.
+.RE
 .SH "BUGS"
 .sp
 The original \fBhardlink\fP implementation uses the option \fB\-f\fP to force hardlinks creation between filesystem. This very rarely usable feature is no more supported by the current \fBhardlink\fP.

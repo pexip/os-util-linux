@@ -105,7 +105,7 @@ static struct blocked_number *parse_block(const char *s, int ret, const struct s
 	struct blocked_number *blocked;
 	const char *name, *error_name;
 	long blocked_number;
-	char *colon;
+	const char *colon;
 	bool found;
 	size_t i;
 
@@ -203,6 +203,8 @@ int main(int argc, char **argv)
 			return EXIT_SUCCESS;
 		case 'd':
 			if (optarg) {
+				if (*optarg == '=')
+					optarg++;
 				dump = fopen(optarg, "w");
 				if (!dump)
 					err(EXIT_FAILURE, _("Could not open %s"), optarg);

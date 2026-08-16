@@ -352,10 +352,25 @@ static int hook_mount_post(
 
 	/* Attach the idmapped mount. */
 	if (is_private) {
+		unsigned int mmflags = MOVE_MOUNT_F_EMPTY_PATH;
+
 		/* Unmount the old, non-idmapped mount we just cloned and idmapped. */
 		umount2(target, MNT_DETACH);
 
-		rc = move_mount(fd_tree, "", -1, target, MOVE_MOUNT_F_EMPTY_PATH);
+		if (mnt_context_target_fd_required(cxt)) {
+			int fd_tgt = mnt_context_get_target_fd(cxt);
+
+			if (fd_tgt < 0) {
+				rc = -errno;
+				goto done;
+			}
+			mmflags |= MOVE_MOUNT_T_EMPTY_PATH;
+			rc = move_mount(fd_tree, "", fd_tgt, "", mmflags);
+		} else
+			rc = move_mount(fd_tree, "", AT_FDCWD, target, mmflags);
+
+		if (rc == 0)
+			rc = mnt_context_reopen_target_fd(cxt);
 		if (rc < 0) {
 			mnt_context_syscall_save_status(cxt, "move_mount", 0);
 			if (!mnt_context_read_mesgs(cxt, fd_tree)) {
@@ -434,15 +449,15 @@ static int hook_prepare_options(
 		idmap_type_t map_type;
 		uint32_t nsid = UINT_MAX, hostid = UINT_MAX, range = UINT_MAX;
 
-		if (startswith(tok, "b:")) {
+		if (ul_startswith(tok, "b:")) {
 			/* b:id-mount:id-host:id-range */
 			map_type = ID_TYPE_UIDGID;
 			tok += 2;
-		} else if (startswith(tok, "g:")) {
+		} else if (ul_startswith(tok, "g:")) {
 			/* g:id-mount:id-host:id-range */
 			map_type = ID_TYPE_GID;
 			tok += 2;
-		} else if (startswith(tok, "u:")) {
+		} else if (ul_startswith(tok, "u:")) {
 			/* u:id-mount:id-host:id-range */
 			map_type = ID_TYPE_UID;
 			tok += 2;

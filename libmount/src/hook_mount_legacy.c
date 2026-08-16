@@ -243,6 +243,9 @@ static int hook_mount(struct libmnt_context *cxt,
 		return rc;
 	}
 
+	/* re-open to point to the mounted filesystem root */
+	rc = mnt_context_reopen_target_fd(cxt);
+
 	cxt->syscall_status = 0;
 	return rc;
 }
@@ -277,6 +280,8 @@ static int hook_prepare(struct libmnt_context *cxt,
 
 	/* add extra mount(2) calls for each propagation flag  */
 	if (flags & MS_PROPAGATION) {
+		if (mnt_context_is_restricted(cxt))
+			goto eperm;
 		rc = prepare_propagation(cxt, hs);
 		if (rc)
 			return rc;
@@ -286,12 +291,18 @@ static int hook_prepare(struct libmnt_context *cxt,
 	if ((flags & MS_BIND)
 	    && (flags & MNT_BIND_SETTABLE)
 	    && !(flags & MS_REMOUNT)) {
+		if (mnt_context_is_restricted(cxt))
+			goto eperm;
 		rc = prepare_bindremount(cxt, hs);
 		if (rc)
 			return rc;
 	}
 
 	return rc;
+eperm:
+	DBG(HOOK, ul_debugobj(hs,
+		"multi-step mount(2) refused for non-root user"));
+	return -EPERM;
 }
 
 const struct libmnt_hookset hookset_mount_legacy =

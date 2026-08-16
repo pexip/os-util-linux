@@ -287,7 +287,7 @@ static const struct cpuinfo_pattern cache_patterns[] =
 	DEF_PAT_CACHE("cache",	PAT_CACHE),
 };
 
-#define CPUTYPE_PATTERN_BUFSZ	32
+#define CPUTYPE_PATTERN_BUFSZ	128
 
 static int cmp_pattern(const void *a0, const void *b0)
 {
@@ -444,7 +444,8 @@ static char *key_cleanup(char *str, int *keynum)
 
 static const struct cpuinfo_pattern *cpuinfo_parse_line(char *str, char **value, int *keynum)
 {
-	struct cpuinfo_pattern key = { .id = 0 }, *pat;
+	struct cpuinfo_pattern key = { .id = 0 };
+	const struct cpuinfo_pattern *pat;
 	char *p, *v;
 	char buf[CPUTYPE_PATTERN_BUFSZ] = { 0 };
 
@@ -461,8 +462,7 @@ static const struct cpuinfo_pattern *cpuinfo_parse_line(char *str, char **value,
 		return NULL;
 
 	/* prepare name of the field */
-	xstrncpy(buf, p, sizeof(buf));
-	buf[v - p] = '\0';
+	xstrncpy(buf, p, min((size_t)(v - p)+1, sizeof(buf)));
 	v++;
 
 	/* prepare value */
@@ -773,7 +773,9 @@ struct lscpu_arch *lscpu_read_architecture(struct lscpu_cxt *cxt)
 		char buf[BUFSIZ];
 
 		snprintf(buf, sizeof(buf), " %s ", ct->isa);
-		if (strstr(buf, " loongarch32 "))
+		if (strstr(buf, " loongarch32 ")
+		    || strstr(buf, " loongarch32s ")
+		    || strstr(buf, " loongarch32r "))
 			ar->bit32 = 1;
 		if (strstr(buf, " loongarch64 "))
 			ar->bit64 = 1;
@@ -960,14 +962,14 @@ int lscpu_read_vulnerabilities(struct lscpu_cxt *cxt)
 		/* Name */
 		vu->name = xstrdup(d->d_name);
 		*vu->name = toupper(*vu->name);
-		strrep(vu->name, '_', ' ');
+		ul_strrep(vu->name, '_', ' ');
 
 		/* Description */
 		vu->text = str;
-		p = (char *) startswith(vu->text, "Mitigation");
+		p = (char *) ul_startswith(vu->text, "Mitigation");
 		if (p) {
 			*p = ';';
-			strrem(vu->text, ':');
+			ul_strrem(vu->text, ':');
 		}
 	}
 	closedir(dir);

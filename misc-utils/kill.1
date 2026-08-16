@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: kill
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "KILL" "1" "2025-02-26" "util\-linux 2.41" "User Commands"
+.TH "KILL" "1" "2026-06-16" "util\-linux 2.41.5" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,7 +31,7 @@
 kill \- terminate a process
 .SH "SYNOPSIS"
 .sp
-\fBkill\fP  [\fB\-\fP\fIsignal\fP|\fB\-s\fP \fIsignal\fP|\fB\-p\fP]  [\fB\-q\fP \fIvalue\fP] [\fB\-a\fP] [\fB\-\-timeout\fP \fImilliseconds\fP \fIsignal\fP] [\fB\-\-\fP] \fIpid\fP|\fIname\fP...
+\fBkill\fP  [\fB\-\fP\fIsignal\fP|\fB\-s\fP \fIsignal\fP|\fB\-p\fP]  [\fB\-q\fP \fIvalue\fP] [\fB\-a\fP] [\fB\-\-timeout\fP \fImilliseconds\fP \fIsignal\fP] [\fB\-\-\fP] \fIpid\fP|\fIname\fP.\|.\|.
 .sp
 \fBkill\fP \fB\-l\fP [\fInumber\fP|\f(CR0x\fP\fIsigmask\fP] | \fB\-L\fP
 .sp
@@ -94,8 +94,8 @@ The signals can be found in \fI/usr/include/linux/signal.h\fP.
 .nf
 .fam C
 $ ps s $$
-  UID     PID          PENDING          BLOCKED          IGNORED           CAUGHT STAT TTY        TIME COMMAND
- 1000 1608069 0000000000000000 0000000000000002 0000000000384000 0000000008013003 Ss   pts/44     0:02 zsh
+  UID\&     PID\&          PENDING\&          BLOCKED\&          IGNORED\&           CAUGHT STAT TTY\&        TIME COMMAND
+ 1000 1608069 0000000000000000 0000000000000002 0000000000384000 0000000008013003 Ss\&   pts/44\&     0:02 zsh
 $ kill \-l 0x0000000000384000
 TERM
 TSTP

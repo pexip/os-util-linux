@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: fdisk
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-03-17
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "FDISK" "8" "2025-03-17" "util\-linux 2.41" "System Administration"
+.TH "FDISK" "8" "2026-06-16" "util\-linux 2.41.5" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -33,14 +33,14 @@ fdisk \- manipulate disk partition table
 .sp
 \fBfdisk\fP [options] \fIdevice\fP
 .sp
-\fBfdisk\fP \fB\-l\fP [\fIdevice\fP...]
+\fBfdisk\fP \fB\-l\fP [\fIdevice\fP.\|.\|.]
 .SH "DESCRIPTION"
 .sp
 \fBfdisk\fP is a dialog\-driven program for creation and manipulation of partition tables. It understands GPT, MBR, Sun, SGI and BSD partition tables.
 .sp
 Block devices can be divided into one or more logical disks called \fIpartitions\fP. This division is recorded in the \fIpartition table\fP, usually found in sector 0 of the disk. (In the BSD world one talks about `disk slices\*(Aq and a `disklabel\*(Aq.)
 .sp
-All partitioning is driven by device I/O limits (the topology) by default. \fBfdisk\fP is able to optimize the disk layout for a 4K\-sector size and use an alignment offset on modern devices for MBR and GPT. It is always a good idea to follow \fBfdisk\fP\*(Aqs defaults as the default values (e.g., first and last partition sectors) and partition sizes specified by the +/\-<size>{M,G,...} notation are always aligned according to the device properties.
+All partitioning is driven by device I/O limits (the topology) by default. \fBfdisk\fP is able to optimize the disk layout for a 4K\-sector size and use an alignment offset on modern devices for MBR and GPT. It is always a good idea to follow \fBfdisk\fP\*(Aqs defaults as the default values (e.g., first and last partition sectors) and partition sizes specified by the +/\-<size>{M,G,.\|.\|.} notation are always aligned according to the device properties.
 .sp
 CHS (Cylinder\-Head\-Sector) addressing is deprecated and not used by default. Please, do not follow old articles and recommendations with \fBfdisk \-S <n> \-H <n>\fP advice for SSD or 4K\-sector devices.
 .sp
@@ -152,13 +152,13 @@ The \fIdevice\fP is usually \fI/dev/sda\fP, \fI/dev/sdb\fP or so. A device name 
 The \fIpartition\fP is a device name followed by a partition number. For example, \fI/dev/sda1\fP is the first partition on the first hard disk in the system. See also Linux kernel documentation (the \fIDocumentation/admin\-guide/devices.txt\fP file).
 .SH "SIZES"
 .sp
-The "last sector" dialog accepts partition size specified by number of sectors or by +/\-<size>{K,B,M,G,...} notation.
+The "last sector" dialog accepts partition size specified by number of sectors or by +/\-<size>{K,B,M,G,.\|.\|.} notation.
 .sp
 If the size is prefixed by \*(Aq+\*(Aq then it is interpreted as relative to the partition first sector. If the size is prefixed by \*(Aq\-\*(Aq then it is interpreted as relative to the high limit (last available sector for the partition).
 .sp
 In the case the size is specified in bytes, then the number may be followed by the multiplicative suffixes KiB (1024 bytes), MiB (1024*1024 bytes), and so on for GiB, TiB, PiB, EiB, ZiB and YiB. The "iB" is optional, e.g., "K" has the same meaning as "KiB".
 .sp
-The relative sizes if specified with multiplicative suffixes (e.g. +100MiB) are always aligned according to device I/O limits. The +/\-<size>{K,B,M,G,...} notation is recommended.
+The relative sizes if specified with multiplicative suffixes (e.g. +100MiB) are always aligned according to device I/O limits. The +/\-<size>{K,B,M,G,.\|.\|.} notation is recommended.
 .sp
 The last sector of the partition is strictly calculated as <start> + <size> (without \-1) if the size is specified by the +<sectors> notation. In this case, the size is not aligned to the device I/O limits.
 .sp

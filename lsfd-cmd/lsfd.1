@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: lsfd
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-03-18
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "LSFD" "1" "2025-03-18" "util\-linux 2.41" "User Commands"
+.TH "LSFD" "1" "2026-06-16" "util\-linux 2.41.5" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -564,7 +564,7 @@ Interface name associated with the packet socket.
 .sp
 PACKET.PROTOCOL <\f(CRstring\fP>
 .RS 4
-L3 protocol associated with the packet socket.
+L2 protocol associated with the packet socket.
 .RE
 .sp
 PARTITION <\f(CRstring\fP>
@@ -1167,7 +1167,7 @@ List processes communicating via unix stream sockets:
 .if n .RS 4
 .nf
 .fam C
-# lsfd  \-Q \*(AqTYPE == "UNIX\-STREAM" && UNIX.PATH =~ ".+"\*(Aq \-oUNIX.PATH,PID,COMMAND,FD,SOCK.STATE,ENDPOINTS
+# lsfd\&  \-Q \*(AqTYPE == "UNIX\-STREAM" && UNIX.PATH =~ ".+"\*(Aq \-oUNIX.PATH,PID,COMMAND,FD,SOCK.STATE,ENDPOINTS
 .fam
 .fi
 .if n .RE
@@ -1179,7 +1179,7 @@ List processes communicating via a specified unix stream socket:
 .if n .RS 4
 .nf
 .fam C
-# lsfd  \-Q \*(AqTYPE == "UNIX\-STREAM" && UNIX.PATH == "@/tmp/.X11\-unix/X0"\*(Aq \-oUNIX.PATH,PID,COMMAND,FD,SOCK.STATE,ENDPOINTS
+# lsfd\&  \-Q \*(AqTYPE == "UNIX\-STREAM" && UNIX.PATH == "@/tmp/.X11\-unix/X0"\*(Aq \-oUNIX.PATH,PID,COMMAND,FD,SOCK.STATE,ENDPOINTS
 .fam
 .fi
 .if n .RE

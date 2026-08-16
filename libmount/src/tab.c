@@ -318,7 +318,7 @@ int mnt_table_append_intro_comment(struct libmnt_table *tb, const char *comm)
 {
 	if (!tb)
 		return -EINVAL;
-	return strappend(&tb->comm_intro, comm);
+	return ul_strappend(&tb->comm_intro, comm);
 }
 
 /**
@@ -359,7 +359,7 @@ int mnt_table_append_trailing_comment(struct libmnt_table *tb, const char *comm)
 {
 	if (!tb)
 		return -EINVAL;
-	return strappend(&tb->comm_tail, comm);
+	return ul_strappend(&tb->comm_tail, comm);
 }
 
 /**
@@ -1632,7 +1632,10 @@ static int get_btrfs_fs_root(struct libmnt_table *tb, struct libmnt_fs *fs, char
 
 		DBG(BTRFS, ul_debug(" found subvolid=%s, checking", vol));
 
-		assert (volsz + 1 < sizeof(stringify_value(UINT64_MAX)));
+		/* a subvolid is a u64, so a longer value cannot match any
+		 * subvolume; reject it rather than overflow subvolidstr */
+		if (volsz + 1 >= sizeof(subvolidstr))
+			goto not_found;
 		memcpy(subvolidstr, vol, volsz);
 		subvolidstr[volsz] = '\0';
 
@@ -1818,7 +1821,7 @@ struct libmnt_fs *mnt_table_get_fs_root(struct libmnt_table *tb,
 
 		DBG(FS, ul_debugobj(fs, "source root: %s, source FS root: %s", root, src_root));
 
-		if (src_root && root && !startswith(root, src_root)) {
+		if (src_root && root && !ul_startswith(root, src_root)) {
 			if (strcmp(root, "/") == 0) {
 				free(root);
 				root = strdup(src_root);
@@ -1900,7 +1903,7 @@ int __mnt_table_is_fs_mounted(struct libmnt_table *tb, struct libmnt_fs *fstab_f
 			src = mnt_fs_get_srcpath(rootfs);
 			if (fstype && strncmp(fstype, "nfs", 3) == 0 && root) {
 				/* NFS stores the root at the end of the source */
-				src = src2 = strconcat(src, root);
+				src = src2 = ul_strconcat(src, root);
 				free(root);
 				root = NULL;
 			}
@@ -1948,7 +1951,7 @@ int __mnt_table_is_fs_mounted(struct libmnt_table *tb, struct libmnt_fs *fstab_f
 			int flags = 0;
 
 			if (!mnt_fs_get_srcpath(fs) ||
-			    !startswith(mnt_fs_get_srcpath(fs), "/dev/loop"))
+			    !ul_startswith(mnt_fs_get_srcpath(fs), "/dev/loop"))
 				continue;	/* does not look like loopdev */
 
 			if (mnt_fs_get_option(fstab_fs, "offset", &val, &len) == 0) {
@@ -2054,6 +2057,7 @@ int mnt_table_is_fs_mounted(struct libmnt_table *tb, struct libmnt_fs *fstab_fs)
 
 #ifdef TEST_PROGRAM
 #include "pathnames.h"
+#include "cctype.h"
 
 static int parser_errcb(struct libmnt_table *tb __attribute__((unused)),
 			const char *filename, int line)
@@ -2229,9 +2233,9 @@ static int test_find(struct libmnt_test *ts __attribute__((unused)),
 	mnt_table_set_cache(tb, mpc);
 	mnt_unref_cache(mpc);
 
-	if (strcasecmp(find, "source") == 0)
+	if (c_strcasecmp(find, "source") == 0)
 		fs = mnt_table_find_source(tb, what, dr);
-	else if (strcasecmp(find, "target") == 0)
+	else if (c_strcasecmp(find, "target") == 0)
 		fs = mnt_table_find_target(tb, what, dr);
 
 	if (!fs)

@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: blkdiscard
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "BLKDISCARD" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
+.TH "BLKDISCARD" "8" "2026-06-16" "util\-linux 2.41.5" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -34,7 +34,7 @@ blkdiscard \- discard sectors on a device
 \fBblkdiscard\fP [options] [\fB\-o\fP \fIoffset\fP] [\fB\-l\fP \fIlength\fP] \fIdevice\fP
 .SH "DESCRIPTION"
 .sp
-\fBblkdiscard\fP is used to discard device sectors. This is useful for solid\-state drivers (SSDs) and thinly\-provisioned storage. Unlike \fBfstrim\fP(8), this command is used directly on the block device.
+\fBblkdiscard\fP is used to discard device sectors. This is useful for solid\-state drives (SSDs) and thinly\-provisioned storage. Unlike \fBfstrim\fP(8), this command is used directly on the block device.
 .sp
 By default, \fBblkdiscard\fP will discard all blocks on the device. Options may be used to modify this behavior based on range or size, as explained below.
 .sp

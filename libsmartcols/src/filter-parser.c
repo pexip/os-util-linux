@@ -69,11 +69,14 @@
 /* First part of user prologue.  */
 #line 1 "libsmartcols/src/filter-parser.y"
 
-#ifdef __clang__
-/* clang detects yynerrs as unused.
- * Will be fixed in future versions of bison.
+/*
+ * Compilers detect yynerrs as unused. Let's hope it will be fixed in future
+ * versions of Bison.
  */
-#pragma clang diagnostic ignored "-Wunused-but-set-variable"
+#if defined(__GNUC__) && !defined(__clang__)
+# pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+#elif defined(__clang__)
+# pragma clang diagnostic ignored "-Wunused-but-set-variable"
 #endif
 
 #include <stdio.h>
@@ -85,7 +88,7 @@
 void yyerror(yyscan_t *locp, struct libscols_filter *fltr, char const *fmt, ...);
 
 
-#line 89 "libsmartcols/src/filter-parser.c"
+#line 92 "libsmartcols/src/filter-parser.c"
 
 # ifndef YY_CAST
 #  ifdef __cplusplus
@@ -527,9 +530,9 @@ static const yytype_int8 yytranslate[] =
 /* YYRLINE[YYN] -- Source line where rule number YYN was defined.  */
 static const yytype_int8 yyrline[] =
 {
-       0,    73,    73,    77,    78,    79,    80,    81,    82,    83,
-      84,    85,    86,    87,    89,    95,   103,   104,   105,   106,
-     107,   111,   115
+       0,    76,    76,    80,    81,    82,    83,    84,    85,    86,
+      87,    88,    89,    90,    92,    98,   106,   107,   108,   109,
+     110,   114,   118
 };
 #endif
 
@@ -1122,7 +1125,7 @@ yydestruct (const char *yymsg,
   switch (yykind)
     {
     case YYSYMBOL_expr: /* expr  */
-#line 60 "libsmartcols/src/filter-parser.y"
+#line 63 "libsmartcols/src/filter-parser.y"
             {
 		/* This destruct is called on error. The root node will be deallocated
 		 * by scols_unref_filter().
@@ -1130,11 +1133,11 @@ yydestruct (const char *yymsg,
 		if (fltr->root != ((*yyvaluep).param))
 			filter_unref_node(((*yyvaluep).param));
 	}
-#line 1134 "libsmartcols/src/filter-parser.c"
+#line 1137 "libsmartcols/src/filter-parser.c"
         break;
 
     case YYSYMBOL_param: /* param  */
-#line 60 "libsmartcols/src/filter-parser.y"
+#line 63 "libsmartcols/src/filter-parser.y"
             {
 		/* This destruct is called on error. The root node will be deallocated
 		 * by scols_unref_filter().
@@ -1142,7 +1145,7 @@ yydestruct (const char *yymsg,
 		if (fltr->root != ((*yyvaluep).param))
 			filter_unref_node(((*yyvaluep).param));
 	}
-#line 1146 "libsmartcols/src/filter-parser.c"
+#line 1149 "libsmartcols/src/filter-parser.c"
         break;
 
       default:
@@ -1174,7 +1177,7 @@ YY_INITIAL_VALUE (static YYSTYPE yyval_default;)
 YYSTYPE yylval YY_INITIAL_VALUE (= yyval_default);
 
     /* Number of syntax errors so far.  */
-    int yynerrs = 0;
+    int yynerrs YY_ATTRIBUTE_UNUSED = 0;
 
     yy_state_fast_t yystate = 0;
     /* Number of tokens to shift before error messages enabled.  */
@@ -1419,150 +1422,150 @@ yyreduce:
   switch (yyn)
     {
   case 2: /* filter: expr  */
-#line 73 "libsmartcols/src/filter-parser.y"
+#line 76 "libsmartcols/src/filter-parser.y"
              { fltr->root = (yyvsp[0].param); }
-#line 1425 "libsmartcols/src/filter-parser.c"
+#line 1428 "libsmartcols/src/filter-parser.c"
     break;
 
   case 3: /* expr: param  */
-#line 77 "libsmartcols/src/filter-parser.y"
+#line 80 "libsmartcols/src/filter-parser.y"
                                 { (yyval.param) = (yyvsp[0].param); }
-#line 1431 "libsmartcols/src/filter-parser.c"
+#line 1434 "libsmartcols/src/filter-parser.c"
     break;
 
   case 4: /* expr: '(' expr ')'  */
-#line 78 "libsmartcols/src/filter-parser.y"
+#line 81 "libsmartcols/src/filter-parser.y"
                                 { (yyval.param) = (yyvsp[-1].param); }
-#line 1437 "libsmartcols/src/filter-parser.c"
+#line 1440 "libsmartcols/src/filter-parser.c"
     break;
 
   case 5: /* expr: expr T_AND expr  */
-#line 79 "libsmartcols/src/filter-parser.y"
+#line 82 "libsmartcols/src/filter-parser.y"
                                 { (yyval.param) = filter_new_expr(fltr, F_EXPR_AND, (yyvsp[-2].param), (yyvsp[0].param)); }
-#line 1443 "libsmartcols/src/filter-parser.c"
+#line 1446 "libsmartcols/src/filter-parser.c"
     break;
 
   case 6: /* expr: expr T_OR expr  */
-#line 80 "libsmartcols/src/filter-parser.y"
+#line 83 "libsmartcols/src/filter-parser.y"
                                 { (yyval.param) = filter_new_expr(fltr, F_EXPR_OR, (yyvsp[-2].param), (yyvsp[0].param)); }
-#line 1449 "libsmartcols/src/filter-parser.c"
+#line 1452 "libsmartcols/src/filter-parser.c"
     break;
 
   case 7: /* expr: T_NEG expr  */
-#line 81 "libsmartcols/src/filter-parser.y"
+#line 84 "libsmartcols/src/filter-parser.y"
                                 { (yyval.param) = filter_new_expr(fltr, F_EXPR_NEG, NULL, (yyvsp[0].param)); }
-#line 1455 "libsmartcols/src/filter-parser.c"
+#line 1458 "libsmartcols/src/filter-parser.c"
     break;
 
   case 8: /* expr: expr T_EQ expr  */
-#line 82 "libsmartcols/src/filter-parser.y"
+#line 85 "libsmartcols/src/filter-parser.y"
                                 { (yyval.param) = filter_new_expr(fltr, F_EXPR_EQ, (yyvsp[-2].param), (yyvsp[0].param)); }
-#line 1461 "libsmartcols/src/filter-parser.c"
+#line 1464 "libsmartcols/src/filter-parser.c"
     break;
 
   case 9: /* expr: expr T_NE expr  */
-#line 83 "libsmartcols/src/filter-parser.y"
+#line 86 "libsmartcols/src/filter-parser.y"
                                 { (yyval.param) = filter_new_expr(fltr, F_EXPR_NE, (yyvsp[-2].param), (yyvsp[0].param)); }
-#line 1467 "libsmartcols/src/filter-parser.c"
+#line 1470 "libsmartcols/src/filter-parser.c"
     break;
 
   case 10: /* expr: expr T_LE expr  */
-#line 84 "libsmartcols/src/filter-parser.y"
+#line 87 "libsmartcols/src/filter-parser.y"
                                 { (yyval.param) = filter_new_expr(fltr, F_EXPR_LE, (yyvsp[-2].param), (yyvsp[0].param)); }
-#line 1473 "libsmartcols/src/filter-parser.c"
+#line 1476 "libsmartcols/src/filter-parser.c"
     break;
 
   case 11: /* expr: expr T_LT expr  */
-#line 85 "libsmartcols/src/filter-parser.y"
+#line 88 "libsmartcols/src/filter-parser.y"
                                 { (yyval.param) = filter_new_expr(fltr, F_EXPR_LT, (yyvsp[-2].param), (yyvsp[0].param)); }
-#line 1479 "libsmartcols/src/filter-parser.c"
+#line 1482 "libsmartcols/src/filter-parser.c"
     break;
 
   case 12: /* expr: expr T_GE expr  */
-#line 86 "libsmartcols/src/filter-parser.y"
+#line 89 "libsmartcols/src/filter-parser.y"
                                 { (yyval.param) = filter_new_expr(fltr, F_EXPR_GE, (yyvsp[-2].param), (yyvsp[0].param)); }
-#line 1485 "libsmartcols/src/filter-parser.c"
+#line 1488 "libsmartcols/src/filter-parser.c"
     break;
 
   case 13: /* expr: expr T_GT expr  */
-#line 87 "libsmartcols/src/filter-parser.y"
+#line 90 "libsmartcols/src/filter-parser.y"
                                 { (yyval.param) = filter_new_expr(fltr, F_EXPR_GT, (yyvsp[-2].param), (yyvsp[0].param)); }
-#line 1491 "libsmartcols/src/filter-parser.c"
+#line 1494 "libsmartcols/src/filter-parser.c"
     break;
 
   case 14: /* expr: expr T_REG expr  */
-#line 89 "libsmartcols/src/filter-parser.y"
+#line 92 "libsmartcols/src/filter-parser.y"
                                 {
 		if (filter_compile_param(fltr, (struct filter_param *) (yyvsp[0].param)) != 0)
 			YYERROR;
 		(yyval.param) = filter_new_expr(fltr, F_EXPR_REG, (yyvsp[-2].param), (yyvsp[0].param));
 	}
-#line 1501 "libsmartcols/src/filter-parser.c"
+#line 1504 "libsmartcols/src/filter-parser.c"
     break;
 
   case 15: /* expr: expr T_NREG expr  */
-#line 95 "libsmartcols/src/filter-parser.y"
+#line 98 "libsmartcols/src/filter-parser.y"
                                 {
 		if (filter_compile_param(fltr, (struct filter_param *) (yyvsp[0].param)) != 0)
 			YYERROR;
 		(yyval.param) = filter_new_expr(fltr, F_EXPR_NREG, (yyvsp[-2].param), (yyvsp[0].param));
 	}
-#line 1511 "libsmartcols/src/filter-parser.c"
+#line 1514 "libsmartcols/src/filter-parser.c"
     break;
 
   case 16: /* param: T_NUMBER  */
-#line 103 "libsmartcols/src/filter-parser.y"
+#line 106 "libsmartcols/src/filter-parser.y"
                         { (yyval.param) = filter_new_param(fltr, SCOLS_DATA_U64, 0, (void *) (&(yyvsp[0].param_number))); }
-#line 1517 "libsmartcols/src/filter-parser.c"
+#line 1520 "libsmartcols/src/filter-parser.c"
     break;
 
   case 17: /* param: T_FLOAT  */
-#line 104 "libsmartcols/src/filter-parser.y"
+#line 107 "libsmartcols/src/filter-parser.y"
                         { (yyval.param) = filter_new_param(fltr, SCOLS_DATA_FLOAT, 0, (void *) (&(yyvsp[0].param_float))); }
-#line 1523 "libsmartcols/src/filter-parser.c"
+#line 1526 "libsmartcols/src/filter-parser.c"
     break;
 
   case 18: /* param: T_HOLDER  */
-#line 105 "libsmartcols/src/filter-parser.y"
+#line 108 "libsmartcols/src/filter-parser.y"
                         { (yyval.param) = filter_new_param(fltr, SCOLS_DATA_NONE, F_HOLDER_COLUMN, (void *) (yyvsp[0].param_name)); }
-#line 1529 "libsmartcols/src/filter-parser.c"
+#line 1532 "libsmartcols/src/filter-parser.c"
     break;
 
   case 19: /* param: T_STRING  */
-#line 106 "libsmartcols/src/filter-parser.y"
+#line 109 "libsmartcols/src/filter-parser.y"
                         { (yyval.param) = filter_new_param(fltr, SCOLS_DATA_STRING, 0, (void *) (yyvsp[0].param_string)); }
-#line 1535 "libsmartcols/src/filter-parser.c"
+#line 1538 "libsmartcols/src/filter-parser.c"
     break;
 
   case 20: /* param: T_TRUE  */
-#line 107 "libsmartcols/src/filter-parser.y"
+#line 110 "libsmartcols/src/filter-parser.y"
                         {
 		bool x = true;
 		(yyval.param) = filter_new_param(fltr, SCOLS_DATA_BOOLEAN, 0, (void *) &x);
 	}
-#line 1544 "libsmartcols/src/filter-parser.c"
+#line 1547 "libsmartcols/src/filter-parser.c"
     break;
 
   case 21: /* param: T_FALSE  */
-#line 111 "libsmartcols/src/filter-parser.y"
+#line 114 "libsmartcols/src/filter-parser.y"
                         {
 		bool x = false;
 		(yyval.param) = filter_new_param(fltr, SCOLS_DATA_BOOLEAN, 0, (void *) &x);
 	}
-#line 1553 "libsmartcols/src/filter-parser.c"
+#line 1556 "libsmartcols/src/filter-parser.c"
     break;
 
   case 22: /* param: T_INVALID_NUMBER  */
-#line 115 "libsmartcols/src/filter-parser.y"
+#line 118 "libsmartcols/src/filter-parser.y"
                            {		/* YYerror token is unsupported in old Bisons */
 		ignore_result( (yyval.param) );	/* suppress "unset value" warning */
 		YYERROR;		/* yyerror() already called by lex() */
 	}
-#line 1562 "libsmartcols/src/filter-parser.c"
+#line 1565 "libsmartcols/src/filter-parser.c"
     break;
 
 
-#line 1566 "libsmartcols/src/filter-parser.c"
+#line 1569 "libsmartcols/src/filter-parser.c"
 
       default: break;
     }
@@ -1786,7 +1789,7 @@ yyreturnlab:
   return yyresult;
 }
 
-#line 122 "libsmartcols/src/filter-parser.y"
+#line 125 "libsmartcols/src/filter-parser.y"
 
 
 void yyerror (yyscan_t *locp __attribute__((__unused__)),

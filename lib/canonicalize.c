@@ -96,7 +96,7 @@ char *absolute_path(const char *path)
 		return NULL;
 
 	/* simple clean up */
-	if (startswith(path, "./"))
+	if (ul_startswith(path, "./"))
 		path += 2;
 	else if (strcmp(path, ".") == 0)
 		path = NULL;
@@ -192,7 +192,7 @@ char *canonicalize_path_restricted(const char *path)
 		write_all(pipes[1], (char *) &len, sizeof(len));
 		if (canonical)
 			write_all(pipes[1], canonical, len);
-		exit(0);
+		_exit(0);
 	default:
 		break;
 	}

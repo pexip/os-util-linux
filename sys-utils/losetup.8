@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: losetup
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "LOSETUP" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
+.TH "LOSETUP" "8" "2026-06-16" "util\-linux 2.41.5" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -41,7 +41,7 @@ Get info:
 .sp
 Detach a loop device:
 .sp
-\fBlosetup\fP \fB\-d\fP \fIloopdev\fP ...
+\fBlosetup\fP \fB\-d\fP \fIloopdev\fP .\|.\|.
 .sp
 Detach all associated loop devices:
 .sp
@@ -72,7 +72,7 @@ The \fIsize\fP and \fIoffset\fP arguments may be followed by the multiplicative 
 Show the status of all loop devices. Note that not all information is accessible for non\-root users. See also \fB\-\-list\fP. The old output format (as printed without \fB\-\-list\fP) is deprecated.
 .RE
 .sp
-\fB\-d\fP, \fB\-\-detach\fP \fIloopdev\fP...
+\fB\-d\fP, \fB\-\-detach\fP \fIloopdev\fP.\|.\|.
 .RS 4
 Detach the file or device associated with the specified loop device(s). Note that since Linux v3.7 kernel uses "lazy device destruction". The detach operation does not return \fBEBUSY\fP error anymore if device is actively used by system, but it is marked by autoclear flag and destroyed later. Even if the device is not used, the loop device can be destroyed later. If you need to wait for a complete removal of the loop device, call \fBudevadm settle\fP after \fBlosetup\fP.
 .RE
@@ -152,7 +152,7 @@ Verbose mode.
 If a loop device or the \fB\-a\fP option is specified, print the default columns for either the specified loop device or all loop devices; the default is to print info about all devices. See also \fB\-\-output\fP, \fB\-\-noheadings\fP, \fB\-\-raw\fP, and \fB\-\-json\fP.
 .RE
 .sp
-\fB\-O\fP, \fB\-\-output\fP \fIcolumn\fP[,\fIcolumn\fP]...
+\fB\-O\fP, \fB\-\-output\fP \fIcolumn\fP[,\fIcolumn\fP].\|.\|.
 .RS 4
 Specify the columns that are to be printed for the \fB\-\-list\fP output. Use \fB\-\-help\fP to get a list of all supported columns.
 .RE

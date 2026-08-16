@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: lastlog2
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: Programmer's Manual
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "LASTLOG2" "3" "2025-02-26" "util\-linux 2.41" "Programmer\*(Aqs Manual"
+.TH "LASTLOG2" "3" "2026-06-16" "util\-linux 2.41.5" "Programmer\*(Aqs Manual"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -39,18 +39,17 @@ lastlog2 \- Y2038 safe version of lastlog library.
 It\(cqs using sqlite3 as database backend. Data is only collected via a PAM module, so that all
 tools can make use of it, without modifying existing packages.
 The output is as compatible as possible with the old lastlog implementation.
-By default the database will be written as \f(CR/var/lib/lastlog/lastlog2.db\fP.
+By default the database will be written as \fI/var/lib/lastlog/lastlog2.db\fP.
 The size of the database depends on the amount of users, not how big the biggest UID is.
 .SH "AUTHORS"
 .sp
-Thorsten Kukuk (\c
-.MTO "kukuk\(atsuse.de" "" ")"
+.MTO "kukuk\(atsuse.de" "Thorsten Kukuk" ""
 .SH "SEE ALSO"
 .sp
 \fBlastlog2\fP(3),
-\fBll2_new_context(3),
-*ll2_unref_context(3),
-*ll2_write_entry\fP(3),
+\fBll2_new_context\fP(3),
+\fBll2_unref_context\fP(3),
+\fBll2_write_entry\fP(3),
 \fBll2_read_all\fP(3),
 \fBll2_read_entry\fP(3),
 \fBll2_update_login_time\fP(3),

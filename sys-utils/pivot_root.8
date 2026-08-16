@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: pivot_root
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-02-26
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: System Administration
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "PIVOT_ROOT" "8" "2025-02-26" "util\-linux 2.41" "System Administration"
+.TH "PIVOT_ROOT" "8" "2026-06-16" "util\-linux 2.41.5" "System Administration"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -83,11 +83,11 @@ Mount the new root file system over NFS from 10.0.0.1:/my_root and run \fBinit\f
 .if n .RS 4
 .nf
 .fam C
-ifconfig lo 127.0.0.1 up   # for portmap
+ifconfig lo 127.0.0.1 up\&   # for portmap
 # configure Ethernet or such
-portmap   # for lockd (implicitly started by mount)
+portmap\&   # for lockd (implicitly started by mount)
 mount \-o ro 10.0.0.1:/my_root /mnt
-killall portmap   # portmap keeps old root busy
+killall portmap\&   # portmap keeps old root busy
 cd /mnt
 pivot_root . old_root
 exec chroot . sh \-c \*(Aqumount /old_root; exec /sbin/init\*(Aq \(rs

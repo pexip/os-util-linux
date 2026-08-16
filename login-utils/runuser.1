@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: runuser
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.20
-.\"      Date: 2025-03-18
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-06-16
 .\"    Manual: User Commands
-.\"    Source: util-linux 2.41
+.\"    Source: util-linux 2.41.5
 .\"  Language: English
 .\"
-.TH "RUNUSER" "1" "2025-03-18" "util\-linux 2.41" "User Commands"
+.TH "RUNUSER" "1" "2026-06-16" "util\-linux 2.41.5" "User Commands"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -31,9 +31,9 @@
 runuser \- run a command with substitute user and group ID
 .SH "SYNOPSIS"
 .sp
-\fBrunuser\fP [options] \fB\-u\fP \fIuser\fP [[\-\-] \fIcommand\fP [\fIargument\fP...]]
+\fBrunuser\fP [options] \fB\-u\fP \fIuser\fP [[\-\-] \fIcommand\fP [\fIargument\fP.\|.\|.]]
 .sp
-\fBrunuser\fP [options] [\fB\-\fP] [\fIuser\fP [\fIargument\fP...]]
+\fBrunuser\fP [options] [\fB\-\fP] [\fIuser\fP [\fIargument\fP.\|.\|.]]
 .SH "DESCRIPTION"
 .sp
 \fBrunuser\fP can be used to run commands with a substitute user and group ID. If the option \fB\-u\fP is not given, \fBrunuser\fP falls back to \fBsu\fP\-compatible semantics and a shell is executed. The difference between the commands \fBrunuser\fP and \fBsu\fP is that \fBrunuser\fP does not ask for a password (because it may be executed by the root user only) and it uses a different PAM configuration. The command \fBrunuser\fP does not have to be installed with set\-user\-ID permissions.

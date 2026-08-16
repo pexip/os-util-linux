@@ -21,7 +21,7 @@
 /* initialize a custom exit code for all *_or_err functions */
 extern void strutils_set_exitcode(int exit_code);
 
-extern int parse_size(const char *str, uintmax_t *res, int *power);
+extern int ul_parse_size(const char *str, uintmax_t *res, int *power);
 extern int strtosize(const char *str, uintmax_t *res);
 extern uintmax_t strtosize_or_err(const char *str, const char *errmesg);
 
@@ -68,7 +68,7 @@ extern int isxdigit_strend(const char *str, const char **end);
 #define isxdigit_string(_s)	isxdigit_strend(_s, NULL)
 
 
-extern int parse_switch(const char *arg, const char *errmesg, ...);
+extern int ul_parse_switch(const char *arg, const char *errmesg, ...);
 
 #ifndef HAVE_MEMPCPY
 extern void *mempcpy(void *restrict dest, const void *restrict src, size_t n);
@@ -260,14 +260,14 @@ extern int string_to_bitarray(const char *list, char *ary,
 extern int string_to_bitmask(const char *list,
 			     unsigned long *mask,
 			     long (*name2flag)(const char *, size_t));
-extern int parse_range(const char *str, int *lower, int *upper, int def);
+extern int ul_parse_range(const char *str, int *lower, int *upper, int def);
 
 extern int streq_paths(const char *a, const char *b);
 
 /*
  * Match string beginning.
  */
-static inline const char *startswith(const char *s, const char *prefix)
+static inline const char *ul_startswith(const char *s, const char *prefix)
 {
 	size_t sz = prefix ? strlen(prefix) : 0;
 
@@ -291,7 +291,7 @@ static inline const char *startswith_no_case(const char *s, const char *prefix)
 /*
  * Match string ending.
  */
-static inline const char *endswith(const char *s, const char *postfix)
+static inline const char *ul_endswith(const char *s, const char *postfix)
 {
 	size_t sl = s ? strlen(s) : 0;
 	size_t pl = postfix ? strlen(postfix) : 0;
@@ -405,13 +405,13 @@ static inline size_t normalize_whitespace(unsigned char *str)
 	return __normalize_whitespace(str, sz, str, sz + 1);
 }
 
-static inline void strrep(char *s, int find, int replace)
+static inline void ul_strrep(char *s, int find, int replace)
 {
 	while (s && *s && (s = strchr(s, find)) != NULL)
 		*s++ = replace;
 }
 
-static inline void strrem(char *s, int rem)
+static inline void ul_strrem(char *s, int rem)
 {
 	char *p;
 
@@ -441,18 +441,18 @@ static inline char *ul_next_string(char *p, char *end)
 	return NULL;
 }
 
-extern char *strnconcat(const char *s, const char *suffix, size_t b);
-extern char *strconcat(const char *s, const char *suffix);
-extern char *strfconcat(const char *s, const char *format, ...)
+extern char *ul_strnconcat(const char *s, const char *suffix, size_t b);
+extern char *ul_strconcat(const char *s, const char *suffix);
+extern char *ul_strfconcat(const char *s, const char *format, ...)
 		 __attribute__ ((__format__ (__printf__, 2, 3)));
 
-extern int strappend(char **a, const char *b);
+extern int ul_strappend(char **a, const char *b);
 extern int strfappend(char **a, const char *format, ...)
 		 __attribute__ ((__format__ (__printf__, 2, 3)));
-extern int strvfappend(char **a, const char *format, va_list ap)
+extern int ul_strvfappend(char **a, const char *format, va_list ap)
 		 __attribute__ ((__format__ (__printf__, 2, 0)));
 
-extern const char *split(const char **state, size_t *l, const char *separator, int quoted);
+extern const char *ul_split(const char **state, size_t *l, const char *separator, int quoted);
 
 extern char *ul_strchr_escaped(const char *s, int c);
 
